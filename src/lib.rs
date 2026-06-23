@@ -261,4 +261,50 @@ impl WorkloadGovernor {
     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
         storage::has_assignment(&env, &org_id, issue_id, &contributor)
     }
+
+    // -----------------------------------------------------------------------
+    // Organization Selector Helper Functions
+    // -----------------------------------------------------------------------
+
+    /// Returns the assignment capacity remaining for a contributor in an organization.
+    /// 
+    /// Returns: `ORG_ASSIGNMENT_LIMIT - current_count` (minimum 0).
+    /// Useful for UI display: showing "X/4" where X is the count and 4 is the limit.
+    pub fn get_org_assignment_capacity(
+        env: Env,
+        contributor: Address,
+        org_id: Symbol,
+    ) -> u32 {
+        let current = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        storage::ORG_ASSIGNMENT_LIMIT.saturating_sub(current)
+    }
+
+    /// Returns the global application capacity remaining for a contributor.
+    /// 
+    /// Returns: `GLOBAL_APP_LIMIT - current_count` (minimum 0).
+    /// Useful for determining if a contributor can apply to more issues globally.
+    pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {
+        let current = storage::get_global_app_count(&env, &contributor);
+        storage::GLOBAL_APP_LIMIT.saturating_sub(current)
+    }
+
+    /// Checks if a contributor has reached their org assignment limit.
+    ///
+    /// Returns `true` if the contributor has 4 active assignments in the org.
+    pub fn is_org_assignment_limit_reached(
+        env: Env,
+        contributor: Address,
+        org_id: Symbol,
+    ) -> bool {
+        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        count >= storage::ORG_ASSIGNMENT_LIMIT
+    }
+
+    /// Checks if a contributor has reached their global application limit.
+    ///
+    /// Returns `true` if the contributor has 15 pending applications globally.
+    pub fn is_global_application_limit_reached(env: Env, contributor: Address) -> bool {
+        let count = storage::get_global_app_count(&env, &contributor);
+        count >= storage::GLOBAL_APP_LIMIT
+    }
 }
