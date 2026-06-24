@@ -618,6 +618,63 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Issue #76: Global cap invariant under arbitrary apply/withdraw sequences
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_global_cap(
+        // sequence of (apply=true / withdraw=false, issue_id 0..15)
+        actions in proptest::collection::vec((proptest::bool::ANY, 0u32..15u32), 1..30)
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("seq");
+        client.initialize(&admin);
+
+        // Track which issue_ids are currently applied, to drive withdraw correctly
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (do_apply, issue_id) in actions {
+            let count_before = client.get_global_application_count(&contributor);
+
+            if do_apply {
+                if applied.contains(&issue_id) {
+                    // already applied – skip (would be DuplicateApplication)
+                    continue;
+                }
+                if count_before >= 15 {
+                    // must fail with error 6, state must not change
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    prop_assert!(result.is_err(), "expected error when count=15");
+                    prop_assert_eq!(
+                        client.get_global_application_count(&contributor),
+                        15,
+                        "count must stay 15 after rejected apply"
+                    );
+                } else {
+                    client.apply_for_issue(&contributor, &org, &issue_id);
+                    applied.insert(issue_id);
+                    let count_after = client.get_global_application_count(&contributor);
+                    prop_assert_eq!(count_after, count_before + 1);
+                }
+            } else {
+                if !applied.contains(&issue_id) {
+                    // nothing to withdraw – skip
+                    continue;
+                }
+                client.withdraw_application(&contributor, &org, &issue_id);
+                applied.remove(&issue_id);
+                let count_after = client.get_global_application_count(&contributor);
+                prop_assert_eq!(count_after, count_before - 1);
+            }
+
+            // invariant: count always in [0, 15]
+            let count = client.get_global_application_count(&contributor);
+            prop_assert!(count <= 15, "count {} exceeded cap 15", count);
+        }
+    }
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {
