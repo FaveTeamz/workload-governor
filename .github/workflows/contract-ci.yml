@@ -30,3 +30,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --features testutils
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        run: cargo audit
