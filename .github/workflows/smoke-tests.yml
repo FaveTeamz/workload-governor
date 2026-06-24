@@ -1,0 +1,41 @@
+# Post-deploy smoke tests — run manually after deploying a new contract version.
+name: Testnet Smoke Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      contract_id:
+        description: Deployed contract ID
+        required: true
+      network:
+        description: Stellar network
+        default: testnet
+        required: false
+
+jobs:
+  smoke:
+    name: Smoke test all 13 contract functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-stellar-cli
+
+      - name: Install stellar-cli
+        run: cargo install stellar-cli --features opt --locked
+
+      - name: Run smoke tests
+        env:
+          CONTRACT_ID: ${{ inputs.contract_id }}
+          NETWORK: ${{ inputs.network }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          MAINTAINER_KEY: ${{ secrets.MAINTAINER_KEY }}
+          CONTRIBUTOR_KEY: ${{ secrets.CONTRIBUTOR_KEY }}
+        run: bash tests/smoke/testnet-smoke.sh

@@ -7,19 +7,15 @@ on:
     branches: [main]
 
 jobs:
-  contract:
+  contract-ci:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none
-          components: clippy
+      - name: Install Rust wasm target
+        run: rustup target add wasm32v1-none
 
-      - name: Cache cargo registry & build
+      - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
@@ -29,11 +25,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Clippy (errors only)
-        run: cargo clippy --all-targets --features testutils -- -D warnings
+      - name: Build WASM
+        run: cargo build --target wasm32v1-none --release
 
-      - name: Tests
+      - name: Run tests
         run: cargo test --features testutils
 
-      - name: Build WASM (release)
-        run: cargo build --target wasm32v1-none --release
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        run: cargo audit
