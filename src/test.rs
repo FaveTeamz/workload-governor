@@ -954,6 +954,84 @@ fn prop_storage_key_collision_freedom() {
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
 }
 
+// Issue #43: Boundary-value key collision test.
+//
+// Strategy: use two distinct addresses and two distinct org symbols so that
+// patterns 1/4/5 (contributor-scoped) and patterns 2/6 (triple-scoped) are
+// exercised at boundary issue_ids (0 and u32::MAX). We drive every key pattern
+// through the public contract API and assert all six storage categories remain
+// independent — no cross-pattern read returns a value written by a different
+// pattern.
+//
+// Collision-free argument (mirrors storage.rs doc-comment):
+//   Every key tuple starts with a unique symbol_short! prefix. Two keys from
+//   different patterns can never match because the Soroban host serialises the
+//   whole tuple; a prefix mismatch at byte 0 makes equality impossible.
+#[test]
+fn unit_storage_key_no_collision_boundary_values() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer_a = Address::generate(&t.env);
+    let maintainer_b = Address::generate(&t.env);
+    let contributor_a = Address::generate(&t.env);
+    let contributor_b = Address::generate(&t.env);
+    let org_a = t.org("aaaaaaa"); // boundary: max-length 7-char symbol
+    let org_b = t.org("b");       // boundary: min-length 1-char symbol
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer_a, &org_a);
+    t.client.register_maintainer(&admin, &maintainer_b, &org_b);
+
+    // Boundary issue_ids: 0 and u32::MAX
+    let issue_min: u32 = 0;
+    let issue_max: u32 = u32::MAX;
+
+    // contributor_a applies for boundary issues in org_a
+    t.client.apply_for_issue(&contributor_a, &org_a, &issue_min);
+    t.client.apply_for_issue(&contributor_a, &org_a, &issue_max);
+
+    // contributor_b applies in org_b with the same issue ids
+    t.client.apply_for_issue(&contributor_b, &org_b, &issue_min);
+    t.client.apply_for_issue(&contributor_b, &org_b, &issue_max);
+
+    // ── Pattern 1 ("g_apps") vs Pattern 2 ("app") ──────────────────────────
+    // g_apps counts must not be confused with app-entry booleans
+    assert_eq!(t.client.get_global_application_count(&contributor_a), 2);
+    assert_eq!(t.client.get_global_application_count(&contributor_b), 2);
+    assert!(t.client.has_applied(&contributor_a, &org_a, &issue_min));
+    assert!(t.client.has_applied(&contributor_a, &org_a, &issue_max));
+
+    // ── Pattern 2 ("app") cross-contributor isolation ──────────────────────
+    // contributor_b's entries must not pollute contributor_a's
+    assert!(!t.client.has_applied(&contributor_a, &org_b, &issue_min));
+    assert!(!t.client.has_applied(&contributor_b, &org_a, &issue_min));
+
+    // ── Pattern 2 ("app") cross-issue isolation ────────────────────────────
+    // issue_min entry must not alias issue_max entry
+    assert!(t.client.has_applied(&contributor_a, &org_a, &issue_max));
+
+    // assign boundary issues → exercises Patterns 4 ("maint"), 5 ("o_asgn"), 6 ("asgn")
+    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_min);
+    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_max);
+    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_min);
+    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_max);
+
+    // ── Pattern 5 ("o_asgn") vs Pattern 6 ("asgn") ────────────────────────
+    // org assignment count (pattern 5) must not collide with assignment sentinel (pattern 6)
+    assert_eq!(t.client.get_org_assignment_count(&contributor_a, &org_a), 2);
+    assert_eq!(t.client.get_org_assignment_count(&contributor_b, &org_b), 2);
+    assert!(t.client.is_assigned(&contributor_a, &org_a, &issue_min));
+    assert!(t.client.is_assigned(&contributor_a, &org_a, &issue_max));
+
+    // ── Pattern 6 ("asgn") cross-contributor / cross-org isolation ─────────
+    assert!(!t.client.is_assigned(&contributor_a, &org_b, &issue_min));
+    assert!(!t.client.is_assigned(&contributor_b, &org_a, &issue_min));
+
+    // ── Pattern 1 ("g_apps") consumed to 0 after both assignments ──────────
+    assert_eq!(t.client.get_global_application_count(&contributor_a), 0);
+    assert_eq!(t.client.get_global_application_count(&contributor_b), 0);
+}
+
 // ---------------------------------------------------------------------------
 // ERROR CASES — one test per ContractError variant (codes 1–11)
 //
