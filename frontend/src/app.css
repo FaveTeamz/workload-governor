@@ -290,3 +290,37 @@
   .panel-columns { grid-template-columns: 1fr; }
   .row-info { flex-wrap: wrap; }
 }
+
+/* ============================================================
+   CapacityBars — closes #95
+   ============================================================ */
+.capacity-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+.cap-bar { display: flex; flex-direction: column; gap: 4px; }
+
+.cap-bar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--text-sm, .8125rem);
+}
+
+.cap-bar__label { color: var(--color-text); font-weight: 500; }
+.cap-bar__count { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.cap-bar__track {
+  height: 8px;
+  background: var(--color-border);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.cap-bar__fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width .3s ease, background .15s ease;
+}
