@@ -6,6 +6,10 @@
 
 #![cfg(test)]
 
+extern crate std;
+
+use std::boxed::Box;
+
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
 use crate::{WorkloadGovernor, WorkloadGovernorClient};
@@ -695,3 +699,212 @@ fn prop_storage_key_collision_freedom() {
     assert!(!t.client.has_applied(&contributor, &org, &1u32)); // consumed by assign
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
 }
+
+// ---------------------------------------------------------------------------
+// ERROR CASES — one test per ContractError variant (codes 1–11)
+//
+// Uses try_* client methods which return:
+//   Result<Result<T, ConversionError>, Result<soroban_sdk::Error, InvokeError>>
+//
+// Errors raised via panic_with_error! (codes 1,2,4,6,7,8,9,10,11) surface as:
+//   Err(Ok(soroban_sdk::Error::from_contract_error(code as u32)))
+//
+// Errors 3 and 5 are guarded by require_auth() which raises a host Auth error
+// (Err(Err(...))), not a ContractError. Those are tested with #[should_panic].
+// ---------------------------------------------------------------------------
+
+mod error_cases {
+    use soroban_sdk::{testutils::Address as _, Address, Env, Error, Symbol};
+
+    use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
+
+    fn setup() -> (WorkloadGovernorClient<'static>, &'static Env) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, WorkloadGovernor);
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+        (WorkloadGovernorClient::new(env, &id), env)
+    }
+
+    /// Map a ContractError variant to the soroban_sdk::Error the host returns.
+    fn ce(e: ContractError) -> Error {
+        Error::from_contract_error(e as u32)
+    }
+
+    fn org(env: &Env, name: &str) -> Symbol {
+        Symbol::new(env, name)
+    }
+
+    /// Error 1 — `AlreadyInitialized`: `initialize` called a second time.
+    #[test]
+    fn err_1_already_initialized() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+        let result = client.try_initialize(&admin);
+        assert_eq!(result, Err(Ok(ce(ContractError::AlreadyInitialized))));
+    }
+
+    /// Error 2 — `NotInitialized`: any state-changing call before `initialize`.
+    #[test]
+    fn err_2_not_initialized() {
+        let (client, env) = setup();
+        let contributor = Address::generate(env);
+        let result = client.try_apply_for_issue(&contributor, &org(env, "x"), &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::NotInitialized))));
+    }
+
+    /// Error 3 — `UnauthorizedAdmin`: the contract variant is defined for future use;
+    /// the current implementation delegates admin auth to `require_auth()` on the stored
+    /// admin address, which raises a host Auth error (not a ContractError).
+    /// This test verifies the auth guard fires when a non-admin calls a protected function.
+    #[test]
+    #[should_panic]
+    fn err_3_unauthorized_admin() {
+        // Initialize with mock_all_auths, then clear auths so the next call panics.
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+
+        // Clear all auth mocks — stored_admin.require_auth() will now fail
+        env.set_auths(&[]);
+        let impostor = Address::generate(env);
+        let maintainer = Address::generate(env);
+        // panics: stored admin's require_auth not satisfied by impostor
+        client.register_maintainer(&impostor, &maintainer, &org(env, "x"));
+    }
+
+    /// Error 4 — `UnauthorizedMaintainer`: unregistered address tries to assign an issue.
+    #[test]
+    fn err_4_unauthorized_maintainer() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &o, &1u32);
+        let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    /// Error 5 — `UnauthorizedContributor`: the contract variant is defined for future use;
+    /// `apply_for_issue` delegates auth to `contributor.require_auth()` which raises a
+    /// host Auth error (not a ContractError). This test verifies the auth guard fires.
+    #[test]
+    #[should_panic]
+    fn err_5_unauthorized_contributor() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+
+        // Clear all auth mocks — contributor.require_auth() will now fail
+        env.set_auths(&[]);
+        let contributor = Address::generate(env);
+        // panics: contributor's require_auth not satisfied
+        client.apply_for_issue(&contributor, &org(env, "x"), &1u32);
+    }
+
+    /// Error 6 — `GlobalApplicationLimitReached`: contributor has 15 pending applications.
+    #[test]
+    fn err_6_global_application_limit_reached() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        for i in 0u32..15 {
+            client.apply_for_issue(&contributor, &o, &i);
+        }
+        let result = client.try_apply_for_issue(&contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::GlobalApplicationLimitReached))));
+    }
+
+    /// Error 7 — `OrgAssignmentLimitReached`: contributor has 4 active assignments in the org.
+    #[test]
+    fn err_7_org_assignment_limit_reached() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        for i in 0u32..4 {
+            client.apply_for_issue(&contributor, &o, &i);
+            client.assign_issue(&maintainer, &contributor, &o, &i);
+        }
+        client.apply_for_issue(&contributor, &o, &99u32);
+        let result = client.try_assign_issue(&maintainer, &contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::OrgAssignmentLimitReached))));
+    }
+
+    /// Error 8 — `DuplicateApplication`: same (contributor, org, issue) applied twice.
+    #[test]
+    fn err_8_duplicate_application() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &o, &1u32);
+        let result = client.try_apply_for_issue(&contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::DuplicateApplication))));
+    }
+
+    /// Error 9 — `ApplicationNotFound`: withdraw for a non-existent application.
+    #[test]
+    fn err_9_application_not_found() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        let result = client.try_withdraw_application(&contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::ApplicationNotFound))));
+    }
+
+    /// Error 10 — `AssignmentNotFound`: complete for a non-existent assignment.
+    #[test]
+    fn err_10_assignment_not_found() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        let result = client.try_complete_assignment(&maintainer, &contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::AssignmentNotFound))));
+    }
+
+    /// Error 11 — `AlreadyAssigned`: assign_issue when assignment already exists.
+    ///
+    /// `seed_assignment` (test-only) plants the assignment entry directly bypassing
+    /// the normal flow, so the AlreadyAssigned guard inside assign_issue is reachable.
+    #[test]
+    fn err_11_already_assigned() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        // Seed an existing assignment for issue 1
+        client.seed_assignment(&contributor, &o, &1u32);
+        // Apply so ApplicationNotFound guard is passed
+        client.apply_for_issue(&contributor, &o, &1u32);
+
+        let result = client.try_assign_issue(&maintainer, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::AlreadyAssigned))));
+    }
+}
+

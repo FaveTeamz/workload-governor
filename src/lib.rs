@@ -16,11 +16,14 @@ mod storage;
 #[cfg(test)]
 mod test;
 
+// In tests we run on the native host, which has std; expose it explicitly
+// since the crate is unconditionally `no_std`.
+#[cfg(test)]
+extern crate std;
+
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
 
 use crate::errors::ContractError;
-use crate::events;
-use crate::storage;
 
 #[contract]
 pub struct WorkloadGovernor;
@@ -303,8 +306,24 @@ impl WorkloadGovernor {
     /// Checks if a contributor has reached their global application limit.
     ///
     /// Returns `true` if the contributor has 15 pending applications globally.
-    pub fn is_global_application_limit_reached(env: Env, contributor: Address) -> bool {
+    pub fn is_global_app_limit_reached(env: Env, contributor: Address) -> bool {
         let count = storage::get_global_app_count(&env, &contributor);
         count >= storage::GLOBAL_APP_LIMIT
+    }
+
+    /// TEST-ONLY: directly seeds an assignment entry to make `AlreadyAssigned` reachable.
+    ///
+    /// This bypasses the normal `assign_issue` flow so tests can verify error 11.
+    /// Compiled only when the `testutils` feature is active.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn seed_assignment(
+        env: Env,
+        contributor: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    ) {
+        storage::set_assignment(&env, &org_id, issue_id, &contributor);
+        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        storage::set_org_assignment_count(&env, &contributor, &org_id, count + 1);
     }
 }
