@@ -8,13 +8,18 @@ you need to know to contribute effectively.
 ## Table of Contents
 
 1. [Getting Started](#getting-started)
-2. [Development Workflow](#development-workflow)
-3. [Commit Convention](#commit-convention)
-4. [Changelog Requirements](#changelog-requirements)
-5. [Versioning Convention (Semver)](#versioning-convention-semver)
-6. [Release Process](#release-process)
-7. [Code Style](#code-style)
-8. [Testing](#testing)
+2. [Reporting Bugs](#reporting-bugs)
+3. [Proposing Features](#proposing-features)
+4. [Development Workflow](#development-workflow)
+5. [Branch Naming](#branch-naming)
+6. [Commit Convention](#commit-convention)
+7. [PR Checklist](#pr-checklist)
+8. [Changelog Requirements](#changelog-requirements)
+9. [Versioning Convention (Semver)](#versioning-convention-semver)
+10. [Release Process](#release-process)
+11. [Code Style](#code-style)
+12. [Testing](#testing)
+13. [Code of Conduct](#code-of-conduct)
 
 ---
 
@@ -39,6 +44,30 @@ cargo test --features testutils
 
 ---
 
+## Reporting Bugs
+
+Open an issue using the **Bug Report** template (`.github/ISSUE_TEMPLATE/bug_report.md`).
+
+Include:
+- What you did (steps to reproduce)
+- What you expected to happen
+- What actually happened (error message, error code)
+- Environment: network (testnet/mainnet), contract ID, browser/Node version
+
+---
+
+## Proposing Features
+
+Open an issue using the **Feature Request** template (`.github/ISSUE_TEMPLATE/feature_request.md`).
+
+Include:
+- The problem you are solving
+- Your proposed solution
+- Alternatives you considered
+- Whether it requires a contract upgrade (ABI change = MAJOR semver bump)
+
+---
+
 ## Development Workflow
 
 1. Sync your fork: `git fetch upstream && git rebase upstream/main`.
@@ -46,6 +75,20 @@ cargo test --features testutils
 3. Make your changes — keep commits focused and atomic.
 4. Update `CHANGELOG.md` under the `[Unreleased]` section (see below).
 5. Open a pull request targeting `main`.
+
+---
+
+## Branch Naming
+
+```
+feat/<short-description>      # new functionality
+fix/<short-description>       # bug fixes
+docs/<short-description>      # documentation only
+refactor/<short-description>  # no behaviour change
+chore/<short-description>     # tooling, deps, CI
+```
+
+Example: `feat/global-cap-increase`, `fix/saturating-subtraction`.
 
 ---
 
@@ -62,6 +105,21 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 ```
 
 Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
+
+---
+
+## PR Checklist
+
+Before requesting review, confirm every item:
+
+- [ ] `cargo fmt` applied
+- [ ] `cargo clippy --features testutils -- -D warnings` passes with zero warnings
+- [ ] `cargo test --features testutils` passes
+- [ ] New functionality has new tests
+- [ ] `CHANGELOG.md` updated under `[Unreleased]`
+- [ ] Docs updated if public API or behaviour changed
+- [ ] PR title follows Conventional Commits format
+- [ ] Issue number referenced in PR description (`Closes #N`)
 
 ---
 
@@ -197,3 +255,12 @@ cargo doc --no-deps
 ```
 
 All PRs must pass CI. New functionality requires new tests.
+
+---
+
+## Code of Conduct
+
+This project follows the
+[Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+By participating you agree to uphold its standards. Report unacceptable
+behaviour to the maintainers via a private GitHub message.
