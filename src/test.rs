@@ -641,3 +641,66 @@ fn prop_storage_key_collision_freedom() {
     assert!(!t.client.has_applied(&contributor, &org, &1u32)); // consumed by assign
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
 }
+
+#[test]
+fn unit_happy_path_apply_then_assign_then_complete() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("lifecycle");
+    let issue_id = 1u32;
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // --- Step 1: Before apply ---
+    assert!(!t.client.has_applied(&contributor, &org, &issue_id));
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+
+    // --- Step 2: apply_for_issue ---
+    t.client.apply_for_issue(&contributor, &org, &issue_id);
+    assert!(t.client.has_applied(&contributor, &org, &issue_id));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+    assert!(!t.client.is_assigned(&contributor, &org, &issue_id));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    // --- Step 3: assign_issue ---
+    t.client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+    assert!(!t.client.has_applied(&contributor, &org, &issue_id)); // application consumed
+    assert_eq!(t.client.get_global_application_count(&contributor), 0); // global count decremented
+    assert!(t.client.is_assigned(&contributor, &org, &issue_id));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    // --- Step 4: complete_assignment ---
+    t.client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+    assert!(!t.client.is_assigned(&contributor, &org, &issue_id));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+}
+
+#[test]
+fn unit_happy_path_no_residual_state_after_complete() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("residual");
+    let issue_id = 42u32;
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Run the full lifecycle
+    t.client.apply_for_issue(&contributor, &org, &issue_id);
+    t.client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+    t.client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+
+    // Assert no residual state
+    assert!(!t.client.has_applied(&contributor, &org, &issue_id));
+    assert!(!t.client.is_assigned(&contributor, &org, &issue_id));
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    // Capacities are fully restored
+    assert_eq!(t.client.get_org_assignment_capacity(&contributor, &org), 4);
+    assert_eq!(t.client.get_global_application_capacity(&contributor), 15);
+}
