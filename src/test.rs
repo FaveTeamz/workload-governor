@@ -933,6 +933,28 @@ fn unit_upgrade_idempotent() {
     assert!(t.client.is_assigned(&t.contributor, &t.org, &20u32));
 }
 
+/// Issue #44: non-admin calling upgrade must fail with a host Auth error (error 3).
+/// The stored admin's `require_auth()` rejects any other caller.
+#[test]
+#[should_panic]
+fn unit_upgrade_rejects_non_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    // Upload the hash while auths are still mocked, then strip them.
+    let hash = upload_self_wasm(&env);
+
+    // Remove all auth mocks — stored_admin.require_auth() will now reject
+    env.set_auths(&[]);
+    // Must panic: non-admin (no auth) calls upgrade
+    client.upgrade(&hash);
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {
