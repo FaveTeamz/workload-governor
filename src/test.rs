@@ -1162,3 +1162,106 @@ mod error_cases {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Issue #49: Cap invariant property tests (10 000 cases each)
+// ---------------------------------------------------------------------------
+
+// Property: for any (contributor, org), assignment count never exceeds 4
+// under arbitrary apply/assign/complete/revoke sequences.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_org_assignment_cap_never_exceeds_4(
+        // sequence of actions: 0=apply, 1=assign, 2=complete, 3=revoke; issue_id 0..4
+        actions in proptest::collection::vec((0u8..4u8, 0u32..4u32), 1..20)
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("orgcap");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        let mut assigned: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (action, issue_id) in actions {
+            match action {
+                0 => { // apply
+                    if !applied.contains(&issue_id) && !assigned.contains(&issue_id)
+                        && client.get_global_application_count(&contributor) < 15
+                    {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                        applied.insert(issue_id);
+                    }
+                }
+                1 => { // assign
+                    if applied.contains(&issue_id) {
+                        let count = client.get_org_assignment_count(&contributor, &org);
+                        if count < 4 {
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                            applied.remove(&issue_id);
+                            assigned.insert(issue_id);
+                        }
+                    }
+                }
+                2 => { // complete
+                    if assigned.contains(&issue_id) {
+                        client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+                        assigned.remove(&issue_id);
+                    }
+                }
+                _ => { // revoke
+                    if assigned.contains(&issue_id) {
+                        client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+                        assigned.remove(&issue_id);
+                    }
+                }
+            }
+            // invariant: org assignment count never exceeds 4
+            prop_assert!(
+                client.get_org_assignment_count(&contributor, &org) <= 4,
+                "org assignment count exceeded 4"
+            );
+        }
+    }
+}
+
+// Property: no two applications with identical (contributor, org, issue) exist simultaneously.
+// Verified by tracking applied set and asserting the contract rejects any duplicate attempt.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_no_duplicate_application_exists(
+        actions in proptest::collection::vec((proptest::bool::ANY, 0u32..10u32), 1..20)
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("nodup");
+        client.initialize(&admin);
+
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (do_apply, issue_id) in actions {
+            if do_apply {
+                if applied.contains(&issue_id) {
+                    // Must reject — duplicate (contributor, org, issue)
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    prop_assert!(result.is_err(), "duplicate application should be rejected");
+                } else if client.get_global_application_count(&contributor) < 15 {
+                    client.apply_for_issue(&contributor, &org, &issue_id);
+                    applied.insert(issue_id);
+                }
+            } else if applied.contains(&issue_id) {
+                client.withdraw_application(&contributor, &org, &issue_id);
+                applied.remove(&issue_id);
+            }
+
+            // invariant: has_applied reflects the applied set exactly
+            for &id in &applied {
+                prop_assert!(
+                    client.has_applied(&contributor, &org, &id),
+                    "applied set and contract disagree for issue {}", id
+                );
+            }
+        }
+    }
+}
