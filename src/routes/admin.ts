@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
+import { getMetrics } from '../services/redis';
 
 const router = Router();
 
@@ -11,6 +12,14 @@ function authMiddleware(req: Request, res: Response, next: () => void): void {
   }
   next();
 }
+
+// GET /api/admin/metrics
+router.get('/metrics', authMiddleware, (req: Request, res: Response) => {
+  const metrics = getMetrics();
+  res.json({
+    cache: metrics,
+  });
+});
 
 // POST /api/admin/maintainers  body: { address, org_id }
 router.post('/maintainers', authMiddleware, async (req: Request, res: Response) => {
