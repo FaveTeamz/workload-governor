@@ -92,6 +92,32 @@ fn unit_revoke_lifecycle() {
 }
 
 #[test]
+fn unit_error_revoke_counter_inconsistency() {
+    // Simulate a post-migration state: assignment entry exists but counter was zeroed.
+    // revoke_assignment must return CounterInconsistency (code 13) instead of wrapping.
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("migrated");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Directly write assignment entry + leave counter at 0 (mimics zeroed migration).
+    crate::storage::set_assignment(&t.env, &org, 7u32, &contributor);
+
+    let result = t.client.try_revoke_assignment(&maintainer, &contributor, &org, &7u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::CounterInconsistency.into_val(&t.env)))
+    );
+}
+
+#[test]
 fn unit_withdraw_application() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);

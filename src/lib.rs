@@ -383,7 +383,10 @@ impl WorkloadGovernor {
         }
         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        let new_count = asgn_count.saturating_sub(1);
+        if asgn_count == 0 {
+            panic_with_error!(env, ContractError::CounterInconsistency);
+        }
+        let new_count = asgn_count - 1;
         if new_count == 0 {
             storage::remove_org_assignment_count(&env, &contributor, &org_id);
         } else {

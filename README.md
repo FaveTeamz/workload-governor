@@ -49,6 +49,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
+| 13 | `CounterInconsistency` | Assignment entry exists but org counter is 0 (post-migration corruption) |
 
 ## Storage Design
 

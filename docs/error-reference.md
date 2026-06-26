@@ -17,6 +17,7 @@ All errors raised by WorkloadGovernor are variants of `ContractError` — a `#[c
 | 9 | `ApplicationNotFound` | No pending application found for the given triple | The application may have expired (Wave TTL elapsed) or was never submitted. Re-apply with `apply_for_issue`. |
 | 10 | `AssignmentNotFound` | No active assignment found for the given `(org_id, issue_id, contributor)` triple | The assignment does not exist or was already removed. Verify the triple with `is_assigned` before calling. |
 | 11 | `AlreadyAssigned` | An active assignment already exists for this issue and contributor | Call `complete_assignment` or `revoke_assignment` to close the existing assignment before re-assigning. |
+| 13 | `CounterInconsistency` | The org assignment counter is `0` while the assignment entry still exists — storage was corrupted or manually zeroed by a migration script | Restore the counter to the correct value via a migration script, then retry. |
 
 ---
 
@@ -101,6 +102,19 @@ assign_issue(maintainer, frank, "org-f", 20)
 
 ---
 
+### Code 13 — `CounterInconsistency`
+
+A migration script zeroes the org assignment counter for Grace while her assignment entry still exists. A maintainer then tries to revoke it:
+
+```
+revoke_assignment(maintainer, grace, "org-g", 5)
+→ ContractError::CounterInconsistency (13)
+```
+
+**Resolution:** Run a corrective migration to restore the counter to the correct value (equal to the number of active assignment entries for the contributor in that org), then retry.
+
+---
+
 ## Errors by Contract Function
 
 | Function | Possible error codes |
@@ -112,7 +126,7 @@ assign_issue(maintainer, frank, "org-f", 20)
 | `withdraw_application` | 2, 5, 9 |
 | `assign_issue` | 2, 4, 9, 7, 11 |
 | `complete_assignment` | 2, 4, 10 |
-| `revoke_assignment` | 2, 4, 10 |
+| `revoke_assignment` | 2, 4, 10, 13 |
 | `extend_application_ttl` | 9 |
 | `get_global_application_count` | — |
 | `get_org_assignment_count` | — |

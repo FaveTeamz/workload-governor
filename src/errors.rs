@@ -57,4 +57,9 @@ pub enum ContractError {
     /// An active assignment already exists for this issue and contributor.
     /// Discriminant: `11`.
     AlreadyAssigned = 11,
+
+    /// The org assignment counter is 0 but an assignment entry still exists —
+    /// indicates storage was corrupted or manually zeroed by a migration script.
+    /// Discriminant: `13`.
+    CounterInconsistency = 13,
 }
