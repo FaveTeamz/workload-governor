@@ -3,7 +3,6 @@ import { pool } from '../db';
 import {
   validateGitHubSignature,
   parseGitHubPayload,
-  GitHubIssuePayload,
 } from '../services/github-webhook';
 import { invalidateCache } from '../services/redis';
 

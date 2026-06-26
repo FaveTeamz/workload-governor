@@ -8,13 +8,16 @@ const MOCK_APPLICATIONS = [
 ];
 
 test('maintainer assign and complete flow', async ({ page }) => {
-  await page.addInitScript(({ pubkey, apps, xdr }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await page.addInitScript((context: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).freighter = {
       isConnected: () => Promise.resolve(true),
-      getPublicKey: () => Promise.resolve(pubkey),
-      signTransaction: (_xdr: string) => Promise.resolve(xdr),
+      getPublicKey: () => Promise.resolve(context.pubkey),
+      signTransaction: () => Promise.resolve(context.xdr),
     };
-    (window as any).__mockApplications = apps;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__mockApplications = context.apps;
   }, { pubkey: MAINTAINER_KEY, apps: MOCK_APPLICATIONS, xdr: FIXED_XDR });
 
   await page.goto('/maintainer');

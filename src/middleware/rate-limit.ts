@@ -22,9 +22,12 @@ export const globalLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req: Request) => getClientIp(req),
   handler: (req: Request, res: Response) => {
-    const retryAfter = req.rateLimit?.resetTime
-      ? Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000)
-      : 60;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rateLimitInfo = (req as any).rateLimit;
+    const retryAfter =
+      rateLimitInfo?.resetTime && typeof rateLimitInfo.resetTime === 'number'
+        ? Math.ceil((rateLimitInfo.resetTime - Date.now()) / 1000)
+        : 60;
     res.set('Retry-After', String(retryAfter));
     res.status(429).json({
       error: 'too many requests',
