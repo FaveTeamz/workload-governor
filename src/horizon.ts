@@ -1,6 +1,5 @@
 import {
   Horizon,
-  NetworkError,
   NotFoundError,
 } from '@stellar/stellar-sdk';
 
@@ -71,12 +70,15 @@ export class HorizonService {
           id: account.id,
           sequence: account.sequence,
           subentryCount: account.subentry_count,
-          balances: account.balances.map((balance) => ({
-            balance: balance.balance,
-            asset_type: balance.asset_type,
-            asset_code: (balance as any).asset_code,
-            asset_issuer: (balance as any).asset_issuer,
-          })),
+          balances: account.balances.map((balance) => {
+            const balanceWithOptional = balance as Record<string, unknown>;
+            return {
+              balance: balance.balance,
+              asset_type: balance.asset_type,
+              asset_code: balanceWithOptional.asset_code as string | undefined,
+              asset_issuer: balanceWithOptional.asset_issuer as string | undefined,
+            };
+          }),
         };
       } catch (error) {
         if (error instanceof NotFoundError) {
@@ -84,7 +86,7 @@ export class HorizonService {
         }
 
         lastError = error as Error;
-        const statusCode = (error as any)?.response?.status;
+        const statusCode = (error as Record<string, unknown>)?.response?.status as number | undefined;
 
         // Retry on rate limit (429) or service unavailable (503)
         if (statusCode === 429 || statusCode === 503) {
@@ -132,7 +134,7 @@ export class HorizonService {
         }));
       } catch (error) {
         lastError = error as Error;
-        const statusCode = (error as any)?.response?.status;
+        const statusCode = (error as Record<string, unknown>)?.response?.status as number | undefined;
 
         // Retry on rate limit (429) or service unavailable (503)
         if (statusCode === 429 || statusCode === 503) {
@@ -154,14 +156,14 @@ export class HorizonService {
 
   streamEvents(
     accountId: string,
-    onUpdate: (event: any) => void,
+    onUpdate: (event: Record<string, unknown>) => void,
     onError: (error: Error) => void,
   ): void {
     this.server
       .transactions()
       .forAccount(accountId)
       .stream({
-        onmessage: onUpdate,
+        onmessage: onUpdate as (event: Record<string, unknown>) => void,
         onerror: onError,
       });
   }

@@ -95,24 +95,24 @@ export class GitHubService {
         const response = await this.fetch(
           `/search/issues?${params.toString()}&q=repo:${org}`,
         );
-        const data = (await response.json()) as any;
+        const data = (await response.json()) as Record<string, unknown>;
 
         if (!Array.isArray(data.items)) {
           console.warn(`[GitHub] Invalid response for ${org}`);
           break;
         }
 
-        const pageIssues: GitHubIssue[] = data.items
-          .filter((item: any) => !item.pull_request) // Exclude PRs
-          .map((item: any) => ({
-            id: item.id,
-            number: item.number,
-            title: item.title,
-            body: item.body,
-            labels: (item.labels || []).map((label: any) => label.name),
-            state: item.state === 'open' ? 'open' : 'closed',
-            created_at: item.created_at,
-            updated_at: item.updated_at,
+        const pageIssues: GitHubIssue[] = (data.items as Record<string, unknown>[])
+          .filter((item) => !item.pull_request) // Exclude PRs
+          .map((item) => ({
+            id: item.id as number,
+            number: item.number as number,
+            title: item.title as string,
+            body: item.body as string | null,
+            labels: ((item.labels || []) as Record<string, unknown>[]).map((label) => label.name as string),
+            state: (item.state as string) === 'open' ? ('open' as const) : ('closed' as const),
+            created_at: item.created_at as string,
+            updated_at: item.updated_at as string,
           }));
 
         issues.push(...pageIssues);
