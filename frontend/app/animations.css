@@ -1,0 +1,48 @@
+/* Keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideOut {
+  from { opacity: 1; transform: translateX(0); max-height: 200px; }
+  to   { opacity: 0; transform: translateX(-100%); max-height: 0; overflow: hidden; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Utility classes */
+.fade-in {
+  animation: fadeIn 300ms ease-out both;
+}
+
+.slide-out {
+  animation: slideOut 300ms ease-in forwards;
+}
+
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* Disable all animations when user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .slide-out,
+  .spinner {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    max-height: none !important;
+  }
+}
