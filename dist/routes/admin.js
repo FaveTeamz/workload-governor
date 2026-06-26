@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = require("../db");
+const sync_1 = require("../sync");
 const router = (0, express_1.Router)();
 function authMiddleware(req, res, next) {
     const token = req.headers['x-admin-token'];
@@ -24,6 +25,41 @@ router.post('/maintainers', authMiddleware, async (req, res) => {
     }
     catch {
         res.status(500).json({ error: 'internal server error' });
+    }
+});
+// POST /api/admin/sync  body: { orgs: string[] }
+// Trigger manual sync of GitHub issues for specified organizations
+router.post('/sync', authMiddleware, async (req, res) => {
+    const { orgs } = req.body;
+    if (!orgs || !Array.isArray(orgs) || orgs.length === 0) {
+        res.status(400).json({ error: 'orgs array required' });
+        return;
+    }
+    try {
+        const results = await sync_1.syncService.syncAllOrgs(orgs);
+        res.json({
+            message: 'Sync completed',
+            results,
+        });
+    }
+    catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: `Sync failed: ${errorMsg}` });
+    }
+});
+// POST /api/admin/sync/:org  Trigger sync for a single organization
+router.post('/sync/:org', authMiddleware, async (req, res) => {
+    const { org } = req.params;
+    try {
+        const result = await sync_1.syncService.syncIssuesForOrg(org);
+        res.json({
+            message: 'Sync completed for org',
+            result,
+        });
+    }
+    catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: `Sync failed: ${errorMsg}` });
     }
 });
 exports.default = router;

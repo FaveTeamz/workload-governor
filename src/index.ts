@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createApp } from './app';
 import { migrate, pool } from './db';
+import { startScheduler, stopScheduler } from './scheduler';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -13,9 +14,23 @@ async function start() {
       console.log(`Server running on http://${HOST}:${PORT}`);
     });
 
+    // Start scheduler for GitHub issues sync
+    const orgsEnv = process.env.GITHUB_ORGS ?? '';
+    const orgs = orgsEnv
+      .split(',')
+      .map((org) => org.trim())
+      .filter((org) => org.length > 0);
+
+    if (orgs.length > 0) {
+      startScheduler(orgs);
+    }
+
     // Graceful shutdown
     const gracefulShutdown = async (signal: string) => {
       console.log(`${signal} received, starting graceful shutdown...`);
+
+      stopScheduler();
+
       server.close(async () => {
         console.log('HTTP server closed');
         await pool.end();

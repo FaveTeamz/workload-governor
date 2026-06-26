@@ -7,11 +7,24 @@ export const pool = new Pool({
 export async function migrate(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS issues (
-      id        SERIAL PRIMARY KEY,
-      org_id    TEXT    NOT NULL,
+      id        INTEGER PRIMARY KEY,
+      github_id INTEGER NOT NULL UNIQUE,
+      org       TEXT    NOT NULL,
       title     TEXT    NOT NULL,
-      status    TEXT    NOT NULL DEFAULT 'open',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      body      TEXT,
+      labels    TEXT[],
+      state     TEXT    NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_issues_org ON issues(org);
+    CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
+
+    CREATE TABLE IF NOT EXISTS sync_metadata (
+      id           SERIAL PRIMARY KEY,
+      org          TEXT    NOT NULL UNIQUE,
+      last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS maintainers (

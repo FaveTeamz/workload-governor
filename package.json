@@ -17,6 +17,7 @@
     "express": "4.19.2",
     "helmet": "^8.2.0",
     "morgan": "^1.11.0",
+    "node-cron": "^4.5.0",
     "pg": "8.12.0"
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
     "@types/jest": "29.5.12",
     "@types/morgan": "^1.9.10",
     "@types/node": "20.14.10",
+    "@types/node-cron": "^3.0.11",
     "@types/pg": "8.11.6",
     "@types/supertest": "6.0.2",
     "@typescript-eslint/eslint-plugin": "7.16.1",

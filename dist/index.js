@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const app_1 = require("./app");
 const db_1 = require("./db");
+const scheduler_1 = require("./scheduler");
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
 async function start() {
@@ -12,9 +13,19 @@ async function start() {
         const server = app.listen(PORT, HOST, () => {
             console.log(`Server running on http://${HOST}:${PORT}`);
         });
+        // Start scheduler for GitHub issues sync
+        const orgsEnv = process.env.GITHUB_ORGS ?? '';
+        const orgs = orgsEnv
+            .split(',')
+            .map((org) => org.trim())
+            .filter((org) => org.length > 0);
+        if (orgs.length > 0) {
+            (0, scheduler_1.startScheduler)(orgs);
+        }
         // Graceful shutdown
         const gracefulShutdown = async (signal) => {
             console.log(`${signal} received, starting graceful shutdown...`);
+            (0, scheduler_1.stopScheduler)();
             server.close(async () => {
                 console.log('HTTP server closed');
                 await db_1.pool.end();
