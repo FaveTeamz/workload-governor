@@ -6,8 +6,42 @@
 //!   - **Instance**   — Contract instance entry; bumped on every state-changing call
 //!                      so the contract itself never gets archived.
 //!
-//! All key prefixes are distinct `symbol_short!` values — zero collision guarantee:
-//!   "g_apps", "app", "admin", "maint", "o_asgn", "asgn"
+//! # Storage key collision-free proof
+//!
+//! Six key patterns are used. Each is a tuple whose **first element is a unique
+//! `symbol_short!` prefix**. Because the Soroban host serialises the entire tuple
+//! (prefix + remaining fields) as a single `ScVal`, two keys can only collide if
+//! **every** element in both tuples is identical. The prefix alone therefore
+//! partitions the key space — no cross-pattern collision is possible regardless of
+//! input values.
+//!
+//! | # | Pattern | Prefix | Extra fields |
+//! |---|---------|--------|--------------|
+//! | 1 | `("g_apps", contributor)` | `"g_apps"` | `Address` |
+//! | 2 | `("app", contributor, org_id, issue_id)` | `"app"` | `Address`, `Symbol`, `u32` |
+//! | 3 | `"admin"` (scalar) | `"admin"` | — (singleton) |
+//! | 4 | `("maint", maintainer, org_id)` | `"maint"` | `Address`, `Symbol` |
+//! | 5 | `("o_asgn", contributor, org_id)` | `"o_asgn"` | `Address`, `Symbol` |
+//! | 6 | `("asgn", org_id, issue_id, contributor)` | `"asgn"` | `Symbol`, `u32`, `Address` |
+//!
+//! Pairwise uniqueness argument:
+//! - **1 vs 2**: `"g_apps"` ≠ `"app"` — different prefix bytes.
+//! - **1 vs 3**: tuple ≠ scalar — different `ScVal` discriminants.
+//! - **1 vs 4**: `"g_apps"` ≠ `"maint"`.
+//! - **1 vs 5**: `"g_apps"` ≠ `"o_asgn"`.
+//! - **1 vs 6**: `"g_apps"` ≠ `"asgn"`.
+//! - **2 vs 3**: tuple ≠ scalar.
+//! - **2 vs 4**: `"app"` ≠ `"maint"`.
+//! - **2 vs 5**: `"app"` ≠ `"o_asgn"`.
+//! - **2 vs 6**: `"app"` ≠ `"asgn"`.
+//! - **3 vs 4–6**: scalar `"admin"` ≠ any tuple.
+//! - **4 vs 5**: `"maint"` ≠ `"o_asgn"`.
+//! - **4 vs 6**: `"maint"` ≠ `"asgn"`.
+//! - **5 vs 6**: `"o_asgn"` ≠ `"asgn"`.
+//!
+//! Within each pattern, uniqueness is guaranteed by the combination of caller-controlled
+//! `Address` values (validated by the host via `require_auth`) and the caller-supplied
+//! `org_id`/`issue_id` fields — making impersonation impossible at the auth layer.
 
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, symbol_short};
 
