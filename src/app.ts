@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -8,6 +8,7 @@ import adminRouter from './routes/admin';
 import transactionsRouter from './routes/transactions';
 import eventsRouter from './routes/events';
 import { correlationIdMiddleware, errorHandler } from './logger';
+import { setupSwagger } from './swagger';
 
 export function createApp(): express.Application {
   const app = express();
@@ -27,20 +28,12 @@ export function createApp(): express.Application {
 
   // JSON parser middleware
   app.use(express.json());
+  app.use(express.static('public'));
   app.use(correlationIdMiddleware);
 
-  app.get('/health', async (req: Request, res: Response) => {
-    try {
-      await healthCheck();
-      const redisClient = getRedisClient();
-      await redisClient.ping();
-      res.json({ status: 'healthy', database: 'connected', cache: 'connected' });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown error';
-      res.status(503).json({ status: 'unhealthy', error: msg });
-    }
-  });
+  setupSwagger(app);
 
+  app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok' }));
   app.use('/api/issues', issuesRouter);
   app.use('/api/contributors', contributorsRouter);
   app.use('/api/admin', adminRouter);
