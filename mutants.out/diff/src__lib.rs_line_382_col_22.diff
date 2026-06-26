@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace == with != in WorkloadGovernor::revoke_assignment
+@@ -374,17 +374,17 @@
+             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+         }
+         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {
+             panic_with_error!(env, ContractError::AssignmentNotFound);
+         }
+         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
+         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+         let new_count = asgn_count.saturating_sub(1);
+-        if new_count == 0 {
++        if new_count != /* ~ changed by cargo-mutants ~ */ 0 {
+             storage::remove_org_assignment_count(&env, &contributor, &org_id);
+         } else {
+             storage::set_org_assignment_count(&env, &contributor, &org_id, new_count);
+         }
+         storage::bump_instance(&env);
+         events::emit_assignment_revoked(&env, &maintainer, &contributor, &org_id, issue_id);
+     }
+ 

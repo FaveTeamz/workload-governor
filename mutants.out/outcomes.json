@@ -1,0 +1,1908 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 144.177592296,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 157.883355948,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:55:9: replace WorkloadGovernor::initialize with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::initialize",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 32,
+                "column": 5
+              },
+              "end": {
+                "line": 62,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 55,
+              "column": 9
+            },
+            "end": {
+              "line": 61,
+              "column": 48
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_55_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_55_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.680587341,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.469604446,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:109:9: replace WorkloadGovernor::upgrade with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::upgrade",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 91,
+                "column": 5
+              },
+              "end": {
+                "line": 113,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 109,
+              "column": 9
+            },
+            "end": {
+              "line": 112,
+              "column": 68
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_109_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_109_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.196053705,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 386.658187516,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:153:9: replace WorkloadGovernor::apply_for_issue with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::apply_for_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 168,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 153,
+              "column": 9
+            },
+            "end": {
+              "line": 167,
+              "column": 83
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_153_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_153_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.651521582,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 7.007769403,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:156:18: replace >= with < in WorkloadGovernor::apply_for_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::apply_for_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 168,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 156,
+              "column": 18
+            },
+            "end": {
+              "line": 156,
+              "column": 20
+            }
+          },
+          "replacement": "<",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_156_col_18.log",
+      "diff_path": "diff/src__lib.rs_line_156_col_18.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.366604079,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.435383901,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:162:65: replace + with - in WorkloadGovernor::apply_for_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::apply_for_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 168,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 162,
+              "column": 65
+            },
+            "end": {
+              "line": 162,
+              "column": 66
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_162_col_65.log",
+      "diff_path": "diff/src__lib.rs_line_162_col_65.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.695987562,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.143246568,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:162:65: replace + with * in WorkloadGovernor::apply_for_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::apply_for_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 119,
+                "column": 5
+              },
+              "end": {
+                "line": 168,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 162,
+              "column": 65
+            },
+            "end": {
+              "line": 162,
+              "column": 66
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_162_col_65_001.log",
+      "diff_path": "diff/src__lib.rs_line_162_col_65_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.069164521,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 17.58669623,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:201:9: replace WorkloadGovernor::withdraw_application with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::withdraw_application",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 170,
+                "column": 5
+              },
+              "end": {
+                "line": 216,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 201,
+              "column": 9
+            },
+            "end": {
+              "line": 215,
+              "column": 83
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_201_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_201_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.420262567,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 23.385661275,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:203:12: delete ! in WorkloadGovernor::withdraw_application",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::withdraw_application",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 170,
+                "column": 5
+              },
+              "end": {
+                "line": 216,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 203,
+              "column": 12
+            },
+            "end": {
+              "line": 203,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_203_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_203_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.364522757,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 24.839804867,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:209:22: replace == with != in WorkloadGovernor::withdraw_application",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::withdraw_application",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 170,
+                "column": 5
+              },
+              "end": {
+                "line": 216,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 209,
+              "column": 22
+            },
+            "end": {
+              "line": 209,
+              "column": 24
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_209_col_22.log",
+      "diff_path": "diff/src__lib.rs_line_209_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.833205119,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 26.510912101,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:83:9: replace WorkloadGovernor::register_maintainer with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::register_maintainer",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 64,
+                "column": 5
+              },
+              "end": {
+                "line": 89,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 83,
+              "column": 9
+            },
+            "end": {
+              "line": 88,
+              "column": 80
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_83_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_83_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 217.741946918,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 315.417699051,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:264:9: replace WorkloadGovernor::assign_issue with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 264,
+              "column": 9
+            },
+            "end": {
+              "line": 291,
+              "column": 89
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_264_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_264_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.468784003,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 291.82731364,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:266:12: delete ! in WorkloadGovernor::assign_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 266,
+              "column": 12
+            },
+            "end": {
+              "line": 266,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_266_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_266_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.366463642,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 291.341353606,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:269:12: delete ! in WorkloadGovernor::assign_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 269,
+              "column": 12
+            },
+            "end": {
+              "line": 269,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_269_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_269_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.819098549,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 299.505546576,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:273:23: replace >= with < in WorkloadGovernor::assign_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 273,
+              "column": 23
+            },
+            "end": {
+              "line": 273,
+              "column": 25
+            }
+          },
+          "replacement": "<",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_273_col_23.log",
+      "diff_path": "diff/src__lib.rs_line_273_col_23.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.199847567,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 296.608438145,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:283:26: replace == with != in WorkloadGovernor::assign_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 283,
+              "column": 26
+            },
+            "end": {
+              "line": 283,
+              "column": 28
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_283_col_26.log",
+      "diff_path": "diff/src__lib.rs_line_283_col_26.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.48946316,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 308.520893501,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:288:83: replace + with - in WorkloadGovernor::assign_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 288,
+              "column": 83
+            },
+            "end": {
+              "line": 288,
+              "column": 84
+            }
+          },
+          "replacement": "-",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_288_col_83.log",
+      "diff_path": "diff/src__lib.rs_line_288_col_83.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.106588957,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 306.093380393,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:288:83: replace + with * in WorkloadGovernor::assign_issue",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::assign_issue",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 222,
+                "column": 5
+              },
+              "end": {
+                "line": 292,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 288,
+              "column": 83
+            },
+            "end": {
+              "line": 288,
+              "column": 84
+            }
+          },
+          "replacement": "*",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_288_col_83_001.log",
+      "diff_path": "diff/src__lib.rs_line_288_col_83_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.27260589,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 293.412738511,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:322:9: replace WorkloadGovernor::complete_assignment with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::complete_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 294,
+                "column": 5
+              },
+              "end": {
+                "line": 340,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 322,
+              "column": 9
+            },
+            "end": {
+              "line": 339,
+              "column": 95
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_322_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_322_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.737884391,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 291.705006833,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:324:12: delete ! in WorkloadGovernor::complete_assignment",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::complete_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 294,
+                "column": 5
+              },
+              "end": {
+                "line": 340,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 324,
+              "column": 12
+            },
+            "end": {
+              "line": 324,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_324_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_324_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.677983695,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 306.239489531,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:327:12: delete ! in WorkloadGovernor::complete_assignment",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::complete_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 294,
+                "column": 5
+              },
+              "end": {
+                "line": 340,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 327,
+              "column": 12
+            },
+            "end": {
+              "line": 327,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_327_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_327_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.99061082,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 304.766738488,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:371:9: replace WorkloadGovernor::revoke_assignment with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::revoke_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 342,
+                "column": 5
+              },
+              "end": {
+                "line": 389,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 371,
+              "column": 9
+            },
+            "end": {
+              "line": 388,
+              "column": 93
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_371_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_371_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.995433587,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 302.216791911,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:333:22: replace == with != in WorkloadGovernor::complete_assignment",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::complete_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 294,
+                "column": 5
+              },
+              "end": {
+                "line": 340,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 333,
+              "column": 22
+            },
+            "end": {
+              "line": 333,
+              "column": 24
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_333_col_22.log",
+      "diff_path": "diff/src__lib.rs_line_333_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.577468458,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 306.715438122,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:373:12: delete ! in WorkloadGovernor::revoke_assignment",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::revoke_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 342,
+                "column": 5
+              },
+              "end": {
+                "line": 389,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 373,
+              "column": 12
+            },
+            "end": {
+              "line": 373,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_373_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_373_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.7187944,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 302.508139412,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:376:12: delete ! in WorkloadGovernor::revoke_assignment",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::revoke_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 342,
+                "column": 5
+              },
+              "end": {
+                "line": 389,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 376,
+              "column": 12
+            },
+            "end": {
+              "line": 376,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/src__lib.rs_line_376_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_376_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.779952924,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 303.397373018,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:382:22: replace == with != in WorkloadGovernor::revoke_assignment",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::revoke_assignment",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 342,
+                "column": 5
+              },
+              "end": {
+                "line": 389,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 382,
+              "column": 22
+            },
+            "end": {
+              "line": 382,
+              "column": 24
+            }
+          },
+          "replacement": "!=",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_382_col_22.log",
+      "diff_path": "diff/src__lib.rs_line_382_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.806571506,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 264.903113849,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:425:9: replace WorkloadGovernor::extend_application_ttl with ()",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::extend_application_ttl",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 395,
+                "column": 5
+              },
+              "end": {
+                "line": 432,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 425,
+              "column": 9
+            },
+            "end": {
+              "line": 431,
+              "column": 10
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_425_col_9.log",
+      "diff_path": "diff/src__lib.rs_line_425_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.5066262,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 264.661770232,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:429:62: replace > with == in WorkloadGovernor::extend_application_ttl",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::extend_application_ttl",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 395,
+                "column": 5
+              },
+              "end": {
+                "line": 432,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 429,
+              "column": 62
+            },
+            "end": {
+              "line": 429,
+              "column": 63
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_429_col_62.log",
+      "diff_path": "diff/src__lib.rs_line_429_col_62.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.077159906,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 253.628926556,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:425:12: delete ! in WorkloadGovernor::extend_application_ttl",
+          "package": "workload-governor",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "WorkloadGovernor::extend_application_ttl",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 395,
+                "column": 5
+              },
+              "end": {
+                "line": 432,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 425,
+              "column": 12
+            },
+            "end": {
+              "line": 425,
+              "column": 13
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/src__lib.rs_line_425_col_12.log",
+      "diff_path": "diff/src__lib.rs_line_425_col_12.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.5763101710000003,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=workload-governor@0.1.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 259.751468114,
+          "process_status": "Success",
+          "argv": [
+            "/home/codespace/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=workload-governor@0.1.0",
+            "--features",
+            "testutils"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 28,
+  "missed": 7,
+  "caught": 21,
+  "timeout": 0,
+  "unviable": 0,
+  "success": 0,
+  "start_time": "2026-06-25T05:29:41.196535978Z",
+  "end_time": null,
+  "cargo_mutants_version": "27.1.0"
+}

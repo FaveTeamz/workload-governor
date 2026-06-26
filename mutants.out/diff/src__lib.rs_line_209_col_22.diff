@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace == with != in WorkloadGovernor::withdraw_application
+@@ -201,17 +201,17 @@
+         storage::require_initialized(&env, &ContractError::NotInitialized);
+         contributor.require_auth();
+         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+             panic_with_error!(env, ContractError::ApplicationNotFound);
+         }
+         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+         let count = storage::get_global_app_count(&env, &contributor);
+         let new_count = count.saturating_sub(1);
+-        if new_count == 0 {
++        if new_count != /* ~ changed by cargo-mutants ~ */ 0 {
+             storage::remove_global_app_count(&env, &contributor);
+         } else {
+             storage::set_global_app_count(&env, &contributor, new_count);
+         }
+         storage::bump_instance(&env);
+         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
+     }
+ 

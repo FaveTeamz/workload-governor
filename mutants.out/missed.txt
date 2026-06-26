@@ -1,0 +1,7 @@
+src/lib.rs:109:9: replace WorkloadGovernor::upgrade with ()
+src/lib.rs:283:26: replace == with != in WorkloadGovernor::assign_issue
+src/lib.rs:333:22: replace == with != in WorkloadGovernor::complete_assignment
+src/lib.rs:382:22: replace == with != in WorkloadGovernor::revoke_assignment
+src/lib.rs:425:9: replace WorkloadGovernor::extend_application_ttl with ()
+src/lib.rs:429:62: replace > with == in WorkloadGovernor::extend_application_ttl
+src/lib.rs:425:12: delete ! in WorkloadGovernor::extend_application_ttl

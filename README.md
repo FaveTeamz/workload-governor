@@ -58,6 +58,14 @@ This prevents a small group of faster developers from monopolizing open-source t
 
 All six key prefixes are distinct — zero key collision guarantee.
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
+| [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
+| [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+
 ## Building
 
 ```bash

@@ -7,7 +7,6 @@
 #![cfg(test)]
 
 extern crate std;
-use std::boxed::Box;
 
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
@@ -29,7 +28,7 @@ impl TestEnv {
         let contract_id = env.register_contract(None, WorkloadGovernor);
         // SAFETY: we move `env` into the struct and keep it alive for the test's
         // duration. Box::leak gives the 'static lifetime the generated client needs.
-        let env: &'static Env = Box::leak(Box::new(env));
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
         let client = WorkloadGovernorClient::new(env, &contract_id);
         TestEnv {
             env: env.clone(),
@@ -411,7 +410,7 @@ fn fresh_client(
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register_contract(None, WorkloadGovernor);
-    let env: &'static Env = Box::leak(Box::new(env));
+    let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
     let client = WorkloadGovernorClient::new(env, &contract_id);
     let admin = Address::generate(env);
     let maintainer = Address::generate(env);
@@ -621,6 +620,308 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Issue #76: Global cap invariant under arbitrary apply/withdraw sequences
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_global_cap(
+        // sequence of (apply=true / withdraw=false, issue_id 0..15)
+        actions in proptest::collection::vec((proptest::bool::ANY, 0u32..15u32), 1..30)
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("seq");
+        client.initialize(&admin);
+
+        // Track which issue_ids are currently applied, to drive withdraw correctly
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (do_apply, issue_id) in actions {
+            let count_before = client.get_global_application_count(&contributor);
+
+            if do_apply {
+                if applied.contains(&issue_id) {
+                    // already applied – skip (would be DuplicateApplication)
+                    continue;
+                }
+                if count_before >= 15 {
+                    // must fail with error 6, state must not change
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    prop_assert!(result.is_err(), "expected error when count=15");
+                    prop_assert_eq!(
+                        client.get_global_application_count(&contributor),
+                        15,
+                        "count must stay 15 after rejected apply"
+                    );
+                } else {
+                    client.apply_for_issue(&contributor, &org, &issue_id);
+                    applied.insert(issue_id);
+                    let count_after = client.get_global_application_count(&contributor);
+                    prop_assert_eq!(count_after, count_before + 1);
+                }
+            } else {
+                if !applied.contains(&issue_id) {
+                    // nothing to withdraw – skip
+                    continue;
+                }
+                client.withdraw_application(&contributor, &org, &issue_id);
+                applied.remove(&issue_id);
+                let count_after = client.get_global_application_count(&contributor);
+                prop_assert_eq!(count_after, count_before - 1);
+            }
+
+            // invariant: count always in [0, 15]
+            let count = client.get_global_application_count(&contributor);
+            prop_assert!(count <= 15, "count {} exceeded cap 15", count);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// UPGRADE STATE-PRESERVATION TESTS
+// ---------------------------------------------------------------------------
+//
+// These tests require the compiled WASM artifact at
+// target/wasm32v1-none/release/workload_governor.wasm (set by build.rs).
+// They are skipped in cargo-mutants scratch environments where the WASM
+// has not been built.
+
+/// Returns a WASM hash by uploading the contract's own compiled WASM bytes.
+/// The path is relative to the workspace root at compile time.
+#[cfg(all(test, wasm_available))]
+fn upload_self_wasm(env: &Env) -> soroban_sdk::BytesN<32> {
+    const WASM: &[u8] = include_bytes!(
+        "../target/wasm32v1-none/release/workload_governor.wasm"
+    );
+    let bytes = soroban_sdk::Bytes::from_slice(env, WASM);
+    env.deployer().upload_contract_wasm(bytes)
+}
+
+/// Helper: build a fully-populated V1 environment and return the actors.
+#[cfg(all(test, wasm_available))]
+struct UpgradeFixture {
+    env: Env,
+    client: WorkloadGovernorClient<'static>,
+    admin: Address,
+    maintainer: Address,
+    contributor: Address,
+    org: Symbol,
+}
+
+#[cfg(all(test, wasm_available))]
+impl UpgradeFixture {
+    fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, WorkloadGovernor);
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+        let client = WorkloadGovernorClient::new(env, &contract_id);
+
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org = Symbol::new(env, "upgorgtst");
+
+        // --- V1 state population ---
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        // Leave one issue as a pending application
+        client.apply_for_issue(&contributor, &org, &10u32);
+
+        // Assign and keep active — populates persistent assignment + org counter
+        client.apply_for_issue(&contributor, &org, &20u32);
+        client.assign_issue(&maintainer, &contributor, &org, &20u32);
+
+        UpgradeFixture {
+            env: env.clone(),
+            client,
+            admin,
+            maintainer,
+            contributor,
+            org,
+        }
+    }
+}
+
+/// Verify that `upgrade()` panics when called before `initialize` (NotInitialized guard).
+#[cfg(wasm_available)]
+#[test]
+#[should_panic]
+fn unit_upgrade_rejects_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let dummy_hash = upload_self_wasm(&env);
+    client.upgrade(&dummy_hash); // NotInitialized — must panic
+}
+
+/// Core: pre-upgrade state is fully preserved post-upgrade.
+#[cfg(wasm_available)]
+#[test]
+fn unit_upgrade_preserves_all_state() {
+    let t = UpgradeFixture::new();
+
+    // --- Pre-upgrade assertions ---
+    // Admin exists (implicitly — only admin can call upgrade; if not set, upgrade panics)
+    // Maintainer registered
+    // Global app count = 1 (issue 10 still pending; issue 20 was consumed by assign)
+    assert_eq!(
+        t.client.get_global_application_count(&t.contributor),
+        1,
+        "pre-upgrade: global app count"
+    );
+    // Issue 10: pending application
+    assert!(
+        t.client.has_applied(&t.contributor, &t.org, &10u32),
+        "pre-upgrade: has_applied issue 10"
+    );
+    // Issue 20: active assignment
+    assert!(
+        t.client.is_assigned(&t.contributor, &t.org, &20u32),
+        "pre-upgrade: is_assigned issue 20"
+    );
+    assert_eq!(
+        t.client.get_org_assignment_count(&t.contributor, &t.org),
+        1,
+        "pre-upgrade: org assignment count"
+    );
+
+    // --- Perform upgrade ---
+    let new_wasm_hash = upload_self_wasm(&t.env);
+    t.client.upgrade(&new_wasm_hash); // must not panic
+
+    // --- Post-upgrade state assertions (identical to pre-upgrade) ---
+    assert_eq!(
+        t.client.get_global_application_count(&t.contributor),
+        1,
+        "post-upgrade: global app count preserved"
+    );
+    assert!(
+        t.client.has_applied(&t.contributor, &t.org, &10u32),
+        "post-upgrade: pending application preserved"
+    );
+    assert!(
+        t.client.is_assigned(&t.contributor, &t.org, &20u32),
+        "post-upgrade: active assignment preserved"
+    );
+    assert_eq!(
+        t.client.get_org_assignment_count(&t.contributor, &t.org),
+        1,
+        "post-upgrade: org assignment count preserved"
+    );
+}
+
+/// V1 functions behave identically on the upgraded contract.
+#[cfg(wasm_available)]
+#[test]
+fn unit_upgrade_functions_behave_identically() {
+    let t = UpgradeFixture::new();
+    let new_wasm_hash = upload_self_wasm(&t.env);
+    t.client.upgrade(&new_wasm_hash);
+
+    // apply_for_issue: should still work for a new issue
+    t.client.apply_for_issue(&t.contributor, &t.org, &30u32);
+    assert!(t.client.has_applied(&t.contributor, &t.org, &30u32));
+    assert_eq!(t.client.get_global_application_count(&t.contributor), 2);
+
+    // withdraw_application: issue 10 was pending pre-upgrade
+    t.client.withdraw_application(&t.contributor, &t.org, &10u32);
+    assert!(!t.client.has_applied(&t.contributor, &t.org, &10u32));
+    assert_eq!(t.client.get_global_application_count(&t.contributor), 1);
+
+    // assign_issue: issue 30 is now pending
+    t.client
+        .assign_issue(&t.maintainer, &t.contributor, &t.org, &30u32);
+    assert!(t.client.is_assigned(&t.contributor, &t.org, &30u32));
+    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 2);
+
+    // complete_assignment: issue 20 was assigned pre-upgrade
+    t.client
+        .complete_assignment(&t.maintainer, &t.contributor, &t.org, &20u32);
+    assert!(!t.client.is_assigned(&t.contributor, &t.org, &20u32));
+    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 1);
+
+    // revoke_assignment: issue 30
+    t.client
+        .revoke_assignment(&t.maintainer, &t.contributor, &t.org, &30u32);
+    assert!(!t.client.is_assigned(&t.contributor, &t.org, &30u32));
+    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 0);
+
+    // register_maintainer: still works post-upgrade
+    let new_maintainer = Address::generate(&t.env);
+    let new_org = Symbol::new(&t.env, "neworg");
+    t.client
+        .register_maintainer(&t.admin, &new_maintainer, &new_org);
+    // verify: new maintainer can accept an application
+    t.client
+        .apply_for_issue(&t.contributor, &new_org, &1u32);
+    t.client
+        .assign_issue(&new_maintainer, &t.contributor, &new_org, &1u32);
+    assert!(t.client.is_assigned(&t.contributor, &new_org, &1u32));
+
+    // limit helpers still return correct values
+    assert_eq!(
+        t.client.get_global_application_capacity(&t.contributor),
+        crate::storage::GLOBAL_APP_LIMIT
+            - t.client.get_global_application_count(&t.contributor)
+    );
+    assert_eq!(
+        t.client.get_org_assignment_capacity(&t.contributor, &t.org),
+        crate::storage::ORG_ASSIGNMENT_LIMIT
+            - t.client.get_org_assignment_count(&t.contributor, &t.org)
+    );
+}
+
+/// Global and org caps are still enforced after upgrade.
+#[cfg(wasm_available)]
+#[test]
+fn unit_upgrade_limits_still_enforced() {
+    let t = UpgradeFixture::new();
+    let new_wasm_hash = upload_self_wasm(&t.env);
+    t.client.upgrade(&new_wasm_hash);
+
+    // Global cap: 1 pending (issue 10) already from fixture; need 14 more.
+    for i in 31u32..45 {
+        t.client.apply_for_issue(&t.contributor, &t.org, &i);
+    }
+    assert_eq!(t.client.get_global_application_count(&t.contributor), 15);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.apply_for_issue(&t.contributor, &t.org, &99u32);
+    }));
+    assert!(result.is_err(), "global cap must still be enforced post-upgrade");
+
+    // Org assignment cap: issue 20 is already assigned (count=1).
+    // Free up global slots, then assign 3 more to reach cap of 4.
+    for i in 31u32..34 {
+        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &i);
+    }
+    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 4);
+    // issue 34 is still a pending application (applied in the loop above)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &34u32);
+    }));
+    assert!(
+        result.is_err(),
+        "org assignment cap must still be enforced post-upgrade"
+    );
+}
+
+/// Upgrade is idempotent: calling it twice does not corrupt state.
+#[cfg(wasm_available)]
+#[test]
+fn unit_upgrade_idempotent() {
+    let t = UpgradeFixture::new();
+    let hash = upload_self_wasm(&t.env);
+    t.client.upgrade(&hash);
+    t.client.upgrade(&hash); // second upgrade — must not panic or corrupt state
+
+    assert_eq!(t.client.get_global_application_count(&t.contributor), 1);
+    assert!(t.client.has_applied(&t.contributor, &t.org, &10u32));
+    assert!(t.client.is_assigned(&t.contributor, &t.org, &20u32));
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {
@@ -641,3 +942,212 @@ fn prop_storage_key_collision_freedom() {
     assert!(!t.client.has_applied(&contributor, &org, &1u32)); // consumed by assign
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
 }
+
+// ---------------------------------------------------------------------------
+// ERROR CASES — one test per ContractError variant (codes 1–11)
+//
+// Uses try_* client methods which return:
+//   Result<Result<T, ConversionError>, Result<soroban_sdk::Error, InvokeError>>
+//
+// Errors raised via panic_with_error! (codes 1,2,4,6,7,8,9,10,11) surface as:
+//   Err(Ok(soroban_sdk::Error::from_contract_error(code as u32)))
+//
+// Errors 3 and 5 are guarded by require_auth() which raises a host Auth error
+// (Err(Err(...))), not a ContractError. Those are tested with #[should_panic].
+// ---------------------------------------------------------------------------
+
+mod error_cases {
+    use soroban_sdk::{testutils::Address as _, Address, Env, Error, Symbol};
+
+    use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
+
+    fn setup() -> (WorkloadGovernorClient<'static>, &'static Env) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let id = env.register_contract(None, WorkloadGovernor);
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+        (WorkloadGovernorClient::new(env, &id), env)
+    }
+
+    /// Map a ContractError variant to the soroban_sdk::Error the host returns.
+    fn ce(e: ContractError) -> Error {
+        Error::from_contract_error(e as u32)
+    }
+
+    fn org(env: &Env, name: &str) -> Symbol {
+        Symbol::new(env, name)
+    }
+
+    /// Error 1 — `AlreadyInitialized`: `initialize` called a second time.
+    #[test]
+    fn err_1_already_initialized() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+        let result = client.try_initialize(&admin);
+        assert_eq!(result, Err(Ok(ce(ContractError::AlreadyInitialized))));
+    }
+
+    /// Error 2 — `NotInitialized`: any state-changing call before `initialize`.
+    #[test]
+    fn err_2_not_initialized() {
+        let (client, env) = setup();
+        let contributor = Address::generate(env);
+        let result = client.try_apply_for_issue(&contributor, &org(env, "x"), &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::NotInitialized))));
+    }
+
+    /// Error 3 — `UnauthorizedAdmin`: the contract variant is defined for future use;
+    /// the current implementation delegates admin auth to `require_auth()` on the stored
+    /// admin address, which raises a host Auth error (not a ContractError).
+    /// This test verifies the auth guard fires when a non-admin calls a protected function.
+    #[test]
+    #[should_panic]
+    fn err_3_unauthorized_admin() {
+        // Initialize with mock_all_auths, then clear auths so the next call panics.
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+
+        // Clear all auth mocks — stored_admin.require_auth() will now fail
+        env.set_auths(&[]);
+        let impostor = Address::generate(env);
+        let maintainer = Address::generate(env);
+        // panics: stored admin's require_auth not satisfied by impostor
+        client.register_maintainer(&impostor, &maintainer, &org(env, "x"));
+    }
+
+    /// Error 4 — `UnauthorizedMaintainer`: unregistered address tries to assign an issue.
+    #[test]
+    fn err_4_unauthorized_maintainer() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &o, &1u32);
+        let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    /// Error 5 — `UnauthorizedContributor`: the contract variant is defined for future use;
+    /// `apply_for_issue` delegates auth to `contributor.require_auth()` which raises a
+    /// host Auth error (not a ContractError). This test verifies the auth guard fires.
+    #[test]
+    #[should_panic]
+    fn err_5_unauthorized_contributor() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        client.initialize(&admin);
+
+        // Clear all auth mocks — contributor.require_auth() will now fail
+        env.set_auths(&[]);
+        let contributor = Address::generate(env);
+        // panics: contributor's require_auth not satisfied
+        client.apply_for_issue(&contributor, &org(env, "x"), &1u32);
+    }
+
+    /// Error 6 — `GlobalApplicationLimitReached`: contributor has 15 pending applications.
+    #[test]
+    fn err_6_global_application_limit_reached() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        for i in 0u32..15 {
+            client.apply_for_issue(&contributor, &o, &i);
+        }
+        let result = client.try_apply_for_issue(&contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::GlobalApplicationLimitReached))));
+    }
+
+    /// Error 7 — `OrgAssignmentLimitReached`: contributor has 4 active assignments in the org.
+    #[test]
+    fn err_7_org_assignment_limit_reached() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        for i in 0u32..4 {
+            client.apply_for_issue(&contributor, &o, &i);
+            client.assign_issue(&maintainer, &contributor, &o, &i);
+        }
+        client.apply_for_issue(&contributor, &o, &99u32);
+        let result = client.try_assign_issue(&maintainer, &contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::OrgAssignmentLimitReached))));
+    }
+
+    /// Error 8 — `DuplicateApplication`: same (contributor, org, issue) applied twice.
+    #[test]
+    fn err_8_duplicate_application() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &o, &1u32);
+        let result = client.try_apply_for_issue(&contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::DuplicateApplication))));
+    }
+
+    /// Error 9 — `ApplicationNotFound`: withdraw for a non-existent application.
+    #[test]
+    fn err_9_application_not_found() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        let result = client.try_withdraw_application(&contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::ApplicationNotFound))));
+    }
+
+    /// Error 10 — `AssignmentNotFound`: complete for a non-existent assignment.
+    #[test]
+    fn err_10_assignment_not_found() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        let result = client.try_complete_assignment(&maintainer, &contributor, &o, &99u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::AssignmentNotFound))));
+    }
+
+    /// Error 11 — `AlreadyAssigned`: assign_issue when assignment already exists.
+    ///
+    /// `seed_assignment` (test-only) plants the assignment entry directly bypassing
+    /// the normal flow, so the AlreadyAssigned guard inside assign_issue is reachable.
+    #[test]
+    fn err_11_already_assigned() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "x");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        // Seed an existing assignment for issue 1
+        client.seed_assignment(&contributor, &o, &1u32);
+        // Apply so ApplicationNotFound guard is passed
+        client.apply_for_issue(&contributor, &o, &1u32);
+
+        let result = client.try_assign_issue(&maintainer, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::AlreadyAssigned))));
+    }
+}
+
