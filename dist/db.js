@@ -24,16 +24,6 @@ async function healthCheck() {
         client.release();
     }
 }
-async function runMigration(client, name, sql) {
-    try {
-        await client.query(sql);
-        console.log(`✓ Migration: ${name}`);
-    }
-    catch (err) {
-        console.error(`✗ Migration failed: ${name}`, err);
-        throw err;
-    }
-}
 async function migrate() {
     const client = await exports.pool.connect();
     try {
