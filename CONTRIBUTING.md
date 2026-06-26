@@ -254,6 +254,38 @@ cargo test --features testutils unit_
 cargo doc --no-deps
 ```
 
+### Frontend unit tests (Vitest)
+
+```bash
+# Run all frontend unit tests once
+npm run test:unit
+
+# Run in watch mode during development
+npm run test:unit:watch
+
+# Run with coverage report
+npm run test:unit:coverage
+```
+
+### React component snapshot tests
+
+Snapshot files live in `tests/unit/__snapshots__/`. They are committed to
+version control so CI catches unintended visual regressions.
+
+**When you intentionally change a component's rendered output**, update the
+snapshots and commit the new `.snap` file alongside your code change:
+
+```bash
+# Update all snapshots
+npx vitest run --update-snapshots
+
+# Update snapshots for a single file
+npx vitest run tests/unit/snapshots.test.tsx --update-snapshots
+```
+
+CI will fail if any snapshot differs from the committed version. Always review
+`git diff tests/unit/__snapshots__/` before committing updated snapshots.
+
 All PRs must pass CI. New functionality requires new tests.
 
 ---
