@@ -3,6 +3,7 @@ import issuesRouter from './routes/issues';
 import contributorsRouter from './routes/contributors';
 import adminRouter from './routes/admin';
 import transactionsRouter from './routes/transactions';
+import webhooksRouter from './routes/webhooks';
 
 export function createApp(): express.Application {
   const app = express();
@@ -13,6 +14,7 @@ export function createApp(): express.Application {
   app.use('/api/contributors', contributorsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/transactions', transactionsRouter);
+  app.use('/webhooks', webhooksRouter);
 
   return app;
 }
