@@ -55,3 +55,55 @@ jobs:
           path: |
             mutants-report.txt
             mutants.out/
+
+      - name: Optimize WASM
+        if: github.ref == 'refs/heads/main'
+        run: stellar contract optimize --wasm target/wasm32v1-none/release/workload_governor.wasm
+
+      - name: Upload optimized WASM
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workload_governor.optimized.wasm
+          path: target/wasm32v1-none/release/workload_governor.optimized.wasm
+
+  testnet-deploy:
+    name: Testnet deploy + smoke test
+    needs: contract-ci
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      NETWORK: testnet
+      ADMIN_KEY: ci-admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stellar-cli
+        run: cargo install stellar-cli --features opt --locked
+
+      - name: Import CI admin key
+        env:
+          STELLAR_SECRET: ${{ secrets.CI_ADMIN_SECRET }}
+        run: stellar keys add "$ADMIN_KEY" --secret-key "$STELLAR_SECRET"
+
+      - name: Download optimized WASM
+        uses: actions/download-artifact@v4
+        with:
+          name: workload_governor.optimized.wasm
+          path: target/wasm32v1-none/release/
+
+      - name: Deploy contract
+        id: deploy
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm target/wasm32v1-none/release/workload_governor.optimized.wasm \
+            --network "$NETWORK" \
+            --source "$ADMIN_KEY")
+          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          echo "### Deployed Contract ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$CONTRACT_ID\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run CI smoke tests
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+        run: bash tests/smoke/ci-smoke.sh
