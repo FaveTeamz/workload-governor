@@ -26,7 +26,18 @@ function createApp() {
     app.use((0, morgan_1.default)('combined'));
     // JSON parser middleware
     app.use(express_1.default.json());
-    app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+    app.get('/health', async (req, res) => {
+        try {
+            await (0, db_1.healthCheck)();
+            const redisClient = (0, cache_1.getRedisClient)();
+            await redisClient.ping();
+            res.json({ status: 'healthy', database: 'connected', cache: 'connected' });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : 'unknown error';
+            res.status(503).json({ status: 'unhealthy', error: msg });
+        }
+    });
     app.use('/api/issues', issues_1.default);
     app.use('/api/contributors', contributors_1.default);
     app.use('/api/admin', admin_1.default);
