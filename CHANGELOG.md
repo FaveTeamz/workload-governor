@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/faq.md` with answers to 10+ contributor and maintainer questions (#69).
 - `get_org_assignment_capacity` and `get_global_application_capacity` helper functions.
 - `is_org_assignment_limit_reached` and `is_global_application_limit_reached` helper functions.
+- PostgreSQL migration system with transaction support and connection pooling (#26).
+- Redis caching support with configurable TTL (#26).
+- `sync_cursors` table for blockchain data indexing (#26).
+- Enhanced health check endpoint reporting database and cache connectivity (#26).
+- `GET /api/issues` endpoint with pagination, search, and 30-second caching (#23).
+- `GET /api/contributors/:address/applications` endpoint for pending applications (#24).
+- `GET /api/contributors/:address/assignments` endpoint for active assignments (#24).
+- `GET /api/contributors/:address/counts` endpoint with organization-level statistics (#24).
+- Enhanced transaction builder service with comprehensive input validation (#25).
+- Stellar address format validation across all transaction endpoints (#25).
 
 ## [0.1.0] - 2026-06-24
 
