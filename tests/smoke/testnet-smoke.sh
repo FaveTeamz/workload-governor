@@ -13,10 +13,19 @@
 set -euo pipefail
 
 CONTRACT_ID="${CONTRACT_ID:?CONTRACT_ID is required}"
-ADMIN_KEY="${ADMIN_KEY:?ADMIN_KEY is required}"
-MAINTAINER_KEY="${MAINTAINER_KEY:?MAINTAINER_KEY is required}"
-CONTRIBUTOR_KEY="${CONTRIBUTOR_KEY:?CONTRIBUTOR_KEY is required}"
 NETWORK="${NETWORK:-testnet}"
+
+# CI single-key mode: set CI_KEY to use one key for all roles.
+# Multi-key mode: set ADMIN_KEY, MAINTAINER_KEY, CONTRIBUTOR_KEY separately.
+if [[ -n "${CI_KEY:-}" ]]; then
+  ADMIN_KEY="$CI_KEY"
+  MAINTAINER_KEY="$CI_KEY"
+  CONTRIBUTOR_KEY="$CI_KEY"
+else
+  ADMIN_KEY="${ADMIN_KEY:?ADMIN_KEY or CI_KEY is required}"
+  MAINTAINER_KEY="${MAINTAINER_KEY:?MAINTAINER_KEY or CI_KEY is required}"
+  CONTRIBUTOR_KEY="${CONTRIBUTOR_KEY:?CONTRIBUTOR_KEY or CI_KEY is required}"
+fi
 
 # Derive public addresses from key names
 ADMIN_ADDR=$(stellar keys address "$ADMIN_KEY")
