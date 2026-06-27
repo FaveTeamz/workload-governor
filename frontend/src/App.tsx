@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
@@ -46,6 +47,8 @@ export default function App() {
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
+
+      <NavBar />
 
       <header className="app-header" role="banner">
         <span className="app-logo" aria-hidden="true">⚙</span>

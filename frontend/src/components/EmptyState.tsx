@@ -1,3 +1,5 @@
+import React from "react";
+
 export type EmptyVariant = "no-issues" | "no-applications" | "no-assignments" | "no-events";
 
 interface EmptyStateProps {
@@ -29,7 +31,7 @@ const CONTENT: Record<EmptyVariant, { title: string; message: string; icon: stri
   },
 };
 
-const ICONS: Record<string, JSX.Element> = {
+const ICONS: Record<string, React.ReactElement> = {
   search: (
     <svg viewBox="0 0 64 64" fill="none" aria-hidden="true" className="empty-state__svg">
       <circle cx="28" cy="28" r="16" stroke="currentColor" strokeWidth="3.5" />
