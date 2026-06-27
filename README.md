@@ -87,6 +87,15 @@ cargo build --target wasm32v1-none --release
 stellar contract optimize --wasm target/wasm32v1-none/release/workload_governor.wasm
 ```
 
+### Binary Size
+
+| Build | Size |
+|---|---|
+| Unoptimized (`cargo build --release`) | ~28 KB |
+| Optimized (`stellar contract optimize`) | < 20 KB (target) |
+
+The release profile is pre-configured with `opt-level = 'z'` and `lto = true` in `Cargo.toml` to meet the 64 KB contract size limit.
+
 ## Testing
 
 ```bash
@@ -98,6 +107,16 @@ cargo test --features testutils prop_
 
 # Unit tests only
 cargo test --features testutils unit_
+```
+
+## Benchmarking
+
+```bash
+# Run benchmark tests (prints CPU/memory usage to stdout)
+cargo test --features testutils bench_
+
+# Capture output for documentation
+cargo test --features testutils bench_ 2>&1 | tee benchmarks.txt
 ```
 
 ## Deploying

@@ -91,6 +91,35 @@ fn unit_revoke_lifecycle() {
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
 }
 
+/// Issue #46: Re-application after revoke succeeds.
+/// After revoke_assignment clears the assignment state, the contributor should be able
+/// to apply for the same issue again (the application entry was removed).
+#[test]
+fn unit_reapplication_after_revoke() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("reapp");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Apply → Assign → Revoke (full cycle)
+    t.client.apply_for_issue(&contributor, &org, &7u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &7u32);
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &7u32);
+
+    // Verify revoked state
+    assert!(!t.client.is_assigned(&contributor, &org, &7u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    // Re-apply for the same issue should succeed after revoke
+    t.client.apply_for_issue(&contributor, &org, &7u32);
+    assert!(t.client.has_applied(&contributor, &org, &7u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
 #[test]
 fn unit_withdraw_application() {
     let t = TestEnv::new();
@@ -131,6 +160,81 @@ fn unit_ttl_constant_in_range() {
         APP_TTL_LEDGERS <= APP_TTL_MAX,
         "APP_TTL_LEDGERS exceeds maximum"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #47: TTL behavior tests for temporary storage keys
+// ---------------------------------------------------------------------------
+
+/// Issue #47: Application and global app count entries expire correctly with wave TTL.
+/// After TTL expiry, has_applied returns false and global count drops.
+#[test]
+fn unit_ttl_expiry_removes_application_entries() {
+    use soroban_sdk::testutils::Ledger;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("ttlexp");
+
+    // Use a short TTL for testing (we'll set it in storage.rs)
+    // For now, we test by advancing the ledger beyond the TTL window
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    // Verify application exists
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    // Advance ledger beyond APP_TTL_LEDGERS to simulate expiry.
+    // Entries written at ledger 0 with TTL 17_280 expire at ledger 17_280.
+    // Setting sequence to 17_281 guarantees both the app entry and global
+    // counter have been archived by the host.
+    let ttl_ledgers = crate::storage::APP_TTL_LEDGERS;
+    t.env.ledger().set_sequence_number(ttl_ledgers + 1);
+
+    // After TTL expiry, entries should no longer be readable
+    // Note: Soroban's test framework automatically handles TTL expiration on read
+    // The entries should return default values (false/0) when expired
+    assert!(!t.client.has_applied(&contributor, &org, &1u32), "expired application should not be found");
+    assert_eq!(t.client.get_global_application_count(&contributor), 0, "expired global count should be 0");
+}
+
+/// Issue #47: Verify `extend_application_ttl` bumps TTL as expected.
+/// After extension, the ledger bump should be measurable.
+#[test]
+fn unit_extend_application_ttl_bumps_live_ledger() {
+    use soroban_sdk::testutils::Ledger;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("ttlbump");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &42u32);
+
+    // Record initial ledger
+    let initial_ledger = t.env.ledger().sequence();
+    let ttl_ledgers = crate::storage::APP_TTL_LEDGERS;
+
+    // Advance to just before the original expiry boundary.
+    // At ledger (ttl_ledgers - 1) the entry is still alive.
+    t.env.ledger().set_sequence_number(ttl_ledgers - 1);
+    assert!(t.client.has_applied(&contributor, &org, &42u32), "application must survive within original TTL");
+
+    // Extend TTL from the current ledger position. This bumps live_until
+    // from (initial_ledger + ttl_ledgers) to ((ttl_ledgers - 1) + ttl_leders).
+    t.client.extend_application_ttl(&contributor, &org, &42u32);
+
+    // We should now be able to advance far beyond the original expiry
+    // without the entry disappearing.
+    t.env.ledger().set_sequence_number(ttl_ledgers + 1000);
+    assert!(t.client.has_applied(&contributor, &org, &42u32), "application should exist after TTL extension");
+
+    // Advance past the extended TTL to confirm the entry eventually expires.
+    t.env.ledger().set_sequence_number(2 * ttl_ledgers + 1000);
+    assert!(!t.client.has_applied(&contributor, &org, &42u32), "application must expire after extended TTL window");
 }
 
 #[test]
@@ -392,6 +496,130 @@ fn unit_event_application_submitted_has_two_topics() {
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+}
+
+// ---------------------------------------------------------------------------
+// Issue #48: Benchmark contract function execution costs
+// ---------------------------------------------------------------------------
+// Run with:  cargo test --features testutils bench_
+// Results are printed to stdout and can be captured for the benchmarks table.
+
+#[cfg(test)]
+mod benchmarks {
+    use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
+
+    use crate::{WorkloadGovernor, WorkloadGovernorClient};
+
+    struct BenchEnv {
+        env: Env,
+        client: WorkloadGovernorClient<'static>,
+    }
+
+    impl BenchEnv {
+        fn new() -> Self {
+            let env = Env::default();
+            env.mock_all_auths();
+            let contract_id = env.register_contract(None, WorkloadGovernor);
+            let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+            let client = WorkloadGovernorClient::new(env, &contract_id);
+            BenchEnv { env: env.clone(), client }
+        }
+
+        fn org(&self, name: &str) -> Symbol {
+            Symbol::new(&self.env, name)
+        }
+    }
+
+    #[test]
+    fn bench_apply_for_issue() {
+        let b = BenchEnv::new();
+        let admin = Address::generate(&b.env);
+        let contributor = Address::generate(&b.env);
+        let org = b.org("bench");
+
+        b.client.initialize(&admin);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.apply_for_issue(&contributor, &org, &1u32);
+        b.env.cost_estimate().budget().print();
+    }
+
+    #[test]
+    fn bench_withdraw_application() {
+        let b = BenchEnv::new();
+        let admin = Address::generate(&b.env);
+        let contributor = Address::generate(&b.env);
+        let org = b.org("bench");
+
+        b.client.initialize(&admin);
+        b.client.apply_for_issue(&contributor, &org, &1u32);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.withdraw_application(&contributor, &org, &1u32);
+        b.env.cost_estimate().budget().print();
+    }
+
+    #[test]
+    fn bench_assign_issue() {
+        let b = BenchEnv::new();
+        let admin = Address::generate(&b.env);
+        let maintainer = Address::generate(&b.env);
+        let contributor = Address::generate(&b.env);
+        let org = b.org("bench");
+
+        b.client.initialize(&admin);
+        b.client.register_maintainer(&admin, &maintainer, &org);
+        b.client.apply_for_issue(&contributor, &org, &1u32);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+        b.env.cost_estimate().budget().print();
+    }
+
+    #[test]
+    fn bench_complete_assignment() {
+        let b = BenchEnv::new();
+        let admin = Address::generate(&b.env);
+        let maintainer = Address::generate(&b.env);
+        let contributor = Address::generate(&b.env);
+        let org = b.org("bench");
+
+        b.client.initialize(&admin);
+        b.client.register_maintainer(&admin, &maintainer, &org);
+        b.client.apply_for_issue(&contributor, &org, &1u32);
+        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
+        b.env.cost_estimate().budget().print();
+    }
+
+    #[test]
+    fn bench_revoke_assignment() {
+        let b = BenchEnv::new();
+        let admin = Address::generate(&b.env);
+        let maintainer = Address::generate(&b.env);
+        let contributor = Address::generate(&b.env);
+        let org = b.org("bench");
+
+        b.client.initialize(&admin);
+        b.client.register_maintainer(&admin, &maintainer, &org);
+        b.client.apply_for_issue(&contributor, &org, &1u32);
+        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
+        b.env.cost_estimate().budget().print();
+    }
+
+    #[test]
+    fn bench_extend_application_ttl() {
+        let b = BenchEnv::new();
+        let admin = Address::generate(&b.env);
+        let contributor = Address::generate(&b.env);
+        let org = b.org("bench");
+
+        b.client.initialize(&admin);
+        b.client.apply_for_issue(&contributor, &org, &1u32);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.extend_application_ttl(&contributor, &org, &1u32);
+        b.env.cost_estimate().budget().print();
+    }
 }
 
 // ---------------------------------------------------------------------------

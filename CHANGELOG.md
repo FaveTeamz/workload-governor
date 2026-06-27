@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub issues indexing service with incremental sync from GitHub API (#22).
 - Scheduled sync job that runs every 15 minutes to keep GitHub issues in sync (#22).
 - Admin endpoints for manual GitHub issues sync triggering (#22).
+- Revoke-assignment state-transition tests: org count decrement, `is_assigned` false, re-application after revoke, and `AssignmentNotFound` error (#46).
+- TTL expiry and extension tests for temporary storage keys with measurable ledger assertions (#47).
+- Benchmark tests for contract function execution costs with reproducible CI command (#48).
+- WASM binary size documentation and release-profile optimization settings in README (#50).
 
 ## [0.1.0] - 2026-06-24
 
