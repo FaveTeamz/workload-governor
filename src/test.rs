@@ -1354,3 +1354,92 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #40: DuplicateApplication (error 8) — targeted unit tests
+// ---------------------------------------------------------------------------
+
+/// AC1: Second application for same (contributor, org, issue) returns error 8.
+#[test]
+fn unit_duplicate_application_returns_error_8() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("dup40");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+
+    let result = t.client.try_apply_for_issue(&contributor, &org, &5u32);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(ContractError::DuplicateApplication as u32))),
+        "second apply must return error 8"
+    );
+    // Counter must not have incremented
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+/// AC2: Re-application after withdrawal succeeds (no DuplicateApplication).
+#[test]
+fn unit_reapply_after_withdraw_succeeds() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("reapply");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &7u32);
+    t.client.withdraw_application(&contributor, &org, &7u32);
+
+    // Must succeed — no panic, no error
+    t.client.apply_for_issue(&contributor, &org, &7u32);
+    assert!(t.client.has_applied(&contributor, &org, &7u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+/// AC3: A different contributor can apply for the same issue without collision.
+#[test]
+fn unit_different_contributor_same_issue_no_collision() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contrib_a = Address::generate(&t.env);
+    let contrib_b = Address::generate(&t.env);
+    let org = t.org("shared");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contrib_a, &org, &42u32);
+    // Different contributor — must succeed
+    t.client.apply_for_issue(&contrib_b, &org, &42u32);
+
+    assert!(t.client.has_applied(&contrib_a, &org, &42u32));
+    assert!(t.client.has_applied(&contrib_b, &org, &42u32));
+    assert_eq!(t.client.get_global_application_count(&contrib_a), 1);
+    assert_eq!(t.client.get_global_application_count(&contrib_b), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #37: Double-init fuzz test — initialize called twice must return error 1
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_double_init_returns_error_1(_seed in 0u32..u32::MAX) {
+        use crate::errors::ContractError;
+        use soroban_sdk::Error;
+
+        let (_, client, admin, _, _, _) = fresh_client("dblini");
+        client.initialize(&admin);
+
+        let result = client.try_initialize(&admin);
+        prop_assert_eq!(
+            result,
+            Err(Ok(Error::from_contract_error(ContractError::AlreadyInitialized as u32))),
+            "second initialize must return error 1 (AlreadyInitialized)"
+        );
+    }
+}
