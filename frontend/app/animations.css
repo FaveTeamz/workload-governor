@@ -1,4 +1,14 @@
 /* Keyframes */
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modalSlideIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -22,6 +32,10 @@
   animation: slideOut 300ms ease-in forwards;
 }
 
+.modal-slide-in {
+  animation: modalSlideIn 220ms ease-out both;
+}
+
 .spinner {
   display: inline-block;
   width: 1em;
@@ -38,6 +52,7 @@
 @media (prefers-reduced-motion: reduce) {
   .fade-in,
   .slide-out,
+  .modal-slide-in,
   .spinner {
     animation: none !important;
     transition: none !important;
