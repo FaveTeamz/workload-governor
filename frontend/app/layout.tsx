@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import "./animations.css";
 import NetworkBanner from "../components/NetworkBanner";
 
 export const metadata = { title: "WorkloadGovernor" };
