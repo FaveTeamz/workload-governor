@@ -113,6 +113,15 @@ stellar contract invoke \
   --admin <ADMIN_ADDRESS>
 ```
 
+## Operations
+
+| Runbook | Description |
+|---------|-------------|
+| [docs/runbooks/contract-upgrade.md](docs/runbooks/contract-upgrade.md) | Build, optimise, upload WASM, and call `upgrade` |
+| [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Two-step admin key transfer procedure |
+| [docs/runbooks/cap-emergency-increase.md](docs/runbooks/cap-emergency-increase.md) | Raise contributor caps (requires governance vote + upgrade) |
+| [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | What to do when a bug is found post-deploy |
+
 ## License
 
 Apache-2.0
