@@ -3,6 +3,7 @@ import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
+import { ActivityFeed } from "./components/ActivityFeed";
 import { ToastContainer, useToast } from "./components/Toast";
 import "./app.css";
 
@@ -64,6 +65,7 @@ export default function App() {
           onComplete={handleComplete}
           onRevoke={handleRevoke}
         />
+        <ActivityFeed apiBase="/api" network="testnet" />
       </main>
 
       <OnboardingWizard />
