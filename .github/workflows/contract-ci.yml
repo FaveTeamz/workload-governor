@@ -47,6 +47,10 @@ jobs:
           echo "--- Mutation summary ---"
           grep -E "^(Found|ok|MISSED|CAUGHT|TIMEOUT|FAILED)" mutants-report.txt | tail -20 || true
 
+      - name: Generate HTML mutation report
+        if: always()
+        run: node scripts/mutation-report.js mutants.out mutants.out/mutation-report.html || true
+
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,7 +58,10 @@ jobs:
           name: mutants-report
           path: |
             mutants-report.txt
-            mutants.out/
+            mutants.out/mutation-report.html
+            mutants.out/outcomes.json
+            mutants.out/caught.txt
+            mutants.out/missed.txt
 
       - name: Optimize WASM
         if: github.ref == 'refs/heads/main'
