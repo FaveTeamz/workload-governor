@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace > with >= in WorkloadGovernor::extend_application_ttl
+@@ -421,17 +421,17 @@
+     ///   --contributor <CONTRIBUTOR_ADDRESS> \
+     ///   --org_id my_org --issue_id 42
+     /// ```
+     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+             panic_with_error!(env, ContractError::ApplicationNotFound);
+         }
+         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+-        if storage::get_global_app_count(&env, &contributor) > 0 {
++        if storage::get_global_app_count(&env, &contributor) >= /* ~ changed by cargo-mutants ~ */ 0 {
+             storage::extend_global_app_count_ttl(&env, &contributor);
+         }
+     }
+ 
+     // -----------------------------------------------------------------------
+     // Read-only query functions — no storage mutations, no events
+     // -----------------------------------------------------------------------
+ 

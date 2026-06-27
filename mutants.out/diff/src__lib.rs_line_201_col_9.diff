@@ -1,0 +1,35 @@
+--- src/lib.rs
++++ replace WorkloadGovernor::withdraw_application with ()
+@@ -193,31 +193,17 @@
+     /// ```text
+     /// stellar contract invoke --id <CONTRACT_ID> \
+     ///   --network testnet --source <contributor-account> \
+     ///   -- withdraw_application \
+     ///   --contributor <CONTRIBUTOR_ADDRESS> \
+     ///   --org_id my_org --issue_id 42
+     /// ```
+     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+-        storage::require_initialized(&env, &ContractError::NotInitialized);
+-        contributor.require_auth();
+-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+-            panic_with_error!(env, ContractError::ApplicationNotFound);
+-        }
+-        storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+-        let count = storage::get_global_app_count(&env, &contributor);
+-        let new_count = count.saturating_sub(1);
+-        if new_count == 0 {
+-            storage::remove_global_app_count(&env, &contributor);
+-        } else {
+-            storage::set_global_app_count(&env, &contributor, new_count);
+-        }
+-        storage::bump_instance(&env);
+-        events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     // -----------------------------------------------------------------------
+     // Maintainer functions
+     // -----------------------------------------------------------------------
+ 
+     /// Converts a pending application into an active assignment (maintainer-only).
+     ///

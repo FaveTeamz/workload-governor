@@ -1,0 +1,21 @@
+src/lib.rs:55:9: replace WorkloadGovernor::initialize with ()
+src/lib.rs:153:9: replace WorkloadGovernor::apply_for_issue with ()
+src/lib.rs:156:18: replace >= with < in WorkloadGovernor::apply_for_issue
+src/lib.rs:162:65: replace + with - in WorkloadGovernor::apply_for_issue
+src/lib.rs:162:65: replace + with * in WorkloadGovernor::apply_for_issue
+src/lib.rs:201:9: replace WorkloadGovernor::withdraw_application with ()
+src/lib.rs:203:12: delete ! in WorkloadGovernor::withdraw_application
+src/lib.rs:209:22: replace == with != in WorkloadGovernor::withdraw_application
+src/lib.rs:83:9: replace WorkloadGovernor::register_maintainer with ()
+src/lib.rs:264:9: replace WorkloadGovernor::assign_issue with ()
+src/lib.rs:266:12: delete ! in WorkloadGovernor::assign_issue
+src/lib.rs:269:12: delete ! in WorkloadGovernor::assign_issue
+src/lib.rs:273:23: replace >= with < in WorkloadGovernor::assign_issue
+src/lib.rs:288:83: replace + with - in WorkloadGovernor::assign_issue
+src/lib.rs:288:83: replace + with * in WorkloadGovernor::assign_issue
+src/lib.rs:322:9: replace WorkloadGovernor::complete_assignment with ()
+src/lib.rs:324:12: delete ! in WorkloadGovernor::complete_assignment
+src/lib.rs:327:12: delete ! in WorkloadGovernor::complete_assignment
+src/lib.rs:371:9: replace WorkloadGovernor::revoke_assignment with ()
+src/lib.rs:373:12: delete ! in WorkloadGovernor::revoke_assignment
+src/lib.rs:376:12: delete ! in WorkloadGovernor::revoke_assignment

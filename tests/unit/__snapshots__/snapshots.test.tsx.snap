@@ -1,0 +1,532 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ApplicationBadge snapshots > status=assigned 1`] = `
+<span
+  aria-label="Application status: Assigned"
+  class="application-badge application-badge--assigned"
+>
+  Assigned
+</span>
+`;
+
+exports[`ApplicationBadge snapshots > status=completed 1`] = `
+<span
+  aria-label="Application status: Completed"
+  class="application-badge application-badge--completed"
+>
+  Completed
+</span>
+`;
+
+exports[`ApplicationBadge snapshots > status=pending 1`] = `
+<span
+  aria-label="Application status: Pending"
+  class="application-badge application-badge--pending"
+>
+  Pending
+</span>
+`;
+
+exports[`ApplicationBadge snapshots > status=withdrawn 1`] = `
+<span
+  aria-label="Application status: Withdrawn"
+  class="application-badge application-badge--withdrawn"
+>
+  Withdrawn
+</span>
+`;
+
+exports[`AssignmentCard snapshots > with actions 1`] = `
+<article
+  aria-label="Assignment: Optimise WASM size"
+  class="assignment-card"
+>
+  <div
+    class="assignment-card__meta"
+  >
+    <span
+      aria-label="Organisation: stellar-org"
+      class="assignment-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      class="assignment-card__contributor"
+      title="GBXXX1ABCDE"
+    >
+      GBXXX1ABCDE
+    </span>
+  </div>
+  <h3
+    class="assignment-card__title"
+  >
+    Optimise WASM size
+  </h3>
+  <div
+    class="assignment-card__actions"
+  >
+    <button
+      aria-label="Complete: Optimise WASM size"
+      class="btn btn-complete btn-sm"
+    >
+      Complete
+    </button>
+    <button
+      aria-label="Revoke: Optimise WASM size"
+      class="btn btn-revoke btn-sm"
+    >
+      Revoke
+    </button>
+  </div>
+</article>
+`;
+
+exports[`AssignmentCard snapshots > without actions 1`] = `
+<article
+  aria-label="Assignment: Optimise WASM size"
+  class="assignment-card"
+>
+  <div
+    class="assignment-card__meta"
+  >
+    <span
+      aria-label="Organisation: stellar-org"
+      class="assignment-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      class="assignment-card__contributor"
+      title="GBXXX1ABCDE"
+    >
+      GBXXX1ABCDE
+    </span>
+  </div>
+  <h3
+    class="assignment-card__title"
+  >
+    Optimise WASM size
+  </h3>
+  <div
+    class="assignment-card__actions"
+  />
+</article>
+`;
+
+exports[`IssueCard snapshots > status=applied 1`] = `
+<article
+  aria-label="Issue: Fix TTL bug"
+  class="issue-card issue-card--applied"
+>
+  <div
+    class="issue-card__meta"
+  >
+    <span
+      aria-label="Organisation: stellar-org"
+      class="issue-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      aria-label="Status: Applied"
+      class="issue-card__chip issue-card__chip--applied"
+    >
+      Applied
+    </span>
+  </div>
+  <h3
+    class="issue-card__title"
+  >
+    Fix TTL bug
+  </h3>
+  <div
+    class="issue-card__actions"
+  >
+    <button
+      aria-busy="false"
+      aria-label="Withdraw application for: Fix TTL bug"
+      class="btn btn-secondary btn-sm"
+    >
+      Withdraw
+    </button>
+  </div>
+</article>
+`;
+
+exports[`IssueCard snapshots > status=assigned 1`] = `
+<article
+  aria-label="Issue: Fix TTL bug"
+  class="issue-card issue-card--assigned"
+>
+  <div
+    class="issue-card__meta"
+  >
+    <span
+      aria-label="Organisation: stellar-org"
+      class="issue-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      aria-label="Status: Assigned"
+      class="issue-card__chip issue-card__chip--assigned"
+    >
+      Assigned
+    </span>
+  </div>
+  <h3
+    class="issue-card__title"
+  >
+    Fix TTL bug
+  </h3>
+  <div
+    class="issue-card__actions"
+  />
+</article>
+`;
+
+exports[`IssueCard snapshots > status=completed 1`] = `
+<article
+  aria-label="Issue: Fix TTL bug"
+  class="issue-card issue-card--completed"
+>
+  <div
+    class="issue-card__meta"
+  >
+    <span
+      aria-label="Organisation: stellar-org"
+      class="issue-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      aria-label="Status: Completed"
+      class="issue-card__chip issue-card__chip--completed"
+    >
+      Completed
+    </span>
+  </div>
+  <h3
+    class="issue-card__title"
+  >
+    Fix TTL bug
+  </h3>
+  <div
+    class="issue-card__actions"
+  />
+</article>
+`;
+
+exports[`IssueCard snapshots > status=open 1`] = `
+<article
+  aria-label="Issue: Fix TTL bug"
+  class="issue-card issue-card--open"
+>
+  <div
+    class="issue-card__meta"
+  >
+    <span
+      aria-label="Organisation: stellar-org"
+      class="issue-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      aria-label="Status: Open"
+      class="issue-card__chip issue-card__chip--open"
+    >
+      Open
+    </span>
+  </div>
+  <h3
+    class="issue-card__title"
+  >
+    Fix TTL bug
+  </h3>
+  <div
+    class="issue-card__actions"
+  >
+    <button
+      aria-busy="false"
+      aria-label="Apply for issue: Fix TTL bug"
+      class="btn btn-primary btn-sm"
+    >
+      Apply
+    </button>
+  </div>
+</article>
+`;
+
+exports[`MaintainerPanel snapshots > empty state 1`] = `
+<section
+  aria-label="Maintainer Panel"
+  class="maintainer-panel"
+>
+  <div
+    class="panel-columns"
+  >
+    <div
+      class="panel-column"
+    >
+      <h2
+        id="applications-heading"
+      >
+        Pending Applications
+        <span
+          aria-atomic="true"
+          aria-label="0 pending applications"
+          aria-live="polite"
+          class="count-badge"
+        >
+          0
+        </span>
+      </h2>
+      <p
+        class="empty-state"
+        role="status"
+      >
+        No pending applications.
+      </p>
+    </div>
+    <div
+      class="panel-column"
+    >
+      <h2
+        id="assignments-heading"
+      >
+        Active Assignments
+        <span
+          aria-atomic="true"
+          aria-label="0 active assignments"
+          aria-live="polite"
+          class="count-badge"
+        >
+          0
+        </span>
+      </h2>
+      <p
+        class="empty-state"
+        role="status"
+      >
+        No active assignments.
+      </p>
+    </div>
+  </div>
+</section>
+`;
+
+exports[`MaintainerPanel snapshots > with applications and assignments 1`] = `
+<section
+  aria-label="Maintainer Panel"
+  class="maintainer-panel"
+>
+  <div
+    class="panel-columns"
+  >
+    <div
+      class="panel-column"
+    >
+      <h2
+        id="applications-heading"
+      >
+        Pending Applications
+        <span
+          aria-atomic="true"
+          aria-label="1 pending applications"
+          aria-live="polite"
+          class="count-badge"
+        >
+          1
+        </span>
+      </h2>
+      <ul
+        aria-label="Pending applications list"
+        aria-labelledby="applications-heading"
+        class="panel-list"
+      >
+        <li
+          class="panel-row"
+        >
+          <div
+            class="row-info"
+          >
+            <span
+              aria-label="Contributor: GBXXX1ABCDEFGHIJKLMNO12345"
+              class="contributor"
+              title="GBXXX1ABCDEFGHIJKLMNO12345"
+            >
+              GBXXX1AB…O12345
+            </span>
+            <span
+              aria-label="Organisation: stellar-org"
+              class="org"
+            >
+              stellar-org
+            </span>
+            <span
+              aria-label="Issue: Fix bug"
+              class="issue-title"
+            >
+              Fix bug
+            </span>
+            <time
+              aria-label="Applied on 6/20/2026"
+              class="date"
+              datetime="2026-06-20"
+            >
+              6/20/2026
+            </time>
+          </div>
+          <div
+            class="row-actions"
+          >
+            <button
+              aria-label="Assign Fix bug to GBXXX1AB…O12345"
+              class="btn btn-primary btn-sm"
+            >
+              Assign
+            </button>
+          </div>
+        </li>
+      </ul>
+    </div>
+    <div
+      class="panel-column"
+    >
+      <h2
+        id="assignments-heading"
+      >
+        Active Assignments
+        <span
+          aria-atomic="true"
+          aria-label="1 active assignments"
+          aria-live="polite"
+          class="count-badge"
+        >
+          1
+        </span>
+      </h2>
+      <ul
+        aria-label="Active assignments list"
+        aria-labelledby="assignments-heading"
+        class="panel-list"
+      >
+        <li
+          class="panel-row"
+        >
+          <div
+            class="row-info"
+          >
+            <span
+              aria-label="Contributor: GBXXX1ABCDEFGHIJKLMNO12345"
+              class="contributor"
+              title="GBXXX1ABCDEFGHIJKLMNO12345"
+            >
+              GBXXX1AB…O12345
+            </span>
+            <span
+              aria-label="Organisation: stellar-org"
+              class="org"
+            >
+              stellar-org
+            </span>
+            <span
+              aria-label="Issue: Optimise WASM"
+              class="issue-title"
+            >
+              Optimise WASM
+            </span>
+          </div>
+          <div
+            class="row-actions"
+          >
+            <button
+              aria-busy="false"
+              aria-label="Mark Optimise WASM as complete for GBXXX1AB…O12345"
+              class="btn btn-complete btn-sm"
+            >
+              Complete
+            </button>
+            <button
+              aria-busy="false"
+              aria-label="Revoke assignment of Optimise WASM from GBXXX1AB…O12345"
+              class="btn btn-revoke btn-sm"
+            >
+              Revoke
+            </button>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+`;
+
+exports[`NavBar snapshots > connected 1`] = `
+<nav
+  aria-label="Main navigation"
+  class="navbar"
+  role="navigation"
+>
+  <a
+    aria-label="WorkloadGovernor home"
+    class="navbar__brand"
+    href="/"
+  >
+    <span
+      aria-hidden="true"
+    >
+      ⚙
+    </span>
+     WorkloadGovernor
+  </a>
+  <div
+    class="navbar__wallet"
+  >
+    <span
+      aria-label="Connected wallet: GBTEST1234ABCD"
+      class="navbar__address"
+      title="GBTEST1234ABCD"
+    >
+      GBTEST…ABCD
+    </span>
+    <button
+      aria-label="Disconnect wallet"
+      class="btn btn-ghost btn-sm"
+    >
+      Disconnect
+    </button>
+  </div>
+</nav>
+`;
+
+exports[`NavBar snapshots > disconnected 1`] = `
+<nav
+  aria-label="Main navigation"
+  class="navbar"
+  role="navigation"
+>
+  <a
+    aria-label="WorkloadGovernor home"
+    class="navbar__brand"
+    href="/"
+  >
+    <span
+      aria-hidden="true"
+    >
+      ⚙
+    </span>
+     WorkloadGovernor
+  </a>
+  <div
+    class="navbar__wallet"
+  >
+    <button
+      aria-label="Connect wallet"
+      class="btn btn-primary btn-sm"
+    >
+      Connect Wallet
+    </button>
+  </div>
+</nav>
+`;

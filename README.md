@@ -1,5 +1,10 @@
 # WorkloadGovernor
 
+[![codecov](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Backend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Frontend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=frontend)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Contract Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=contract)](https://codecov.io/gh/FaveTeamz/workload-governor)
+
 A production-ready Soroban smart contract for the **AlignmentDrips Wave** platform on the Stellar network.
 
 ## Purpose
@@ -58,6 +63,14 @@ This prevents a small group of faster developers from monopolizing open-source t
 
 All six key prefixes are distinct — zero key collision guarantee.
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
+| [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
+| [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+
 ## Building
 
 ```bash
@@ -74,6 +87,15 @@ cargo build --target wasm32v1-none --release
 stellar contract optimize --wasm target/wasm32v1-none/release/workload_governor.wasm
 ```
 
+### Binary Size
+
+| Build | Size |
+|---|---|
+| Unoptimized (`cargo build --release`) | ~28 KB |
+| Optimized (`stellar contract optimize`) | < 20 KB (target) |
+
+The release profile is pre-configured with `opt-level = 'z'` and `lto = true` in `Cargo.toml` to meet the 64 KB contract size limit.
+
 ## Testing
 
 ```bash
@@ -85,6 +107,16 @@ cargo test --features testutils prop_
 
 # Unit tests only
 cargo test --features testutils unit_
+```
+
+## Benchmarking
+
+```bash
+# Run benchmark tests (prints CPU/memory usage to stdout)
+cargo test --features testutils bench_
+
+# Capture output for documentation
+cargo test --features testutils bench_ 2>&1 | tee benchmarks.txt
 ```
 
 ## Deploying

@@ -1,0 +1,131 @@
+name: Dependency Audit
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday 08:00 UTC
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  audit-rust:
+    name: Rust (cargo audit)
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.audit.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run audit
+        id: audit
+        run: |
+          set +e
+          OUT=$(cargo audit 2>&1)
+          EXIT=$?
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $EXIT
+
+  audit-backend:
+    name: Backend (npm audit)
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.audit.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Run audit
+        id: audit
+        run: |
+          set +e
+          OUT=$(npm audit --audit-level=high 2>&1)
+          EXIT=$?
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $EXIT
+
+  audit-frontend:
+    name: Frontend (npm audit)
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.audit.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run audit
+        id: audit
+        working-directory: frontend
+        run: |
+          set +e
+          OUT=$(npm audit --audit-level=high 2>&1)
+          EXIT=$?
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $EXIT
+
+  post-comment:
+    name: Post PR comment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [audit-rust, audit-backend, audit-frontend]
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment audit summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '## 🔐 Dependency Audit Summary',
+              '',
+              '<details><summary>Rust (cargo audit)</summary>\n\n```\n' + `${{ needs.audit-rust.outputs.result }}` + '\n```\n</details>',
+              '<details><summary>Backend (npm audit)</summary>\n\n```\n' + `${{ needs.audit-backend.outputs.result }}` + '\n```\n</details>',
+              '<details><summary>Frontend (npm audit)</summary>\n\n```\n' + `${{ needs.audit-frontend.outputs.result }}` + '\n```\n</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.startsWith('## 🔐 Dependency Audit Summary')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
