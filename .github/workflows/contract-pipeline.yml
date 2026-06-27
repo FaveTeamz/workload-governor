@@ -188,7 +188,57 @@ jobs:
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
           retention-days: 90
 
-  # ── 5. Fuzz (nightly schedule only) ──────────────────────────────────────
+  # ── 5. Testnet Deploy + Smoke Test (main only) ───────────────────────────
+  testnet-deploy:
+    name: Testnet Deploy & Smoke Test
+    runs-on: ubuntu-latest
+    needs: optimize
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Download optimized WASM
+        uses: actions/download-artifact@v4
+        with:
+          name: workload-governor-wasm-optimized
+          path: wasm
+
+      - name: Import CI admin key
+        run: |
+          stellar keys add ci-admin --secret-key "${{ secrets.TESTNET_ADMIN_SECRET }}"
+
+      - name: Fund CI key via friendbot
+        run: |
+          ADDR=$(stellar keys address ci-admin)
+          curl -s "https://friendbot.stellar.org?addr=${ADDR}" > /dev/null
+
+      - name: Deploy contract
+        id: deploy
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm wasm/workload_governor.optimized.wasm \
+            --network testnet \
+            --source ci-admin)
+          echo "contract_id=${CONTRACT_ID}" >> "$GITHUB_OUTPUT"
+          echo "### 🚀 Testnet Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Key | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ----- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Network | testnet |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run smoke tests
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+          CI_KEY: ci-admin
+          NETWORK: testnet
+        run: bash tests/smoke/testnet-smoke.sh
+
+  # ── 6. Fuzz (nightly schedule only) ─────────────────────────────────────
   fuzz:
     name: Fuzz (10 min)
     runs-on: ubuntu-latest
