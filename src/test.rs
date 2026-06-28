@@ -74,6 +74,34 @@ fn unit_full_lifecycle() {
 }
 
 #[test]
+fn unit_complete_assignment_lifecycle_counts() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("acme-life");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &10u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+    assert!(t.client.has_applied(&contributor, &org, &10u32));
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+    assert!(!t.client.has_applied(&contributor, &org, &10u32));
+    assert!(t.client.is_assigned(&contributor, &org, &10u32));
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &10u32);
+
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    assert!(!t.client.is_assigned(&contributor, &org, &10u32));
+}
+
+#[test]
 fn unit_revoke_lifecycle() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
