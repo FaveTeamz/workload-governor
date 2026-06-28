@@ -1414,6 +1414,40 @@ mod error_cases {
         assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
 
+    #[test]
+    fn err_4_unauthorized_maintainer_cross_org() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org_a = org(env, "org-a");
+        let org_b = org(env, "org-b");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org_a);
+        client.apply_for_issue(&contributor, &org_b, &1u32);
+
+        let result = client.try_assign_issue(&maintainer, &contributor, &org_b, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    #[test]
+    fn err_4_authorized_maintainer_succeeds_after_registration() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org_id = org(env, "org-success");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org_id);
+        client.apply_for_issue(&contributor, &org_id, &1u32);
+
+        let result = client.try_assign_issue(&maintainer, &contributor, &org_id, &1u32);
+        assert!(result.is_ok());
+        assert!(client.is_assigned(&contributor, &org_id, &1u32));
+    }
+
     /// Error 5 — `UnauthorizedContributor`: the contract variant is defined for future use;
     /// `apply_for_issue` delegates auth to `contributor.require_auth()` which raises a
     /// host Auth error (not a ContractError). This test verifies the auth guard fires.
