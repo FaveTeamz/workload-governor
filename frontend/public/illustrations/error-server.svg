@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" fill="none" aria-hidden="true">
+  <!-- Server rack unit 1 -->
+  <rect x="56" y="36" width="128" height="30" rx="5" fill="#1c1f2b" stroke="#2e3347" stroke-width="1.75"/>
+  <circle cx="74" cy="51" r="4" fill="#22c55e" fill-opacity="0.7"/>
+  <rect x="84" y="47" width="60" height="3.5" rx="1.75" fill="#2e3347"/>
+  <rect x="84" y="54" width="40" height="3" rx="1.5" fill="#2e3347" fill-opacity="0.5"/>
+  <circle cx="168" cy="51" r="3" fill="#2e3347"/>
+  <circle cx="178" cy="51" r="3" fill="#2e3347"/>
+
+  <!-- Server rack unit 2 -->
+  <rect x="56" y="76" width="128" height="30" rx="5" fill="#1c1f2b" stroke="#2e3347" stroke-width="1.75"/>
+  <circle cx="74" cy="91" r="4" fill="#22c55e" fill-opacity="0.7"/>
+  <rect x="84" y="87" width="48" height="3.5" rx="1.75" fill="#2e3347"/>
+  <rect x="84" y="94" width="56" height="3" rx="1.5" fill="#2e3347" fill-opacity="0.5"/>
+  <circle cx="168" cy="91" r="3" fill="#2e3347"/>
+  <circle cx="178" cy="91" r="3" fill="#2e3347"/>
+
+  <!-- Server rack unit 3 (erroring) -->
+  <rect x="56" y="116" width="128" height="30" rx="5" fill="#7f1d1d" fill-opacity="0.35" stroke="#ef4444" stroke-width="1.75" stroke-opacity="0.6"/>
+  <circle cx="74" cy="131" r="4" fill="#ef4444"/>
+  <rect x="84" y="127" width="52" height="3.5" rx="1.75" fill="#ef4444" fill-opacity="0.3"/>
+  <rect x="84" y="134" width="36" height="3" rx="1.5" fill="#ef4444" fill-opacity="0.2"/>
+  <circle cx="168" cy="131" r="3" fill="#ef4444" fill-opacity="0.5"/>
+  <circle cx="178" cy="131" r="3" fill="#ef4444" fill-opacity="0.5"/>
+
+  <!-- Warning triangle floating above -->
+  <path d="M196 12 L214 44 L178 44 Z" fill="#7f1d1d" fill-opacity="0.5" stroke="#ef4444" stroke-width="1.75" stroke-linejoin="round"/>
+  <line x1="196" y1="22" x2="196" y2="34" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="196" cy="38.5" r="1.75" fill="#ef4444"/>
+
+  <!-- Connection cables (small lines at bottom) -->
+  <line x1="90" y1="146" x2="90" y2="158" stroke="#2e3347" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="110" y1="146" x2="110" y2="162" stroke="#2e3347" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="130" y1="146" x2="130" y2="156" stroke="#2e3347" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="150" y1="146" x2="150" y2="160" stroke="#2e3347" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

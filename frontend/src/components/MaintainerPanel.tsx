@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import type { KeyboardEvent } from "react";
+import { EmptyState } from "./EmptyState";
 
 export interface Application {
   id: string;
@@ -208,9 +209,12 @@ export function MaintainerPanel({
             </span>
           </h2>
           {applications.length === 0 ? (
-            <p className="empty-state" role="status">
-              No pending applications.
-            </p>
+            <EmptyState
+              variant="no-applications"
+              compact
+              ctaLabel="Browse issues"
+              onCta={() => window.open("https://github.com", "_blank", "noreferrer")}
+            />
           ) : (
             <ul
               className="panel-list"
@@ -238,9 +242,12 @@ export function MaintainerPanel({
             </span>
           </h2>
           {assignments.length === 0 ? (
-            <p className="empty-state" role="status">
-              No active assignments.
-            </p>
+            <EmptyState
+              variant="no-assignments"
+              compact
+              ctaLabel="Apply for an issue"
+              onCta={() => window.open("https://github.com", "_blank", "noreferrer")}
+            />
           ) : (
             <ul
               className="panel-list"
