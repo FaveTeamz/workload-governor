@@ -627,3 +627,121 @@
 .gauge__pct   { font-size: 1.1em; font-weight: 700; }
 .gauge__value { font-size: .75em; }
 .gauge__label { font-size: var(--text-xs, .75rem); color: var(--color-muted); text-align: center; }
+
+/* ============================================================
+   MaintainerDashboard — /maintainer/:org_id
+   ============================================================ */
+.md-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.md-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.md-title  { font-size: 1.375rem; }
+.md-subtitle { color: var(--color-muted); font-size: 0.875rem; margin-top: 4px; }
+
+.md-status {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  padding: 24px 0;
+  text-align: center;
+}
+
+/* Table — reuse shared .table-wrap/.table, only add dashboard-specific tweaks */
+.table { width: 100%; border-collapse: collapse; }
+.table__caption {
+  caption-side: top;
+  text-align: left;
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  padding-bottom: 8px;
+}
+.table th, .table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.table th { color: var(--color-muted); font-weight: 600; }
+.table tbody tr:hover { background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+.table__empty { text-align: center; color: var(--color-muted); padding: 24px; }
+
+.md-addr    { font-family: monospace; color: var(--color-primary); }
+.md-issue-id { font-family: monospace; }
+
+.md-row-actions { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Pagination bar */
+.md-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+.md-pagination__info {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  min-width: 80px;
+  text-align: center;
+}
+
+/* Loading state */
+.md-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 60vh;
+  color: var(--color-muted);
+}
+.md-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Error / Forbidden page (403 / no-wallet)
+   ============================================================ */
+.error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 70vh;
+  text-align: center;
+  padding: 24px;
+}
+.error-page__code {
+  font-size: 5rem;
+  font-weight: 900;
+  color: var(--color-border);
+  line-height: 1;
+}
+.error-page h1 { font-size: 1.5rem; }
+.error-page p  { color: var(--color-muted); max-width: 360px; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .md-page { padding: 12px; }
+  .table th, .table td { padding: 8px; font-size: 0.8125rem; }
+  /* Stack issue/date cols off-screen on very small screens */
+  .md-issue-id { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+}

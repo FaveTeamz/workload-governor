@@ -1,11 +1,37 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { ToastContainer, useToast } from "./components/Toast";
+import { MaintainerDashboard } from "./pages/MaintainerDashboard";
+import { ForbiddenPage } from "./pages/ForbiddenPage";
 import "./app.css";
+
+// ---------------------------------------------------------------------------
+// Minimal hash router — no external dependency
+// ---------------------------------------------------------------------------
+function getHash() {
+  return window.location.hash.slice(1) || "/";
+}
+
+function useHash() {
+  return useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    getHash
+  );
+}
+
+function matchRoute(hash: string): { route: "home" | "maintainer" | "forbidden"; orgId?: string } {
+  if (hash === "/403") return { route: "forbidden" };
+  const m = hash.match(/^\/maintainer\/([^/]+)$/);
+  if (m) return { route: "maintainer", orgId: m[1] };
+  return { route: "home" };
+}
 
 // Demo data — replace with real API calls
 const DEMO_APPS: Application[] = [
@@ -20,6 +46,9 @@ const DEMO_ASGNS: Assignment[] = [
 ];
 
 export default function App() {
+  const hash = useHash();
+  const matched = matchRoute(hash);
+
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
   const { toasts, add: addToast, remove: removeToast } = useToast();
@@ -51,24 +80,33 @@ export default function App() {
 
       <NavBar />
 
-      <header className="app-header" role="banner">
-        <span className="app-logo" aria-hidden="true">⚙</span>
-        <h1>WorkloadGovernor</h1>
-        <GetStartedButton />
-      </header>
+      {matched.route === "forbidden" ? (
+        <ForbiddenPage />
+      ) : matched.route === "maintainer" ? (
+        <MaintainerDashboard orgId={matched.orgId!} />
+      ) : (
+        <>
+          <header className="app-header" role="banner">
+            <span className="app-logo" aria-hidden="true">⚙</span>
+            <h1>WorkloadGovernor</h1>
+            <GetStartedButton />
+          </header>
 
-      <main id="main-content" className="app-main" tabIndex={-1}>
-        <MaintainerPanel
-          applications={applications}
-          assignments={assignments}
-          onAssign={handleAssign}
-          onComplete={handleComplete}
-          onRevoke={handleRevoke}
-        />
-        <ActivityFeed apiBase="/api" network="testnet" />
-      </main>
+          <main id="main-content" className="app-main" tabIndex={-1}>
+            <MaintainerPanel
+              applications={applications}
+              assignments={assignments}
+              onAssign={handleAssign}
+              onComplete={handleComplete}
+              onRevoke={handleRevoke}
+            />
+            <ActivityFeed apiBase="/api" network="testnet" />
+          </main>
 
-      <OnboardingWizard />
+          <OnboardingWizard />
+        </>
+      )}
+
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>
   );
