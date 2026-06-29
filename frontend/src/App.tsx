@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { Routes, Route } from "react-router-dom";
 import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { ToastContainer, useToast } from "./components/Toast";
+import { MaintainerPage } from "./pages/MaintainerPage";
+import { ForbiddenPage } from "./pages/ForbiddenPage";
 import "./app.css";
 
 // Demo data — replace with real API calls
@@ -51,22 +54,33 @@ export default function App() {
 
       <NavBar />
 
-      <header className="app-header" role="banner">
-        <span className="app-logo" aria-hidden="true">⚙</span>
-        <h1>WorkloadGovernor</h1>
-        <GetStartedButton />
-      </header>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <header className="app-header" role="banner">
+                <span className="app-logo" aria-hidden="true">⚙</span>
+                <h1>WorkloadGovernor</h1>
+                <GetStartedButton />
+              </header>
 
-      <main id="main-content" className="app-main" tabIndex={-1}>
-        <MaintainerPanel
-          applications={applications}
-          assignments={assignments}
-          onAssign={handleAssign}
-          onComplete={handleComplete}
-          onRevoke={handleRevoke}
+              <main id="main-content" className="app-main" tabIndex={-1}>
+                <MaintainerPanel
+                  applications={applications}
+                  assignments={assignments}
+                  onAssign={handleAssign}
+                  onComplete={handleComplete}
+                  onRevoke={handleRevoke}
+                />
+                <ActivityFeed apiBase="/api" network="testnet" />
+              </main>
+            </>
+          }
         />
-        <ActivityFeed apiBase="/api" network="testnet" />
-      </main>
+        <Route path="/maintainer/:org_id" element={<MaintainerPage />} />
+        <Route path="/403" element={<ForbiddenPage />} />
+      </Routes>
 
       <OnboardingWizard />
       <ToastContainer toasts={toasts} onRemove={removeToast} />

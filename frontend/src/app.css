@@ -627,3 +627,96 @@
 .gauge__pct   { font-size: 1.1em; font-weight: 700; }
 .gauge__value { font-size: .75em; }
 .gauge__label { font-size: var(--text-xs, .75rem); color: var(--color-muted); text-align: center; }
+
+/* ============================================================
+   MaintainerPage
+   ============================================================ */
+.maintainer-page {
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.maintainer-page__title {
+  font-size: 1.4rem;
+  margin-bottom: 16px;
+}
+
+.maintainer-page__error {
+  color: var(--color-revoke);
+  margin-bottom: 12px;
+}
+
+.maintainer-page__loading {
+  color: var(--color-muted);
+  padding: 24px 0;
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-btn--active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* Action buttons in table cells */
+.table__actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Revoke button danger colour */
+.btn-revoke {
+  color: var(--color-revoke) !important;
+  border-color: var(--color-revoke) !important;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.pagination__info {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+/* /403 error page */
+.error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 60vh;
+  text-align: center;
+  padding: 24px;
+}
+
+.error-page h1 {
+  font-size: 2rem;
+  color: var(--color-revoke);
+}
