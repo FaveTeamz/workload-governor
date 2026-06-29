@@ -1759,3 +1759,123 @@ proptest! {
         );
     }
 }
+
+// Property: after assign_issue succeeds, has_applied is false AND is_assigned is true;
+// after complete or revoke, is_assigned becomes false.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_applied_and_assigned_mutually_exclusive(
+        issue_id in 0u32..100u32,
+        do_complete in proptest::bool::ANY,
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("mutex");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+
+        prop_assert!(!client.has_applied(&contributor, &org, &issue_id));
+        prop_assert!(client.is_assigned(&contributor, &org, &issue_id));
+
+        if do_complete {
+            client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+        } else {
+            client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+        }
+        prop_assert!(!client.is_assigned(&contributor, &org, &issue_id));
+    }
+}
+
+// Property: complete_assignment decrements the org assignment count by exactly 1.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_complete_decrements_org_count(issue_id in 0u32..1000u32) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("cmpdec");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        let before = client.get_org_assignment_count(&contributor, &org);
+        client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), before - 1);
+    }
+}
+
+// Property: revoke_assignment decrements the org assignment count by exactly 1.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_revoke_decrements_org_count(issue_id in 0u32..1000u32) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("rvkdec");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        let before = client.get_org_assignment_count(&contributor, &org);
+        client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), before - 1);
+    }
+}
+
+// Property: withdraw_application decrements the global application count by exactly 1.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_withdraw_decrements_global_count(issue_id in 0u32..1000u32) {
+        let (_, client, admin, _, contributor, org) = fresh_client("wdwdec");
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        let before = client.get_global_application_count(&contributor);
+        client.withdraw_application(&contributor, &org, &issue_id);
+        prop_assert_eq!(client.get_global_application_count(&contributor), before - 1);
+    }
+}
+
+// Property: a contributor can hold exactly 4 assignments in each of up to 3 distinct
+// orgs simultaneously; hitting the cap in one org does not affect another org's count.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(100))]
+    #[test]
+    fn prop_multi_org_isolation(_seed in 0u32..100u32) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, WorkloadGovernor);
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+        let client = WorkloadGovernorClient::new(env, &contract_id);
+
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org_names = ["isola", "isolb", "isolc"];
+        let orgs: [Symbol; 3] = [
+            Symbol::new(env, org_names[0]),
+            Symbol::new(env, org_names[1]),
+            Symbol::new(env, org_names[2]),
+        ];
+
+        client.initialize(&admin);
+        for org in &orgs {
+            let maintainer = Address::generate(env);
+            client.register_maintainer(&admin, &maintainer, org);
+            for i in 0u32..4 {
+                client.apply_for_issue(&contributor, org, &i);
+                client.assign_issue(&maintainer, &contributor, org, &i);
+            }
+            prop_assert_eq!(client.get_org_assignment_count(&contributor, org), 4);
+        }
+
+        // Each org is independently at the cap; counts are isolated
+        for (idx, org) in orgs.iter().enumerate() {
+            prop_assert_eq!(
+                client.get_org_assignment_count(&contributor, org),
+                4,
+                "org {} count should be 4", idx
+            );
+        }
+
+        // Cap in org[0] does not affect org[1] or org[2]
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &orgs[1]), 4);
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &orgs[2]), 4);
+    }
+}
