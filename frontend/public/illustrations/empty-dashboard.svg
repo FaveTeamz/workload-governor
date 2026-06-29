@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" fill="none" aria-hidden="true">
+  <!-- Org card 1 (active) -->
+  <rect x="16" y="44" width="72" height="56" rx="6" fill="#1c1f2b" stroke="#6c8eff" stroke-width="1.5"/>
+  <rect x="26" y="56" width="32" height="5" rx="2.5" fill="#6c8eff"/>
+  <rect x="26" y="67" width="44" height="3" rx="1.5" fill="#2e3347"/>
+  <rect x="26" y="76" width="36" height="3" rx="1.5" fill="#2e3347"/>
+  <rect x="26" y="85" width="22" height="7" rx="3.5" fill="#6c8eff" fill-opacity="0.25"/>
+  <rect x="26" y="86.5" width="8" height="4" rx="2" fill="#6c8eff"/>
+
+  <!-- Org card 2 (active, dimmer) -->
+  <rect x="100" y="44" width="72" height="56" rx="6" fill="#1c1f2b" stroke="#6c8eff" stroke-width="1.5" stroke-opacity="0.45"/>
+  <rect x="110" y="56" width="24" height="5" rx="2.5" fill="#94a3b8"/>
+  <rect x="110" y="67" width="44" height="3" rx="1.5" fill="#2e3347"/>
+  <rect x="110" y="76" width="30" height="3" rx="1.5" fill="#2e3347"/>
+  <rect x="110" y="85" width="22" height="7" rx="3.5" fill="#2e3347"/>
+
+  <!-- Org card 3 (empty / invite) -->
+  <rect x="152" y="108" width="72" height="56" rx="6" fill="#1c1f2b" stroke="#2e3347" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <!-- Plus icon centred in empty card -->
+  <line x1="188" y1="128" x2="188" y2="144" stroke="#2e3347" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="180" y1="136" x2="196" y2="136" stroke="#2e3347" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Magnifying glass (browse) -->
+  <circle cx="42" cy="142" r="13" fill="#1c1f2b" stroke="#6c8eff" stroke-width="2"/>
+  <circle cx="39" cy="139" r="6" stroke="#6c8eff" stroke-width="1.75" fill="none"/>
+  <line x1="43.5" y1="143.5" x2="49" y2="149" stroke="#6c8eff" stroke-width="1.75" stroke-linecap="round"/>
+
+  <!-- Sparkle top-right -->
+  <line x1="210" y1="28" x2="210" y2="36" stroke="#6c8eff" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+  <line x1="206" y1="32" x2="214" y2="32" stroke="#6c8eff" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+  <line x1="220" y1="16" x2="220" y2="20" stroke="#94a3b8" stroke-width="1.25" stroke-linecap="round" stroke-opacity="0.4"/>
+  <line x1="218" y1="18" x2="222" y2="18" stroke="#94a3b8" stroke-width="1.25" stroke-linecap="round" stroke-opacity="0.4"/>
+</svg>

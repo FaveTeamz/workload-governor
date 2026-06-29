@@ -1,10 +1,11 @@
+import { Link } from "react-router-dom";
+
 export function ForbiddenPage() {
   return (
-    <main className="error-page" aria-labelledby="error-heading">
-      <span className="error-page__code" aria-hidden="true">403</span>
-      <h1 id="error-heading">Access Forbidden</h1>
+    <main className="error-page" role="main">
+      <h1>403 — Forbidden</h1>
       <p>You are not registered as a maintainer for this organisation.</p>
-      <a href="#/" className="btn btn-secondary">← Back to home</a>
+      <Link to="/" className="btn btn-primary">Go home</Link>
     </main>
   );
 }

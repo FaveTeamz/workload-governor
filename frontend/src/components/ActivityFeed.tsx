@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { EmptyState } from "./EmptyState";
+import { ErrorState } from "./ErrorState";
 import "./ActivityFeed.css";
 
 // ---------------------------------------------------------------------------
@@ -176,11 +177,19 @@ export function ActivityFeed({ apiBase = "/api", orgId, network = "testnet" }: A
       </div>
 
       {error && (
-        <p className="activity-feed__error" role="alert">{error}</p>
+        <ErrorState
+          variant="server-error"
+          message={`Unable to load activity events. ${error}`}
+          onRetry={() => { setError(null); setEvents([]); setOffset(0); setHasMore(true); fetchPage(0, true); }}
+        />
       )}
 
       {!loading && events.length === 0 && !error && (
-        <EmptyState variant="no-events" />
+        <EmptyState
+          variant="no-events"
+          ctaLabel="Learn how activity is generated"
+          onCta={() => window.open("https://github.com/workload-governor", "_blank", "noreferrer")}
+        />
       )}
 
       <ol className="activity-feed__list" aria-live="polite" aria-relevant="additions">

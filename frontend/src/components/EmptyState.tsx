@@ -1,37 +1,64 @@
 import React from "react";
 
-export type EmptyVariant = "no-issues" | "no-applications" | "no-assignments" | "no-events";
+export type EmptyVariant =
+  | "no-issues"
+  | "no-applications"
+  | "no-assignments"
+  | "no-events"
+  | "no-orgs";
 
 interface EmptyStateProps {
   variant: EmptyVariant;
   ctaLabel?: string;
   onCta?: () => void;
+  /** When true, renders a smaller layout suitable for panel columns */
+  compact?: boolean;
 }
 
-const CONTENT: Record<EmptyVariant, { title: string; message: string; icon: string }> = {
+const CONTENT: Record<EmptyVariant, { title: string; message: string; icon: string; illustration: string }> = {
+  "no-orgs": {
+    title:        "No organisations yet",
+    message:      "You haven't joined any organisations. Browse available orgs to get started.",
+    icon:         "grid",
+    illustration: "/illustrations/empty-dashboard.svg",
+  },
   "no-issues": {
-    title:   "No issues found",
-    message: "There are no open issues at the moment. Check back soon or adjust your filters.",
-    icon:    "search",
+    title:        "No open issues",
+    message:      "All caught up! There are no open issues right now. Check back soon or browse on GitHub.",
+    icon:         "search",
+    illustration: "/illustrations/empty-issues.svg",
   },
   "no-applications": {
-    title:   "No applications yet",
-    message: "You haven't applied to any issues. Browse open issues to get started.",
-    icon:    "inbox",
+    title:        "No applications yet",
+    message:      "You haven't applied to any issues. Browse open issues to find work that fits.",
+    icon:         "inbox",
+    illustration: "/illustrations/empty-issues.svg",
   },
   "no-assignments": {
-    title:   "No active assignments",
-    message: "You have no active assignments. Apply for an issue to get one.",
-    icon:    "clipboard",
+    title:        "No active assignments",
+    message:      "You have no active assignments. Apply for an issue to get one.",
+    icon:         "clipboard",
+    illustration: "/illustrations/empty-activity.svg",
   },
   "no-events": {
-    title:   "No events recorded",
-    message: "Contract events will appear here once activity begins.",
-    icon:    "history",
+    title:        "No activity yet",
+    message:      "Contract events will appear here once contributors apply, get assigned, or complete work.",
+    icon:         "history",
+    illustration: "/illustrations/empty-activity.svg",
   },
 };
 
 const ICONS: Record<string, React.ReactElement> = {
+  grid: (
+    <svg viewBox="0 0 64 64" fill="none" aria-hidden="true" className="empty-state__svg">
+      <rect x="8"  y="8"  width="22" height="22" rx="4" stroke="currentColor" strokeWidth="3" />
+      <rect x="34" y="8"  width="22" height="22" rx="4" stroke="currentColor" strokeWidth="3" />
+      <rect x="8"  y="34" width="22" height="22" rx="4" stroke="currentColor" strokeWidth="3" />
+      <rect x="34" y="34" width="22" height="22" rx="4" stroke="currentColor" strokeWidth="2.5" strokeDasharray="5 3" />
+      <line x1="45" y1="42" x2="45" y2="50" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <line x1="41" y1="46" x2="49" y2="46" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  ),
   search: (
     <svg viewBox="0 0 64 64" fill="none" aria-hidden="true" className="empty-state__svg">
       <circle cx="28" cy="28" r="16" stroke="currentColor" strokeWidth="3.5" />
@@ -66,16 +93,38 @@ const ICONS: Record<string, React.ReactElement> = {
   ),
 };
 
-export function EmptyState({ variant, ctaLabel, onCta }: EmptyStateProps) {
-  const { title, message, icon } = CONTENT[variant];
+export function EmptyState({ variant, ctaLabel, onCta, compact = false }: EmptyStateProps) {
+  const { title, message, icon, illustration } = CONTENT[variant];
+
+  if (compact) {
+    return (
+      <div className="empty-state empty-state--compact" role="status" aria-label={title}>
+        <div className="empty-state__icon empty-state__icon--sm">{ICONS[icon]}</div>
+        <p className="empty-state__title empty-state__title--sm">{title}</p>
+        {ctaLabel && onCta && (
+          <button className="btn btn-primary btn-sm empty-state__cta" onClick={onCta}>
+            {ctaLabel}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="empty-state" role="status" aria-label={title}>
+    <div className="empty-state empty-state--illustrated" role="status" aria-label={title}>
+      <img
+        src={illustration}
+        alt=""
+        className="empty-state__illustration"
+        aria-hidden="true"
+        width={200}
+        height={150}
+      />
       <div className="empty-state__icon">{ICONS[icon]}</div>
       <h3 className="empty-state__title">{title}</h3>
       <p className="empty-state__message">{message}</p>
       {ctaLabel && onCta && (
-        <button className="btn btn-primary btn-sm empty-state__cta" onClick={onCta}>
+        <button className="btn btn-primary empty-state__cta" onClick={onCta}>
           {ctaLabel}
         </button>
       )}

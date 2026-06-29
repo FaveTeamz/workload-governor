@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" fill="none" aria-hidden="true">
+  <!-- Vertical timeline spine -->
+  <line x1="90" y1="28" x2="90" y2="158" stroke="#2e3347" stroke-width="2" stroke-dasharray="4 3"/>
+
+  <!-- Timeline node 1 (empty) -->
+  <circle cx="90" cy="50" r="8" fill="#1c1f2b" stroke="#2e3347" stroke-width="1.75"/>
+  <rect x="108" y="45" width="72" height="5" rx="2.5" fill="#2e3347" fill-opacity="0.6"/>
+  <rect x="108" y="55" width="48" height="3.5" rx="1.75" fill="#2e3347" fill-opacity="0.35"/>
+
+  <!-- Timeline node 2 (empty) -->
+  <circle cx="90" cy="90" r="8" fill="#1c1f2b" stroke="#2e3347" stroke-width="1.75"/>
+  <rect x="108" y="85" width="56" height="5" rx="2.5" fill="#2e3347" fill-opacity="0.6"/>
+  <rect x="108" y="95" width="40" height="3.5" rx="1.75" fill="#2e3347" fill-opacity="0.35"/>
+
+  <!-- Timeline node 3 (empty) -->
+  <circle cx="90" cy="130" r="8" fill="#1c1f2b" stroke="#2e3347" stroke-width="1.75"/>
+  <rect x="108" y="125" width="64" height="5" rx="2.5" fill="#2e3347" fill-opacity="0.6"/>
+  <rect x="108" y="135" width="44" height="3.5" rx="1.75" fill="#2e3347" fill-opacity="0.35"/>
+
+  <!-- Lightning bolt (activity / trigger) -->
+  <path d="M54 36 L44 62 L52 62 L40 90 L62 58 L53 58 Z" fill="#6c8eff" fill-opacity="0.18" stroke="#6c8eff" stroke-width="1.5" stroke-linejoin="round"/>
+
+  <!-- Pulse arcs around lightning -->
+  <path d="M30 63 Q24 74 30 85" stroke="#6c8eff" stroke-width="1.25" stroke-linecap="round" stroke-opacity="0.35" fill="none"/>
+  <path d="M24 56 Q14 74 24 92" stroke="#6c8eff" stroke-width="1" stroke-linecap="round" stroke-opacity="0.2" fill="none"/>
+</svg>

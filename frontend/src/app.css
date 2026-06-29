@@ -258,7 +258,166 @@
 
 .row-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
-.empty-state { color: var(--color-muted); font-size: 0.875rem; padding: 16px 0; text-align: center; }
+/* ============================================================
+   Empty State — base + illustrated + compact variants
+   ============================================================ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 16px;
+  color: var(--color-muted);
+}
+
+/* Illustrated variant — full-page/section sized */
+.empty-state--illustrated {
+  padding: 56px 32px;
+}
+
+.empty-state__illustration {
+  width: 200px;
+  height: 150px;
+  object-fit: contain;
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.empty-state__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+/* Hide the inline icon when an illustration is shown */
+.empty-state--illustrated .empty-state__icon {
+  display: none;
+}
+
+.empty-state__svg { width: 32px; height: 32px; }
+
+.empty-state__title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.empty-state__message {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  max-width: 360px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.empty-state__cta { margin-top: 4px; }
+
+/* Compact variant — fits inside small panel columns */
+.empty-state--compact {
+  padding: 20px 12px;
+  gap: 10px;
+}
+
+.empty-state__icon--sm {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-state__icon--sm .empty-state__svg { width: 20px; height: 20px; }
+
+.empty-state__title--sm {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+/* ============================================================
+   Error State — for 40x / 50x pages
+   ============================================================ */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 56px 32px;
+  gap: 16px;
+  color: var(--color-muted);
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.error-state__illustration {
+  width: 200px;
+  height: 150px;
+  object-fit: contain;
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+
+.error-state__icon {
+  display: none; /* shown only when no illustration is used (future use) */
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-revoke) 12%, transparent);
+  color: var(--color-revoke);
+}
+
+.error-state__svg { width: 32px; height: 32px; }
+
+.error-state__code {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-revoke);
+  background: color-mix(in srgb, var(--color-revoke) 12%, transparent);
+  padding: 2px 10px;
+  border-radius: 9999px;
+  margin: 0;
+}
+
+.error-state__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.error-state__message {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  max-width: 400px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.error-state__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
 
 /* ============================================================
    Onboarding wizard (closes #94)
@@ -629,119 +788,94 @@
 .gauge__label { font-size: var(--text-xs, .75rem); color: var(--color-muted); text-align: center; }
 
 /* ============================================================
-   MaintainerDashboard — /maintainer/:org_id
+   MaintainerPage
    ============================================================ */
-.md-page {
+.maintainer-page {
+  padding: 24px;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
 }
 
-.md-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+.maintainer-page__title {
+  font-size: 1.4rem;
+  margin-bottom: 16px;
 }
 
-.md-title  { font-size: 1.375rem; }
-.md-subtitle { color: var(--color-muted); font-size: 0.875rem; margin-top: 4px; }
+.maintainer-page__error {
+  color: var(--color-revoke);
+  margin-bottom: 12px;
+}
 
-.md-status {
+.maintainer-page__loading {
   color: var(--color-muted);
-  font-size: 0.875rem;
   padding: 24px 0;
-  text-align: center;
 }
 
-/* Table — reuse shared .table-wrap/.table, only add dashboard-specific tweaks */
-.table { width: 100%; border-collapse: collapse; }
-.table__caption {
-  caption-side: top;
-  text-align: left;
-  color: var(--color-muted);
-  font-size: 0.8125rem;
-  padding-bottom: 8px;
-}
-.table th, .table td {
-  padding: 10px 12px;
+/* Tabs */
+.tab-bar {
+  display: flex;
+  gap: 4px;
   border-bottom: 1px solid var(--color-border);
-  font-size: 0.875rem;
-  text-align: left;
-  white-space: nowrap;
+  margin-bottom: 16px;
 }
-.table th { color: var(--color-muted); font-weight: 600; }
-.table tbody tr:hover { background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
-.table__empty { text-align: center; color: var(--color-muted); padding: 24px; }
 
-.md-addr    { font-family: monospace; color: var(--color-primary); }
-.md-issue-id { font-family: monospace; }
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
-.md-row-actions { display: inline-flex; gap: 6px; align-items: center; }
+.tab-btn--active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
 
-/* Pagination bar */
-.md-pagination {
+/* Action buttons in table cells */
+.table__actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Revoke button danger colour */
+.btn-revoke {
+  color: var(--color-revoke) !important;
+  border-color: var(--color-revoke) !important;
+}
+
+/* Pagination */
+.pagination {
   display: flex;
   align-items: center;
   gap: 12px;
   justify-content: flex-end;
-  padding-top: 12px;
-}
-.md-pagination__info {
-  font-size: 0.8125rem;
-  color: var(--color-muted);
-  min-width: 80px;
-  text-align: center;
+  margin-top: 12px;
 }
 
-/* Loading state */
-.md-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 60vh;
+.pagination__info {
   color: var(--color-muted);
+  font-size: 0.85rem;
 }
-.md-spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
-  animation: spin .7s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ============================================================
-   Error / Forbidden page (403 / no-wallet)
-   ============================================================ */
+/* /403 error page */
 .error-page {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  height: 70vh;
+  min-height: 60vh;
   text-align: center;
   padding: 24px;
 }
-.error-page__code {
-  font-size: 5rem;
-  font-weight: 900;
-  color: var(--color-border);
-  line-height: 1;
-}
-.error-page h1 { font-size: 1.5rem; }
-.error-page p  { color: var(--color-muted); max-width: 360px; line-height: 1.6; }
 
-@media (max-width: 600px) {
-  .md-page { padding: 12px; }
-  .table th, .table td { padding: 8px; font-size: 0.8125rem; }
-  /* Stack issue/date cols off-screen on very small screens */
-  .md-issue-id { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+.error-page h1 {
+  font-size: 2rem;
+  color: var(--color-revoke);
 }

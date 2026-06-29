@@ -95,4 +95,59 @@ describe('useWallet', () => {
 
     expect(result.current.publicKey).toBe(MOCK_ADDRESS);
   });
+
+  it('network mismatch sets networkMismatch flag', async () => {
+    setFreighter({
+      isConnected: vi.fn().mockResolvedValue({ isConnected: true }),
+      getAddress: vi.fn().mockResolvedValue({ address: MOCK_ADDRESS, error: undefined }),
+      getNetwork: vi.fn().mockResolvedValue({ network: 'PUBLIC', networkPassphrase: 'Public Global Stellar Network ; September 2015' }),
+    });
+
+    // Force expected network to TESTNET
+    vi.stubEnv('VITE_STELLAR_NETWORK', 'TESTNET');
+
+    const { result } = renderHook(() => useWallet());
+    await act(async () => { await result.current.connect(); });
+
+    expect(result.current.publicKey).toBe(MOCK_ADDRESS);
+    expect(result.current.networkMismatch).toBe(true);
+
+    vi.unstubAllEnvs();
+  });
+
+  it('matching network leaves networkMismatch false', async () => {
+    setFreighter({
+      isConnected: vi.fn().mockResolvedValue({ isConnected: true }),
+      getAddress: vi.fn().mockResolvedValue({ address: MOCK_ADDRESS, error: undefined }),
+      getNetwork: vi.fn().mockResolvedValue({ network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' }),
+    });
+
+    vi.stubEnv('VITE_STELLAR_NETWORK', 'TESTNET');
+
+    const { result } = renderHook(() => useWallet());
+    await act(async () => { await result.current.connect(); });
+
+    expect(result.current.networkMismatch).toBe(false);
+
+    vi.unstubAllEnvs();
+  });
+
+  it('disconnect resets networkMismatch', async () => {
+    setFreighter({
+      isConnected: vi.fn().mockResolvedValue({ isConnected: true }),
+      getAddress: vi.fn().mockResolvedValue({ address: MOCK_ADDRESS, error: undefined }),
+      getNetwork: vi.fn().mockResolvedValue({ network: 'PUBLIC', networkPassphrase: '' }),
+    });
+
+    vi.stubEnv('VITE_STELLAR_NETWORK', 'TESTNET');
+
+    const { result } = renderHook(() => useWallet());
+    await act(async () => { await result.current.connect(); });
+    expect(result.current.networkMismatch).toBe(true);
+
+    act(() => { result.current.disconnect(); });
+    expect(result.current.networkMismatch).toBe(false);
+
+    vi.unstubAllEnvs();
+  });
 });
