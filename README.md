@@ -72,6 +72,17 @@ All six key prefixes are distinct — zero key collision guarantee.
 | [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
 
+## Operations
+
+Step-by-step operator runbooks for production scenarios:
+
+| Runbook | Description |
+|---|---|
+| [docs/runbooks/contract-upgrade.md](docs/runbooks/contract-upgrade.md) | Build, optimize, upload WASM, call `upgrade` |
+| [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Two-step admin key transfer procedure |
+| [docs/runbooks/cap-emergency-increase.md](docs/runbooks/cap-emergency-increase.md) | Governance vote + contract upgrade to raise contributor caps |
+| [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | What to do when a bug is found post-deploy (freeze strategy included) |
+
 ## Building
 
 ```bash
