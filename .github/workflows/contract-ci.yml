@@ -82,76 +82,12 @@ jobs:
             --lcov --output-path lcov.info \
             --summary-only 2>&1 | tee coverage-summary.txt
 
-      - name: Post coverage comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('coverage-summary.txt', 'utf8');
-            const lines = summary
-              .split('\n')
-              .filter(l => l.includes('TOTAL') || l.includes('Lines') || l.includes('Functions'));
-            const body = `## 📊 Coverage Report\n\`\`\`\n${lines.join('\n')}\n\`\`\``;
+      - name: Generate HTML mutation report
+        if: always()
+        run: node scripts/mutation-report.js mutants.out mutants.out/mutation-report.html || true
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find(c => c.body.startsWith('## 📊 Coverage Report'));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
-
-      - name: Upload lcov to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          flags: contract
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  # ── 3. Build WASM ────────────────────────────────────────────────────────
-  build-wasm:
-    name: Build WASM
-    runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable with wasm32v1-none target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none
-
-      - name: Restore cargo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
-
-      - name: Build WASM
-        run: cargo build --target wasm32v1-none --release
-
-      - name: Upload unoptimized WASM
+      - name: Upload mutation report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-unoptimized
@@ -178,17 +114,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
-
-      - name: Install Stellar CLI (with wasm-opt)
-        run: cargo install --locked stellar-cli --features opt
-
-      - name: Build WASM
-        run: cargo build --target wasm32v1-none --release
+            mutants-report.txt
+            mutants.out/mutation-report.html
+            mutants.out/outcomes.json
+            mutants.out/caught.txt
+            mutants.out/missed.txt
 
       - name: Optimize WASM
         run: |

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:${POSTGRES_VERSION:-16}-alpine
     container_name: workload-governor-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -47,6 +47,35 @@ services:
         condition: service_healthy
     networks:
       - workload-governor-network
+    profiles:
+      - tools
+
+  # Test runner service — used by:
+  #   docker compose up --abort-on-container-exit test
+  # Runs the full Jest integration test suite against real Postgres + Redis.
+  test:
+    image: node:20-alpine
+    container_name: workload-governor-test
+    working_dir: /app
+    command: ["sh", "-c", "npm ci && npm test -- --forceExit"]
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-workload_governor}
+      REDIS_URL: redis://redis:6379
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-test-admin-token}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-test-secret}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - workload-governor-network
+    profiles:
+      - test
 
 volumes:
   postgres_data:

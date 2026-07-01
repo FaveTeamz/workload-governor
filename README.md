@@ -110,6 +110,35 @@ cargo test --features testutils prop_
 cargo test --features testutils unit_
 ```
 
+## Fuzz Testing
+
+Fuzz targets live in `fuzz/fuzz_targets/` and require a nightly Rust toolchain plus `cargo-fuzz`.
+
+```bash
+# Install cargo-fuzz (nightly required)
+rustup install nightly
+cargo install cargo-fuzz --locked
+
+# Build all fuzz targets
+cargo +nightly fuzz build
+
+# Run a target for 10 minutes
+cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
+cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
+cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+
+# Run with pre-seeded corpus
+cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
+```
+
+| Target | Description |
+|---|---|
+| `fuzz_apply` | Random `contributor`, `org_id`, `issue_id` → `apply_for_issue` |
+| `fuzz_assign` | Random inputs → `assign_issue`, `complete_assignment`, `revoke_assignment` |
+| `fuzz_batch_apply` | Vec of random `issue_id`s applied in batch, enforces ≤15 global cap |
+
+Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
+
 ## Benchmarking
 
 ```bash

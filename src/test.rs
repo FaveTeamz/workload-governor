@@ -74,6 +74,34 @@ fn unit_full_lifecycle() {
 }
 
 #[test]
+fn unit_complete_assignment_lifecycle_counts() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("acme-life");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &10u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+    assert!(t.client.has_applied(&contributor, &org, &10u32));
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+    assert!(!t.client.has_applied(&contributor, &org, &10u32));
+    assert!(t.client.is_assigned(&contributor, &org, &10u32));
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &10u32);
+
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    assert!(!t.client.is_assigned(&contributor, &org, &10u32));
+}
+
+#[test]
 fn unit_revoke_lifecycle() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -1386,6 +1414,40 @@ mod error_cases {
         assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
 
+    #[test]
+    fn err_4_unauthorized_maintainer_cross_org() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org_a = org(env, "org-a");
+        let org_b = org(env, "org-b");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org_a);
+        client.apply_for_issue(&contributor, &org_b, &1u32);
+
+        let result = client.try_assign_issue(&maintainer, &contributor, &org_b, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    #[test]
+    fn err_4_authorized_maintainer_succeeds_after_registration() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org_id = org(env, "org-success");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org_id);
+        client.apply_for_issue(&contributor, &org_id, &1u32);
+
+        let result = client.try_assign_issue(&maintainer, &contributor, &org_id, &1u32);
+        assert!(result.is_ok());
+        assert!(client.is_assigned(&contributor, &org_id, &1u32));
+    }
+
     /// Error 5 — `UnauthorizedContributor`: the contract variant is defined for future use;
     /// `apply_for_issue` delegates auth to `contributor.require_auth()` which raises a
     /// host Auth error (not a ContractError). This test verifies the auth guard fires.
@@ -1695,5 +1757,125 @@ proptest! {
             Err(Ok(Error::from_contract_error(ContractError::AlreadyInitialized as u32))),
             "second initialize must return error 1 (AlreadyInitialized)"
         );
+    }
+}
+
+// Property: after assign_issue succeeds, has_applied is false AND is_assigned is true;
+// after complete or revoke, is_assigned becomes false.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_applied_and_assigned_mutually_exclusive(
+        issue_id in 0u32..100u32,
+        do_complete in proptest::bool::ANY,
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("mutex");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+
+        prop_assert!(!client.has_applied(&contributor, &org, &issue_id));
+        prop_assert!(client.is_assigned(&contributor, &org, &issue_id));
+
+        if do_complete {
+            client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+        } else {
+            client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+        }
+        prop_assert!(!client.is_assigned(&contributor, &org, &issue_id));
+    }
+}
+
+// Property: complete_assignment decrements the org assignment count by exactly 1.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_complete_decrements_org_count(issue_id in 0u32..1000u32) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("cmpdec");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        let before = client.get_org_assignment_count(&contributor, &org);
+        client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), before - 1);
+    }
+}
+
+// Property: revoke_assignment decrements the org assignment count by exactly 1.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_revoke_decrements_org_count(issue_id in 0u32..1000u32) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("rvkdec");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        let before = client.get_org_assignment_count(&contributor, &org);
+        client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), before - 1);
+    }
+}
+
+// Property: withdraw_application decrements the global application count by exactly 1.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_withdraw_decrements_global_count(issue_id in 0u32..1000u32) {
+        let (_, client, admin, _, contributor, org) = fresh_client("wdwdec");
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        let before = client.get_global_application_count(&contributor);
+        client.withdraw_application(&contributor, &org, &issue_id);
+        prop_assert_eq!(client.get_global_application_count(&contributor), before - 1);
+    }
+}
+
+// Property: a contributor can hold exactly 4 assignments in each of up to 3 distinct
+// orgs simultaneously; hitting the cap in one org does not affect another org's count.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(100))]
+    #[test]
+    fn prop_multi_org_isolation(_seed in 0u32..100u32) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, WorkloadGovernor);
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+        let client = WorkloadGovernorClient::new(env, &contract_id);
+
+        let admin = Address::generate(env);
+        let contributor = Address::generate(env);
+        let org_names = ["isola", "isolb", "isolc"];
+        let orgs: [Symbol; 3] = [
+            Symbol::new(env, org_names[0]),
+            Symbol::new(env, org_names[1]),
+            Symbol::new(env, org_names[2]),
+        ];
+
+        client.initialize(&admin);
+        for org in &orgs {
+            let maintainer = Address::generate(env);
+            client.register_maintainer(&admin, &maintainer, org);
+            for i in 0u32..4 {
+                client.apply_for_issue(&contributor, org, &i);
+                client.assign_issue(&maintainer, &contributor, org, &i);
+            }
+            prop_assert_eq!(client.get_org_assignment_count(&contributor, org), 4);
+        }
+
+        // Each org is independently at the cap; counts are isolated
+        for (idx, org) in orgs.iter().enumerate() {
+            prop_assert_eq!(
+                client.get_org_assignment_count(&contributor, org),
+                4,
+                "org {} count should be 4", idx
+            );
+        }
+
+        // Cap in org[0] does not affect org[1] or org[2]
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &orgs[1]), 4);
+        prop_assert_eq!(client.get_org_assignment_count(&contributor, &orgs[2]), 4);
     }
 }

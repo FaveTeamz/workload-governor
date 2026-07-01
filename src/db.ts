@@ -79,5 +79,12 @@ export async function migrate(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_contract_events_org_id ON contract_events(org_id);
     CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp ON contract_events(timestamp);
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id         SERIAL PRIMARY KEY,
+      key_hash   TEXT NOT NULL UNIQUE,
+      label      TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }
