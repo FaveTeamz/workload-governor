@@ -1,0 +1,202 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# vesting-backend Helm chart – default values
+# Override any value with --set key=value or -f custom-values.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+# -- Number of desired pod replicas (ignored when HPA is enabled)
+replicaCount: 2
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/faveteamz/workload-governor
+  # -- Image pull policy: Always | IfNotPresent | Never
+  pullPolicy: IfNotPresent
+  # -- Image tag; defaults to the chart appVersion when empty
+  tag: ""
+
+# -- List of image pull secret names
+imagePullSecrets: []
+
+# -- String to partially override the chart name
+nameOverride: ""
+# -- String to fully override the release full name
+fullnameOverride: ""
+
+# ─── Service Account ─────────────────────────────────────────────────────────
+serviceAccount:
+  # -- Create a dedicated service account
+  create: true
+  # -- Automatically mount the service account API token
+  automount: true
+  # -- Additional annotations for the service account
+  annotations: {}
+  # -- Override the service account name (auto-generated when empty)
+  name: ""
+
+# ─── Pod annotations & labels ────────────────────────────────────────────────
+# -- Annotations added to every pod
+podAnnotations: {}
+# -- Labels added to every pod
+podLabels: {}
+
+# ─── Security ────────────────────────────────────────────────────────────────
+podSecurityContext:
+  # -- Run as non-root user
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# ─── Service ─────────────────────────────────────────────────────────────────
+service:
+  # -- Service type: ClusterIP | NodePort | LoadBalancer
+  type: ClusterIP
+  # -- Container port exposed by the application
+  port: 3000
+  # -- Service port (clients connect here)
+  targetPort: 3000
+
+# ─── Ingress ─────────────────────────────────────────────────────────────────
+ingress:
+  # -- Enable Ingress resource
+  enabled: true
+  # -- Ingress class name (e.g. nginx, traefik)
+  className: "nginx"
+  # -- Additional annotations (e.g. cert-manager, rate limiting)
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+  # -- Ingress hostname rules
+  hosts:
+    - host: vesting-backend.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration
+  tls:
+    - secretName: vesting-backend-tls
+      hosts:
+        - vesting-backend.example.com
+
+# ─── Resources ───────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# ─── Horizontal Pod Autoscaler ───────────────────────────────────────────────
+autoscaling:
+  # -- Enable HPA
+  enabled: true
+  # -- Minimum number of replicas
+  minReplicas: 2
+  # -- Maximum number of replicas
+  maxReplicas: 10
+  # -- Target CPU utilisation percentage
+  targetCPUUtilizationPercentage: 70
+  # -- Target memory utilisation percentage (requires metrics-server)
+  targetMemoryUtilizationPercentage: 80
+
+# ─── Probes ──────────────────────────────────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 3000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ─── Application config (ConfigMap) ─────────────────────────────────────────
+config:
+  # -- Stellar network to connect to: testnet | mainnet
+  STELLAR_NETWORK: "testnet"
+  # -- Soroban RPC endpoint
+  SOROBAN_RPC_URL: "https://soroban-testnet.stellar.org"
+  # -- Horizon API endpoint
+  HORIZON_URL: "https://horizon-testnet.stellar.org"
+  # -- Deployed contract ID (override per-environment)
+  CONTRACT_ID: ""
+  # -- Node.js environment
+  NODE_ENV: "production"
+  # -- Listening port (must match service.targetPort)
+  PORT: "3000"
+  # -- Log level: debug | info | warn | error
+  LOG_LEVEL: "info"
+
+# ─── Secrets via External Secrets Operator ───────────────────────────────────
+externalSecrets:
+  # -- Enable ExternalSecret resource (requires external-secrets operator)
+  enabled: true
+  # -- Name of the SecretStore or ClusterSecretStore to use
+  secretStoreName: "aws-secrets-manager"
+  # -- SecretStore kind: SecretStore | ClusterSecretStore
+  secretStoreKind: "ClusterSecretStore"
+  # -- How often the secret is refreshed from the backend
+  refreshInterval: "1h"
+  # -- Mapping of env var name → backend secret key path
+  secrets:
+    # AWS Secrets Manager path → env var name in the pod
+    - secretKey: ADMIN_TOKEN
+      remoteRef:
+        key: "workload-governor/admin-token"
+    - secretKey: STELLAR_SECRET_KEY
+      remoteRef:
+        key: "workload-governor/stellar-secret-key"
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: "workload-governor/database-url"
+    - secretKey: REDIS_URL
+      remoteRef:
+        key: "workload-governor/redis-url"
+
+# -- Node selector labels
+nodeSelector: {}
+
+# -- Tolerations for pod scheduling
+tolerations: []
+
+# -- Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - vesting-backend
+          topologyKey: kubernetes.io/hostname
+
+# -- Extra environment variables injected directly (non-secret)
+extraEnv: []
+# - name: MY_VAR
+#   value: "my-value"
+
+# -- Additional volumes to mount
+extraVolumes: []
+# - name: tmp
+#   emptyDir: {}
+
+# -- Additional volume mounts
+extraVolumeMounts: []
+# - name: tmp
+#   mountPath: /tmp
