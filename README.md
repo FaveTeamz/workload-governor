@@ -1,5 +1,9 @@
 # WorkloadGovernor
 
+[![Backend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/gh/FaveTeamz/workload-governor?flag=backend)
+[![Frontend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=frontend)](https://codecov.io/gh/FaveTeamz/workload-governor?flag=frontend)
+[![Contract Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=contract)](https://codecov.io/gh/FaveTeamz/workload-governor?flag=contract)
+
 A production-ready Soroban smart contract for the **AlignmentDrips Wave** platform on the Stellar network.
 
 ## Purpose
