@@ -1,0 +1,44 @@
+{
+  "name": "workload-governor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WorkloadGovernor backend API and frontend for AlignmentDrips Wave",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint 'src/**/*.ts' 'frontend/src/**/*.{ts,tsx}' --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:backend": "vitest run --config vitest.config.ts --coverage",
+    "test:frontend": "vitest run --config frontend/vitest.config.ts --coverage",
+    "coverage": "npm run test:backend && npm run test:frontend",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@stellar/freighter-api": "^6.0.1",
+    "@stellar/stellar-sdk": "12.3.0",
+    "express": "4.19.2",
+    "ioredis": "5.3.2",
+    "pg": "8.11.5"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.4.2",
+    "@testing-library/react": "15.0.7",
+    "@testing-library/user-event": "14.5.2",
+    "@types/express": "4.17.21",
+    "@types/node": "20.12.12",
+    "@types/pg": "8.11.6",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "@vitejs/plugin-react": "4.3.1",
+    "@vitest/coverage-istanbul": "1.6.0",
+    "@vitest/coverage-v8": "1.6.0",
+    "jsdom": "24.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.23.1",
+    "typescript": "5.4.5",
+    "vite": "5.2.12",
+    "vitest": "1.6.0"
+  }
+}
