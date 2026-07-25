@@ -1,0 +1,52 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        description: 'ECS cluster name'
+        required: true
+      service:
+        description: 'ECS service name'
+        required: true
+      image_sha:
+        description: 'Image tag to roll back to (e.g. sha-abc1234)'
+        required: true
+      health_url:
+        description: 'Health-check URL for smoke test (optional)'
+        required: false
+        default: ''
+
+permissions:
+  id-token: write   # OIDC for AWS auth
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run rollback script
+        env:
+          ROLLBACK_TIMEOUT: '300'
+          HEALTH_URL: ${{ inputs.health_url }}
+        run: |
+          bash scripts/rollback.sh \
+            "${{ inputs.cluster }}" \
+            "${{ inputs.service }}" \
+            "${{ inputs.image_sha }}"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Rollback FAILED for ${{ inputs.service }} to ${{ inputs.image_sha }}. Check logs above."

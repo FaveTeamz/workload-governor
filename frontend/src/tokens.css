@@ -1,0 +1,120 @@
+/* =============================================================
+   Design Tokens — closes #91
+   All components import this file for consistent theming.
+   ============================================================= */
+
+:root {
+  /* ── Color: Primary (purple/indigo) ── */
+  --color-primary-50:  #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6c8eff;
+  --color-primary-600: #4a6de0;
+  --color-primary-700: #3730a3;
+
+  /* ── Color: Secondary (slate) ── */
+  --color-secondary-100: #f1f5f9;
+  --color-secondary-200: #e2e8f0;
+  --color-secondary-400: #94a3b8;
+  --color-secondary-600: #475569;
+  --color-secondary-800: #1e293b;
+
+  /* ── Color: Accent (amber) ── */
+  --color-accent-300: #fcd34d;
+  --color-accent-400: #facc15;
+  --color-accent-500: #f59e0b;
+
+  /* ── Color: Success ── */
+  --color-success-100: #dcfce7;
+  --color-success-500: #22c55e;
+  --color-success-700: #15803d;
+  --color-success-900: #14532d;
+
+  /* ── Color: Warning ── */
+  --color-warning-100: #fef9c3;
+  --color-warning-400: #facc15;
+  --color-warning-500: #eab308;
+  --color-warning-700: #a16207;
+
+  /* ── Color: Error ── */
+  --color-error-100: #fee2e2;
+  --color-error-500: #ef4444;
+  --color-error-700: #b91c1c;
+  --color-error-900: #7f1d1d;
+
+  /* ── Semantic surface tokens (dark-mode defaults) ── */
+  --color-bg:           #0f1117;
+  --color-surface:      #1c1f2b;
+  --color-border:       #2e3347;
+  --color-text:         #e2e8f0;
+  --color-muted:        var(--color-secondary-400);
+  --color-focus:        var(--color-accent-400);
+
+  /* shorthand aliases kept for backward compat */
+  --color-primary:      var(--color-primary-500);
+  --color-primary-dark: var(--color-primary-600);
+  --color-complete:     var(--color-success-500);
+  --color-revoke:       var(--color-error-500);
+
+  /* ── Typography scale ── */
+  --font-sans:  system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:  ui-monospace, Consolas, 'Courier New', monospace;
+
+  --text-xs:   0.75rem;   /* 12px */
+  --text-sm:   0.8125rem; /* 13px */
+  --text-base: 0.875rem;  /* 14px */
+  --text-md:   1rem;      /* 16px */
+  --text-lg:   1.125rem;  /* 18px */
+  --text-xl:   1.25rem;   /* 20px */
+  --text-2xl:  1.5rem;    /* 24px */
+  --text-3xl:  1.875rem;  /* 30px */
+
+  --leading-tight:  1.25;
+  --leading-normal: 1.5;
+  --leading-loose:  1.75;
+
+  --font-normal:   400;
+  --font-medium:   500;
+  --font-semibold: 600;
+  --font-bold:     700;
+
+  /* ── Spacing scale (4px base grid) ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── Border radius ── */
+  --radius-sm:   4px;
+  --radius:      6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow:    0 4px 6px -1px rgba(0,0,0,.4), 0 2px 4px -1px rgba(0,0,0,.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.4), 0 4px 6px -2px rgba(0,0,0,.2);
+
+  /* ── Transitions ── */
+  --transition-fast:   0.1s ease;
+  --transition-normal: 0.15s ease;
+  --transition-slow:   0.3s ease;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg:      #f8fafc;
+    --color-surface: #ffffff;
+    --color-border:  #e2e8f0;
+    --color-text:    #0f172a;
+    --color-muted:   #64748b;
+  }
+}
