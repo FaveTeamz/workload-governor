@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  # ── Backend (Node/Jest — lcov) ─────────────────────────────────────────
+  # ── Backend — Vitest + Istanbul/V8 (Node API + unit tests) ─────────────
   backend-coverage:
     runs-on: ubuntu-latest
 
@@ -47,21 +47,23 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install root dependencies
+        run: npm ci
 
-      - name: Run Jest with coverage
-        run: npx jest --runInBand --forceExit --coverage --coverageReporters=lcov --coverageReporters=text
+      - name: Run Vitest backend coverage
+        # Runs only the backend project defined in vitest.config.ts (Istanbul/V8 provider).
+        # Output is written to coverage/backend/lcov.info.
+        run: npm run coverage:backend
 
       - name: Upload backend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/lcov.info
+          files: ./coverage/backend/lcov.info
           flags: backend
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── Frontend (Vitest / v8 — lcov) ─────────────────────────────────────
+  # ── Frontend — Vitest + Istanbul + jsdom ───────────────────────────────
   frontend-coverage:
     runs-on: ubuntu-latest
 
@@ -73,26 +75,35 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
 
-      - name: Run Vitest with coverage
-        run: npx vitest run --coverage
+      - name: Run Vitest frontend coverage
+        # Runs vitest inside frontend/ with jsdom environment and Istanbul provider.
+        # Output is written to frontend/coverage/lcov.info.
+        run: |
+          cd frontend
+          npm run coverage
 
       - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/lcov.info
+          files: ./frontend/coverage/lcov.info
           flags: frontend
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── Contract (Rust / cargo-tarpaulin — lcov) ──────────────────────────
+  # ── Contract — Rust + cargo-llvm-cov ──────────────────────────────────
   contract-coverage:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install llvm-tools-preview for cargo-llvm-cov
+        run: rustup component add llvm-tools-preview
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -101,26 +112,27 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-tarpaulin-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-tarpaulin-
+          key: ${{ runner.os }}-cargo-llvm-cov-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-llvm-cov-
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin --locked
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
 
-      - name: Run tarpaulin
+      - name: Run contract coverage
+        # Generates an LCOV report; excludes test helpers and benchmark-only code.
+        # Minimum 90% line coverage enforced here to give early local feedback.
         run: |
-          cargo tarpaulin \
+          cargo llvm-cov \
             --features testutils \
-            --out Lcov \
-            --output-dir ./coverage \
-            --exclude-files "src/test.rs" \
-            --fail-under 80
+            --lcov \
+            --output-path ./coverage/contract/lcov.info \
+            --ignore-filename-regex "(src/test\.rs|fuzz/)" \
+            --fail-under-lines 90
 
       - name: Upload contract coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/lcov.info
+          files: ./coverage/contract/lcov.info
           flags: contract
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
