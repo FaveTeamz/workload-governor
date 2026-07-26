@@ -31,6 +31,19 @@ jobs:
       - name: Run tests
         run: cargo test --features testutils
 
+      - name: Run benchmarks and check thresholds
+        run: |
+          cargo test --features testutils bench_ -- --nocapture 2>&1 | tee benchmarks.txt
+          echo "--- Benchmark output ---"
+          grep "^BENCH" benchmarks.txt || true
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: benchmarks.txt
+
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 
