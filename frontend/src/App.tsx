@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { Routes, Route } from "react-router-dom";
 import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
-import { ActivityPage } from "./components/ActivityPage";
 import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
+import { IssueDetailPage } from "./pages/IssueDetailPage";
 import "./app.css";
 
 const DEMO_APPS: Application[] = [
@@ -20,18 +21,11 @@ const DEMO_ASGNS: Assignment[] = [
   { id: "a2", contributor: "GDWWW4LMNOPQRSTUVWXYZ22222", org: "meridian-dao", issueTitle: "Integration tests for SDK" },
 ];
 
-function useHash() {
-  const [hash, setHash] = useState(() => window.location.hash);
-  useEffect(() => {
-    const handler = () => setHash(window.location.hash);
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
-  }, []);
-  return hash;
-}
+// ---------------------------------------------------------------------------
+// Home page (existing layout extracted into its own component)
+// ---------------------------------------------------------------------------
 
-export default function App() {
-  const hash = useHash();
+function HomePage() {
   const wallet = useWallet();
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
@@ -58,6 +52,38 @@ export default function App() {
 
   return (
     <>
+      <main id="main-content" className="app-main" tabIndex={-1}>
+        <header className="app-header" role="banner">
+          <span className="app-logo" aria-hidden="true">⚙</span>
+          <h1>WorkloadGovernor</h1>
+          <GetStartedButton />
+        </header>
+
+        <MaintainerPanel
+          applications={applications}
+          assignments={assignments}
+          onAssign={handleAssign}
+          onComplete={handleComplete}
+          onRevoke={handleRevoke}
+        />
+        <ActivityFeed apiBase="/api" network="testnet" />
+      </main>
+
+      <OnboardingWizard />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// App shell — NavBar is shared; routes render below it
+// ---------------------------------------------------------------------------
+
+export default function App() {
+  const wallet = useWallet();
+
+  return (
+    <>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -70,31 +96,16 @@ export default function App() {
         onDisconnect={wallet.disconnect}
       />
 
-      <main id="main-content" className="app-main" tabIndex={-1}>
-        {hash === "#/activity" ? (
-          <ActivityPage />
-        ) : (
-          <>
-            <header className="app-header" role="banner">
-              <span className="app-logo" aria-hidden="true">⚙</span>
-              <h1>WorkloadGovernor</h1>
-              <GetStartedButton />
-            </header>
+      <Routes>
+        {/* Issue detail view */}
+        <Route
+          path="/issues/:org_id/:issue_id"
+          element={<IssueDetailPage apiBase="/api" />}
+        />
 
-            <MaintainerPanel
-              applications={applications}
-              assignments={assignments}
-              onAssign={handleAssign}
-              onComplete={handleComplete}
-              onRevoke={handleRevoke}
-            />
-            <ActivityFeed apiBase="/api" network="testnet" />
-          </>
-        )}
-      </main>
-
-      <OnboardingWizard />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+        {/* Default: home */}
+        <Route path="*" element={<HomePage />} />
+      </Routes>
     </>
   );
 }

@@ -5,10 +5,12 @@ export interface Row { [key: string]: unknown }
 const tables = new Map<string, Row[]>();
 const sequences = new Map<string, number>();
 
-function tbl(name: string): Row[] {
+/** Expose table contents for direct DB-state assertions in tests */
+export function tbl(name: string): Row[] {
   if (!tables.has(name)) tables.set(name, []);
   return tables.get(name)!;
 }
+
 function nextId(name: string): number {
   const n = (sequences.get(name) ?? 0) + 1;
   sequences.set(name, n);
@@ -59,7 +61,7 @@ export function runQuery(sql: string, params: unknown[] = []): { rows: Row[] } {
 
   // ---- INSERT ----
   // INSERT INTO table (cols) VALUES ($1, $2, ...) [ON CONFLICT ...] [RETURNING ...]
-  let m = s.match(/^INSERT INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON CONFLICT(?:(?!RETURNING).)*)?(?:\s+RETURNING (.+))?$/i);
+  let m = s.match(/^INSERT INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON CONFLICT\b.*?)?(?: RETURNING (.+))?$/i);
   if (m) {
     const [, tableName, colsStr, valsStr, retStr] = m;
     const cols = colsStr.split(',').map((c) => c.trim());
@@ -92,6 +94,50 @@ export function runQuery(sql: string, params: unknown[] = []): { rows: Row[] } {
       tbl(tableName).push(row);
     }
     return { rows: [] };
+  }
+
+  // ---- UPDATE ----
+  // UPDATE table SET col1 = $1, col2 = $2 [WHERE cond]
+  m = s.match(/^UPDATE (\w+) SET (.+?) WHERE (.+)$/i);
+  if (m) {
+    const [, tableName, setStr, whereStr] = m;
+
+    // Parse SET assignments: "col = $n" pairs
+    const assignments: Array<{ col: string; paramIdx: number }> = [];
+    for (const part of setStr.split(',')) {
+      const am = part.trim().match(/^(\w+)\s*=\s*\$(\d+)$/);
+      if (am) assignments.push({ col: am[1], paramIdx: +am[2] });
+    }
+
+    const rows = tbl(tableName);
+    const matched = filterRows(rows, whereStr, params);
+    for (const row of matched) {
+      for (const { col, paramIdx } of assignments) {
+        row[col] = params[paramIdx - 1];
+      }
+    }
+    return { rows: matched };
+  }
+
+  // ---- DELETE ----
+  // DELETE FROM table WHERE cond
+  m = s.match(/^DELETE FROM (\w+)(?: WHERE (.+))?$/i);
+  if (m) {
+    const [, tableName, whereStr] = m;
+    const rows = tbl(tableName);
+    const kept: Row[] = [];
+    const deleted: Row[] = [];
+    for (const row of rows) {
+      if (whereStr) {
+        const matches = filterRows([row], whereStr, params);
+        if (matches.length > 0) deleted.push(row);
+        else kept.push(row);
+      } else {
+        deleted.push(row);
+      }
+    }
+    tables.set(tableName, kept);
+    return { rows: deleted };
   }
 
   // ---- SELECT COUNT(*) ----
