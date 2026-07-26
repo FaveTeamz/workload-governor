@@ -122,6 +122,22 @@ The following functions are relevant to contributor onboarding:
 - Use `has_applied` and `get_global_application_count` to verify your status.
 - If the issue is assigned, ask the maintainer to complete it after work is done.
 
+## Understanding the transaction lifecycle
+
+Every action you take in the UI — applying, withdrawing, etc. — goes through a
+7-stage pipeline: XDR construction, Freighter signing, network submission,
+ledger consensus, confirmation polling, event indexing, and UI update. The
+total round-trip takes 15 – 72 seconds.
+
+If Freighter reports success but the UI doesn't update, the most common causes
+are event indexer lag (up to 10 s) and frontend polling not firing after the
+transaction confirmed.
+
+See [docs/transaction-lifecycle.md](./transaction-lifecycle.md) for:
+- A full timing diagram of all 7 stages
+- Failure modes and debug commands for each stage
+- A stuck-transaction debugging checklist
+
 ## Screenshot note
 
 Replace the placeholder screenshot files in `docs/screenshots/` with actual UI captures before publishing.
