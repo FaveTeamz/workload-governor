@@ -879,3 +879,252 @@
   font-size: 2rem;
   color: var(--color-revoke);
 }
+
+/* ============================================================
+   Skeleton screens — issue #319
+   ============================================================ */
+
+/* Shimmer keyframe */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+/* Shared shimmer mixin applied via class */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface)   0%,
+    var(--color-border)   40%,
+    var(--color-surface)  80%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Disable shimmer for users that prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background: var(--color-border);
+  }
+}
+
+/* Skeleton line / block base */
+.skeleton-line,
+.skeleton-block {
+  display: block;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* Spacing helpers inside skeletons */
+.issue-card__title-skeleton  { margin-top: var(--space-3, 12px); }
+.issue-card__subtitle-skeleton { margin-top: var(--space-2, 8px); }
+
+/* IssueCard skeleton */
+.issue-card--skeleton {
+  pointer-events: none;
+  opacity: .8;
+}
+.issue-card--skeleton .issue-card__meta {
+  display: flex;
+  gap: var(--space-2, 8px);
+}
+.issue-card--skeleton .issue-card__actions {
+  margin-top: var(--space-4, 16px);
+}
+
+/* EventHistoryTable skeleton */
+.event-history-skeleton {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+.event-history-skeleton__header,
+.event-history-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 16px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-bottom: 1px solid var(--color-border);
+}
+.event-history-skeleton__header {
+  background: var(--color-bg);
+}
+.event-history-skeleton__row:last-child {
+  border-bottom: none;
+}
+.event-history-skeleton__cell {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ContributorProfile skeleton */
+.contributor-profile-skeleton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 16px);
+  padding: var(--space-4, 16px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+.contributor-profile-skeleton__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+.contributor-profile-skeleton__stats {
+  display: flex;
+  gap: var(--space-6, 24px);
+}
+.contributor-profile-skeleton__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+/* Screen-reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   Onboarding Wizard — issue #320
+   ============================================================ */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  animation: backdropIn 200ms ease-out both;
+}
+
+.onboarding-dialog {
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-8, 32px) var(--space-8, 32px) var(--space-6, 24px);
+  max-width: 500px;
+  width: calc(100vw - 48px);
+  box-shadow: var(--shadow-lg);
+  animation: modalSlideIn 220ms ease-out both;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+/* Progress dots */
+.onboarding-steps {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  margin-bottom: var(--space-2, 8px);
+}
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-border);
+  transition: background var(--transition-normal, 0.15s ease),
+              transform var(--transition-normal, 0.15s ease);
+}
+.step-dot.active {
+  background: var(--color-primary);
+  transform: scale(1.35);
+}
+.step-dot.done {
+  background: var(--color-complete);
+}
+
+/* Step progress bar */
+.onboarding-progress {
+  width: 100%;
+  height: 4px;
+  background: var(--color-border);
+  border-radius: var(--radius-full, 9999px);
+  overflow: hidden;
+}
+.onboarding-progress__fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full, 9999px);
+  transition: width 300ms ease;
+}
+
+/* Illustration area */
+.onboarding-illustration {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 3.5rem;
+  line-height: 1;
+  min-height: 72px;
+}
+
+/* Headings and body text */
+.onboarding-dialog h2 {
+  font-size: var(--text-xl, 1.25rem);
+  font-weight: var(--font-bold, 700);
+  color: var(--color-text);
+  margin: 0;
+  text-align: center;
+}
+.onboarding-dialog p {
+  font-size: var(--text-base, 0.875rem);
+  color: var(--color-muted);
+  line-height: var(--leading-normal, 1.5);
+  margin: 0;
+  text-align: center;
+}
+
+/* Action row */
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  margin-top: var(--space-2, 8px);
+}
+
+/* Close button */
+.onboarding-close {
+  position: absolute;
+  top: var(--space-3, 12px);
+  right: var(--space-3, 12px);
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  border-radius: var(--radius, 6px);
+  min-width: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-fast, 0.1s ease);
+}
+.onboarding-close:hover { color: var(--color-text); }
+
+/* Step count label */
+.onboarding-step-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-muted);
+  text-align: center;
+}
