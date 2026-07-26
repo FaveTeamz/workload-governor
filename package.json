@@ -12,8 +12,9 @@
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
     "test:unit:watch": "vitest",
-    "coverage": "npm run coverage:backend && cd frontend && npm run coverage",
-    "coverage:backend": "vitest run --project backend --coverage"
+    "coverage": "npm run coverage:backend && npm run coverage:frontend",
+    "coverage:backend": "jest --runInBand --forceExit --coverage --coverageReporters=lcov --coverageReporters=text",
+    "coverage:frontend": "npm --prefix frontend run coverage"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^12.3.0",
