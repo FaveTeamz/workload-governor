@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TTL expiry and extension tests for temporary storage keys with measurable ledger assertions (#47).
 - Benchmark tests for contract function execution costs with reproducible CI command (#48).
 - WASM binary size documentation and release-profile optimization settings in README (#50).
+- Codecov integration with three independent flags: `backend` (≥80%), `frontend` (≥75%), `contract` (≥90%) (#378).
+- `codecov.yml` with per-flag coverage thresholds, PR comment showing per-file coverage delta, and carryforward flag support (#378).
+- `.github/workflows/coverage.yml` rewritten: backend uses Vitest + Istanbul, frontend uses Vitest + jsdom + Istanbul, contract uses `cargo-llvm-cov` (#378).
+- `npm run coverage` (all suites) and `npm run coverage:backend` scripts to root `package.json`; `npm run coverage` script to `frontend/package.json` (#378).
+- `@vitest/coverage-istanbul` devDependency added to both root and frontend packages (#378).
 
 ## [0.1.0] - 2026-06-24
 
