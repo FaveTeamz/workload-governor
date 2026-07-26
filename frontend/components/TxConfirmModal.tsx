@@ -86,20 +86,44 @@ export default function TxConfirmModal({ modal }: Props) {
     }
   }
 
-  if (!isOpen) return null;
+  // Prevent body scroll while modal is open
+  useEffect(() => {
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
+  // ── Swipe-to-dismiss handlers ─────────────────────────────────────────────
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    touchStartY.current = e.touches[0]?.clientY ?? null;
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartY.current === null) return;
+    const delta = (e.touches[0]?.clientY ?? 0) - touchStartY.current;
+    touchCurrentY.current = delta;
+
+    // Only translate downward (no negative values)
+    if (sheetRef.current && delta > 0) {
+      sheetRef.current.style.transform = `translateY(${delta}px)`;
+    }
+  }, []);
 
   return (
     <>
       {/* Backdrop */}
       <div
+        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
         aria-hidden="true"
         className="txmodal-backdrop"
         onClick={() => { if (!isLoading) _reject(); }}
       />
 
-      {/* Dialog */}
+      {/*
+        Desktop: centred dialog
+        Mobile: bottom sheet (full width, rounded top corners, fixed to bottom)
+      */}
       <div
-        ref={dialogRef}
+        ref={sheetRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="txmodal-title"
