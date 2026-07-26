@@ -290,3 +290,42 @@
   .panel-columns { grid-template-columns: 1fr; }
   .row-info { flex-wrap: wrap; }
 }
+
+/* ============================================================
+   Print view — hide nav and action UI
+   ============================================================ */
+@media print {
+  /* App shell */
+  .app-header          { display: none !important; }
+  .skip-link           { display: none !important; }
+
+  /* All button variants */
+  .btn,
+  .btn-sm,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-complete,
+  .btn-revoke          { display: none !important; }
+
+  /* Overlay and notifications */
+  .onboarding-overlay  { display: none !important; }
+  .toast-container     { display: none !important; }
+
+  /* Maintainer panel action controls */
+  .row-actions         { display: none !important; }
+  .panel-column        { max-height: none; overflow: visible; }
+
+  /* Clean page background */
+  :root {
+    --color-bg: #fff;
+    --color-surface: #fff;
+    --color-text: #000;
+    --color-muted: #555;
+    --color-border: #ccc;
+  }
+
+  body { background: #fff; color: #000; }
+
+  .app-main { padding: 0; }
+}
