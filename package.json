@@ -9,9 +9,9 @@
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand --forceExit",
-    "test:unit": "vitest run",
-    "test:unit:coverage": "vitest run --coverage",
-    "test:unit:watch": "vitest"
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:unit:coverage": "vitest run --config vitest.unit.config.ts --coverage",
+    "test:unit:watch": "vitest --config vitest.unit.config.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^12.3.0",
