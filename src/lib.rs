@@ -93,6 +93,48 @@ impl WorkloadGovernor {
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
+    /// Transfers admin authority from the current admin to a new address.
+    ///
+    /// **Both** the current and new admin must sign the transaction.  After a
+    /// successful call, `new_admin` becomes the sole admin; the previous admin
+    /// key loses all privileges immediately.
+    ///
+    /// # Who can call
+    /// Any transaction that carries valid signatures for **both** the stored
+    /// admin address (`current_admin`) and the new admin address (`new_admin`).
+    ///
+    /// # Arguments
+    /// * `current_admin` – Must match the stored admin address (auth enforced).
+    /// * `new_admin`     – The incoming admin address (auth enforced).
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — stored admin auth check fails.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   --source <current-admin-account> \
+    ///   -- transfer_admin \
+    ///   --current_admin <CURRENT_ADMIN_ADDRESS> \
+    ///   --new_admin <NEW_ADMIN_ADDRESS>
+    /// # Both current_admin and new_admin must countersign the transaction.
+    /// ```
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        new_admin.require_auth();
+        let old_admin = stored_admin;
+        storage::set_admin(&env, &new_admin);
+        storage::bump_instance(&env);
+        events::emit_admin_transferred(&env, &old_admin, &new_admin);
+    }
+
     /// Upgrades the contract WASM to a new hash (admin-only).
     ///
     /// This is the standard Soroban upgrade path. The new WASM must already be

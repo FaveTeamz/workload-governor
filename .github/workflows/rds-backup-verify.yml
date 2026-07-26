@@ -2,8 +2,8 @@ name: RDS backup verify
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # Every Monday 06:00 UTC
-  workflow_dispatch:
+    - cron: '0 2 * * 0'   # Every Sunday at 02:00 UTC
+  workflow_dispatch:       # Allow manual trigger
 
 jobs:
   verify:
@@ -11,24 +11,163 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
+    env:
+      DB_ID: ${{ secrets.RDS_DB_INSTANCE_ID }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      SNS_TOPIC_ARN: ${{ secrets.SNS_ALERT_TOPIC_ARN }}
+      # Temporary restore instance — unique per run to avoid collisions
+      RESTORE_ID: rds-backup-verify-${{ github.run_id }}
+
     steps:
       - uses: actions/checkout@v4
 
+      # ── Auth ───────────────────────────────────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify latest automated backup exists
-        env:
-          DB_ID: ${{ secrets.RDS_DB_INSTANCE_ID }}
+      # ── 1. Find latest automated snapshot ─────────────────────────────────
+      - name: Find latest automated snapshot
+        id: snapshot
         run: |
           LATEST=$(aws rds describe-db-snapshots \
             --db-instance-identifier "${DB_ID}" \
             --snapshot-type automated \
             --query 'sort_by(DBSnapshots, &SnapshotCreateTime)[-1].{id:DBSnapshotIdentifier,status:Status,time:SnapshotCreateTime}' \
             --output json)
-          echo "Latest backup: ${LATEST}"
+
+          echo "Latest snapshot: ${LATEST}"
+
           STATUS=$(echo "${LATEST}" | jq -r '.status')
-          [ "${STATUS}" = "available" ] || { echo "ERROR: backup not available"; exit 1; }
+          SNAPSHOT_ID=$(echo "${LATEST}" | jq -r '.id')
+          SNAPSHOT_TIME=$(echo "${LATEST}" | jq -r '.time')
+
+          if [ "${STATUS}" != "available" ]; then
+            echo "ERROR: Latest backup not in available state (status=${STATUS})"
+            exit 1
+          fi
+
+          echo "snapshot_id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
+          echo "snapshot_time=${SNAPSHOT_TIME}" >> "$GITHUB_OUTPUT"
+          echo "✅ Found snapshot: ${SNAPSHOT_ID} (created: ${SNAPSHOT_TIME})" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 2. Restore snapshot to temp instance ──────────────────────────────
+      - name: Restore snapshot to temporary instance
+        id: restore
+        run: |
+          RESTORE_START=$(date -u +%s)
+
+          echo "Restoring snapshot ${{ steps.snapshot.outputs.snapshot_id }} → ${RESTORE_ID} ..."
+
+          aws rds restore-db-instance-from-db-snapshot \
+            --db-instance-identifier "${RESTORE_ID}" \
+            --db-snapshot-identifier "${{ steps.snapshot.outputs.snapshot_id }}" \
+            --db-instance-class db.t3.micro \
+            --no-multi-az \
+            --no-publicly-accessible \
+            --tags Key=Purpose,Value=backup-verify Key=RunId,Value="${{ github.run_id }}"
+
+          echo "Waiting for instance to become available (this may take several minutes)..."
+          aws rds wait db-instance-available \
+            --db-instance-identifier "${RESTORE_ID}"
+
+          RESTORE_END=$(date -u +%s)
+          DURATION=$(( RESTORE_END - RESTORE_START ))
+
+          echo "restore_duration=${DURATION}" >> "$GITHUB_OUTPUT"
+
+          ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier "${RESTORE_ID}" \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text)
+          echo "restore_endpoint=${ENDPOINT}" >> "$GITHUB_OUTPUT"
+
+          echo "## Restore Details" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Instance ID**: ${RESTORE_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Endpoint**: ${ENDPOINT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Restore duration**: ${DURATION}s" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 3. Schema integrity check ──────────────────────────────────────────
+      # Install psql client, connect to the restored instance, verify tables
+      # exist and have non-zero row counts.
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Schema integrity check
+        env:
+          PGHOST: ${{ steps.restore.outputs.restore_endpoint }}
+          PGUSER: ${{ secrets.RDS_MASTER_USERNAME }}
+          PGPASSWORD: ${{ secrets.RDS_MASTER_PASSWORD }}
+          PGDATABASE: ${{ secrets.RDS_DB_NAME }}
+          PGSSLMODE: require
+        run: |
+          echo "## Schema Integrity Check" >> "$GITHUB_STEP_SUMMARY"
+
+          # List of expected tables — update this list to match your schema
+          EXPECTED_TABLES=(
+            "applications"
+            "assignments"
+            "contributors"
+            "organizations"
+            "maintainers"
+          )
+
+          FAILURES=0
+
+          for TABLE in "${EXPECTED_TABLES[@]}"; do
+            # Check table exists
+            EXISTS=$(psql -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='${TABLE}';")
+            if [ "${EXISTS}" != "1" ]; then
+              echo "❌ Table '${TABLE}' does NOT exist" | tee -a "$GITHUB_STEP_SUMMARY"
+              FAILURES=$(( FAILURES + 1 ))
+              continue
+            fi
+
+            # Check row count is non-zero
+            ROW_COUNT=$(psql -tAc "SELECT COUNT(*) FROM \"${TABLE}\";")
+            if [ "${ROW_COUNT}" -gt 0 ]; then
+              echo "✅ Table '${TABLE}': ${ROW_COUNT} rows" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              echo "⚠️  Table '${TABLE}' exists but has 0 rows" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          if [ "${FAILURES}" -gt 0 ]; then
+            echo "ERROR: ${FAILURES} table(s) missing from restore" >&2
+            exit 1
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ All expected tables present in restored instance." >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 4. Tear down — ALWAYS runs even if earlier steps fail ─────────────
+      - name: Delete temporary RDS instance
+        if: always()
+        run: |
+          echo "Deleting temporary instance ${RESTORE_ID}..."
+
+          # Instance may not exist if restore step never started — ignore errors
+          aws rds delete-db-instance \
+            --db-instance-identifier "${RESTORE_ID}" \
+            --skip-final-snapshot \
+            --delete-automated-backups 2>/dev/null || true
+
+          echo "✅ Delete request sent for ${RESTORE_ID}" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 5. Notify via SNS on failure ──────────────────────────────────────
+      - name: Send SNS alert on failure
+        if: failure() && env.SNS_TOPIC_ARN != ''
+        run: |
+          REPO="${{ github.repository }}"
+          RUN_URL="${{ github.server_url }}/${REPO}/actions/runs/${{ github.run_id }}"
+          MESSAGE="RDS backup verification FAILED for ${DB_ID}. See: ${RUN_URL}"
+
+          aws sns publish \
+            --topic-arn "${SNS_TOPIC_ARN}" \
+            --subject "RDS Backup Verify FAILED — ${DB_ID}" \
+            --message "${MESSAGE}"
