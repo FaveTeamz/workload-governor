@@ -14,47 +14,24 @@ WORKDIR /app
 # Copy manifests first for better layer caching — dependencies are only
 # reinstalled when package*.json changes.
 COPY package*.json ./
-
-# Install all dependencies (dev + prod) needed for TypeScript compilation.
-# --ignore-scripts prevents potentially unsafe postinstall scripts.
-RUN npm ci --ignore-scripts
-
-# Copy TypeScript config and source files only (not test files, docs, etc.)
-COPY tsconfig.json ./
-COPY src/ ./src/
-
-# Compile TypeScript → dist/
+RUN npm ci --legacy-peer-deps
+COPY tsconfig.json .
+COPY src ./src
 RUN npm run build
+RUN npm prune --omit=dev --legacy-peer-deps
 
-# ── Stage 2: runtime ─────────────────────────────────────────────────────────
-# Minimal production image — no dev dependencies, no source files, no build tools.
-FROM node:20-alpine AS runtime
-
-# Re-declare build args so they are in scope for this stage
+# ── Runtime stage ────────────────────────────────────────────
+FROM gcr.io/distroless/nodejs20-debian12 AS runtime
+WORKDIR /app
 ARG NODE_ENV=production
 ARG PORT=3000
-
-ENV NODE_ENV=${NODE_ENV} \
-    PORT=${PORT}
-
-WORKDIR /app
-
-# Install only production dependencies.
-# Files are owned by the built-in node user (uid 1000) from the start.
-COPY --chown=node:node package*.json ./
-RUN npm ci --omit=dev --ignore-scripts && \
-    npm cache clean --force
-
-# Copy compiled output from builder stage only — no source, no tests.
-COPY --chown=node:node --from=builder /app/dist ./dist
-
-# Run as the built-in non-root node user (uid 1000, gid 1000).
-USER node
-
+ENV NODE_ENV=${NODE_ENV}
+ENV PORT=${PORT}
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+USER 1000:1000
 EXPOSE ${PORT}
-
-# Probe the health endpoint; container is considered unhealthy after 3 failures.
-HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- "http://localhost:${PORT}/health" || exit 1
-
-CMD ["node", "dist/index.js"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://localhost:' + (process.env.PORT || 3000) + '/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+CMD ["dist/index.js"]

@@ -7,7 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  # ── Backend (Node/Jest — lcov) ─────────────────────────────────────────
+  # ── Backend — Jest + Istanbul (Node API + unit tests) ───────────────────
+  # Uses the existing Jest config (jest.config.js) which runs tests/unit and
+  # tests/api against src/. Coverage thresholds: 80% line/function/branch.
   backend-coverage:
     runs-on: ubuntu-latest
 
@@ -47,21 +49,27 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install root dependencies
+        run: npm ci
 
-      - name: Run Jest with coverage
-        run: npx jest --runInBand --forceExit --coverage --coverageReporters=lcov --coverageReporters=text
+      - name: Run Jest backend coverage
+        # Runs all Jest test suites (unit + API) against src/.
+        # Output: coverage/lcov.info  (controlled by jest.config.js)
+        run: npm run coverage:backend
 
       - name: Upload backend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage/lcov.info
           flags: backend
+          # fail_ci_if_error=false: Codecov outages must not block deploys.
+          # Threshold enforcement is handled by codecov.yml status checks.
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── Frontend (Vitest / v8 — lcov) ─────────────────────────────────────
+  # ── Frontend — Vitest + Istanbul + jsdom ────────────────────────────────
+  # Runs inside frontend/ with its own vitest.config.ts.
+  # Coverage threshold: 75%. Output: frontend/coverage/lcov.info.
   frontend-coverage:
     runs-on: ubuntu-latest
 
@@ -72,27 +80,39 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
 
-      - name: Run Vitest with coverage
-        run: npx vitest run --coverage
+      - name: Run Vitest frontend coverage
+        # jsdom environment, Istanbul provider.
+        # Output: frontend/coverage/lcov.info
+        working-directory: frontend
+        run: npm run coverage
 
       - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/lcov.info
+          files: ./frontend/coverage/lcov.info
           flags: frontend
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── Contract (Rust / cargo-tarpaulin — lcov) ──────────────────────────
+  # ── Contract — Rust + cargo-llvm-cov ────────────────────────────────────
+  # Targets the library crate (Soroban contract) with testutils feature.
+  # Coverage threshold: 90% enforced via codecov.yml status checks.
   contract-coverage:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust stable + llvm-tools
+        run: |
+          rustup update stable
+          rustup component add llvm-tools-preview
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -101,26 +121,29 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-tarpaulin-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-tarpaulin-
+          key: ${{ runner.os }}-cargo-llvm-cov-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-llvm-cov-
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin --locked
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
 
-      - name: Run tarpaulin
+      - name: Run contract coverage
+        # --lib targets the library crate only (excludes fuzz targets).
+        # Excludes test helpers (src/test.rs) from the report.
+        # Output: coverage/contract/lcov.info
         run: |
-          cargo tarpaulin \
+          mkdir -p coverage/contract
+          cargo llvm-cov \
+            --lib \
             --features testutils \
-            --out Lcov \
-            --output-dir ./coverage \
-            --exclude-files "src/test.rs" \
-            --fail-under 80
+            --lcov \
+            --output-path ./coverage/contract/lcov.info \
+            --ignore-filename-regex "(src/test\.rs|fuzz/)"
 
       - name: Upload contract coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/lcov.info
+          files: ./coverage/contract/lcov.info
           flags: contract
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}

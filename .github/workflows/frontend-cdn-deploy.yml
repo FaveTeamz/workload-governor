@@ -1,0 +1,201 @@
+name: Frontend CDN Deploy
+
+# Deploys the Vite frontend build to S3 and invalidates the CloudFront cache.
+# Triggered on every push to main (after the backend staging-deploy) or manually.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC for AWS
+      contents: read
+
+    # Default to staging on push; use the input value on manual dispatch
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Build frontend ────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Test
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+        # Vite writes output to frontend/dist by default
+
+      - name: Verify build output exists
+        run: |
+          [[ -f frontend/dist/index.html ]] || { echo "ERROR: frontend/dist/index.html not found." >&2; exit 1; }
+          echo "==> Build output verified."
+
+      # ── AWS credentials (OIDC) ────────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ── Retrieve S3 bucket + CloudFront distribution ID from Terraform ───
+      # These are stored as SSM parameters by the Terraform apply in staging-deploy.
+      # Alternatively, set them directly as repository secrets.
+      - name: Resolve deployment targets
+        id: targets
+        run: |
+          ENV="${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}"
+
+          # Prefer explicit secrets; fall back to SSM if not set
+          S3_BUCKET="${{ secrets.FRONTEND_S3_BUCKET }}"
+          CF_DIST_ID="${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}"
+
+          if [[ -z "$S3_BUCKET" ]]; then
+            S3_BUCKET=$(aws ssm get-parameter \
+              --name "/workload-governor/${ENV}/frontend-s3-bucket" \
+              --query "Parameter.Value" --output text)
+          fi
+          if [[ -z "$CF_DIST_ID" ]]; then
+            CF_DIST_ID=$(aws ssm get-parameter \
+              --name "/workload-governor/${ENV}/cloudfront-distribution-id" \
+              --query "Parameter.Value" --output text)
+          fi
+
+          echo "s3_bucket=${S3_BUCKET}" >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=${CF_DIST_ID}" >> "$GITHUB_OUTPUT"
+          echo "==> S3 bucket: ${S3_BUCKET}"
+          echo "==> CloudFront distribution: ${CF_DIST_ID}"
+
+      # ── Sync hashed assets (long TTL, immutable) ─────────────────────────
+      # Vite places content-hashed files under assets/ (JS, CSS, images, etc.)
+      - name: Upload hashed assets to S3
+        run: |
+          aws s3 sync frontend/dist/assets/ \
+            "s3://${{ steps.targets.outputs.s3_bucket }}/assets/" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --content-encoding identity \
+            --delete
+
+      # ── Sync root files (no-cache: index.html, favicons, etc.) ───────────
+      - name: Upload root files to S3 (no-cache)
+        run: |
+          # Upload everything except the assets/ directory
+          aws s3 sync frontend/dist/ \
+            "s3://${{ steps.targets.outputs.s3_bucket }}/" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --exclude "assets/*" \
+            --delete
+
+      # ── CloudFront cache invalidation ────────────────────────────────────
+      # Invalidate the SPA entry point and any JS/CSS files at the root to
+      # ensure users always get the latest version immediately after deploy.
+      - name: Invalidate CloudFront cache
+        id: invalidation
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.targets.outputs.cf_dist_id }}" \
+            --paths "/index.html" "/*.js" "/*.css" "/*.html" \
+            --query "Invalidation.Id" --output text)
+          echo "invalidation_id=${INVALIDATION_ID}" >> "$GITHUB_OUTPUT"
+          echo "==> Invalidation created: ${INVALIDATION_ID}"
+
+      # Wait for the invalidation to complete so the smoke test hits fresh content
+      - name: Wait for CloudFront invalidation to complete
+        run: |
+          echo "==> Waiting for invalidation ${{ steps.invalidation.outputs.invalidation_id }} to complete..."
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ steps.targets.outputs.cf_dist_id }}" \
+            --id "${{ steps.invalidation.outputs.invalidation_id }}"
+          echo "==> Invalidation complete."
+
+      # ── Smoke test: verify the CDN serves the new index.html ─────────────
+      - name: Smoke test CDN
+        run: |
+          CF_DOMAIN=$(aws cloudfront get-distribution \
+            --id "${{ steps.targets.outputs.cf_dist_id }}" \
+            --query "Distribution.DomainName" --output text)
+
+          CDN_URL="https://${CF_DOMAIN}"
+          echo "==> Smoke test: GET ${CDN_URL}"
+
+          for attempt in 1 2 3; do
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+              --max-time 15 "${CDN_URL}" || true)
+            if [[ "$HTTP" == "200" ]]; then
+              echo "==> CDN smoke test passed (HTTP 200)."
+              break
+            fi
+            echo "    Attempt ${attempt}/3: HTTP ${HTTP:-no response}"
+            [[ "$attempt" -lt 3 ]] && sleep 10
+            if [[ "$attempt" -eq 3 && "$HTTP" != "200" ]]; then
+              echo "ERROR: CDN smoke test failed after 3 attempts." >&2
+              exit 1
+            fi
+          done
+
+          # Verify cache-control headers for index.html
+          CC=$(curl -sI --max-time 15 "${CDN_URL}/index.html" \
+            | tr '[:upper:]' '[:lower:]' \
+            | grep '^cache-control:' | head -1)
+          echo "==> Cache-Control for /index.html: ${CC}"
+          if echo "$CC" | grep -qE "no-cache|no-store|max-age=0"; then
+            echo "    ✓ index.html has no-cache header."
+          else
+            echo "WARNING: index.html cache-control header is unexpected: ${CC}" >&2
+          fi
+
+      # ── Slack notifications ───────────────────────────────────────────────
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "✅ *Frontend CDN deploy succeeded*\n  commit: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|`${{ github.sha }}`>\n  invalidation: `${{ steps.invalidation.outputs.invalidation_id }}`\n  actor: `${{ github.actor }}`"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "❌ *Frontend CDN deploy FAILED*\n  commit: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|`${{ github.sha }}`>\n  run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view logs>\n  actor: `${{ github.actor }}`"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
