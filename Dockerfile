@@ -1,8 +1,18 @@
 # syntax=docker/dockerfile:1
+# Image: ghcr.io/FaveTeamz/workload-governor:{sha} | :latest
 
-# ── Build stage ──────────────────────────────────────────────
+# ── Build arguments ──────────────────────────────────────────────────────────
+ARG NODE_ENV=production
+ARG PORT=3000
+
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+# Installs all dependencies (including devDependencies) and compiles TypeScript.
 FROM node:20-alpine AS builder
+
 WORKDIR /app
+
+# Copy manifests first for better layer caching — dependencies are only
+# reinstalled when package*.json changes.
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY tsconfig.json .
