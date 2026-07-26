@@ -21,9 +21,31 @@ variable "db_instance_identifier" {
   default     = ""
 }
 
-# ---------------------------------------------------------------------------
-# Log groups
-# ---------------------------------------------------------------------------
+variable "alarm_email" {
+  description = "Email address to receive SNS alarm notifications"
+  type        = string
+  default     = ""
+}
+
+variable "pagerduty_https_endpoint" {
+  description = "PagerDuty HTTPS endpoint URL for SNS subscription (leave empty to skip)"
+  type        = string
+  default     = ""
+}
+
+variable "ecs_cluster_name" {
+  description = "ECS cluster name for CPU/memory metrics in dashboard"
+  type        = string
+  default     = ""
+}
+
+variable "rds_instance_identifier" {
+  description = "RDS instance identifier for RDS connections metric in dashboard"
+  type        = string
+  default     = ""
+}
+
+# ── Log groups ────────────────────────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/${var.service_name}"
@@ -36,18 +58,10 @@ resource "aws_cloudwatch_log_group" "rds" {
   retention_in_days = 30
 }
 
-# ---------------------------------------------------------------------------
-# Saved Logs Insights queries (issue #397)
-# ---------------------------------------------------------------------------
+# ── Saved Insights queries ────────────────────────────────────────────────────
 
-# Query 1 — Error rate by endpoint (last 1 hour)
-# Groups HTTP 4xx/5xx responses and logged errors by request path.
-# Useful during incidents to quickly identify the most-affected endpoints.
-resource "aws_cloudwatch_query_definition" "error_rate_by_endpoint" {
-  name = "${var.service_name}-error-rate-by-endpoint"
-
-  log_group_names = [aws_cloudwatch_log_group.ecs.name]
-
+resource "aws_cloudwatch_query_definition" "error_rate" {
+  name = "${var.service_name}-error-rate"
   query_string = <<-EOT
     fields @timestamp, path, status, correlationId
     | filter status >= 400 or ispresent(error)
@@ -56,14 +70,8 @@ resource "aws_cloudwatch_query_definition" "error_rate_by_endpoint" {
   EOT
 }
 
-# Query 2 — p95 latency per endpoint
-# Parses the `duration` field (milliseconds) logged on every response and
-# computes the 95th-percentile latency per path. Slow requests surface here.
-resource "aws_cloudwatch_query_definition" "p95_latency_per_endpoint" {
-  name = "${var.service_name}-p95-latency-per-endpoint"
-
-  log_group_names = [aws_cloudwatch_log_group.ecs.name]
-
+resource "aws_cloudwatch_query_definition" "slow_requests" {
+  name = "${var.service_name}-slow-requests"
   query_string = <<-EOT
     fields @timestamp, path, duration
     | filter ispresent(duration)
@@ -72,34 +80,8 @@ resource "aws_cloudwatch_query_definition" "p95_latency_per_endpoint" {
   EOT
 }
 
-# Query 3 — Failed transactions by error code (last 1 hour)
-# Filters log lines that carry an `error` field (backend error handler path)
-# and extracts numeric error codes from the error message string.
-# Correlates Soroban contract error codes (e.g. 11 = AlreadyAssigned) with
-# the paths that trigger them.
-resource "aws_cloudwatch_query_definition" "failed_transactions_by_error_code" {
-  name = "${var.service_name}-failed-transactions-by-error-code"
-
-  log_group_names = [aws_cloudwatch_log_group.ecs.name]
-
-  query_string = <<-EOT
-    fields @timestamp, correlationId, error, path
-    | filter ispresent(error)
-    | parse error /(?P<error_code>\d+)/
-    | stats count(*) as failures by error_code, path
-    | sort failures desc
-  EOT
-}
-
-# Query 4 — RPC failover events in the last 24 hours
-# Detects connectivity failures to the Stellar RPC / Horizon endpoints.
-# Matches keywords that indicate network-level errors or explicit failover
-# log messages emitted when the client switches to a fallback RPC node.
-resource "aws_cloudwatch_query_definition" "rpc_failover_events" {
-  name = "${var.service_name}-rpc-failover-events"
-
-  log_group_names = [aws_cloudwatch_log_group.ecs.name]
-
+resource "aws_cloudwatch_query_definition" "contract_submission_failures" {
+  name = "${var.service_name}-contract-submission-failures"
   query_string = <<-EOT
     fields @timestamp, correlationId, error, path
     | filter error like /rpc|RPC|failover|timeout|ECONNREFUSED|ETIMEDOUT/
@@ -108,80 +90,238 @@ resource "aws_cloudwatch_query_definition" "rpc_failover_events" {
   EOT
 }
 
-# ---------------------------------------------------------------------------
-# CloudWatch dashboard — one widget per query, 1-hour auto-refresh
-# ---------------------------------------------------------------------------
-# Layout (each widget 12 wide × 6 tall):
-#   Row 0: [error-rate-by-endpoint]  [p95-latency-per-endpoint]
-#   Row 1: [failed-txn-by-error-code][rpc-failover-events]
+# ── SNS topic for on-call alerts ──────────────────────────────────────────────
+
+resource "aws_sns_topic" "devops_alerts" {
+  name = "devops-alerts"
+}
+
+resource "aws_sns_topic_subscription" "email" {
+  count     = var.alarm_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.devops_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alarm_email
+}
+
+resource "aws_sns_topic_subscription" "pagerduty" {
+  count     = var.pagerduty_https_endpoint != "" ? 1 : 0
+  topic_arn = aws_sns_topic.devops_alerts.arn
+  protocol  = "https"
+  endpoint  = var.pagerduty_https_endpoint
+}
+
+# ── Metric filter 1: ERROR log count ─────────────────────────────────────────
+# Counts log lines containing ERROR/Error/error in the ECS log group.
+
+resource "aws_cloudwatch_log_metric_filter" "error_count" {
+  name           = "${var.service_name}-error-count"
+  pattern        = "[timestamp, request_id, level=ERROR, ...]"
+  log_group_name = aws_cloudwatch_log_group.ecs.name
+
+  metric_transformation {
+    name          = "ErrorCount"
+    namespace     = "${var.service_name}/Application"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "error_count_alarm" {
+  alarm_name          = "${var.service_name}-high-error-rate"
+  alarm_description   = "More than 10 ERROR log entries per minute for 2 consecutive periods"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "ErrorCount"
+  namespace           = "${var.service_name}/Application"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 10
+  treat_missing_data  = "breaching" # INSUFFICIENT_DATA treated as ALARM
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
+# ── Metric filter 2: HTTP 5xx response count ──────────────────────────────────
+# Counts log lines that record HTTP 5xx status codes.
+
+resource "aws_cloudwatch_log_metric_filter" "http_5xx" {
+  name           = "${var.service_name}-http-5xx"
+  pattern        = "[..., status_code=5*, ...]"
+  log_group_name = aws_cloudwatch_log_group.ecs.name
+
+  metric_transformation {
+    name          = "Http5xxCount"
+    namespace     = "${var.service_name}/Application"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "http_5xx_alarm" {
+  alarm_name          = "${var.service_name}-high-5xx-rate"
+  alarm_description   = "More than 5 HTTP 5xx responses per minute for 2 consecutive periods"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "Http5xxCount"
+  namespace           = "${var.service_name}/Application"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 5
+  treat_missing_data  = "breaching"
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
+# ── Metric filter 3: Soroban RPC failover events ──────────────────────────────
+# Triggers on any log message indicating a Soroban RPC endpoint failover.
+
+resource "aws_cloudwatch_log_metric_filter" "soroban_rpc_failover" {
+  name           = "${var.service_name}-soroban-rpc-failover"
+  pattern        = "?\"soroban rpc failover\" ?\"rpc failover\" ?\"switching rpc\" ?\"rpc endpoint switched\""
+  log_group_name = aws_cloudwatch_log_group.ecs.name
+
+  metric_transformation {
+    name          = "SorobanRpcFailover"
+    namespace     = "${var.service_name}/Application"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "soroban_rpc_failover_alarm" {
+  alarm_name          = "${var.service_name}-soroban-rpc-failover"
+  alarm_description   = "At least one Soroban RPC failover event detected"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "SorobanRpcFailover"
+  namespace           = "${var.service_name}/Application"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "breaching"
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
+# ── CloudWatch Dashboard ──────────────────────────────────────────────────────
+# Single view: all 3 alarms + ECS CPU/memory + RDS connections.
 
 resource "aws_cloudwatch_dashboard" "service_dashboard" {
-  dashboard_name = "${var.service_name}-operational"
+  dashboard_name = "${var.service_name}-dashboard"
 
   dashboard_body = jsonencode({
     widgets = [
-      # ---- Row 0, col 0 — Error rate by endpoint -------------------------
+      # ── Title ──────────────────────────────────────────────────────────────
       {
-        type   = "log"
+        type   = "text"
         x      = 0
         y      = 0
-        width  = 12
-        height = 6
+        width  = 24
+        height = 1
         properties = {
-          title   = "Error Rate by Endpoint (1 h)"
-          region  = "us-east-1"
-          view    = "table"
-          period  = 3600
-          refresh = 3600
-          query   = "SOURCE '${aws_cloudwatch_log_group.ecs.name}' | fields @timestamp, path, status, correlationId | filter status >= 400 or ispresent(error) | stats count(*) as error_count by path, bin(1h) | sort error_count desc"
+          markdown = "# ${var.service_name} — Operations Overview"
         }
       },
-      # ---- Row 0, col 1 — p95 latency per endpoint -----------------------
+
+      # ── Alarm: Error Count ─────────────────────────────────────────────────
       {
-        type   = "log"
-        x      = 12
-        y      = 0
-        width  = 12
-        height = 6
-        properties = {
-          title   = "p95 Latency per Endpoint (ms)"
-          region  = "us-east-1"
-          view    = "table"
-          period  = 3600
-          refresh = 3600
-          query   = "SOURCE '${aws_cloudwatch_log_group.ecs.name}' | fields @timestamp, path, duration | filter ispresent(duration) | stats pct(duration, 95) as p95_ms, count(*) as requests by path | sort p95_ms desc"
-        }
-      },
-      # ---- Row 1, col 0 — Failed transactions by error code --------------
-      {
-        type   = "log"
+        type   = "alarm"
         x      = 0
-        y      = 6
-        width  = 12
-        height = 6
+        y      = 1
+        width  = 8
+        height = 3
         properties = {
-          title   = "Failed Transactions by Error Code"
-          region  = "us-east-1"
-          view    = "table"
-          period  = 3600
-          refresh = 3600
-          query   = "SOURCE '${aws_cloudwatch_log_group.ecs.name}' | fields @timestamp, correlationId, error, path | filter ispresent(error) | parse error /(?P<error_code>\\d+)/ | stats count(*) as failures by error_code, path | sort failures desc"
+          title  = "High Error Rate"
+          alarms = [aws_cloudwatch_metric_alarm.error_count_alarm.arn]
         }
       },
-      # ---- Row 1, col 1 — RPC failover events ----------------------------
+
+      # ── Alarm: HTTP 5xx ────────────────────────────────────────────────────
       {
-        type   = "log"
-        x      = 12
-        y      = 6
+        type   = "alarm"
+        x      = 8
+        y      = 1
+        width  = 8
+        height = 3
+        properties = {
+          title  = "HTTP 5xx Rate"
+          alarms = [aws_cloudwatch_metric_alarm.http_5xx_alarm.arn]
+        }
+      },
+
+      # ── Alarm: Soroban RPC Failover ────────────────────────────────────────
+      {
+        type   = "alarm"
+        x      = 16
+        y      = 1
+        width  = 8
+        height = 3
+        properties = {
+          title  = "Soroban RPC Failover"
+          alarms = [aws_cloudwatch_metric_alarm.soroban_rpc_failover_alarm.arn]
+        }
+      },
+
+      # ── Error Count metric (time series) ──────────────────────────────────
+      {
+        type   = "metric"
+        x      = 0
+        y      = 4
         width  = 12
         height = 6
         properties = {
-          title   = "RPC Failover Events (24 h)"
-          region  = "us-east-1"
-          view    = "table"
-          period  = 86400
-          refresh = 3600
-          query   = "SOURCE '${aws_cloudwatch_log_group.ecs.name}' | fields @timestamp, correlationId, error, path | filter error like /rpc|RPC|failover|timeout|ECONNREFUSED|ETIMEDOUT/ | stats count(*) as rpc_failures by bin(1h) | sort @timestamp desc"
+          title  = "Application Error Count"
+          view   = "timeSeries"
+          period = 60
+          metrics = [
+            ["${var.service_name}/Application", "ErrorCount", { stat = "Sum", color = "#d62728" }],
+            ["${var.service_name}/Application", "Http5xxCount", { stat = "Sum", color = "#ff7f0e" }],
+            ["${var.service_name}/Application", "SorobanRpcFailover", { stat = "Sum", color = "#9467bd" }]
+          ]
+        }
+      },
+
+      # ── ECS CPU & Memory (only shown when cluster name is provided) ────────
+      {
+        type   = "metric"
+        x      = 12
+        y      = 4
+        width  = 12
+        height = 6
+        properties = {
+          title  = "ECS CPU & Memory Utilization"
+          view   = "timeSeries"
+          period = 60
+          metrics = var.ecs_cluster_name != "" ? [
+            ["AWS/ECS", "CPUUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.service_name, { stat = "Average", color = "#1f77b4" }],
+            ["AWS/ECS", "MemoryUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.service_name, { stat = "Average", color = "#2ca02c" }]
+          ] : []
+        }
+      },
+
+      # ── RDS Connections ────────────────────────────────────────────────────
+      {
+        type   = "metric"
+        x      = 0
+        y      = 10
+        width  = 12
+        height = 6
+        properties = {
+          title  = "RDS Database Connections"
+          view   = "timeSeries"
+          period = 60
+          metrics = var.rds_instance_identifier != "" ? [
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", var.rds_instance_identifier, { stat = "Average", color = "#8c564b" }]
+          ] : []
         }
       }
     ]
