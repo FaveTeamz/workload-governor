@@ -260,148 +260,123 @@ stellar contract invoke \
 
 ---
 
-## Load Testing
+## Operational Queries
 
-The staging environment is validated against a k6 load test after every
-deployment to confirm it can sustain 50 concurrent virtual users without
-breaching SLA thresholds.
+Four CloudWatch Logs Insights queries are saved under `infra/logs_and_alarms.tf`
+and surfaced as widgets in the **`workload-governor-operational` dashboard**.
 
-### Test scenario
+All queries target the `/ecs/<service_name>` log group which receives structured
+JSON from the backend (`src/logger.ts`). Relevant log fields:
 
-| Parameter | Value |
-|---|---|
-| Virtual users | 50 (ramped over 30 s, held 5 min, ramped down 30 s) |
-| Workload pattern | Each VU applies for 3 issues, then withdraws 1 |
-| Endpoints under test | `POST /api/transactions/apply`, `POST /api/transactions/withdraw`, `GET /api/contributors/:address/applications`, `GET /health` |
-| p95 latency threshold | < 2 000 ms (hard gate) |
-| Error rate threshold | < 1 % (hard gate) |
-| Metrics captured | p50 / p95 / p99 latency, throughput (req/s), per-endpoint error counts |
+| Field | Type | Present on |
+|---|---|---|
+| `correlationId` | string | every log line |
+| `method` | string | request logs |
+| `path` | string | request logs |
+| `status` | number | request logs |
+| `duration` | number (ms) | request logs |
+| `error` | string | error handler logs |
+| `stack` | string | error handler logs |
+| `timestamp` | ISO-8601 | every log line |
 
-### Running the test manually
+---
+
+### Query 1 — Error Rate by Endpoint
+
+**Purpose:** Count 4xx/5xx responses and error-handler events grouped by path.
+Run during incidents to identify the most-affected endpoints in the last hour.
+
+```
+fields @timestamp, path, status, correlationId
+| filter status >= 400 or ispresent(error)
+| stats count(*) as error_count by path, bin(1h)
+| sort error_count desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range to **Last 1 hour**.
+4. Paste the query above and click **Run query**.
+
+---
+
+### Query 2 — p95 Latency per Endpoint
+
+**Purpose:** Compute the 95th-percentile response time (ms) per path.
+Highlights slow endpoints that may need caching or query optimisation.
+
+```
+fields @timestamp, path, duration
+| filter ispresent(duration)
+| stats pct(duration, 95) as p95_ms, count(*) as requests by path
+| sort p95_ms desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range as desired (e.g. **Last 1 hour**).
+4. Paste the query above and click **Run query**.
+
+---
+
+### Query 3 — Failed Transactions by Error Code
+
+**Purpose:** Detect Soroban contract errors (numeric codes) surfacing in the
+backend error handler. Maps error codes to the paths that trigger them.
+Cross-reference codes with `docs/error-reference.md`.
+
+```
+fields @timestamp, correlationId, error, path
+| filter ispresent(error)
+| parse error /(?P<error_code>\d+)/
+| stats count(*) as failures by error_code, path
+| sort failures desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range to **Last 1 hour** (or longer for trend analysis).
+4. Paste the query above and click **Run query**.
+
+---
+
+### Query 4 — RPC Failover Events
+
+**Purpose:** Detect network-level failures to the Stellar RPC / Horizon
+endpoints. A spike in this count may indicate a provider outage or the need
+to switch the primary RPC URL.
+
+```
+fields @timestamp, correlationId, error, path
+| filter error like /rpc|RPC|failover|timeout|ECONNREFUSED|ETIMEDOUT/
+| stats count(*) as rpc_failures by bin(1h)
+| sort @timestamp desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range to **Last 24 hours**.
+4. Paste the query above and click **Run query**.
+
+---
+
+### Dashboard
+
+The `workload-governor-operational` dashboard surfaces all four queries as
+Logs Insights widgets with a 1-hour auto-refresh. After applying the Terraform
+configuration, retrieve the dashboard ARN:
 
 ```bash
-# Install k6 (if not already present)
-# https://grafana.com/docs/k6/latest/set-up/install-k6/
-
-# Run against staging
-k6 run \
-  --env BASE_URL=https://staging.example.com \
-  --env ADMIN_TOKEN=<STAGING_ADMIN_TOKEN> \
-  tests/load/k6-staging.js
-
-# Results are written to results/k6-summary.json automatically.
-# Ensure the results/ directory exists first:
-mkdir -p results
+terraform output operational_dashboard_arn
 ```
 
-k6 exits with code `0` when all thresholds pass and `99` when any threshold
-fails. Use the exit code as the CI gate condition.
-
-### CI job — GitHub Actions
-
-Add the following job to `.github/workflows/staging-deploy.yml` (or any
-workflow that runs after a staging deployment):
-
-```yaml
-  load-test:
-    name: Load test — staging
-    runs-on: ubuntu-latest
-    needs: deploy          # adjust to match your deploy job name
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install k6
-        run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring \
-            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 \
-            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] \
-            https://dl.k6.io/deb stable main" \
-            | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install -y k6
-
-      - name: Create results directory
-        run: mkdir -p results
-
-      - name: Run load test
-        env:
-          BASE_URL:    ${{ secrets.STAGING_URL }}
-          ADMIN_TOKEN: ${{ secrets.STAGING_ADMIN_TOKEN }}
-        run: |
-          k6 run \
-            --env BASE_URL="$BASE_URL" \
-            --env ADMIN_TOKEN="$ADMIN_TOKEN" \
-            tests/load/k6-staging.js
-        # k6 exits 99 if any threshold fails — the step will fail the job
-
-      - name: Upload k6 summary
-        if: always()   # upload even if the test failed
-        uses: actions/upload-artifact@v4
-        with:
-          name: k6-summary-${{ github.run_id }}
-          path: results/k6-summary.json
-          retention-days: 90
-```
-
-#### Required secrets
-
-| Secret name | Description |
-|---|---|
-| `STAGING_URL` | Base URL of the staging deployment, e.g. `https://staging.example.com` |
-| `STAGING_ADMIN_TOKEN` | Value of the `ADMIN_TOKEN` environment variable on the staging server |
-
-### Interpreting results
-
-The test prints a summary to stdout at the end of the run:
+Share the ARN (or the direct console URL) with the team so everyone bookmarks
+the same view. The console URL format is:
 
 ```
-=== WorkloadGovernor Staging Load Test — Summary ===
-
-  ✓ http_req_duration: p(95)<2000
-  ✓ errors: rate<0.01
-  ✓ apply_req_duration: p(95)<2000
-  ✓ withdraw_req_duration: p(95)<2000
-  ✓ query_req_duration: p(95)<2000
-  ✓ health_req_duration: p(95)<500
-
-  ✓ All thresholds passed — deployment to staging is HEALTHY
-
-  p50 latency : 120 ms
-  p95 latency : 890 ms  (threshold: <2000 ms)
-  p99 latency : 1340 ms
-  error rate  : 0.12 %  (threshold: <1 %)
-  throughput  : 22.40 req/s
+https://<region>.console.aws.amazon.com/cloudwatch/home#dashboards:name=workload-governor-operational
 ```
-
-The machine-readable `results/k6-summary.json` is also produced. Feed it into
-a trend-tracking tool (Grafana, DataDog, or a simple GitHub Pages chart) to
-detect latency regressions across deployments.
-
-### Alert criteria
-
-The CI job acts as the primary alert. If either threshold is breached:
-
-1. The k6 process exits with code `99`.
-2. The GitHub Actions step fails, blocking any downstream promotion job.
-3. The `k6-summary.json` artifact is always uploaded for post-mortem analysis.
-
-For real-time alerting during a manual run, watch for the `✗` prefix in the
-stdout summary — any failing threshold line is prefixed with `✗`.
-
-### Trend tracking across deployments
-
-The `results/k6-summary.json` artifact contains all raw metric values. To
-compare runs over time:
-
-1. Store the artifact in a persistent location (S3, GCS, or a dedicated branch).
-2. Parse `metrics.http_req_duration.values['p(95)']`,
-   `metrics.errors.values.rate`, and `metrics.http_reqs.values.rate` for the
-   three headline numbers.
-3. Plot them per deployment SHA to identify latency creep before it becomes
-   an incident.
