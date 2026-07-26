@@ -21,7 +21,7 @@ mod test;
 #[cfg(test)]
 extern crate std;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::ContractError;
 
@@ -292,6 +292,15 @@ impl WorkloadGovernor {
         }
         storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
         storage::set_assignment(&env, &org_id, issue_id, &contributor);
+        // Debug assertion: counter and sentinel must agree immediately after write.
+        #[cfg(debug_assertions)]
+        {
+            let written = storage::get_org_assignment_count(&env, &contributor, &org_id);
+            let sentinel = storage::has_assignment(&env, &org_id, issue_id, &contributor);
+            if written == 0 || !sentinel {
+                panic_with_error!(env, ContractError::CounterInconsistency);
+            }
+        }
         storage::bump_instance(&env);
         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);
     }
@@ -331,6 +340,15 @@ impl WorkloadGovernor {
         }
         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {
             panic_with_error!(env, ContractError::AssignmentNotFound);
+        }
+        // Debug assertion: assignment exists so counter must be ≥ 1.
+        // A counter of 0 here indicates storage corruption (CounterInconsistency).
+        #[cfg(debug_assertions)]
+        {
+            let counter = storage::get_org_assignment_count(&env, &contributor, &org_id);
+            if counter == 0 {
+                panic_with_error!(env, ContractError::CounterInconsistency);
+            }
         }
         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
@@ -394,6 +412,65 @@ impl WorkloadGovernor {
         }
         storage::bump_instance(&env);
         events::emit_assignment_revoked(&env, &maintainer, &contributor, &org_id, issue_id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Admin diagnostics  (Issue #4)
+    // -----------------------------------------------------------------------
+
+    /// Checks a list of `(contributor, org_id)` pairs for `CounterInconsistency`.
+    ///
+    /// For each pair, reads the org assignment counter. If the counter is `0` but
+    /// one or more of the supplied `issue_ids` has a live assignment sentinel for that
+    /// pair, the pair is flagged as inconsistent.
+    ///
+    /// Soroban storage cannot be iterated, so the caller supplies the pairs and issue
+    /// IDs to probe — typically derived from an off-chain event index of all
+    /// `assign_issue` transactions.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required. Intended for admin diagnostics.
+    ///
+    /// # Arguments
+    /// * `pairs`     – `Vec<(Address, Symbol)>` of `(contributor, org_id)` pairs.
+    /// * `issue_ids` – `Vec<u32>` of issue IDs to probe for orphan sentinels per pair.
+    ///
+    /// # Returns
+    /// A `Vec<(Address, Symbol)>` of pairs where a `CounterInconsistency` was detected.
+    /// Returns an empty vec when all pairs are consistent.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- check_consistency \
+    ///   --pairs '[[{"address":"GAB..."},{"symbol":"my_org"}]]' \
+    ///   --issue_ids '[1,2,3]'
+    /// ```
+    pub fn check_consistency(
+        env: Env,
+        pairs: Vec<(Address, Symbol)>,
+        issue_ids: Vec<u32>,
+    ) -> Vec<(Address, Symbol)> {
+        let mut inconsistent: Vec<(Address, Symbol)> = Vec::new(&env);
+        for pair in pairs.iter() {
+            let (ref contributor, ref org_id) = pair;
+            let counter = storage::get_org_assignment_count(&env, contributor, org_id);
+            if counter == 0 {
+                // Counter is 0 — scan issue_ids for an orphan sentinel
+                let mut has_orphan = false;
+                for issue_id in issue_ids.iter() {
+                    if storage::has_assignment(&env, org_id, issue_id, contributor) {
+                        has_orphan = true;
+                        break;
+                    }
+                }
+                if has_orphan {
+                    inconsistent.push_back(pair);
+                }
+            }
+        }
+        inconsistent
     }
 
     // -----------------------------------------------------------------------
