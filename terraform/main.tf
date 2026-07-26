@@ -72,3 +72,13 @@ module "secrets" {
   environment = terraform.workspace
   project     = var.project
 }
+
+module "cdn" {
+  source      = "./modules/cdn"
+  environment = terraform.workspace
+  project     = var.project
+
+  # Optional: set these in your .tfvars for custom domains + HTTPS
+  domain_aliases      = var.frontend_domain_aliases
+  acm_certificate_arn = var.frontend_acm_certificate_arn
+}
