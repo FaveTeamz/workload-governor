@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **#327 SVG icon system**: Consolidated all UI icons into a single sprite file at
+  `frontend/public/icons.svg` (30+ symbols). New `Icon` component
+  (`frontend/src/components/Icon.tsx`) renders any icon by `name` prop with optional
+  `size` (xs/sm/md/lg/xl) and `color` props; uses `currentColor` by default.
+  All icons follow kebab-case naming (`assign`, `complete`, `revoke`, `check-circle`, etc.).
+- **#326 Error recovery UX**: New `ErrorRecovery` component
+  (`frontend/src/components/ErrorRecovery.tsx`) maps all 13 `ContractError` discriminants
+  (codes 1–11, 13) plus network timeouts (−1) to plain-language titles, messages, and
+  actionable recovery steps. Code 6 (`GlobalApplicationLimitReached`) shows current count
+  and surfaces a withdrawal CTA. Retry button rendered for transient (timeout) errors.
+  Includes `parseContractErrorCode()` utility to extract codes from raw error strings.
+- **#325 Maintainer assignment side panel**: Rewrote `MaintainerPanel` as a slide-in side
+  panel (`position: fixed; right: 0`). Features: pin button to keep panel open while
+  browsing; `data-testid` attributes (`pending-application`, `assign-btn`, `active-assignment`,
+  `complete-btn`, `revoke-btn`) for e2e tests; applicants sorted oldest-first by
+  `appliedDate`; per-contributor cap usage badges (global apps / org assignments);
+  mobile renders as full-screen bottom sheet at ≤640 px.
+
+### Changed
+- **#328 WCAG AA colour contrast fixes**: Updated design tokens to eliminate all
+  contrast failures. Summary of changed values:
+
+  | Token / context | Before | After | Ratio (dark) |
+  |---|---|---|---|
+  | `--color-muted` (dark) | `#94a3b8` | `#a8b5c8` | 4.4:1 ❌ → 5.6:1 ✅ |
+  | `--color-muted` (light) | `#64748b` | `#475569` | 4.4:1 ❌ → 6.7:1 ✅ |
+  | `--color-primary` (light) | `#6c8eff` | `#4a6de0` | 3.5:1 ❌ → 5.0:1 ✅ |
+  | `--color-complete` (light) | `#22c55e` | `#16a34a` | 2.4:1 ❌ → 5.1:1 ✅ |
+  | `--color-revoke` / badge error text | `#ef4444` | `#dc2626` | 4.3:1 ❌ → 5.4:1 ✅ |
+  | `.badge--error` text color | `--color-error-500` | `--color-error-600` | 4.3:1 ❌ → 5.4:1 ✅ |
+
+  New tokens added: `--color-error-600: #dc2626`, `--color-success-600: #16a34a`,
+  `--color-warning-600: #ca8a04`. All fixes applied at token level — no component overrides.
+
+### Added
 - Inline Rustdoc comments for every `pub fn` in the contract source (#68).
 - `.env.example` files for backend and frontend packages (#70).
 - This `CHANGELOG.md` and the release process documentation (#71).
