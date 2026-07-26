@@ -5,10 +5,12 @@ import morgan from 'morgan';
 import issuesRouter from './routes/issues';
 import contributorsRouter from './routes/contributors';
 import adminRouter from './routes/admin';
+import apiKeysRouter from './routes/api-keys';
 import transactionsRouter from './routes/transactions';
 import webhooksRouter from './routes/webhooks';
 import eventsRouter from './routes/events';
 import { globalLimiter, walletLimiter } from './middleware/rate-limit';
+import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
@@ -36,6 +38,7 @@ export function createApp(): express.Application {
 
   // Rate limiting middleware
   app.use(globalLimiter);
+  app.use(apiKeyAuth);
 
   setupSwagger(app);
 
@@ -45,6 +48,7 @@ export function createApp(): express.Application {
   app.use('/api/issues', issuesRouter);
   app.use('/api/contributors', contributorsRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/api-keys', apiKeysRouter);
   app.use('/api/transactions', walletLimiter, transactionsRouter);
   app.use('/api/events', eventsRouter);
   app.use('/webhooks', webhooksRouter);

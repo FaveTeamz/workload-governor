@@ -1,25 +1,72 @@
 //! Event definitions and emit helpers for WorkloadGovernor contract.
 //!
-//! Every state-changing function calls exactly one `emit_*` helper, which
-//! publishes a two-topic event `(contract_id, event_name)` with a structured
-//! data payload via `env.events().publish`.
+//! This module defines all events emitted by the contract for
+//! off-chain indexing and monitoring.
 
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contractevent, symbol_short, Env, Address, Symbol};
+
+/// All events emitted by the WorkloadGovernor contract
+#[contractevent]
+pub enum WorkloadGovernorEvent {
+    /// Emitted when a contributor applies for an issue
+    Applied {
+        contributor: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    },
+    /// Emitted when a contributor withdraws their application
+    Withdrew {
+        contributor: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    },
+    /// Emitted when a maintainer assigns an issue to a contributor
+    Assigned {
+        contributor: Address,
+        maintainer: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    },
+    /// Emitted when a contributor completes an assignment
+    Completed {
+        contributor: Address,
+        maintainer: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    },
+    /// Emitted when a maintainer revokes an assignment
+    Revoked {
+        contributor: Address,
+        maintainer: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    },
+    /// Emitted when a new maintainer is registered
+    MaintainerRegistered {
+        maintainer: Address,
+        org_id: Symbol,
+    },
+    /// Emitted when admin authority is transferred to a new address
+    AdminTransferred {
+        old_admin: Address,
+        new_admin: Address,
+    },
+}
 
 // ---------------------------------------------------------------------------
-// Contract initialized
+// Emit helper functions
+//
+// These wrap the env.events().publish() calls so that lib.rs can call
+// a named function per event type rather than constructing topic/data
+// tuples directly.
 // ---------------------------------------------------------------------------
 
 pub(crate) fn emit_initialized(env: &Env, admin: &Address) {
     env.events().publish(
-        (symbol_short!("init"),),
-        (admin.clone(),),
+        (symbol_short!("init"), admin.clone()),
+        admin.clone(),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Maintainer registered
-// ---------------------------------------------------------------------------
 
 pub(crate) fn emit_maintainer_registered(
     env: &Env,
@@ -28,14 +75,10 @@ pub(crate) fn emit_maintainer_registered(
     org_id: &Symbol,
 ) {
     env.events().publish(
-        (symbol_short!("maint_reg"),),
-        (maintainer.clone(), org_id.clone()),
+        (symbol_short!("maint_reg"), maintainer.clone()),
+        org_id.clone(),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Application submitted
-// ---------------------------------------------------------------------------
 
 pub(crate) fn emit_application_submitted(
     env: &Env,
@@ -44,14 +87,10 @@ pub(crate) fn emit_application_submitted(
     issue_id: u32,
 ) {
     env.events().publish(
-        (symbol_short!("app_sub"),),
-        (contributor.clone(), org_id.clone(), issue_id),
+        (symbol_short!("applied"), contributor.clone()),
+        (org_id.clone(), issue_id),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Application withdrawn
-// ---------------------------------------------------------------------------
 
 pub(crate) fn emit_application_withdrawn(
     env: &Env,
@@ -60,14 +99,10 @@ pub(crate) fn emit_application_withdrawn(
     issue_id: u32,
 ) {
     env.events().publish(
-        (symbol_short!("app_wth"),),
-        (contributor.clone(), org_id.clone(), issue_id),
+        (symbol_short!("withdrew"), contributor.clone()),
+        (org_id.clone(), issue_id),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Issue assigned
-// ---------------------------------------------------------------------------
 
 pub(crate) fn emit_issue_assigned(
     env: &Env,
@@ -77,14 +112,10 @@ pub(crate) fn emit_issue_assigned(
     issue_id: u32,
 ) {
     env.events().publish(
-        (symbol_short!("assigned"),),
-        (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id),
+        (symbol_short!("assigned"), contributor.clone()),
+        (maintainer.clone(), org_id.clone(), issue_id),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Assignment completed
-// ---------------------------------------------------------------------------
 
 pub(crate) fn emit_assignment_completed(
     env: &Env,
@@ -94,14 +125,10 @@ pub(crate) fn emit_assignment_completed(
     issue_id: u32,
 ) {
     env.events().publish(
-        (symbol_short!("compltd"),),
-        (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id),
+        (symbol_short!("completed"), contributor.clone()),
+        (maintainer.clone(), org_id.clone(), issue_id),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Assignment revoked
-// ---------------------------------------------------------------------------
 
 pub(crate) fn emit_assignment_revoked(
     env: &Env,
@@ -111,27 +138,18 @@ pub(crate) fn emit_assignment_revoked(
     issue_id: u32,
 ) {
     env.events().publish(
-        (symbol_short!("revoked"),),
-        (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id),
+        (symbol_short!("revoked"), contributor.clone()),
+        (maintainer.clone(), org_id.clone(), issue_id),
     );
 }
 
-// ---------------------------------------------------------------------------
-// Org cap updated  (Issue #1)
-// ---------------------------------------------------------------------------
-
-/// Emitted by `set_org_cap` when a maintainer changes the per-org assignment cap.
-///
-/// Topics: `("cap_upd",)`
-/// Data:   `(org_id, old_cap, new_cap)`
-pub(crate) fn emit_org_cap_updated(
+pub(crate) fn emit_admin_transferred(
     env: &Env,
-    org_id: &Symbol,
-    old_cap: u32,
-    new_cap: u32,
+    old_admin: &Address,
+    new_admin: &Address,
 ) {
     env.events().publish(
-        (symbol_short!("cap_upd"),),
-        (org_id.clone(), old_cap, new_cap),
+        (symbol_short!("adm_xfer"), old_admin.clone()),
+        new_admin.clone(),
     );
 }

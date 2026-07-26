@@ -1,13 +1,46 @@
 name: Dependency Audit
 
+# ──────────────────────────────────────────────────────────────────────────
+# Triggers
+#   • Every pull request targeting main
+#   • Weekly on Sunday at 08:00 UTC  (cron: '0 8 * * 0')
+#   • Manual trigger via workflow_dispatch
+#
+# Snooze / ignore mechanism
+#   Rust   : .cargo/audit.toml  (deny.toml compatible)
+#             Add an [advisories.ignore] entry with a required comment
+#             containing the ISO expiry date, e.g.:
+#               # snooze: expires 2026-12-31
+#               ignore = ["RUSTSEC-2024-XXXX"]
+#   Node   : .nsprc  (npm audit --ignore-path equivalent via nsp / better-npm-audit)
+#             Add the CVE/GHSA ID under "exceptions" with an "expires" field:
+#               { "exceptions": [{ "id": "GHSA-xxxx", "expires": "2026-12-31" }] }
+#   Trivy  : .trivyignore  (each line: CVE-ID  # snooze: expires YYYY-MM-DD)
+#             Entries without an expiry date comment will be rejected in
+#             the "Verify snooze expiry dates" step below.
+#
+# SARIF results are uploaded to the GitHub Security tab via the
+# github/codeql-action/upload-sarif action.  The Security tab must be
+# enabled in the repository settings.
+# ──────────────────────────────────────────────────────────────────────────
+
 on:
   schedule:
-    - cron: '0 8 * * 1'  # Every Monday 08:00 UTC
+    - cron: '0 8 * * 0'   # Weekly — every Sunday at 08:00 UTC
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write   # required for SARIF upload
+  pull-requests: write     # required to post PR comment
+
 jobs:
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 1. Rust — cargo audit
+  # ──────────────────────────────────────────────────────────────────────
   audit-rust:
     name: Rust (cargo audit)
     runs-on: ubuntu-latest
@@ -19,17 +52,99 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 
-      - name: Run audit
+      # Verify that every entry in .cargo/audit.toml's ignore list has
+      # an expiry date comment so snoozes don't live forever.
+      - name: Verify snooze expiry dates in audit.toml
+        run: |
+          if [ -f .cargo/audit.toml ]; then
+            # Extract lines with ignored advisories
+            IGNORED=$(grep -E '^ignore\s*=' .cargo/audit.toml || true)
+            if [ -n "$IGNORED" ]; then
+              # Each ignored advisory must be preceded by a comment containing
+              # "expires YYYY-MM-DD" within 5 lines above it.
+              python3 - <<'PYEOF'
+          import re, sys
+          with open('.cargo/audit.toml') as f:
+              lines = f.readlines()
+          errors = []
+          for i, line in enumerate(lines):
+              if re.search(r'^ignore\s*=', line):
+                  window = ''.join(lines[max(0, i-5):i])
+                  if not re.search(r'expires\s+\d{4}-\d{2}-\d{2}', window):
+                      errors.append(f"Line {i+1}: ignored advisory missing expiry date comment")
+          if errors:
+              print('\n'.join(errors))
+              sys.exit(1)
+          PYEOF
+            fi
+          fi
+
+      - name: Run cargo audit
         id: audit
         run: |
           set +e
-          OUT=$(cargo audit 2>&1)
+          OUT=$(cargo audit --deny warnings 2>&1)
           EXIT=$?
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$OUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           exit $EXIT
 
+      # Generate SARIF for the Security tab
+      - name: Generate SARIF report
+        if: always()
+        run: |
+          cargo audit --json 2>/dev/null | python3 - <<'PYEOF' > cargo-audit.sarif
+          import json, sys, datetime
+
+          data = json.load(sys.stdin)
+          vulns = data.get("vulnerabilities", {}).get("list", [])
+
+          runs = [{
+            "tool": {
+              "driver": {
+                "name": "cargo-audit",
+                "version": "latest",
+                "rules": [
+                  {
+                    "id": v["advisory"]["id"],
+                    "name": v["advisory"]["id"],
+                    "shortDescription": { "text": v["advisory"].get("title", "") },
+                    "helpUri": v["advisory"].get("url", ""),
+                    "defaultConfiguration": {
+                      "level": "error" if v["advisory"].get("cvss") else "warning"
+                    }
+                  } for v in vulns
+                ]
+              }
+            },
+            "results": [
+              {
+                "ruleId": v["advisory"]["id"],
+                "level": "error" if v["advisory"].get("cvss") else "warning",
+                "message": { "text": v["advisory"].get("description", "") },
+                "locations": [{
+                  "physicalLocation": {
+                    "artifactLocation": { "uri": "Cargo.lock" }
+                  }
+                }]
+              } for v in vulns
+            ]
+          }]
+
+          print(json.dumps({"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "runs": runs}, indent=2))
+          PYEOF
+
+      - name: Upload Rust SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: cargo-audit.sarif
+          category: cargo-audit
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 2. Backend — npm audit
+  # ──────────────────────────────────────────────────────────────────────
   audit-backend:
     name: Backend (npm audit)
     runs-on: ubuntu-latest
@@ -44,7 +159,33 @@ jobs:
 
       - run: npm ci
 
-      - name: Run audit
+      # Verify .nsprc snooze entries have expiry dates
+      - name: Verify snooze expiry dates in .nsprc
+        run: |
+          if [ -f .nsprc ]; then
+            python3 - <<'PYEOF'
+          import json, sys, datetime
+          with open('.nsprc') as f:
+              data = json.load(f)
+          errors = []
+          for exc in data.get('exceptions', []):
+              expiry = exc.get('expires')
+              if not expiry:
+                  errors.append(f"Exception {exc.get('id', 'unknown')} is missing an 'expires' field")
+              else:
+                  try:
+                      exp_date = datetime.date.fromisoformat(expiry)
+                      if exp_date < datetime.date.today():
+                          print(f"WARNING: Exception {exc.get('id', 'unknown')} expired on {expiry}")
+                  except ValueError:
+                      errors.append(f"Exception {exc.get('id', 'unknown')} has invalid expires date: {expiry}")
+          if errors:
+              print('\n'.join(errors))
+              sys.exit(1)
+          PYEOF
+          fi
+
+      - name: Run npm audit
         id: audit
         run: |
           set +e
@@ -55,6 +196,64 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           exit $EXIT
 
+      # Generate SARIF for backend npm audit
+      - name: Generate npm audit SARIF (backend)
+        if: always()
+        run: |
+          npm audit --json 2>/dev/null | python3 - <<'PYEOF' > npm-audit-backend.sarif
+          import json, sys
+
+          try:
+              data = json.load(sys.stdin)
+          except Exception:
+              data = {}
+
+          vulns = data.get("vulnerabilities", {})
+          rules = []
+          results = []
+
+          for name, info in vulns.items():
+              via = info.get("via", [])
+              for adv in (v for v in via if isinstance(v, dict)):
+                  rule_id = adv.get("source", str(adv.get("cwe", name)))
+                  severity = adv.get("severity", "moderate")
+                  level = "error" if severity in ("high", "critical") else "warning"
+                  rules.append({
+                      "id": str(rule_id),
+                      "name": adv.get("title", name),
+                      "shortDescription": {"text": adv.get("title", "")},
+                      "helpUri": adv.get("url", ""),
+                      "defaultConfiguration": {"level": level}
+                  })
+                  results.append({
+                      "ruleId": str(rule_id),
+                      "level": level,
+                      "message": {"text": adv.get("title", "")},
+                      "locations": [{
+                          "physicalLocation": {
+                              "artifactLocation": {"uri": "package-lock.json"}
+                          }
+                      }]
+                  })
+
+          sarif = {
+              "version": "2.1.0",
+              "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "runs": [{"tool": {"driver": {"name": "npm-audit", "version": "latest", "rules": rules}}, "results": results}]
+          }
+          print(json.dumps(sarif, indent=2))
+          PYEOF
+
+      - name: Upload Backend npm SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: npm-audit-backend.sarif
+          category: npm-audit-backend
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 3. Frontend — npm audit
+  # ──────────────────────────────────────────────────────────────────────
   audit-frontend:
     name: Frontend (npm audit)
     runs-on: ubuntu-latest
@@ -67,11 +266,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
-      - name: Run audit
+      - name: Run frontend npm audit
         id: audit
         working-directory: frontend
         run: |
@@ -83,11 +282,134 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           exit $EXIT
 
+      - name: Generate npm audit SARIF (frontend)
+        if: always()
+        working-directory: frontend
+        run: |
+          npm audit --json 2>/dev/null | python3 - <<'PYEOF' > ../npm-audit-frontend.sarif
+          import json, sys
+
+          try:
+              data = json.load(sys.stdin)
+          except Exception:
+              data = {}
+
+          vulns = data.get("vulnerabilities", {})
+          rules, results = [], []
+
+          for name, info in vulns.items():
+              for adv in (v for v in info.get("via", []) if isinstance(v, dict)):
+                  rule_id = str(adv.get("source", name))
+                  severity = adv.get("severity", "moderate")
+                  level = "error" if severity in ("high", "critical") else "warning"
+                  rules.append({"id": rule_id, "name": adv.get("title", name),
+                                 "shortDescription": {"text": adv.get("title", "")},
+                                 "helpUri": adv.get("url", ""),
+                                 "defaultConfiguration": {"level": level}})
+                  results.append({"ruleId": rule_id, "level": level,
+                                   "message": {"text": adv.get("title", "")},
+                                   "locations": [{"physicalLocation": {
+                                       "artifactLocation": {"uri": "frontend/package-lock.json"}
+                                   }}]})
+
+          sarif = {"version": "2.1.0",
+                   "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                   "runs": [{"tool": {"driver": {"name": "npm-audit-frontend",
+                                                 "version": "latest", "rules": rules}},
+                             "results": results}]}
+          print(json.dumps(sarif, indent=2))
+          PYEOF
+
+      - name: Upload Frontend npm SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: npm-audit-frontend.sarif
+          category: npm-audit-frontend
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 4. Docker image — Trivy scan (OS-level CVEs)
+  # ──────────────────────────────────────────────────────────────────────
+  audit-trivy:
+    name: Docker image (Trivy)
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.trivy-summary.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image for scanning
+        run: docker build -t workload-governor:scan .
+
+      # Verify .trivyignore snooze entries have expiry date comments
+      - name: Verify snooze expiry dates in .trivyignore
+        run: |
+          if [ -f .trivyignore ]; then
+            python3 - <<'PYEOF'
+          import re, sys
+
+          with open('.trivyignore') as f:
+              lines = [l.strip() for l in f if l.strip() and not l.startswith('#')]
+
+          errors = []
+          for line in lines:
+              # Each CVE line must have an inline comment with "expires YYYY-MM-DD"
+              if '#' not in line:
+                  errors.append(f"CVE entry '{line}' is missing an expiry date comment")
+              elif not re.search(r'expires\s+\d{4}-\d{2}-\d{2}', line):
+                  errors.append(f"CVE entry '{line}' comment does not contain 'expires YYYY-MM-DD'")
+
+          if errors:
+              print('\n'.join(errors))
+              sys.exit(1)
+          PYEOF
+          fi
+
+      - name: Run Trivy — SARIF output
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: workload-governor:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'          # we set exit code in the next step
+          trivyignores: .trivyignore
+
+      - name: Run Trivy — table output + fail on HIGH/CRITICAL
+        id: trivy-summary
+        run: |
+          set +e
+          OUT=$(docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$(pwd):/workdir" \
+            aquasec/trivy:latest image \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              $([ -f .trivyignore ] && echo "--ignorefile /workdir/.trivyignore") \
+              workload-governor:scan 2>&1)
+          EXIT=$?
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $EXIT
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-docker
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 5. Post PR comment (on PRs only)
+  # ──────────────────────────────────────────────────────────────────────
   post-comment:
     name: Post PR comment
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    needs: [audit-rust, audit-backend, audit-frontend]
+    needs: [audit-rust, audit-backend, audit-frontend, audit-trivy]
     permissions:
       pull-requests: write
     steps:
@@ -95,12 +417,44 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const rustResult    = `${{ needs.audit-rust.outputs.result }}`;
+            const backendResult = `${{ needs.audit-backend.outputs.result }}`;
+            const frontendResult= `${{ needs.audit-frontend.outputs.result }}`;
+            const trivyResult   = `${{ needs.audit-trivy.outputs.result }}`;
+
             const body = [
               '## 🔐 Dependency Audit Summary',
               '',
-              '<details><summary>Rust (cargo audit)</summary>\n\n```\n' + `${{ needs.audit-rust.outputs.result }}` + '\n```\n</details>',
-              '<details><summary>Backend (npm audit)</summary>\n\n```\n' + `${{ needs.audit-backend.outputs.result }}` + '\n```\n</details>',
-              '<details><summary>Frontend (npm audit)</summary>\n\n```\n' + `${{ needs.audit-frontend.outputs.result }}` + '\n```\n</details>',
+              '<details><summary>🦀 Rust (cargo audit)</summary>',
+              '',
+              '```',
+              rustResult,
+              '```',
+              '</details>',
+              '',
+              '<details><summary>🟢 Backend (npm audit)</summary>',
+              '',
+              '```',
+              backendResult,
+              '```',
+              '</details>',
+              '',
+              '<details><summary>⚛️ Frontend (npm audit)</summary>',
+              '',
+              '```',
+              frontendResult,
+              '```',
+              '</details>',
+              '',
+              '<details><summary>🐳 Docker image (Trivy)</summary>',
+              '',
+              '```',
+              trivyResult,
+              '```',
+              '</details>',
+              '',
+              '> SARIF results are visible in the [Security tab](' +
+              `https://github.com/${{ github.repository }}/security/code-scanning).`,
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -109,9 +463,10 @@ jobs:
               issue_number: context.issue.number,
             });
 
-            const existing = comments.find(c =>
-              c.user.login === 'github-actions[bot]' &&
-              c.body.startsWith('## 🔐 Dependency Audit Summary')
+            const existing = comments.find(
+              (c) =>
+                c.user.login === 'github-actions[bot]' &&
+                c.body.startsWith('## 🔐 Dependency Audit Summary'),
             );
 
             if (existing) {
