@@ -1,0 +1,24 @@
+--- src/lib.rs
++++ replace WorkloadGovernor::upgrade with ()
+@@ -101,20 +101,17 @@
+     ///
+     /// # Returns
+     /// `()` on success; the contract is upgraded in-place with no address change.
+     ///
+     /// # Errors
+     /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+     /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+-        storage::require_initialized(&env, &ContractError::NotInitialized);
+-        let stored_admin = storage::get_admin(&env).unwrap();
+-        stored_admin.require_auth();
+-        env.deployer().update_current_contract_wasm(new_wasm_hash);
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     // -----------------------------------------------------------------------
+     // Contributor functions
+     // -----------------------------------------------------------------------
+ 
+     /// Submits a pending application for a contributor to work on a specific issue.
+     ///

@@ -1,5 +1,10 @@
 # WorkloadGovernor
 
+[![codecov](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Backend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Frontend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=frontend)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Contract Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=contract)](https://codecov.io/gh/FaveTeamz/workload-governor)
+
 A production-ready Soroban smart contract for the **AlignmentDrips Wave** platform on the Stellar network.
 
 ## Purpose
@@ -44,6 +49,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
+| 13 | `CounterInconsistency` | Assignment entry exists but org counter is 0 (post-migration corruption) |
 
 ## Storage Design
 
@@ -58,67 +64,13 @@ This prevents a small group of faster developers from monopolizing open-source t
 
 All six key prefixes are distinct — zero key collision guarantee.
 
-## Local Development
+## Documentation
 
-The full local stack (backend, PostgreSQL 15, Redis 7, and a Stellar Quickstart node for local Soroban RPC) is managed with Docker Compose.
-
-### Prerequisites
-
-- Docker ≥ 24 with the Compose v2 plugin (`docker compose` — not `docker-compose`)
-- Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` if you need non-default ports or credentials.
-
-### Start all services
-
-```bash
-docker compose up -d --wait
-```
-
-`--wait` blocks until every service passes its health check. Stellar Quickstart can take up to 60 s on first boot.
-
-### Verify
-
-```bash
-# All containers healthy
-docker compose ps
-
-# Backend responds
-curl http://localhost:3000/health
-
-# Soroban RPC reachable
-curl http://localhost:8000/health
-```
-
-### Hot reload
-
-The backend mounts `./src` into the container and runs `ts-node --watch`. Any change to a file under `src/` triggers an automatic restart — no container rebuild needed.
-
-### Stop & clean up
-
-```bash
-# Stop containers, keep volumes
-docker compose down
-
-# Stop containers AND delete all volumes (resets DB, Redis, Stellar state)
-docker compose down -v
-```
-
-### Service ports (defaults)
-
-| Service         | Port  |
-|-----------------|-------|
-| Backend         | 3000  |
-| PostgreSQL      | 5432  |
-| Redis           | 6379  |
-| Stellar RPC     | 8000  |
-| pgAdmin         | 5050  |
-
-Override any port in `.env` (e.g. `POSTGRES_PORT=5433`).
+| Document | Description |
+|---|---|
+| [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
+| [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
+| [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
 
 ## Building
 
@@ -136,6 +88,15 @@ cargo build --target wasm32v1-none --release
 stellar contract optimize --wasm target/wasm32v1-none/release/workload_governor.wasm
 ```
 
+### Binary Size
+
+| Build | Size |
+|---|---|
+| Unoptimized (`cargo build --release`) | ~28 KB |
+| Optimized (`stellar contract optimize`) | < 20 KB (target) |
+
+The release profile is pre-configured with `opt-level = 'z'` and `lto = true` in `Cargo.toml` to meet the 64 KB contract size limit.
+
 ## Testing
 
 ```bash
@@ -147,6 +108,45 @@ cargo test --features testutils prop_
 
 # Unit tests only
 cargo test --features testutils unit_
+```
+
+## Fuzz Testing
+
+Fuzz targets live in `fuzz/fuzz_targets/` and require a nightly Rust toolchain plus `cargo-fuzz`.
+
+```bash
+# Install cargo-fuzz (nightly required)
+rustup install nightly
+cargo install cargo-fuzz --locked
+
+# Build all fuzz targets
+cargo +nightly fuzz build
+
+# Run a target for 10 minutes
+cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
+cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
+cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+
+# Run with pre-seeded corpus
+cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
+```
+
+| Target | Description |
+|---|---|
+| `fuzz_apply` | Random `contributor`, `org_id`, `issue_id` → `apply_for_issue` |
+| `fuzz_assign` | Random inputs → `assign_issue`, `complete_assignment`, `revoke_assignment` |
+| `fuzz_batch_apply` | Vec of random `issue_id`s applied in batch, enforces ≤15 global cap |
+
+Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
+
+## Benchmarking
+
+```bash
+# Run benchmark tests (prints CPU/memory usage to stdout)
+cargo test --features testutils bench_
+
+# Capture output for documentation
+cargo test --features testutils bench_ 2>&1 | tee benchmarks.txt
 ```
 
 ## Deploying
@@ -166,6 +166,28 @@ stellar contract invoke \
   -- initialize \
   --admin <ADMIN_ADDRESS>
 ```
+
+## Design System
+
+The frontend ships a token-driven design system consumed by all UI components.
+
+| Artifact | Location |
+|---|---|
+| Design tokens (JSON) | [`frontend/src/tokens.json`](frontend/src/tokens.json) |
+| CSS custom properties | [`frontend/src/tokens.css`](frontend/src/tokens.css) |
+| Component library | [`frontend/src/components/`](frontend/src/components/) |
+| Storybook stories | [`frontend/src/stories/`](frontend/src/stories/) |
+
+### Running Storybook
+
+```bash
+cd frontend
+npm run storybook        # dev server at http://localhost:6006
+npm run build-storybook  # static build → storybook-static/
+```
+
+Components covered: **Button** (primary / secondary / ghost), **Badge** (5 semantic variants), **Card**, **Modal**, **Table**, **Gauge**.  
+Dark mode is driven by `@media (prefers-color-scheme: dark)` CSS custom properties — no extra dependency required.
 
 ## License
 
