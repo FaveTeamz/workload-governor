@@ -127,7 +127,23 @@ echo $CONTRACT_ID
 # Should print a C... or GA... style contract address
 ```
 
----
+## Understanding the transaction lifecycle
+
+Every action you take in the UI — applying, withdrawing, etc. — goes through a
+7-stage pipeline: XDR construction, Freighter signing, network submission,
+ledger consensus, confirmation polling, event indexing, and UI update. The
+total round-trip takes 15 – 72 seconds.
+
+If Freighter reports success but the UI doesn't update, the most common causes
+are event indexer lag (up to 10 s) and frontend polling not firing after the
+transaction confirmed.
+
+See [docs/transaction-lifecycle.md](./transaction-lifecycle.md) for:
+- A full timing diagram of all 7 stages
+- Failure modes and debug commands for each stage
+- A stuck-transaction debugging checklist
+
+## Screenshot note
 
 ## 4. Check Your Cap Availability
 
