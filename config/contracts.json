@@ -1,0 +1,8 @@
+{
+  "testnet": {
+    "workload_governor": "CA... (to be deployed)"
+  },
+  "mainnet": {
+    "workload_governor": ""
+  }
+}

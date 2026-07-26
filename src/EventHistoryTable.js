@@ -21,23 +21,6 @@
  *     contributor: string   // contributor address (full, optional)
  *   }
  */
-/** Truncates a Stellar address to GABC...WXYZ format. */
-function truncateAddress(address) {
-  if (!address || address.length <= 8) return address;
-  return `${address.slice(0, 4)}...${address.slice(-4)}`;
-}
-
-/** Returns HTML for a copyable, truncated wallet address. */
-function walletAddressHTML(address) {
-  if (!address) return '—';
-  const truncated = truncateAddress(address);
-  const esc = address.replace(/"/g, '&quot;');
-  return `<span class="eht-wallet" style="display:inline-flex;align-items:center;gap:.25rem">` +
-    `<span title="${esc}" style="font-family:monospace;cursor:default">${truncated}</span>` +
-    `<button type="button" class="eht-copy-btn" data-address="${esc}" aria-label="Copy address ${esc}" title="Copy address">⧉</button>` +
-    `</span>`;
-}
-
 export class EventHistoryTable {
   /** @param {HTMLElement} container @param {object[]} events */
   constructor(container, events) {
@@ -70,92 +53,115 @@ export class EventHistoryTable {
     this._render();
   }
 
-  // ── Export CSV ───────────────────────────────────────────────────────────
+  // ── Clipboard ─────────────────────────────────────────────────────────────
 
   /**
-   * Exports all events as a UTF-8 CSV file.
-   * Columns: Date, Action, Org, Issue, Status, Ledger Hash, Actor, Contributor
-   * Performance: synchronous string join — handles 1 000 rows well under 16 ms.
+   * Copies `text` to the clipboard using the async Clipboard API when
+   * available, falling back to `document.execCommand('copy')`.
+   *
+   * @param {string} text
+   * @returns {Promise<boolean>} true on success, false on failure
    */
-  exportCSV() {
-    const COLS = [
-      { label: 'Date',        key: 'date' },
-      { label: 'Action',      key: 'action' },
-      { label: 'Org',         key: 'org' },
-      { label: 'Issue',       key: 'issue' },
-      { label: 'Status',      key: 'status' },
-      { label: 'Ledger Hash', key: 'ledgerHash' },
-      { label: 'Actor',       key: 'actor' },
-      { label: 'Contributor', key: 'contributor' },
-    ];
-
-    /** Escapes a value for RFC-4180 CSV (wraps in quotes if it contains comma, quote, or newline). */
-    const escapeField = (val) => {
-      const s = val == null ? '' : String(val);
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-
-    const header = COLS.map(c => escapeField(c.label)).join(',');
-    const rows = this._events.map(ev =>
-      COLS.map(c => escapeField(ev[c.key])).join(',')
-    );
-
-    // UTF-8 BOM (U+FEFF) so Excel recognises the encoding correctly.
-    const bom = '\uFEFF';
-    const csv = bom + [header, ...rows].join('\r\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-
-    const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const a = document.createElement('a');
-    a.href     = url;
-    a.download = `workload-governor-history-${dateStr}.csv`;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  static async _copyText(text) {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // execCommand fallback for non-secure contexts / older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
+        textarea.style.opacity = '0';
+        textarea.setAttribute('aria-hidden', 'true');
+        textarea.setAttribute('tabindex', '-1');
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!ok) throw new Error('execCommand copy failed');
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
-
-  // ── Print ─────────────────────────────────────────────────────────────────
 
   /**
-   * Expands all rows so detail panels are visible, then invokes window.print().
-   * @media print rules in both EventHistoryTable.CSS and app.css handle layout.
+   * Creates a copy icon button that announces success/failure to screen
+   * readers via an adjacent `aria-live="polite"` element.
+   *
+   * @param {string} text       Text to copy.
+   * @param {string} ariaLabel  Accessible button label.
+   * @returns {HTMLSpanElement} Wrapper containing the button + live region.
    */
-  triggerPrint() {
-    // Expand every row so ledger hash / full addresses appear in print output.
-    this._events.forEach((_, i) => this._expanded.add(i));
-    this._render();
-    window.print();
-  }
+  static _makeCopyButton(text, ariaLabel) {
+    const wrapper = document.createElement('span');
+    wrapper.className = 'eht-copy-wrapper';
+    wrapper.style.display = 'inline-flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.gap = '0.25rem';
 
-  // ── Toolbar ───────────────────────────────────────────────────────────────
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'eht-copy-btn';
+    btn.setAttribute('aria-label', ariaLabel);
+    btn.title = ariaLabel;
+    btn.innerHTML = EventHistoryTable._COPY_ICON;
 
-  _buildToolbar() {
-    const bar = document.createElement('div');
-    bar.className = 'eht-toolbar';
-    bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'Event history actions');
+    // Visually-hidden live region for screen reader announcements
+    const announce = document.createElement('span');
+    announce.setAttribute('role', 'status');
+    announce.setAttribute('aria-live', 'polite');
+    announce.setAttribute('aria-atomic', 'true');
+    Object.assign(announce.style, {
+      position: 'absolute',
+      width: '1px',
+      height: '1px',
+      padding: '0',
+      margin: '-1px',
+      overflow: 'hidden',
+      clip: 'rect(0,0,0,0)',
+      whiteSpace: 'nowrap',
+      borderWidth: '0',
+    });
 
-    const exportBtn = document.createElement('button');
-    exportBtn.type = 'button';
-    exportBtn.className = 'eht-btn eht-btn-export';
-    exportBtn.setAttribute('aria-label', 'Export event history as CSV');
-    exportBtn.innerHTML = '⬇ Export CSV';
-    exportBtn.addEventListener('click', () => this.exportCSV());
+    let resetTimer = null;
 
-    const printBtn = document.createElement('button');
-    printBtn.type = 'button';
-    printBtn.className = 'eht-btn eht-btn-print';
-    printBtn.setAttribute('aria-label', 'Print event history');
-    printBtn.innerHTML = '🖨 Print';
-    printBtn.addEventListener('click', () => this.triggerPrint());
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // don't trigger row expand
+      if (resetTimer !== null) clearTimeout(resetTimer);
 
-    bar.appendChild(exportBtn);
-    bar.appendChild(printBtn);
-    return bar;
+      const ok = await EventHistoryTable._copyText(text);
+
+      if (ok) {
+        btn.innerHTML = EventHistoryTable._CHECK_ICON;
+        btn.classList.add('eht-copy-btn--copied');
+        announce.textContent = 'Copied';
+        resetTimer = setTimeout(() => {
+          btn.innerHTML = EventHistoryTable._COPY_ICON;
+          btn.classList.remove('eht-copy-btn--copied');
+          announce.textContent = '';
+          resetTimer = null;
+        }, 2000);
+      } else {
+        btn.innerHTML = EventHistoryTable._ERROR_ICON;
+        btn.classList.add('eht-copy-btn--error');
+        announce.textContent = 'Copy failed';
+        resetTimer = setTimeout(() => {
+          btn.innerHTML = EventHistoryTable._COPY_ICON;
+          btn.classList.remove('eht-copy-btn--error');
+          announce.textContent = '';
+          resetTimer = null;
+        }, 2000);
+      }
+    });
+
+    wrapper.appendChild(btn);
+    wrapper.appendChild(announce);
+    return wrapper;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -180,18 +186,6 @@ export class EventHistoryTable {
     // Mobile card list
     const cards = this._buildCards();
     this._container.appendChild(cards);
-
-    // Copy-to-clipboard delegation
-    this._container.addEventListener('click', e => {
-      const btn = e.target.closest('.eht-copy-btn');
-      if (!btn) return;
-      e.stopPropagation();
-      navigator.clipboard.writeText(btn.dataset.address).then(() => {
-        const orig = btn.textContent;
-        btn.textContent = '✓';
-        setTimeout(() => { btn.textContent = orig; }, 1500);
-      });
-    });
   }
 
   _sortIndicator(col) {
@@ -244,7 +238,7 @@ export class EventHistoryTable {
         detail.className = 'eht-detail';
         const td = detail.insertCell();
         td.colSpan = COLS.length;
-        td.innerHTML = this._detailHTML(ev);
+        this._appendDetail(td, ev);
       }
     });
 
@@ -265,8 +259,13 @@ export class EventHistoryTable {
         <span class="eht-card-date">${ev.date ?? '—'}</span>
         <span class="eht-card-action">${ev.action ?? '—'}</span>
         <span class="eht-card-status">${ev.status ?? '—'}</span>
-        ${this._expanded.has(i) ? `<div class="eht-card-detail">${this._detailHTML(ev)}</div>` : ''}
       `;
+      if (this._expanded.has(i)) {
+        const detail = document.createElement('div');
+        detail.className = 'eht-card-detail';
+        this._appendDetail(detail, ev);
+        li.appendChild(detail);
+      }
       li.addEventListener('click', () => this._toggleExpand(i, li, ev));
       li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') this._toggleExpand(i, li, ev); });
       list.appendChild(li);
@@ -275,15 +274,45 @@ export class EventHistoryTable {
     return list;
   }
 
-  _detailHTML(ev) {
-    return `
-      <dl class="eht-dl">
-        <dt>Ledger hash</dt><dd>${ev.ledgerHash ?? '—'}</dd>
-        <dt>Actor</dt><dd>${walletAddressHTML(ev.actor)}</dd>
-        ${ev.contributor ? `<dt>Contributor</dt><dd>${walletAddressHTML(ev.contributor)}</dd>` : ''}
-        <dt>Org</dt><dd>${ev.org ?? '—'}</dd>
-        <dt>Issue</dt><dd>${ev.issue ?? '—'}</dd>
-      </dl>`;
+  /**
+   * Builds and appends the expanded detail view into `container`.
+   * Ledger hash and addresses get individual copy buttons.
+   *
+   * @param {HTMLElement} container
+   * @param {object} ev
+   */
+  _appendDetail(container, ev) {
+    const dl = document.createElement('dl');
+    dl.className = 'eht-dl';
+
+    const addRow = (label, value, copyable = false) => {
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+
+      if (copyable && value && value !== '—') {
+        const code = document.createElement('code');
+        code.className = 'eht-hash';
+        code.textContent = value;
+        dd.appendChild(code);
+        dd.appendChild(
+          EventHistoryTable._makeCopyButton(value, `Copy ${label.toLowerCase()}`)
+        );
+      } else {
+        dd.textContent = value ?? '—';
+      }
+
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    };
+
+    addRow('Ledger hash', ev.ledgerHash, true);
+    addRow('Actor', ev.actor, true);
+    if (ev.contributor) addRow('Contributor', ev.contributor, true);
+    addRow('Org', ev.org);
+    addRow('Issue', ev.issue != null ? String(ev.issue) : null);
+
+    container.appendChild(dl);
   }
 
   _toggleExpand(i, el, ev) {
@@ -294,6 +323,14 @@ export class EventHistoryTable {
     }
     this._render();
   }
+
+  // ── SVG icon templates ────────────────────────────────────────────────────
+
+  static _COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+
+  static _CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+  static _ERROR_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
 
   // ── CSS ───────────────────────────────────────────────────────────────────
 
@@ -334,12 +371,19 @@ export class EventHistoryTable {
 .eht-row { cursor:pointer; }
 .eht-row:hover { background:#fafafa; }
 .eht-detail td { background:#f9f9f9; padding:.75rem 1rem; }
-.eht-dl { margin:0; display:grid; grid-template-columns:max-content 1fr; gap:.25rem .75rem; }
+.eht-dl { margin:0; display:grid; grid-template-columns:max-content 1fr; gap:.25rem .75rem; align-items:center; }
 .eht-dl dt { font-weight:600; color:#555; }
-.eht-dl dd { margin:0; word-break:break-all; }
-.eht-copy-btn { background:none; border:none; cursor:pointer; padding:0 2px; line-height:1; color:inherit; font-size:.9em; }
-
-/* ── Cards (mobile) ──────────────────────────────────────────────────── */
+.eht-dl dd { margin:0; word-break:break-all; display:inline-flex; align-items:center; gap:.375rem; }
+.eht-hash { font-family:monospace; font-size:.85em; }
+.eht-copy-btn {
+  background: none; border: none; cursor: pointer;
+  padding: 0 2px; line-height: 1; color: inherit;
+  display: inline-flex; align-items: center;
+  border-radius: 3px;
+}
+.eht-copy-btn:hover { opacity: .7; }
+.eht-copy-btn--copied { color: #22c55e; }
+.eht-copy-btn--error  { color: #ef4444; }
 .eht-cards { display:none; list-style:none; margin:0; padding:0; }
 .eht-card { border:1px solid #ddd; border-radius:6px; padding:.75rem; margin-bottom:.5rem; cursor:pointer; display:grid; grid-template-columns:1fr 1fr 1fr; gap:.25rem; }
 .eht-card-date { font-size:.8rem; color:#777; grid-column:1/-1; }
