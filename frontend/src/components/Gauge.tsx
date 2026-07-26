@@ -1,8 +1,14 @@
+/**
+ * Gauge — closes #323 (tooltip integration)
+ */
+import { Tooltip } from "./Tooltip";
+
 export interface GaugeProps {
-  value:   number   // current value
-  max:     number   // maximum value
-  label?:  string
-  size?:   number   // diameter in px, default 120
+  value:    number   // current value
+  max:      number   // maximum value
+  label?:   string
+  size?:    number   // diameter in px, default 120
+  tooltip?: string   // plain-language explanation shown on hover/focus
 }
 
 function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
@@ -15,7 +21,7 @@ function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: nu
   return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`
 }
 
-export function Gauge({ value, max, label, size = 120 }: GaugeProps) {
+export function Gauge({ value, max, label, size = 120, tooltip }: GaugeProps) {
   const ratio    = Math.min(Math.max(value / max, 0), 1)
   const cx       = size / 2
   const cy       = size / 2
@@ -31,8 +37,13 @@ export function Gauge({ value, max, label, size = 120 }: GaugeProps) {
 
   const pct = Math.round(ratio * 100)
 
-  return (
-    <figure className="gauge" aria-label={label}>
+  const figure = (
+    <figure
+      className="gauge"
+      aria-label={label}
+      // Make focusable so keyboard users can trigger the tooltip
+      tabIndex={tooltip ? 0 : undefined}
+    >
       <svg
         width={size}
         height={size}
@@ -67,5 +78,13 @@ export function Gauge({ value, max, label, size = 120 }: GaugeProps) {
       </svg>
       {label && <figcaption className="gauge__label">{label}</figcaption>}
     </figure>
+  )
+
+  if (!tooltip) return figure
+
+  return (
+    <Tooltip content={tooltip} position="top">
+      {figure}
+    </Tooltip>
   )
 }
