@@ -290,3 +290,308 @@
   .panel-columns { grid-template-columns: 1fr; }
   .row-info { flex-wrap: wrap; }
 }
+
+/* ============================================================
+   Theme overrides — data-theme attribute set by useSettings
+   ============================================================ */
+[data-theme="light"] {
+  --color-bg: #f8f9fb;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #1a202c;
+  --color-muted: #718096;
+  --color-primary: #4a6de0;
+  --color-primary-dark: #3657c0;
+  --color-focus: #d97706;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0f1117;
+  --color-surface: #1c1f2b;
+  --color-border: #2e3347;
+  --color-text: #e2e8f0;
+  --color-muted: #94a3b8;
+  --color-primary: #6c8eff;
+  --color-primary-dark: #4a6de0;
+  --color-focus: #facc15;
+}
+
+/* ============================================================
+   Nav (wallet connect + navigation links)
+   ============================================================ */
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.app-nav-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+.app-nav-link:hover { color: var(--color-text); background: var(--color-border); }
+.app-nav-link.active { color: var(--color-primary); background: rgba(108,142,255,0.1); }
+
+.wallet-btn { margin-left: auto; }
+
+.wallet-address {
+  margin-left: auto;
+  font-family: monospace;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  padding: 4px 8px;
+  background: var(--color-border);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.wallet-error {
+  font-size: 0.75rem;
+  color: var(--color-revoke);
+}
+
+/* ============================================================
+   Settings page layout
+   ============================================================ */
+.settings-page {
+  padding: 32px 24px;
+}
+
+.settings-container {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-header {
+  margin-bottom: 32px;
+}
+.settings-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+.settings-subtitle {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+/* ── Section ──────────────────────────────────────────────── */
+.settings-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.settings-section h2 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted);
+  margin: 0 0 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-section--danger {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.settings-section--danger h2 {
+  color: var(--color-revoke);
+}
+
+/* ── Field ────────────────────────────────────────────────── */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+}
+.settings-field + .settings-field {
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-field--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-field--toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-field-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.settings-description {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+/* ── Account address block ────────────────────────────────── */
+.settings-account-address {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.address-badge {
+  font-family: monospace;
+  font-size: 0.8125rem;
+  background: var(--color-border);
+  color: var(--color-primary);
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+/* ── Select ───────────────────────────────────────────────── */
+.settings-select {
+  appearance: none;
+  background: var(--color-bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  padding: 7px 32px 7px 10px;
+  width: 100%;
+  max-width: 320px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.settings-select:hover { border-color: var(--color-primary); }
+.settings-select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ── Radio group (theme picker) ───────────────────────────── */
+.settings-radio-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.settings-radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 99px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.settings-radio-label:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+.settings-radio-label:has(input:checked) {
+  border-color: var(--color-primary);
+  background: rgba(108, 142, 255, 0.12);
+  color: var(--color-primary);
+}
+.settings-radio-label input[type="radio"] {
+  /* Visually hidden, interaction handled by the label */
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* ── Toggle switch ────────────────────────────────────────── */
+.settings-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 42px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--color-border);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  padding: 0;
+}
+.settings-toggle--on { background: var(--color-primary); }
+.settings-toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.settings-toggle-thumb {
+  position: absolute;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s;
+}
+.settings-toggle--on .settings-toggle-thumb {
+  transform: translateX(18px);
+}
+
+/* ── Utility ──────────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .settings-page { padding: 16px; }
+  .settings-field--row,
+  .settings-field--toggle {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .settings-account-address { flex-wrap: wrap; }
+  .settings-select { max-width: 100%; }
+  .app-nav-link { padding: 6px 8px; font-size: 0.8rem; }
+}
