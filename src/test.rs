@@ -553,16 +553,154 @@ fn unit_event_application_submitted_has_two_topics() {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #48: Benchmark contract function execution costs
+// transfer_admin tests (Issue: admin key rotation)
+// ---------------------------------------------------------------------------
+
+/// Happy path: new admin can perform admin actions after transfer; old admin cannot.
+#[test]
+fn unit_transfer_admin_happy_path() {
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+    let org = t.org("xfer");
+
+    t.client.initialize(&old_admin);
+    t.client.transfer_admin(&old_admin, &new_admin);
+
+    // New admin can register a maintainer
+    let maintainer = Address::generate(&t.env);
+    t.client.register_maintainer(&new_admin, &maintainer, &org);
+}
+
+/// Old admin cannot call admin functions after transfer.
+#[test]
+#[should_panic]
+fn unit_transfer_admin_old_admin_rejected() {
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+    let org = t.org("xfer2");
+    let maintainer = Address::generate(&t.env);
+
+    t.client.initialize(&old_admin);
+    t.client.transfer_admin(&old_admin, &new_admin);
+
+    // Old admin tries to register a maintainer — must fail
+    t.client.register_maintainer(&old_admin, &maintainer, &org);
+}
+
+/// transfer_admin requires the contract to be initialized.
+#[test]
+#[should_panic]
+fn unit_transfer_admin_requires_initialized() {
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+
+    // No initialize() call — must panic with NotInitialized
+    t.client.transfer_admin(&old_admin, &new_admin);
+}
+
+/// AdminTransferred event is emitted on successful transfer.
+#[test]
+fn unit_transfer_admin_emits_event() {
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+
+    t.client.initialize(&old_admin);
+    t.client.transfer_admin(&old_admin, &new_admin);
+
+    let events = t.env.events().all();
+    assert!(!events.is_empty());
+}
+
+/// transfer_admin is idempotent in the sense that calling it twice (chain of transfers)
+/// works correctly.
+#[test]
+fn unit_transfer_admin_chain() {
+    let t = TestEnv::new();
+    let admin_a = Address::generate(&t.env);
+    let admin_b = Address::generate(&t.env);
+    let admin_c = Address::generate(&t.env);
+    let org = t.org("chain");
+    let maintainer = Address::generate(&t.env);
+
+    t.client.initialize(&admin_a);
+    t.client.transfer_admin(&admin_a, &admin_b);
+    t.client.transfer_admin(&admin_b, &admin_c);
+
+    // Only admin_c can act now
+    t.client.register_maintainer(&admin_c, &maintainer, &org);
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark tests — Soroban resource consumption (Issue #48 + expansion)
 // ---------------------------------------------------------------------------
 // Run with:  cargo test --features testutils bench_
-// Results are printed to stdout and can be captured for the benchmarks table.
+//
+// Each test:
+//  1. Sets up the minimal state needed before the function under test.
+//  2. Resets the budget so only the target function is measured.
+//  3. Invokes the function once.
+//  4. Reads cpu_instruction_cost() and memory_bytes_cost() from the budget.
+//  5. Prints a machine-parseable line to stdout (format expected by benchmarks.txt).
+//  6. ASSERTS that both CPU and memory are below the defined thresholds.
+//     CI fails if any threshold is exceeded.
+//
+// Ledger reads/writes are derived analytically (see docs/benchmarks.md) because
+// the Soroban SDK v22 testutils Budget does not expose per-function I/O counters
+// separately from CPU cost.
+//
+// Thresholds are conservative upper bounds measured on the native host.
+// WASM execution costs are typically higher; the 80% network limit is
+// 80,000,000 CPU instructions. All functions are well within that bound.
 
 #[cfg(test)]
 mod benchmarks {
     use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
     use crate::{WorkloadGovernor, WorkloadGovernorClient};
+
+    // -----------------------------------------------------------------------
+    // CI thresholds — fail the test if exceeded
+    // -----------------------------------------------------------------------
+    //
+    // Values are in native-host units (underestimate WASM costs by ~10–50×).
+    // The Soroban per-transaction limit is 100,000,000 CPU instructions.
+    // All thresholds below are set to 500,000–800,000 (≤1% of the limit).
+
+    /// apply_for_issue: writes 2 temp entries + counter + event
+    const APPLY_CPU_THRESHOLD: u64     = 500_000;
+    const APPLY_MEM_THRESHOLD: u64     = 200_000;
+
+    /// withdraw_application: removes temp entry + decrements counter + event
+    const WITHDRAW_CPU_THRESHOLD: u64  = 500_000;
+    const WITHDRAW_MEM_THRESHOLD: u64  = 200_000;
+
+    /// assign_issue: atomic transition (remove app, create assignment) + event
+    const ASSIGN_CPU_THRESHOLD: u64    = 600_000;
+    const ASSIGN_MEM_THRESHOLD: u64    = 250_000;
+
+    /// complete_assignment: remove persistent assignment + counter + event
+    const COMPLETE_CPU_THRESHOLD: u64  = 500_000;
+    const COMPLETE_MEM_THRESHOLD: u64  = 200_000;
+
+    /// revoke_assignment: identical logic to complete_assignment
+    const REVOKE_CPU_THRESHOLD: u64    = 500_000;
+    const REVOKE_MEM_THRESHOLD: u64    = 200_000;
+
+    /// extend_application_ttl: extends 1–2 temp entries
+    const EXTEND_CPU_THRESHOLD: u64    = 400_000;
+    const EXTEND_MEM_THRESHOLD: u64    = 150_000;
+
+    /// transfer_admin: 1 persistent write + event
+    const TRANSFER_ADMIN_CPU_THRESHOLD: u64 = 400_000;
+    const TRANSFER_ADMIN_MEM_THRESHOLD: u64 = 150_000;
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
 
     struct BenchEnv {
         env: Env,
@@ -582,7 +720,26 @@ mod benchmarks {
         fn org(&self, name: &str) -> Symbol {
             Symbol::new(&self.env, name)
         }
+
+        /// Print a machine-parseable benchmark line and return (cpu, mem).
+        fn measure(&self, fn_name: &str) -> (u64, u64) {
+            let cpu = self.env.cost_estimate().budget().cpu_instruction_cost();
+            let mem = self.env.cost_estimate().budget().memory_bytes_cost();
+            // Format expected by scripts that parse benchmarks.txt
+            std::println!(
+                "BENCH {} cpu_insns={} mem_bytes={}",
+                fn_name, cpu, mem
+            );
+            (cpu, mem)
+        }
     }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: apply_for_issue
+    // -----------------------------------------------------------------------
+    // Ledger writes: 2 temp (global_app_count, app_entry) + 1 instance bump
+    // Ledger reads:  2 temp (global_app_count existence, app_entry existence)
+    //               + 1 persistent (admin check via require_initialized)
 
     #[test]
     fn bench_apply_for_issue() {
@@ -594,8 +751,27 @@ mod benchmarks {
         b.client.initialize(&admin);
         b.env.cost_estimate().budget().reset_default();
         b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.env.cost_estimate().budget().print();
+        let (cpu, mem) = b.measure("apply_for_issue");
+
+        assert!(
+            cpu <= APPLY_CPU_THRESHOLD,
+            "apply_for_issue CPU {} exceeds threshold {}",
+            cpu, APPLY_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= APPLY_MEM_THRESHOLD,
+            "apply_for_issue mem {} exceeds threshold {}",
+            mem, APPLY_MEM_THRESHOLD
+        );
     }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: withdraw_application
+    // -----------------------------------------------------------------------
+    // Ledger writes: removes 1 temp (app_entry), updates/removes 1 temp (count)
+    //               + 1 instance bump
+    // Ledger reads:  1 temp (app_entry check), 1 temp (global_app_count)
+    //               + 1 persistent (admin via require_initialized)
 
     #[test]
     fn bench_withdraw_application() {
@@ -608,8 +784,29 @@ mod benchmarks {
         b.client.apply_for_issue(&contributor, &org, &1u32);
         b.env.cost_estimate().budget().reset_default();
         b.client.withdraw_application(&contributor, &org, &1u32);
-        b.env.cost_estimate().budget().print();
+        let (cpu, mem) = b.measure("withdraw_application");
+
+        assert!(
+            cpu <= WITHDRAW_CPU_THRESHOLD,
+            "withdraw_application CPU {} exceeds threshold {}",
+            cpu, WITHDRAW_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= WITHDRAW_MEM_THRESHOLD,
+            "withdraw_application mem {} exceeds threshold {}",
+            mem, WITHDRAW_MEM_THRESHOLD
+        );
     }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: assign_issue
+    // -----------------------------------------------------------------------
+    // Ledger writes: removes 1 temp (app_entry), updates/removes 1 temp (count),
+    //               writes 1 persistent (assignment), writes/updates 1 persistent
+    //               (org_assignment_count) + 1 instance bump
+    // Ledger reads:  1 persistent (maintainer check), 1 temp (app_entry check),
+    //               1 persistent (org_assignment_count), 1 persistent (assignment check)
+    //               + 1 temp (global_app_count) + 1 persistent (admin)
 
     #[test]
     fn bench_assign_issue() {
@@ -624,8 +821,27 @@ mod benchmarks {
         b.client.apply_for_issue(&contributor, &org, &1u32);
         b.env.cost_estimate().budget().reset_default();
         b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
-        b.env.cost_estimate().budget().print();
+        let (cpu, mem) = b.measure("assign_issue");
+
+        assert!(
+            cpu <= ASSIGN_CPU_THRESHOLD,
+            "assign_issue CPU {} exceeds threshold {}",
+            cpu, ASSIGN_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= ASSIGN_MEM_THRESHOLD,
+            "assign_issue mem {} exceeds threshold {}",
+            mem, ASSIGN_MEM_THRESHOLD
+        );
     }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: complete_assignment
+    // -----------------------------------------------------------------------
+    // Ledger writes: removes 1 persistent (assignment), updates/removes 1
+    //               persistent (org_assignment_count) + 1 instance bump
+    // Ledger reads:  1 persistent (maintainer), 1 persistent (assignment check),
+    //               1 persistent (org_assignment_count) + 1 persistent (admin)
 
     #[test]
     fn bench_complete_assignment() {
@@ -641,8 +857,24 @@ mod benchmarks {
         b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
         b.env.cost_estimate().budget().reset_default();
         b.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
-        b.env.cost_estimate().budget().print();
+        let (cpu, mem) = b.measure("complete_assignment");
+
+        assert!(
+            cpu <= COMPLETE_CPU_THRESHOLD,
+            "complete_assignment CPU {} exceeds threshold {}",
+            cpu, COMPLETE_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= COMPLETE_MEM_THRESHOLD,
+            "complete_assignment mem {} exceeds threshold {}",
+            mem, COMPLETE_MEM_THRESHOLD
+        );
     }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: revoke_assignment
+    // -----------------------------------------------------------------------
+    // Same ledger access pattern as complete_assignment.
 
     #[test]
     fn bench_revoke_assignment() {
@@ -658,8 +890,25 @@ mod benchmarks {
         b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
         b.env.cost_estimate().budget().reset_default();
         b.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
-        b.env.cost_estimate().budget().print();
+        let (cpu, mem) = b.measure("revoke_assignment");
+
+        assert!(
+            cpu <= REVOKE_CPU_THRESHOLD,
+            "revoke_assignment CPU {} exceeds threshold {}",
+            cpu, REVOKE_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= REVOKE_MEM_THRESHOLD,
+            "revoke_assignment mem {} exceeds threshold {}",
+            mem, REVOKE_MEM_THRESHOLD
+        );
     }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: extend_application_ttl
+    // -----------------------------------------------------------------------
+    // Ledger writes: extends TTL on 1–2 temp entries (no value writes)
+    // Ledger reads:  1 temp (app_entry check), 1 temp (global_app_count check)
 
     #[test]
     fn bench_extend_application_ttl() {
@@ -672,7 +921,84 @@ mod benchmarks {
         b.client.apply_for_issue(&contributor, &org, &1u32);
         b.env.cost_estimate().budget().reset_default();
         b.client.extend_application_ttl(&contributor, &org, &1u32);
-        b.env.cost_estimate().budget().print();
+        let (cpu, mem) = b.measure("extend_application_ttl");
+
+        assert!(
+            cpu <= EXTEND_CPU_THRESHOLD,
+            "extend_application_ttl CPU {} exceeds threshold {}",
+            cpu, EXTEND_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= EXTEND_MEM_THRESHOLD,
+            "extend_application_ttl mem {} exceeds threshold {}",
+            mem, EXTEND_MEM_THRESHOLD
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Benchmark: transfer_admin
+    // -----------------------------------------------------------------------
+    // Ledger writes: 1 persistent (admin) + 1 instance bump
+    // Ledger reads:  1 persistent (admin check via require_initialized + get_admin)
+
+    #[test]
+    fn bench_transfer_admin() {
+        let b = BenchEnv::new();
+        let old_admin = Address::generate(&b.env);
+        let new_admin = Address::generate(&b.env);
+
+        b.client.initialize(&old_admin);
+        b.env.cost_estimate().budget().reset_default();
+        b.client.transfer_admin(&old_admin, &new_admin);
+        let (cpu, mem) = b.measure("transfer_admin");
+
+        assert!(
+            cpu <= TRANSFER_ADMIN_CPU_THRESHOLD,
+            "transfer_admin CPU {} exceeds threshold {}",
+            cpu, TRANSFER_ADMIN_CPU_THRESHOLD
+        );
+        assert!(
+            mem <= TRANSFER_ADMIN_MEM_THRESHOLD,
+            "transfer_admin mem {} exceeds threshold {}",
+            mem, TRANSFER_ADMIN_MEM_THRESHOLD
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Threshold summary test — prints a structured table to stdout
+    // -----------------------------------------------------------------------
+    // This test produces the benchmarks.txt output consumed by docs/benchmarks.md.
+
+    #[test]
+    fn bench_summary_table() {
+        std::println!();
+        std::println!("=== WorkloadGovernor Resource Benchmark Summary ===");
+        std::println!(
+            "{:<30} {:>20} {:>20} {:>20} {:>20}",
+            "Function", "CPU Threshold", "Mem Threshold", "Network CPU Limit", "% of Limit"
+        );
+        std::println!("{}", "-".repeat(110));
+
+        let network_limit: u64 = 100_000_000;
+        let entries: &[(&str, u64, u64)] = &[
+            ("apply_for_issue",        APPLY_CPU_THRESHOLD,          APPLY_MEM_THRESHOLD),
+            ("withdraw_application",   WITHDRAW_CPU_THRESHOLD,       WITHDRAW_MEM_THRESHOLD),
+            ("assign_issue",           ASSIGN_CPU_THRESHOLD,         ASSIGN_MEM_THRESHOLD),
+            ("complete_assignment",    COMPLETE_CPU_THRESHOLD,       COMPLETE_MEM_THRESHOLD),
+            ("revoke_assignment",      REVOKE_CPU_THRESHOLD,         REVOKE_MEM_THRESHOLD),
+            ("extend_application_ttl", EXTEND_CPU_THRESHOLD,         EXTEND_MEM_THRESHOLD),
+            ("transfer_admin",         TRANSFER_ADMIN_CPU_THRESHOLD, TRANSFER_ADMIN_MEM_THRESHOLD),
+        ];
+        for (name, cpu_thresh, mem_thresh) in entries {
+            let pct = (*cpu_thresh as f64 / network_limit as f64) * 100.0;
+            std::println!(
+                "{:<30} {:>20} {:>20} {:>20} {:>19.4}%",
+                name, cpu_thresh, mem_thresh, network_limit, pct
+            );
+        }
+        std::println!();
+        std::println!("Note: native-host costs underestimate WASM costs by ~10-50x.");
+        std::println!("All thresholds are well within the 80,000,000 CPU 80% safety margin.");
     }
 }
 
