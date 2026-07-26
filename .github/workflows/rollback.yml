@@ -6,16 +6,27 @@ on:
       cluster:
         description: 'ECS cluster name'
         required: true
+        default: 'workload-governor-staging'
       service:
         description: 'ECS service name'
         required: true
-      image_sha:
-        description: 'Image tag to roll back to (e.g. sha-abc1234)'
-        required: true
-      health_url:
-        description: 'Health-check URL for smoke test (optional)'
+        default: 'workload-governor-staging'
+      task_definition_arn:
+        description: 'Task definition ARN to roll back to (leave blank for previous revision)'
         required: false
         default: ''
+      image_sha:
+        description: 'Image SHA to roll back to (used only when task_definition_arn is blank)'
+        required: false
+        default: ''
+      health_url:
+        description: 'Health-check URL for post-rollback smoke test (optional)'
+        required: false
+        default: ''
+      timeout:
+        description: 'Seconds to wait for service stability (default: 300)'
+        required: false
+        default: '300'
 
 permissions:
   id-token: write   # OIDC for AWS auth
@@ -25,28 +36,62 @@ jobs:
   rollback:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Notify Slack that rollback has been requested
+      - name: Notify Slack — rollback initiated
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🔄 *Rollback requested* on `${{ inputs.cluster }}/${{ inputs.service }}`\n  task-def: `${{ inputs.task_definition_arn || '(previous revision)' }}`\n  operator: `${{ github.actor }}`\n  run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view>"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # Build the argument list conditionally
       - name: Run rollback script
         env:
-          ROLLBACK_TIMEOUT: '300'
+          ROLLBACK_TIMEOUT: ${{ inputs.timeout }}
           HEALTH_URL: ${{ inputs.health_url }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          bash scripts/rollback.sh \
-            "${{ inputs.cluster }}" \
-            "${{ inputs.service }}" \
-            "${{ inputs.image_sha }}"
+          ARGS=("${{ inputs.cluster }}" "${{ inputs.service }}")
 
-      - name: Notify on failure
+          # Prefer explicit task-definition ARN over image SHA
+          if [[ -n "${{ inputs.task_definition_arn }}" ]]; then
+            ARGS+=(--task-definition "${{ inputs.task_definition_arn }}")
+          elif [[ -n "${{ inputs.image_sha }}" ]]; then
+            ARGS+=(--image-sha "${{ inputs.image_sha }}")
+          fi
+
+          if [[ -n "${{ inputs.health_url }}" ]]; then
+            ARGS+=(--health-url "${{ inputs.health_url }}")
+          fi
+
+          bash scripts/rollback.sh "${ARGS[@]}"
+
+      # The script itself posts the success/failure Slack notification,
+      # but add a workflow-level failure notification here as a safety net
+      # for unexpected errors that prevent the script from reaching its own
+      # notification step (e.g., checkout failure, AWS auth failure).
+      - name: Notify Slack — workflow failure (safety net)
         if: failure()
-        run: |
-          echo "::error::Rollback FAILED for ${{ inputs.service }} to ${{ inputs.image_sha }}. Check logs above."
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "❌ *Rollback FAILED* (workflow error) on `${{ inputs.cluster }}/${{ inputs.service }}`\n  operator: `${{ github.actor }}`\n  run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view logs>"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

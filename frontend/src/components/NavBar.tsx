@@ -2,20 +2,24 @@ import { useState } from "react";
 
 export interface NavBarProps {
   walletAddress?: string | null;
+  walletError?: string | null;
+  networkMismatch?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
 
-export function NavBar({ walletAddress, onConnect, onDisconnect }: NavBarProps) {
+export function NavBar({ walletAddress, walletError, networkMismatch, onConnect, onDisconnect }: NavBarProps) {
   const [open, setOpen] = useState(false);
+
+  const showInstallPrompt = !walletAddress && walletError && /install/i.test(walletError);
+  const expectedNet = (import.meta.env.VITE_STELLAR_NETWORK ?? "TESTNET").toUpperCase();
 
   return (
     <nav className="navbar" role="navigation" aria-label="Main navigation">
-      <a className="navbar__brand" href="/" aria-label="WorkloadGovernor home">
+      <a className="navbar__brand" href="#/" aria-label="WorkloadGovernor home">
         <span aria-hidden="true">⚙</span> WorkloadGovernor
       </a>
 
-      {/* Hamburger button — visible only on mobile */}
       <button
         className="navbar__hamburger"
         aria-label={open ? "Close navigation menu" : "Open navigation menu"}
@@ -28,12 +32,20 @@ export function NavBar({ walletAddress, onConnect, onDisconnect }: NavBarProps) 
         <span className="hamburger-bar" />
       </button>
 
-      {/* Nav menu — collapses on mobile */}
       <div
         id="navbar-menu"
         className={`navbar__menu${open ? " navbar__menu--open" : ""}`}
       >
+        <a className="navbar__link" href="#/activity" onClick={() => setOpen(false)}>
+          Activity
+        </a>
+
         <div className="navbar__wallet">
+          {networkMismatch && walletAddress && (
+            <div className="navbar__network-warning" role="alert">
+              Wrong network — switch to {expectedNet} in Freighter
+            </div>
+          )}
           {walletAddress ? (
             <>
               <span
@@ -51,6 +63,15 @@ export function NavBar({ walletAddress, onConnect, onDisconnect }: NavBarProps) 
                 Disconnect
               </button>
             </>
+          ) : showInstallPrompt ? (
+            <a
+              href="https://www.freighter.app"
+              target="_blank"
+              rel="noreferrer"
+              className="navbar__install-link"
+            >
+              Install Freighter
+            </a>
           ) : (
             <button
               className="btn btn-primary btn-sm"
