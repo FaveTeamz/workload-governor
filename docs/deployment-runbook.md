@@ -256,3 +256,152 @@ stellar contract invoke \
   -- upgrade \
   --new_wasm_hash <WASM_HASH>
 ```
+
+
+---
+
+## Load Testing
+
+The staging environment is validated against a k6 load test after every
+deployment to confirm it can sustain 50 concurrent virtual users without
+breaching SLA thresholds.
+
+### Test scenario
+
+| Parameter | Value |
+|---|---|
+| Virtual users | 50 (ramped over 30 s, held 5 min, ramped down 30 s) |
+| Workload pattern | Each VU applies for 3 issues, then withdraws 1 |
+| Endpoints under test | `POST /api/transactions/apply`, `POST /api/transactions/withdraw`, `GET /api/contributors/:address/applications`, `GET /health` |
+| p95 latency threshold | < 2 000 ms (hard gate) |
+| Error rate threshold | < 1 % (hard gate) |
+| Metrics captured | p50 / p95 / p99 latency, throughput (req/s), per-endpoint error counts |
+
+### Running the test manually
+
+```bash
+# Install k6 (if not already present)
+# https://grafana.com/docs/k6/latest/set-up/install-k6/
+
+# Run against staging
+k6 run \
+  --env BASE_URL=https://staging.example.com \
+  --env ADMIN_TOKEN=<STAGING_ADMIN_TOKEN> \
+  tests/load/k6-staging.js
+
+# Results are written to results/k6-summary.json automatically.
+# Ensure the results/ directory exists first:
+mkdir -p results
+```
+
+k6 exits with code `0` when all thresholds pass and `99` when any threshold
+fails. Use the exit code as the CI gate condition.
+
+### CI job — GitHub Actions
+
+Add the following job to `.github/workflows/staging-deploy.yml` (or any
+workflow that runs after a staging deployment):
+
+```yaml
+  load-test:
+    name: Load test — staging
+    runs-on: ubuntu-latest
+    needs: deploy          # adjust to match your deploy job name
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] \
+            https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Create results directory
+        run: mkdir -p results
+
+      - name: Run load test
+        env:
+          BASE_URL:    ${{ secrets.STAGING_URL }}
+          ADMIN_TOKEN: ${{ secrets.STAGING_ADMIN_TOKEN }}
+        run: |
+          k6 run \
+            --env BASE_URL="$BASE_URL" \
+            --env ADMIN_TOKEN="$ADMIN_TOKEN" \
+            tests/load/k6-staging.js
+        # k6 exits 99 if any threshold fails — the step will fail the job
+
+      - name: Upload k6 summary
+        if: always()   # upload even if the test failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summary-${{ github.run_id }}
+          path: results/k6-summary.json
+          retention-days: 90
+```
+
+#### Required secrets
+
+| Secret name | Description |
+|---|---|
+| `STAGING_URL` | Base URL of the staging deployment, e.g. `https://staging.example.com` |
+| `STAGING_ADMIN_TOKEN` | Value of the `ADMIN_TOKEN` environment variable on the staging server |
+
+### Interpreting results
+
+The test prints a summary to stdout at the end of the run:
+
+```
+=== WorkloadGovernor Staging Load Test — Summary ===
+
+  ✓ http_req_duration: p(95)<2000
+  ✓ errors: rate<0.01
+  ✓ apply_req_duration: p(95)<2000
+  ✓ withdraw_req_duration: p(95)<2000
+  ✓ query_req_duration: p(95)<2000
+  ✓ health_req_duration: p(95)<500
+
+  ✓ All thresholds passed — deployment to staging is HEALTHY
+
+  p50 latency : 120 ms
+  p95 latency : 890 ms  (threshold: <2000 ms)
+  p99 latency : 1340 ms
+  error rate  : 0.12 %  (threshold: <1 %)
+  throughput  : 22.40 req/s
+```
+
+The machine-readable `results/k6-summary.json` is also produced. Feed it into
+a trend-tracking tool (Grafana, DataDog, or a simple GitHub Pages chart) to
+detect latency regressions across deployments.
+
+### Alert criteria
+
+The CI job acts as the primary alert. If either threshold is breached:
+
+1. The k6 process exits with code `99`.
+2. The GitHub Actions step fails, blocking any downstream promotion job.
+3. The `k6-summary.json` artifact is always uploaded for post-mortem analysis.
+
+For real-time alerting during a manual run, watch for the `✗` prefix in the
+stdout summary — any failing threshold line is prefixed with `✗`.
+
+### Trend tracking across deployments
+
+The `results/k6-summary.json` artifact contains all raw metric values. To
+compare runs over time:
+
+1. Store the artifact in a persistent location (S3, GCS, or a dedicated branch).
+2. Parse `metrics.http_req_duration.values['p(95)']`,
+   `metrics.errors.values.rate`, and `metrics.http_reqs.values.rate` for the
+   three headline numbers.
+3. Plot them per deployment SHA to identify latency creep before it becomes
+   an incident.
