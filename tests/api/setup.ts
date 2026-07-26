@@ -20,6 +20,10 @@ export function resetDb(): void {
   sequences.clear();
 }
 
+export function getTable(name: string): Row[] {
+  return tbl(name).slice();
+}
+
 // ---------- condition evaluator -----------------------------------------
 
 function evalCond(row: Row, cond: string, params: unknown[]): boolean {
@@ -55,7 +59,7 @@ export function runQuery(sql: string, params: unknown[] = []): { rows: Row[] } {
 
   // ---- INSERT ----
   // INSERT INTO table (cols) VALUES ($1, $2, ...) [ON CONFLICT ...] [RETURNING ...]
-  let m = s.match(/^INSERT INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON CONFLICT[^R]*)?(?: RETURNING (.+))?$/i);
+  let m = s.match(/^INSERT INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON CONFLICT(?:(?!RETURNING).)*)?(?:\s+RETURNING (.+))?$/i);
   if (m) {
     const [, tableName, colsStr, valsStr, retStr] = m;
     const cols = colsStr.split(',').map((c) => c.trim());
@@ -110,6 +114,36 @@ export function runQuery(sql: string, params: unknown[] = []): { rows: Row[] } {
       rows = rows.slice(offset, offset + limit);
     }
     return { rows };
+  }
+
+  // ---- UPDATE ----
+  // UPDATE table SET col1=$1, col2=$2 WHERE ...
+  m = s.match(/^UPDATE (\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+)$/i);
+  if (m) {
+    const [, tableName, setStr, whereStr] = m;
+    const setEntries: [string, unknown][] = [];
+    for (const part of setStr.split(',').map((p) => p.trim())) {
+      const sm = part.match(/^(\w+)\s*=\s*\$(\d+)$/i);
+      if (sm) setEntries.push([sm[1], params[+sm[2] - 1]]);
+    }
+    const rows = tbl(tableName);
+    const filtered = filterRows(rows, whereStr, params);
+    for (const row of filtered) {
+      for (const [col, val] of setEntries) row[col] = val;
+    }
+    return { rows: filtered };
+  }
+
+  // ---- DELETE ----
+  // DELETE FROM table WHERE ...
+  m = s.match(/^DELETE FROM (\w+)(?:\s+WHERE\s+(.+))?$/i);
+  if (m) {
+    const [, tableName, whereStr] = m;
+    const before = tbl(tableName);
+    const toDelete = filterRows(before, whereStr, params);
+    const remaining = before.filter((r) => !toDelete.includes(r));
+    tables.set(tableName, remaining);
+    return { rows: toDelete };
   }
 
   // ---- TRUNCATE ----
