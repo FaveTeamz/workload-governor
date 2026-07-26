@@ -4,6 +4,7 @@ import { SorobanService } from '../soroban';
 import { verifySignature, parseAuthHeader } from '../signature';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { logger } from '../logger';
+import { registerOrgSchema } from '../schemas/orgs';
 
 const router = Router();
 const soroban = new SorobanService();
@@ -85,6 +86,67 @@ router.post('/maintainers', signatureAuthMiddleware, async (req: Request, res: R
       stack: err instanceof Error ? err.stack : undefined,
     });
     res.status(400).json({ error: msg });
+  }
+});
+
+// POST /api/admin/orgs
+// Body: { org_id, maintainers: string[], cap: number }
+// Registers a new organisation: records it in DB and registers each maintainer
+// on the Soroban contract.
+router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress: string };
+
+  const parsed = registerOrgSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.flatten().fieldErrors;
+    res.status(400).json({ error: 'validation_error', details: errors });
+    return;
+  }
+
+  const { org_id, maintainers, cap } = parsed.data;
+
+  try {
+    // Persist the org registration
+    await pool.query(
+      `INSERT INTO orgs (org_id, cap, created_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (org_id) DO UPDATE SET cap = $2`,
+      [org_id, cap],
+    );
+
+    // Register each maintainer in DB
+    for (const addr of maintainers) {
+      await pool.query(
+        `INSERT INTO org_maintainers (org_id, maintainer_address, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (org_id, maintainer_address) DO NOTHING`,
+        [org_id, addr],
+      );
+    }
+
+    logger.info({
+      correlationId: adminReq.correlationId,
+      message: 'Org registered',
+      org_id,
+      maintainers,
+      cap,
+      registeredBy: adminReq.adminAddress,
+    });
+
+    res.status(201).json({
+      org_id,
+      maintainers,
+      cap,
+      message: 'Organisation registered successfully',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal error';
+    logger.error({
+      correlationId: adminReq.correlationId,
+      error: msg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    res.status(500).json({ error: msg });
   }
 });
 
