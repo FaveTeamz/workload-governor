@@ -1,3 +1,15 @@
+# =============================================================================
+# logs_and_alarms.tf — CloudWatch log groups, Logs Insights queries, dashboard
+# Issue #397: structured query support for operational observability
+# =============================================================================
+#
+# Log format (src/logger.ts — pino JSON):
+#   info  : { correlationId, method, path, status, duration, timestamp }
+#   error : { correlationId, error, stack, timestamp }
+#
+# All four saved Insights queries target the ECS log group so they work
+# against the same structured JSON stream emitted by the backend.
+
 variable "service_name" {
   description = "Service name used for log group names and dashboard"
   type        = string
@@ -51,29 +63,30 @@ resource "aws_cloudwatch_log_group" "rds" {
 resource "aws_cloudwatch_query_definition" "error_rate" {
   name = "${var.service_name}-error-rate"
   query_string = <<-EOT
-    fields @timestamp, @message
-    | filter @message like /ERROR|Error|error/
-    | stats count() as errors by bin(5m)
+    fields @timestamp, path, status, correlationId
+    | filter status >= 400 or ispresent(error)
+    | stats count(*) as error_count by path, bin(1h)
+    | sort error_count desc
   EOT
 }
 
 resource "aws_cloudwatch_query_definition" "slow_requests" {
   name = "${var.service_name}-slow-requests"
   query_string = <<-EOT
-    fields @timestamp, @message
-    | filter @message like /duration|latency/ and @message like /ms/
-    | parse @message "*duration=*ms*" as before, duration
-    | filter tonumber(duration) > 1000
-    | stats count() as slow by bin(5m)
+    fields @timestamp, path, duration
+    | filter ispresent(duration)
+    | stats pct(duration, 95) as p95_ms, count(*) as requests by path
+    | sort p95_ms desc
   EOT
 }
 
 resource "aws_cloudwatch_query_definition" "contract_submission_failures" {
   name = "${var.service_name}-contract-submission-failures"
   query_string = <<-EOT
-    fields @timestamp, @message
-    | filter @message like /contract.*submit.*fail|submission.*failed/i
-    | stats count() by bin(5m)
+    fields @timestamp, correlationId, error, path
+    | filter error like /rpc|RPC|failover|timeout|ECONNREFUSED|ETIMEDOUT/
+    | stats count(*) as rpc_failures by bin(1h)
+    | sort @timestamp desc
   EOT
 }
 
@@ -313,4 +326,26 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
       }
     ]
   })
+}
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+
+output "ecs_log_group_name" {
+  value = aws_cloudwatch_log_group.ecs.name
+}
+
+output "rds_log_group_name" {
+  value = length(aws_cloudwatch_log_group.rds) > 0 ? aws_cloudwatch_log_group.rds[0].name : ""
+}
+
+output "operational_dashboard_name" {
+  description = "Name of the operational CloudWatch dashboard"
+  value       = aws_cloudwatch_dashboard.service_dashboard.dashboard_name
+}
+
+output "operational_dashboard_arn" {
+  description = "ARN of the operational CloudWatch dashboard (share this with the team)"
+  value       = aws_cloudwatch_dashboard.service_dashboard.dashboard_arn
 }
