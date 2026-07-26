@@ -1,103 +1,124 @@
-import React from "react";
-import { ErrorState } from "./ErrorState";
+import React, { Component, ErrorInfo, ReactNode } from "react";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface ErrorPayload {
+  message: string;
+  stack?: string;
+  componentStack?: string;
+}
 
 interface ErrorBoundaryProps {
-  children: React.ReactNode;
-  /** Optional override for the fallback heading */
-  title?: string;
-  /** Optional override for the fallback body text */
-  message?: string;
-  /**
-   * URL of the backend error-logging endpoint.
-   * Defaults to /api/errors. Pass null to disable logging.
-   */
-  logEndpoint?: string | null;
+  children: ReactNode;
+  /** Optional custom fallback element */
+  fallback?: ReactNode;
   /**
    * A value whose identity is compared on each render.
    * When it changes the boundary resets automatically —
    * used to reset on navigation (pass the current route / hash).
    */
-  resetKey?: unknown;
+  resetKey?: string | number;
+  /** Called after the boundary resets */
+  onReset?: () => void;
+  /** Base URL prepended to /api/errors (defaults to '') */
+  apiBase?: string;
 }
 
 interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
+  errorInfo?: ErrorInfo;
 }
+
+// ── ErrorBoundary ─────────────────────────────────────────────────────────────
 
 /**
  * React class-based error boundary.
  *
- * Catches errors thrown in any descendant, renders a fallback UI,
- * logs the error to the backend, and exposes a Retry mechanism.
- *
- * Navigation reset: pass the current route/hash as `resetKey`.
- * When `resetKey` changes the boundary resets automatically.
+ * Catches errors thrown in any descendant, renders a fallback UI with a
+ * "Retry" button, logs the error to POST /api/errors, and resets automatically
+ * when `resetKey` changes (navigation).
  */
-export class ErrorBoundary extends React.Component<
+export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
-  static defaultProps: Partial<ErrorBoundaryProps> = {
-    logEndpoint: "/api/errors",
-  };
+  static displayName = "ErrorBoundary";
 
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
     this.handleRetry = this.handleRetry.bind(this);
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    const { logEndpoint } = this.props;
-    if (logEndpoint == null) return;
-
-    // Fire-and-forget — tests can inspect via mocked fetch
-    fetch(logEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: error.message,
-        stack: error.stack,
-        componentStack: info.componentStack,
-      }),
-    }).catch(() => {
-      // Swallow network errors — logging must never cause secondary crashes
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    this.setState({ errorInfo });
+    this.logError({
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack ?? undefined,
     });
   }
 
-  /** Reset when `resetKey` changes (e.g. on navigation). */
+  /** Auto-reset when navigation key changes */
   componentDidUpdate(prevProps: ErrorBoundaryProps): void {
     if (
       this.state.hasError &&
       prevProps.resetKey !== this.props.resetKey
     ) {
-      this.setState({ hasError: false, error: null });
+      this.reset();
     }
   }
 
-  handleRetry(): void {
-    this.setState({ hasError: false, error: null });
+  private logError(payload: ErrorPayload): void {
+    const base = this.props.apiBase ?? "";
+    fetch(`${base}/api/errors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Never throw from an error boundary
+    });
   }
 
-  render(): React.ReactNode {
+  private reset(): void {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+    this.props.onReset?.();
+  }
+
+  handleRetry(): void {
+    this.reset();
+  }
+
+  render(): ReactNode {
     if (!this.state.hasError) {
       return this.props.children;
     }
 
-    const { title, message } = this.props;
+    if (this.props.fallback) {
+      return this.props.fallback;
+    }
 
     return (
-      <ErrorState
-        variant="server-error"
-        title={title}
-        message={message}
-        onRetry={this.handleRetry}
-      />
+      <div
+        role="alert"
+        aria-live="assertive"
+        style={{ padding: "2rem", textAlign: "center" }}
+      >
+        <h2>Something went wrong</h2>
+        <p>{this.state.error?.message}</p>
+        <button
+          type="button"
+          onClick={this.handleRetry}
+          aria-label="Retry"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 }
