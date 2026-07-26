@@ -1,0 +1,286 @@
+/*
+ * Design tokens — WorkloadGovernor UI
+ *
+ * Layer 1: Color primitives (raw palette, never used directly in components)
+ * Layer 2: Semantic tokens (what components reference)
+ *
+ * Dark mode is applied via:
+ *   a) [data-theme=dark] attribute (manual toggle)
+ *   b) @media (prefers-color-scheme: dark) (OS preference, lower specificity)
+ *
+ * The [data-theme=dark] selector wins over the media query, giving the manual
+ * toggle priority without any JavaScript on the critical path.
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Layer 1 — Color Primitives                                                  */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Neutrals */
+  --primitive-white:        #ffffff;
+  --primitive-gray-50:      #f9fafb;
+  --primitive-gray-100:     #f3f4f6;
+  --primitive-gray-200:     #e5e7eb;
+  --primitive-gray-300:     #d1d5db;
+  --primitive-gray-400:     #9ca3af;
+  --primitive-gray-500:     #6b7280;
+  --primitive-gray-600:     #4b5563;
+  --primitive-gray-700:     #374151;
+  --primitive-gray-800:     #1f2937;
+  --primitive-gray-900:     #111827;
+  --primitive-gray-950:     #030712;
+
+  /* Brand — Stellar/indigo family */
+  --primitive-indigo-50:    #eef2ff;
+  --primitive-indigo-100:   #e0e7ff;
+  --primitive-indigo-200:   #c7d2fe;
+  --primitive-indigo-400:   #818cf8;
+  --primitive-indigo-500:   #6366f1;
+  --primitive-indigo-600:   #4f46e5;
+  --primitive-indigo-700:   #4338ca;
+  --primitive-indigo-800:   #3730a3;
+  --primitive-indigo-900:   #312e81;
+
+  /* Accent — teal */
+  --primitive-teal-400:     #2dd4bf;
+  --primitive-teal-500:     #14b8a6;
+  --primitive-teal-600:     #0d9488;
+
+  /* Feedback */
+  --primitive-green-400:    #4ade80;
+  --primitive-green-500:    #22c55e;
+  --primitive-green-600:    #16a34a;
+  --primitive-yellow-400:   #facc15;
+  --primitive-yellow-500:   #eab308;
+  --primitive-red-400:      #f87171;
+  --primitive-red-500:      #ef4444;
+  --primitive-red-600:      #dc2626;
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* Layer 2 — Semantic tokens (Light mode defaults)                         */
+  /* ─────────────────────────────────────────────────────────────────────── */
+
+  /* Surfaces */
+  --color-surface:          var(--primitive-white);
+  --color-surface-raised:   var(--primitive-gray-50);
+  --color-surface-overlay:  var(--primitive-gray-100);
+  --color-surface-inset:    var(--primitive-gray-200);
+  --color-surface-inverse:  var(--primitive-gray-900);
+
+  /* Text — passes AA (4.5:1) on corresponding surface tokens */
+  --color-text-primary:     var(--primitive-gray-900);   /* 16:1 on white */
+  --color-text-secondary:   var(--primitive-gray-600);   /* 7.0:1 on white */
+  --color-text-tertiary:    var(--primitive-gray-500);   /* 4.6:1 on white */
+  --color-text-disabled:    var(--primitive-gray-400);
+  --color-text-on-brand:    var(--primitive-white);
+  --color-text-on-inverse:  var(--primitive-gray-50);
+  --color-text-link:        var(--primitive-indigo-600);
+  --color-text-link-hover:  var(--primitive-indigo-700);
+
+  /* Brand */
+  --color-brand:            var(--primitive-indigo-600);
+  --color-brand-hover:      var(--primitive-indigo-700);
+  --color-brand-active:     var(--primitive-indigo-800);
+  --color-brand-subtle:     var(--primitive-indigo-50);
+  --color-brand-subtle-border: var(--primitive-indigo-200);
+
+  /* Borders */
+  --color-border:           var(--primitive-gray-200);
+  --color-border-strong:    var(--primitive-gray-300);
+  --color-border-focus:     var(--primitive-indigo-500);
+
+  /* Feedback */
+  --color-success:          var(--primitive-green-500);
+  --color-success-subtle:   #f0fdf4;
+  --color-warning:          var(--primitive-yellow-500);
+  --color-warning-subtle:   #fefce8;
+  --color-error:            var(--primitive-red-500);
+  --color-error-subtle:     #fef2f2;
+
+  /* Interactive states */
+  --color-interactive-hover:  rgba(0, 0, 0, 0.04);
+  --color-interactive-active: rgba(0, 0, 0, 0.08);
+  --color-focus-ring:         var(--primitive-indigo-500);
+
+  /* Illustrations */
+  --illustration-filter: none;
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* Typography scale                                                         */
+  /* ─────────────────────────────────────────────────────────────────────── */
+  --font-family-base:     "Inter", system-ui, -apple-system, sans-serif;
+  --font-family-mono:     "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  --font-size-xs:    0.75rem;   /* 12px */
+  --font-size-sm:    0.875rem;  /* 14px */
+  --font-size-md:    1rem;      /* 16px */
+  --font-size-lg:    1.125rem;  /* 18px */
+  --font-size-xl:    1.25rem;   /* 20px */
+  --font-size-2xl:   1.5rem;    /* 24px */
+  --font-size-3xl:   1.875rem;  /* 30px */
+  --font-size-4xl:   2.25rem;   /* 36px */
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  --line-height-tight:    1.25;
+  --line-height-snug:     1.375;
+  --line-height-normal:   1.5;
+  --line-height-relaxed:  1.625;
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* Spacing scale (4-point grid)                                            */
+  /* ─────────────────────────────────────────────────────────────────────── */
+  --space-1:   0.25rem;   /* 4px  */
+  --space-2:   0.5rem;    /* 8px  */
+  --space-3:   0.75rem;   /* 12px */
+  --space-4:   1rem;      /* 16px */
+  --space-5:   1.25rem;   /* 20px */
+  --space-6:   1.5rem;    /* 24px */
+  --space-8:   2rem;      /* 32px */
+  --space-10:  2.5rem;    /* 40px */
+  --space-12:  3rem;      /* 48px */
+  --space-16:  4rem;      /* 64px */
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* Border radius                                                            */
+  /* ─────────────────────────────────────────────────────────────────────── */
+  --radius-sm:   0.25rem;
+  --radius-md:   0.375rem;
+  --radius-lg:   0.5rem;
+  --radius-xl:   0.75rem;
+  --radius-2xl:  1rem;
+  --radius-full: 9999px;
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* Shadow                                                                   */
+  /* ─────────────────────────────────────────────────────────────────────── */
+  --shadow-sm:   0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md:   0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.10);
+  --shadow-lg:   0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -4px rgba(0, 0, 0, 0.10);
+  --shadow-xl:   0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 8px 10px -6px rgba(0, 0, 0, 0.10);
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* Transition                                                               */
+  /* ─────────────────────────────────────────────────────────────────────── */
+  --transition-fast:   100ms ease;
+  --transition-base:   150ms ease;
+  --transition-slow:   250ms ease;
+
+  /* Color scheme (consumed by browser for scrollbar / form controls) */
+  color-scheme: light;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Dark mode — OS preference (lower specificity, overridden by [data-theme])  */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface:          var(--primitive-gray-950);
+    --color-surface-raised:   var(--primitive-gray-900);
+    --color-surface-overlay:  var(--primitive-gray-800);
+    --color-surface-inset:    var(--primitive-gray-700);
+    --color-surface-inverse:  var(--primitive-gray-100);
+
+    --color-text-primary:     var(--primitive-gray-50);    /* ~21:1 on gray-950 */
+    --color-text-secondary:   var(--primitive-gray-300);   /* ~11:1 on gray-950 */
+    --color-text-tertiary:    var(--primitive-gray-400);   /* ~6.6:1 on gray-950 */
+    --color-text-disabled:    var(--primitive-gray-600);
+    --color-text-on-brand:    var(--primitive-white);
+    --color-text-on-inverse:  var(--primitive-gray-900);
+    --color-text-link:        var(--primitive-indigo-400);
+    --color-text-link-hover:  var(--primitive-indigo-200);
+
+    --color-brand:            var(--primitive-indigo-500);
+    --color-brand-hover:      var(--primitive-indigo-400);
+    --color-brand-active:     var(--primitive-indigo-300);
+    --color-brand-subtle:     rgba(99, 102, 241, 0.15);
+    --color-brand-subtle-border: rgba(99, 102, 241, 0.35);
+
+    --color-border:           var(--primitive-gray-700);
+    --color-border-strong:    var(--primitive-gray-600);
+    --color-border-focus:     var(--primitive-indigo-400);
+
+    --color-success:          var(--primitive-green-400);
+    --color-success-subtle:   rgba(34, 197, 94, 0.12);
+    --color-warning:          var(--primitive-yellow-400);
+    --color-warning-subtle:   rgba(234, 179, 8, 0.12);
+    --color-error:            var(--primitive-red-400);
+    --color-error-subtle:     rgba(239, 68, 68, 0.12);
+
+    --color-interactive-hover:  rgba(255, 255, 255, 0.06);
+    --color-interactive-active: rgba(255, 255, 255, 0.12);
+    --color-focus-ring:         var(--primitive-indigo-400);
+
+    /* Dark-variant SVG illustrations use a brightness inversion + hue adjust */
+    --illustration-filter: invert(1) hue-rotate(180deg);
+
+    --shadow-sm:  0 1px 2px 0 rgba(0, 0, 0, 0.40);
+    --shadow-md:  0 4px 6px -1px rgba(0, 0, 0, 0.50), 0 2px 4px -2px rgba(0, 0, 0, 0.40);
+    --shadow-lg:  0 10px 15px -3px rgba(0, 0, 0, 0.50), 0 4px 6px -4px rgba(0, 0, 0, 0.40);
+    --shadow-xl:  0 20px 25px -5px rgba(0, 0, 0, 0.50), 0 8px 10px -6px rgba(0, 0, 0, 0.40);
+
+    color-scheme: dark;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Dark mode — Manual override via [data-theme=dark] on <html>                */
+/* Higher specificity than :root inside @media, so this always wins.          */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+[data-theme="dark"] {
+  --color-surface:          var(--primitive-gray-950);
+  --color-surface-raised:   var(--primitive-gray-900);
+  --color-surface-overlay:  var(--primitive-gray-800);
+  --color-surface-inset:    var(--primitive-gray-700);
+  --color-surface-inverse:  var(--primitive-gray-100);
+
+  --color-text-primary:     var(--primitive-gray-50);
+  --color-text-secondary:   var(--primitive-gray-300);
+  --color-text-tertiary:    var(--primitive-gray-400);
+  --color-text-disabled:    var(--primitive-gray-600);
+  --color-text-on-brand:    var(--primitive-white);
+  --color-text-on-inverse:  var(--primitive-gray-900);
+  --color-text-link:        var(--primitive-indigo-400);
+  --color-text-link-hover:  var(--primitive-indigo-200);
+
+  --color-brand:            var(--primitive-indigo-500);
+  --color-brand-hover:      var(--primitive-indigo-400);
+  --color-brand-active:     var(--primitive-indigo-300);
+  --color-brand-subtle:     rgba(99, 102, 241, 0.15);
+  --color-brand-subtle-border: rgba(99, 102, 241, 0.35);
+
+  --color-border:           var(--primitive-gray-700);
+  --color-border-strong:    var(--primitive-gray-600);
+  --color-border-focus:     var(--primitive-indigo-400);
+
+  --color-success:          var(--primitive-green-400);
+  --color-success-subtle:   rgba(34, 197, 94, 0.12);
+  --color-warning:          var(--primitive-yellow-400);
+  --color-warning-subtle:   rgba(234, 179, 8, 0.12);
+  --color-error:            var(--primitive-red-400);
+  --color-error-subtle:     rgba(239, 68, 68, 0.12);
+
+  --color-interactive-hover:  rgba(255, 255, 255, 0.06);
+  --color-interactive-active: rgba(255, 255, 255, 0.12);
+  --color-focus-ring:         var(--primitive-indigo-400);
+
+  --illustration-filter: invert(1) hue-rotate(180deg);
+
+  --shadow-sm:  0 1px 2px 0 rgba(0, 0, 0, 0.40);
+  --shadow-md:  0 4px 6px -1px rgba(0, 0, 0, 0.50), 0 2px 4px -2px rgba(0, 0, 0, 0.40);
+  --shadow-lg:  0 10px 15px -3px rgba(0, 0, 0, 0.50), 0 4px 6px -4px rgba(0, 0, 0, 0.40);
+  --shadow-xl:  0 20px 25px -5px rgba(0, 0, 0, 0.50), 0 8px 10px -6px rgba(0, 0, 0, 0.40);
+
+  color-scheme: dark;
+}
+
+/* Force light mode when explicitly set */
+[data-theme="light"] {
+  color-scheme: light;
+}

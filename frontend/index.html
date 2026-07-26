@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorkloadGovernor</title>
+    <meta name="description" content="AlignmentDrips Wave — open-source workload fairness on Stellar." />
+
+    <!--
+      FOUC prevention: this blocking script runs BEFORE the browser paints.
+      It reads the stored theme preference and sets [data-theme] on <html>
+      synchronously, so the correct colour scheme is applied on first render.
+      No flash. No async. Intentionally inline.
+    -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("wg-theme");
+          if (p === "dark" || p === "light") {
+            document.documentElement.setAttribute("data-theme", p);
+          } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            document.documentElement.setAttribute("data-theme", "dark");
+          } else {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (e) {
+          /* localStorage unavailable — silent fallback to OS preference via CSS */
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="/src/components.css" />
+  </head>
+
+  <body>
+    <div class="page">
+      <!-- ─── Navigation ─────────────────────────────────────────────────── -->
+      <nav class="nav" role="navigation" aria-label="Main navigation">
+        <a class="nav__brand" href="/">
+          <!-- Logo mark -->
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 28 28"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect width="28" height="28" rx="7" fill="var(--color-brand)" />
+            <path
+              d="M8 14h12M8 10h8M8 18h6"
+              stroke="var(--color-text-on-brand)"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+          WorkloadGovernor
+        </a>
+
+        <div class="nav__actions">
+          <a class="btn btn--ghost btn--sm" href="/docs">Docs</a>
+
+          <!--
+            Theme toggle button.
+            - id="theme-toggle" is required by theme.ts
+            - aria-label and aria-pressed are set dynamically by updateToggleIcon()
+          -->
+          <button
+            id="theme-toggle"
+            class="theme-toggle"
+            type="button"
+            aria-label="Switch to dark mode"
+            aria-pressed="false"
+          >
+            <!-- Icon injected by theme.ts updateToggleIcon() -->
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+              />
+            </svg>
+          </button>
+        </div>
+      </nav>
+
+      <!-- ─── Main content ─────────────────────────────────────────────── -->
+      <main class="main" id="main-content">
+        <div class="container stack">
+
+          <section>
+            <h1 style="font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); margin: 0 0 var(--space-2);">
+              AlignmentDrips Wave
+            </h1>
+            <p style="color: var(--color-text-secondary); margin: 0 0 var(--space-8);">
+              Open-source workload fairness on the Stellar network.
+            </p>
+
+            <!-- Illustration with dark variant support -->
+            <img
+              class="illustration illustration--auto-invert"
+              src="/public/illustrations/hero-light.svg"
+              data-light-src="/public/illustrations/hero-light.svg"
+              data-dark-src="/public/illustrations/hero-dark.svg"
+              alt="Stylised graph showing fair workload distribution across contributors"
+              width="600"
+              height="300"
+            />
+          </section>
+
+          <!-- Status cards example using semantic tokens -->
+          <div class="cluster">
+            <div class="card" style="flex: 1; min-width: 200px;">
+              <div class="card__header">
+                <h2 class="card__title">Global Limit</h2>
+                <span class="badge badge--brand">Active</span>
+              </div>
+              <p style="margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);">
+                15
+              </p>
+              <p class="card__meta">Max pending applications per contributor</p>
+            </div>
+
+            <div class="card" style="flex: 1; min-width: 200px;">
+              <div class="card__header">
+                <h2 class="card__title">Org Limit</h2>
+                <span class="badge badge--brand">Active</span>
+              </div>
+              <p style="margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);">
+                4
+              </p>
+              <p class="card__meta">Max active assignments per org</p>
+            </div>
+
+            <div class="card" style="flex: 1; min-width: 200px;">
+              <div class="card__header">
+                <h2 class="card__title">TTL</h2>
+                <span class="badge badge--success">Healthy</span>
+              </div>
+              <p style="margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);">
+                ~24h
+              </p>
+              <p class="card__meta">Application entry lifetime (17 280 ledgers)</p>
+            </div>
+          </div>
+
+          <div class="cluster">
+            <button class="btn btn--primary" type="button">Apply for Issue</button>
+            <button class="btn btn--secondary" type="button">View Assignments</button>
+            <button class="btn btn--ghost" type="button">Withdraw</button>
+          </div>
+
+        </div>
+      </main>
+    </div>
+
+    <script type="module">
+      import { initTheme } from "/src/theme.ts";
+      document.addEventListener("DOMContentLoaded", () => initTheme());
+    </script>
+  </body>
+</html>

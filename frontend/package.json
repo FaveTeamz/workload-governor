@@ -1,0 +1,16 @@
+{
+  "name": "workload-governor-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorkloadGovernor UI — dark mode, design tokens, Soroban integration",
+  "type": "module",
+  "scripts": {
+    "dev":   "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "vite":       "5.2.11"
+  }
+}
