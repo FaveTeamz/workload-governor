@@ -1,0 +1,640 @@
+openapi: 3.1.0
+info:
+  title: Workload Governor API
+  description: REST API for managing workload assignments on Stellar blockchain
+  version: 1.0.0
+  contact:
+    name: Workload Governor Team
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.workload-governor.io
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: getHealth
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                required:
+                  - status
+
+  /api/issues:
+    get:
+      summary: List issues with optional filtering
+      operationId: listIssues
+      tags:
+        - Issues
+      parameters:
+        - name: org_id
+          in: query
+          schema:
+            type: string
+          description: Filter by organization ID
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, closed, in_progress]
+          description: Filter by issue status
+      responses:
+        '200':
+          description: List of issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Issue'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/contributors:
+    get:
+      summary: List contributors
+      operationId: listContributors
+      tags:
+        - Contributors
+      responses:
+        '200':
+          description: List of contributors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contributor'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/maintainers:
+    post:
+      summary: Register a maintainer (admin only)
+      operationId: registerMaintainer
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maintainer_address:
+                  type: string
+                  description: Stellar account address of the maintainer
+                org_id:
+                  type: string
+                  description: Organization ID
+                sequence:
+                  type: string
+                  description: Current sequence number of the admin account
+              required:
+                - maintainer_address
+                - org_id
+                - sequence
+      responses:
+        '200':
+          description: Unsigned transaction XDR for admin to sign
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  xdr:
+                    type: string
+                    description: Unsigned transaction XDR
+                  message:
+                    type: string
+                    description: Instructions for admin
+                required:
+                  - xdr
+                  - message
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/transactions/apply:
+    post:
+      summary: Build transaction for applying to an issue
+      operationId: buildApplyTransaction
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyTransactionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/transactions/withdraw:
+    post:
+      summary: Build transaction for withdrawing application
+      operationId: buildWithdrawTransaction
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawTransactionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/transactions/assign:
+    post:
+      summary: Build transaction for assigning issue to contributor
+      operationId: buildAssignTransaction
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignTransactionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/transactions/complete:
+    post:
+      summary: Build transaction for marking issue as complete
+      operationId: buildCompleteTransaction
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteTransactionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/transactions/revoke:
+    post:
+      summary: Build transaction for revoking assignment
+      operationId: buildRevokeTransaction
+      tags:
+        - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeTransactionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/TransactionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/events:
+    get:
+      summary: List contract events with pagination and filtering
+      operationId: listEvents
+      tags:
+        - Events
+      parameters:
+        - name: org_id
+          in: query
+          schema:
+            type: string
+          description: Filter by organization ID
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [applied, withdrawn, assigned, completed, revoked]
+          description: Filter by event type
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter events after this date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter events before this date
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+          description: Number of events to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of events to skip
+      responses:
+        '200':
+          description: List of contract events with pagination info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContractEvent'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                required:
+                  - events
+                  - pagination
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /docs:
+    get:
+      summary: Swagger UI documentation
+      operationId: getDocs
+      tags:
+        - System
+      responses:
+        '200':
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  schemas:
+    Issue:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Issue ID
+        org_id:
+          type: string
+          description: Organization ID
+        title:
+          type: string
+          description: Issue title
+        status:
+          type: string
+          enum: [open, closed, in_progress]
+          description: Issue status
+        created_at:
+          type: string
+          format: date-time
+          description: Issue creation timestamp
+      required:
+        - id
+        - org_id
+        - title
+        - status
+        - created_at
+
+    Contributor:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Stellar account address
+        org_id:
+          type: string
+          description: Organization ID
+      required:
+        - address
+        - org_id
+
+    Maintainer:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Stellar account address
+        org_id:
+          type: string
+          description: Organization ID
+      required:
+        - address
+        - org_id
+
+    ContractEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Event ID
+        event_type:
+          type: string
+          enum: [applied, withdrawn, assigned, completed, revoked]
+          description: Type of contract event
+        ledger_seq:
+          type: integer
+          description: Ledger sequence number
+        timestamp:
+          type: string
+          format: date-time
+          description: Event timestamp
+        actor:
+          type: string
+          description: Address of the actor who triggered the event
+        org_id:
+          type: string
+          description: Organization ID
+        issue_id:
+          type: integer
+          nullable: true
+          description: Issue ID if applicable
+        contributor:
+          type: string
+          nullable: true
+          description: Contributor address if applicable
+        data:
+          type: object
+          nullable: true
+          description: Additional event data
+        created_at:
+          type: string
+          format: date-time
+          description: Record creation timestamp
+      required:
+        - id
+        - event_type
+        - ledger_seq
+        - timestamp
+        - actor
+        - org_id
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of items
+        limit:
+          type: integer
+          description: Items per page
+        offset:
+          type: integer
+          description: Items skipped
+        hasMore:
+          type: boolean
+          description: Whether more items exist
+      required:
+        - total
+        - limit
+        - offset
+        - hasMore
+
+    TransactionResponse:
+      type: object
+      properties:
+        xdr:
+          type: string
+          description: Transaction XDR string
+        fee:
+          type: string
+          description: Estimated fee in stroops
+        instructions:
+          type: integer
+          description: Estimated CPU instructions
+        readBytes:
+          type: integer
+          description: Estimated bytes to read
+        writeBytes:
+          type: integer
+          description: Estimated bytes to write
+      required:
+        - xdr
+        - fee
+
+    ApplyTransactionRequest:
+      type: object
+      properties:
+        contributor:
+          type: string
+          description: Contributor Stellar address
+        org_id:
+          type: string
+          description: Organization ID
+        issue_id:
+          type: integer
+          description: Issue ID
+        sequence:
+          type: string
+          description: Current sequence number
+      required:
+        - contributor
+        - org_id
+        - issue_id
+        - sequence
+
+    WithdrawTransactionRequest:
+      type: object
+      properties:
+        contributor:
+          type: string
+          description: Contributor Stellar address
+        org_id:
+          type: string
+          description: Organization ID
+        issue_id:
+          type: integer
+          description: Issue ID
+        sequence:
+          type: string
+          description: Current sequence number
+      required:
+        - contributor
+        - org_id
+        - issue_id
+        - sequence
+
+    AssignTransactionRequest:
+      type: object
+      properties:
+        maintainer:
+          type: string
+          description: Maintainer Stellar address
+        contributor:
+          type: string
+          description: Contributor Stellar address
+        org_id:
+          type: string
+          description: Organization ID
+        issue_id:
+          type: integer
+          description: Issue ID
+        sequence:
+          type: string
+          description: Current sequence number
+      required:
+        - maintainer
+        - contributor
+        - org_id
+        - issue_id
+        - sequence
+
+    CompleteTransactionRequest:
+      type: object
+      properties:
+        maintainer:
+          type: string
+          description: Maintainer Stellar address
+        contributor:
+          type: string
+          description: Contributor Stellar address
+        org_id:
+          type: string
+          description: Organization ID
+        issue_id:
+          type: integer
+          description: Issue ID
+        sequence:
+          type: string
+          description: Current sequence number
+      required:
+        - maintainer
+        - contributor
+        - org_id
+        - issue_id
+        - sequence
+
+    RevokeTransactionRequest:
+      type: object
+      properties:
+        maintainer:
+          type: string
+          description: Maintainer Stellar address
+        contributor:
+          type: string
+          description: Contributor Stellar address
+        org_id:
+          type: string
+          description: Organization ID
+        issue_id:
+          type: integer
+          description: Issue ID
+        sequence:
+          type: string
+          description: Current sequence number
+      required:
+        - maintainer
+        - contributor
+        - org_id
+        - issue_id
+        - sequence
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        correlationId:
+          type: string
+          nullable: true
+          description: Correlation ID for tracing
+      required:
+        - error
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized - invalid or missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    TransactionResponse:
+      description: Transaction built successfully
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TransactionResponse'
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: base64
+      description: |
+        Bearer token containing signed message in base64 format.
+        Format: Bearer <base64(JSON.stringify({admin_address, message, signature}))>
+
+tags:
+  - name: System
+    description: System endpoints
+  - name: Issues
+    description: Issue management
+  - name: Contributors
+    description: Contributor management
+  - name: Admin
+    description: Admin-only endpoints
+  - name: Transactions
+    description: Transaction building
+  - name: Events
+    description: Event audit trail

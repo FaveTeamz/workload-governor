@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ delete ! in WorkloadGovernor::assign_issue
+@@ -261,17 +261,17 @@
+         org_id: Symbol,
+         issue_id: u32,
+     ) {
+         storage::require_initialized(&env, &ContractError::NotInitialized);
+         maintainer.require_auth();
+         if !storage::is_maintainer(&env, &maintainer, &org_id) {
+             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+         }
+-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
++        if  /* ~ changed by cargo-mutants ~ */storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+             panic_with_error!(env, ContractError::ApplicationNotFound);
+         }
+         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+         if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {
+             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);
+         }
+         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
+             panic_with_error!(env, ContractError::AlreadyAssigned);
