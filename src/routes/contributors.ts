@@ -64,4 +64,85 @@ router.get('/contributors/:address/counts', (req: Request, res: Response) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/contributors/:address/activity
+// Returns monthly applied / assigned / completed counts for the last 12
+// calendar months (oldest → newest), suitable for a bar chart.
+// ---------------------------------------------------------------------------
+
+export interface MonthlyActivityRow {
+  /** "YYYY-MM" — first day of the calendar month */
+  month: string;
+  applied: number;
+  assigned: number;
+  completed: number;
+}
+
+router.get('/:address/activity', async (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  if (!isValidStellarAddress(address)) {
+    res.status(400).json({ error: 'invalid stellar address format' });
+    return;
+  }
+
+  try {
+    // Build the 12-month window ending at the current month (inclusive)
+    const rows = await pool.query<{ month: string; applied: string; assigned: string; completed: string }>(
+      `WITH months AS (
+        SELECT to_char(date_trunc('month', NOW()) - (n || ' months')::interval, 'YYYY-MM') AS month
+        FROM generate_series(0, 11) AS gs(n)
+      ),
+      applied AS (
+        SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
+               COUNT(*) AS cnt
+        FROM applications
+        WHERE contributor = $1
+          AND created_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
+        GROUP BY 1
+      ),
+      assigned AS (
+        SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
+               COUNT(*) AS cnt
+        FROM assignments
+        WHERE contributor = $1
+          AND created_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
+        GROUP BY 1
+      ),
+      completed AS (
+        SELECT to_char(date_trunc('month', timestamp), 'YYYY-MM') AS month,
+               COUNT(*) AS cnt
+        FROM contract_events
+        WHERE contributor = $1
+          AND event_type = 'completed'
+          AND timestamp >= date_trunc('month', NOW()) - INTERVAL '11 months'
+        GROUP BY 1
+      )
+      SELECT
+        m.month,
+        COALESCE(ap.cnt, 0)::int AS applied,
+        COALESCE(as_.cnt, 0)::int AS assigned,
+        COALESCE(co.cnt, 0)::int AS completed
+      FROM months m
+      LEFT JOIN applied  ap  ON ap.month  = m.month
+      LEFT JOIN assigned as_ ON as_.month = m.month
+      LEFT JOIN completed co  ON co.month  = m.month
+      ORDER BY m.month ASC`,
+      [address],
+    );
+
+    const activity: MonthlyActivityRow[] = rows.rows.map((r) => ({
+      month: r.month,
+      applied: Number(r.applied),
+      assigned: Number(r.assigned),
+      completed: Number(r.completed),
+    }));
+
+    res.json({ activity });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal server error';
+    res.status(500).json({ error: msg });
+  }
+});
+
 export default router;

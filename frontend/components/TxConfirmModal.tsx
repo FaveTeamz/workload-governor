@@ -1,57 +1,90 @@
-'use client';
+"use client";
+import { useRef, useState, useEffect, type KeyboardEvent } from "react";
+import type { UseTxModal } from "../hooks/useTxModal";
+import "./TxConfirmModal.css";
 
-import { useEffect, useRef, useCallback, useId } from 'react';
+const FOCUSABLE =
+  'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-type TxConfirmModalProps = {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  description: string;
-};
+interface Props {
+  modal: UseTxModal & { _resolve: () => void; _reject: () => void };
+}
 
-const SWIPE_DISMISS_THRESHOLD = 80; // px — swipe down this far to dismiss
+/** Plain-language icon for the action type */
+function actionIcon(action: string, destructive?: boolean): string {
+  if (destructive) return "⚠️";
+  const lower = action.toLowerCase();
+  if (lower.includes("apply"))    return "📝";
+  if (lower.includes("assign"))   return "✅";
+  if (lower.includes("complete")) return "🎉";
+  if (lower.includes("withdraw")) return "↩️";
+  if (lower.includes("revoke"))   return "🚫";
+  return "🔏";
+}
 
-/**
- * Transaction confirmation modal.
- *
- * - Desktop (≥ 768px): centred overlay dialog
- * - Mobile (< 768px): full-screen bottom sheet that slides up from the bottom.
- *   Supports swipe-down-to-dismiss gesture (touch ≥ 80 px downward).
- *
- * Meets WCAG:
- *  - role="dialog" + aria-modal + aria-labelledby
- *  - Focus trap: first focusable element receives focus on open
- *  - All buttons ≥ 44×44 px (WCAG 2.5.5)
- *  - Escape key closes the modal
- */
-export default function TxConfirmModal({
-  isOpen,
-  onClose,
-  onConfirm,
-  title,
-  description,
-}: TxConfirmModalProps) {
-  const titleId = useId();
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const touchStartY = useRef<number | null>(null);
-  const touchCurrentY = useRef<number>(0);
-  const sheetRef = useRef<HTMLDivElement>(null);
+export default function TxConfirmModal({ modal }: Props) {
+  const { state, _resolve, _reject, close } = modal;
+  const dialogRef      = useRef<HTMLDivElement>(null);
+  const previousFocus  = useRef<HTMLElement | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
-  // Focus the close button when the modal opens
+  const isOpen    = state.status !== "idle";
+  const isLoading = state.status === "loading";
+  const isError   = state.status === "error";
+
+  const details =
+    state.status === "confirming" ||
+    state.status === "loading"    ||
+    state.status === "error"
+      ? state.details
+      : null;
+
+  const destructive  = details?.destructive ?? false;
+  const confirmLabel = details?.confirmLabel ?? "Confirm & Sign";
+  const errorMsg     = state.status === "error" ? state.message : "";
+
+  // ── Focus management ────────────────────────────────────────
   useEffect(() => {
-    if (isOpen) closeButtonRef.current?.focus();
+    if (isOpen) {
+      previousFocus.current = document.activeElement as HTMLElement;
+      document.body.style.overflow = "hidden";
+      requestAnimationFrame(() => {
+        const first = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)[0];
+        first?.focus();
+      });
+    } else {
+      document.body.style.overflow = "";
+      previousFocus.current?.focus();
+    }
   }, [isOpen]);
 
-  // Escape key handler
+  // ── Escape key ──────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape" && !isLoading) _reject();
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, isLoading, _reject]);
+
+  // ── Tab trap ────────────────────────────────────────────────
+  function trapFocus(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab") return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last  = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 
   // Prevent body scroll while modal is open
   useEffect(() => {
@@ -75,28 +108,14 @@ export default function TxConfirmModal({
     }
   }, []);
 
-  const handleTouchEnd = useCallback(() => {
-    if (touchCurrentY.current >= SWIPE_DISMISS_THRESHOLD) {
-      // Reset transform before closing so animation looks clean
-      if (sheetRef.current) sheetRef.current.style.transform = '';
-      onClose();
-    } else {
-      // Snap back
-      if (sheetRef.current) sheetRef.current.style.transform = '';
-    }
-    touchStartY.current = null;
-    touchCurrentY.current = 0;
-  }, [onClose]);
-
-  if (!isOpen) return null;
-
   return (
     <>
       {/* Backdrop */}
       <div
         className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
         aria-hidden="true"
-        onClick={onClose}
+        className="txmodal-backdrop"
+        onClick={() => { if (!isLoading) _reject(); }}
       />
 
       {/*
@@ -107,80 +126,130 @@ export default function TxConfirmModal({
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
-        data-testid="tx-modal"
-        // Bottom-sheet on mobile; centred dialog on md+
-        className={[
-          'fixed z-50 bg-[var(--color-bg)] shadow-xl',
-          // Mobile: bottom sheet
-          'inset-x-0 bottom-0 rounded-t-2xl p-6',
-          // Desktop: centred card
-          'md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-md md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl',
-        ].join(' ')}
-        // Swipe-to-dismiss (mobile only — no-op on desktop)
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        aria-labelledby="txmodal-title"
+        aria-describedby="txmodal-subtitle"
+        onKeyDown={trapFocus}
+        className={`txmodal${destructive ? " txmodal--destructive" : ""}`}
       >
-        {/* Drag handle — decorative, mobile only */}
-        <div
-          className="mx-auto mb-4 h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600 md:hidden"
-          aria-hidden="true"
-          data-testid="modal-bottom-sheet"
-        />
-
-        {/* Header */}
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <h2
-            id={titleId}
-            className="text-lg font-semibold text-[var(--color-text-primary)]"
-          >
-            {title}
-          </h2>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            aria-label="Close modal"
-            onClick={onClose}
-            className="touch-target shrink-0 rounded text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
-          >
-            {/* ✕ icon */}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-5 w-5"
-              aria-hidden="true"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+        {/* ── Hero ────────────────────────────────────────────── */}
+        <div className="txmodal__hero">
+          <span className="txmodal__icon" aria-hidden="true">
+            {actionIcon(details?.action ?? "", destructive)}
+          </span>
+          <div className="txmodal__hero-text">
+            <h2 id="txmodal-title" className="txmodal__action-summary">
+              {details?.action ?? "Confirm Transaction"}
+            </h2>
+            <p id="txmodal-subtitle" className="txmodal__subtitle">
+              Review carefully before signing with Freighter
+            </p>
+          </div>
         </div>
 
-        {/* Body */}
-        <p className="mb-6 text-sm text-[var(--color-text-secondary)]">{description}</p>
+        {/* ── Secondary info grid ──────────────────────────────── */}
+        {details && (
+          <dl className="txmodal__info">
+            <div className="txmodal__info-item">
+              <dt className="txmodal__info-label">Target</dt>
+              <dd className="txmodal__info-value">{details.target}</dd>
+            </div>
+            <div className="txmodal__info-item">
+              <dt className="txmodal__info-label">Est. fee</dt>
+              <dd className="txmodal__info-value">{details.fee}</dd>
+            </div>
+            {details.estimatedTime && (
+              <div className="txmodal__info-item">
+                <dt className="txmodal__info-label">Confirmation</dt>
+                <dd className="txmodal__info-value">{details.estimatedTime}</dd>
+              </div>
+            )}
+            <div className="txmodal__info-item">
+              <dt className="txmodal__info-label">Network</dt>
+              <dd className="txmodal__info-value">
+                <span
+                  className={`txmodal__network-badge txmodal__network-badge--${details.network}`}
+                >
+                  {details.network.toUpperCase()}
+                </span>
+              </dd>
+            </div>
+          </dl>
+        )}
 
-        {/* Actions */}
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="touch-target w-full rounded-md border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 sm:w-auto"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="touch-target w-full rounded-md bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:w-auto dark:bg-brand-500 dark:hover:bg-brand-600"
-          >
-            Confirm &amp; Submit
-          </button>
+        {/* ── Collapsible technical details ────────────────────── */}
+        {details?.xdr && (
+          <div className="txmodal__details">
+            <button
+              type="button"
+              className="txmodal__details-toggle"
+              aria-expanded={detailsOpen}
+              aria-controls="txmodal-xdr"
+              onClick={() => setDetailsOpen((v) => !v)}
+            >
+              Technical details (XDR)
+              <span
+                className={`txmodal__details-chevron${detailsOpen ? " txmodal__details-chevron--open" : ""}`}
+                aria-hidden="true"
+              >
+                ▼
+              </span>
+            </button>
+            {detailsOpen && (
+              <div id="txmodal-xdr" className="txmodal__details-body">
+                <pre className="txmodal__xdr">{details.xdr}</pre>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Error banner ─────────────────────────────────────── */}
+        {isError && (
+          <p role="alert" className="txmodal__error">
+            {errorMsg}
+          </p>
+        )}
+
+        {/* ── Footer ───────────────────────────────────────────── */}
+        <div className="txmodal__footer">
+          {isError ? (
+            <>
+              <button
+                type="button"
+                className="txmodal__btn-secondary"
+                onClick={close}
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                className="txmodal__btn-primary"
+                onClick={_resolve}
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="txmodal__btn-secondary"
+                onClick={_reject}
+                disabled={isLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`txmodal__btn-primary${destructive ? " txmodal__btn-primary--destructive" : ""}`}
+                onClick={_resolve}
+                disabled={isLoading}
+                aria-busy={isLoading}
+              >
+                {isLoading && <span className="txmodal__spinner" aria-hidden="true" />}
+                {isLoading ? "Signing…" : confirmLabel}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </>
