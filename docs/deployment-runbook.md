@@ -256,3 +256,127 @@ stellar contract invoke \
   -- upgrade \
   --new_wasm_hash <WASM_HASH>
 ```
+
+
+---
+
+## Operational Queries
+
+Four CloudWatch Logs Insights queries are saved under `infra/logs_and_alarms.tf`
+and surfaced as widgets in the **`workload-governor-operational` dashboard**.
+
+All queries target the `/ecs/<service_name>` log group which receives structured
+JSON from the backend (`src/logger.ts`). Relevant log fields:
+
+| Field | Type | Present on |
+|---|---|---|
+| `correlationId` | string | every log line |
+| `method` | string | request logs |
+| `path` | string | request logs |
+| `status` | number | request logs |
+| `duration` | number (ms) | request logs |
+| `error` | string | error handler logs |
+| `stack` | string | error handler logs |
+| `timestamp` | ISO-8601 | every log line |
+
+---
+
+### Query 1 — Error Rate by Endpoint
+
+**Purpose:** Count 4xx/5xx responses and error-handler events grouped by path.
+Run during incidents to identify the most-affected endpoints in the last hour.
+
+```
+fields @timestamp, path, status, correlationId
+| filter status >= 400 or ispresent(error)
+| stats count(*) as error_count by path, bin(1h)
+| sort error_count desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range to **Last 1 hour**.
+4. Paste the query above and click **Run query**.
+
+---
+
+### Query 2 — p95 Latency per Endpoint
+
+**Purpose:** Compute the 95th-percentile response time (ms) per path.
+Highlights slow endpoints that may need caching or query optimisation.
+
+```
+fields @timestamp, path, duration
+| filter ispresent(duration)
+| stats pct(duration, 95) as p95_ms, count(*) as requests by path
+| sort p95_ms desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range as desired (e.g. **Last 1 hour**).
+4. Paste the query above and click **Run query**.
+
+---
+
+### Query 3 — Failed Transactions by Error Code
+
+**Purpose:** Detect Soroban contract errors (numeric codes) surfacing in the
+backend error handler. Maps error codes to the paths that trigger them.
+Cross-reference codes with `docs/error-reference.md`.
+
+```
+fields @timestamp, correlationId, error, path
+| filter ispresent(error)
+| parse error /(?P<error_code>\d+)/
+| stats count(*) as failures by error_code, path
+| sort failures desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range to **Last 1 hour** (or longer for trend analysis).
+4. Paste the query above and click **Run query**.
+
+---
+
+### Query 4 — RPC Failover Events
+
+**Purpose:** Detect network-level failures to the Stellar RPC / Horizon
+endpoints. A spike in this count may indicate a provider outage or the need
+to switch the primary RPC URL.
+
+```
+fields @timestamp, correlationId, error, path
+| filter error like /rpc|RPC|failover|timeout|ECONNREFUSED|ETIMEDOUT/
+| stats count(*) as rpc_failures by bin(1h)
+| sort @timestamp desc
+```
+
+**How to run manually:**
+1. Open CloudWatch → Logs Insights.
+2. Select log group `/ecs/<service_name>`.
+3. Set time range to **Last 24 hours**.
+4. Paste the query above and click **Run query**.
+
+---
+
+### Dashboard
+
+The `workload-governor-operational` dashboard surfaces all four queries as
+Logs Insights widgets with a 1-hour auto-refresh. After applying the Terraform
+configuration, retrieve the dashboard ARN:
+
+```bash
+terraform output operational_dashboard_arn
+```
+
+Share the ARN (or the direct console URL) with the team so everyone bookmarks
+the same view. The console URL format is:
+
+```
+https://<region>.console.aws.amazon.com/cloudwatch/home#dashboards:name=workload-governor-operational
+```

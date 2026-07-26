@@ -6,6 +6,7 @@ export interface WalletState {
   publicKey: string | null;
   error: string | null;
   connecting: boolean;
+  networkMismatch: boolean;
 }
 
 export interface UseWallet extends WalletState {
@@ -13,12 +14,13 @@ export interface UseWallet extends WalletState {
   disconnect: () => void;
 }
 
-// Thin wrapper so we can mock in tests
 function getFreighter() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (globalThis as any).__freighter_api__ ??
-    // dynamic import at runtime; tests inject __freighter_api__ before calling
-    null;
+  return (globalThis as any).__freighter_api__ ?? null;
+}
+
+function expectedNetwork(): string {
+  return (import.meta.env.VITE_STELLAR_NETWORK ?? "TESTNET").toUpperCase();
 }
 
 export function useWallet(): UseWallet {
@@ -27,8 +29,8 @@ export function useWallet(): UseWallet {
   );
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [networkMismatch, setNetworkMismatch] = useState(false);
 
-  // Re-hydrate from storage on mount (covers page-reload scenario)
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && !publicKey) setPublicKey(stored);
@@ -37,6 +39,7 @@ export function useWallet(): UseWallet {
   async function connect() {
     setConnecting(true);
     setError(null);
+    setNetworkMismatch(false);
     try {
       const freighter = getFreighter();
       if (!freighter) {
@@ -53,6 +56,13 @@ export function useWallet(): UseWallet {
         setError(addrErr);
         return;
       }
+      // Network mismatch detection
+      if (typeof freighter.getNetwork === "function") {
+        const { network } = await freighter.getNetwork();
+        if (network && network.toUpperCase() !== expectedNetwork()) {
+          setNetworkMismatch(true);
+        }
+      }
       localStorage.setItem(STORAGE_KEY, address);
       setPublicKey(address);
     } catch (e) {
@@ -66,7 +76,8 @@ export function useWallet(): UseWallet {
     localStorage.removeItem(STORAGE_KEY);
     setPublicKey(null);
     setError(null);
+    setNetworkMismatch(false);
   }
 
-  return { publicKey, error, connecting, connect, disconnect };
+  return { publicKey, error, connecting, networkMismatch, connect, disconnect };
 }
