@@ -11,6 +11,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test": "vitest run --config vitest.config.ts",
+    "test:snapshots": "vitest run --config vitest.config.ts tests/unit/snapshots.test.tsx",
+    "test:update-snapshots": "vitest run --config vitest.config.ts tests/unit/snapshots.test.tsx -u",
     "test:e2e": "playwright test"
   },
   "dependencies": {
