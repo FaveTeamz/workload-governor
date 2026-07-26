@@ -58,6 +58,68 @@ This prevents a small group of faster developers from monopolizing open-source t
 
 All six key prefixes are distinct — zero key collision guarantee.
 
+## Local Development
+
+The full local stack (backend, PostgreSQL 15, Redis 7, and a Stellar Quickstart node for local Soroban RPC) is managed with Docker Compose.
+
+### Prerequisites
+
+- Docker ≥ 24 with the Compose v2 plugin (`docker compose` — not `docker-compose`)
+- Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` if you need non-default ports or credentials.
+
+### Start all services
+
+```bash
+docker compose up -d --wait
+```
+
+`--wait` blocks until every service passes its health check. Stellar Quickstart can take up to 60 s on first boot.
+
+### Verify
+
+```bash
+# All containers healthy
+docker compose ps
+
+# Backend responds
+curl http://localhost:3000/health
+
+# Soroban RPC reachable
+curl http://localhost:8000/health
+```
+
+### Hot reload
+
+The backend mounts `./src` into the container and runs `ts-node --watch`. Any change to a file under `src/` triggers an automatic restart — no container rebuild needed.
+
+### Stop & clean up
+
+```bash
+# Stop containers, keep volumes
+docker compose down
+
+# Stop containers AND delete all volumes (resets DB, Redis, Stellar state)
+docker compose down -v
+```
+
+### Service ports (defaults)
+
+| Service         | Port  |
+|-----------------|-------|
+| Backend         | 3000  |
+| PostgreSQL      | 5432  |
+| Redis           | 6379  |
+| Stellar RPC     | 8000  |
+| pgAdmin         | 5050  |
+
+Override any port in `.env` (e.g. `POSTGRES_PORT=5433`).
+
 ## Building
 
 ```bash
