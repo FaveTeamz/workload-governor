@@ -1697,3 +1697,184 @@ proptest! {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #1: Per-org assignment cap — set_org_cap / get_org_cap tests
+// ---------------------------------------------------------------------------
+
+/// AC: Default cap of 4 applies when no per-org cap has been set.
+#[test]
+fn unit_org_cap_default_is_4() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let org = t.org("capdefault");
+
+    t.client.initialize(&admin);
+    assert_eq!(t.client.get_org_cap(&org), 4u32);
+}
+
+/// AC: Maintainer can set org cap to 8 and assignments up to 8 are allowed.
+#[test]
+fn unit_set_org_cap_allows_higher_assignment_count() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("bigorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.set_org_cap(&maintainer, &org, &8u32);
+
+    assert_eq!(t.client.get_org_cap(&org), 8u32);
+
+    // Apply for and assign 8 issues — should all succeed
+    for i in 1u32..=8 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+    }
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 8);
+}
+
+/// AC: The 9th assignment is rejected when cap is 8.
+#[test]
+fn unit_set_org_cap_8_rejects_ninth_assignment() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("bigorg2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.set_org_cap(&maintainer, &org, &8u32);
+
+    for i in 1u32..=8 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+    }
+
+    // 9th assignment must fail
+    t.client.apply_for_issue(&contributor, &org, &9u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &9u32);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::OrgAssignmentLimitReached as u32
+        )))
+    );
+}
+
+/// AC: Non-maintainer caller returns UnauthorizedMaintainer (error 4).
+#[test]
+fn unit_set_org_cap_non_maintainer_rejected() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let not_maintainer = Address::generate(&t.env);
+    let org = t.org("capauth");
+
+    t.client.initialize(&admin);
+
+    let result = t.client.try_set_org_cap(&not_maintainer, &org, &8u32);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::UnauthorizedMaintainer as u32
+        )))
+    );
+}
+
+/// AC: Cap of 0 returns InvalidOrgCap (error 16).
+#[test]
+fn unit_set_org_cap_zero_rejected() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("capzero");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let result = t.client.try_set_org_cap(&maintainer, &org, &0u32);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::InvalidOrgCap as u32
+        )))
+    );
+}
+
+/// AC: Cap of 21 returns InvalidOrgCap (error 16).
+#[test]
+fn unit_set_org_cap_21_rejected() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("cap21");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let result = t.client.try_set_org_cap(&maintainer, &org, &21u32);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::InvalidOrgCap as u32
+        )))
+    );
+}
+
+/// AC: Cap of 20 (boundary) is accepted.
+#[test]
+fn unit_set_org_cap_20_accepted() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("cap20");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.set_org_cap(&maintainer, &org, &20u32);
+    assert_eq!(t.client.get_org_cap(&org), 20u32);
+}
+
+/// AC: Cap of 1 (boundary) is accepted and only 1 assignment is allowed.
+#[test]
+fn unit_set_org_cap_1_limits_to_one_assignment() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cap1");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.set_org_cap(&maintainer, &org, &1u32);
+
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &2u32);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::OrgAssignmentLimitReached as u32
+        )))
+    );
+}

@@ -33,6 +33,8 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `get_org_assignment_count(contributor, org_id)` | Anyone | Query org assignment count |
 | `has_applied(contributor, org_id, issue_id)` | Anyone | Check if application exists |
 | `is_assigned(contributor, org_id, issue_id)` | Anyone | Check if assignment is active |
+| `set_org_cap(maintainer, org_id, new_cap)` | Maintainer | Set per-org assignment cap (1–20) |
+| `get_org_cap(org_id)` | Anyone | Query per-org assignment cap (default 4) |
 
 ## Error Codes
 
@@ -50,6 +52,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
 | 13 | `CounterInconsistency` | Assignment entry exists but org counter is 0 (post-migration corruption) |
+| 16 | `InvalidOrgCap` | `set_org_cap` called with value outside `[1, 20]` |
 
 ## Storage Design
 
@@ -61,6 +64,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | Maintainer | Persistent | `("maint", maintainer, org_id)` | `bool` |
 | Org Assignment Count | Persistent | `("o_asgn", contributor, org_id)` | `u32` |
 | Assignment Entry | Persistent | `("asgn", org_id, issue_id, contributor)` | `bool` |
+| Org Assignment Cap | Persistent | `("o_cap", org_id)` | `u32` |
 
 All six key prefixes are distinct — zero key collision guarantee.
 

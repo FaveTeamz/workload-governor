@@ -62,4 +62,8 @@ pub enum ContractError {
     /// indicates storage was corrupted or manually zeroed by a migration script.
     /// Discriminant: `13`.
     CounterInconsistency = 13,
+
+    /// The requested org cap is outside the allowed range `[1, 20]`.
+    /// Discriminant: `16`.
+    InvalidOrgCap = 16,
 }
