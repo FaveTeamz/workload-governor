@@ -189,6 +189,16 @@ npm run build-storybook  # static build → storybook-static/
 Components covered: **Button** (primary / secondary / ghost), **Badge** (5 semantic variants), **Card**, **Modal**, **Table**, **Gauge**.  
 Dark mode is driven by `@media (prefers-color-scheme: dark)` CSS custom properties — no extra dependency required.
 
+## Status
+
+| Check | Endpoint | Dashboard |
+|---|---|---|
+| Backend health | `GET /api/health` | [Route 53 Health Checks](https://console.aws.amazon.com/route53/healthchecks/home) |
+| Frontend | ALB root `/` | [Route 53 Health Checks](https://console.aws.amazon.com/route53/healthchecks/home) |
+| Horizon network | `GET /api/health/network` | [Route 53 Health Checks](https://console.aws.amazon.com/route53/healthchecks/home) |
+
+SLA target: **99.5% monthly uptime**. Alerts are sent to the `devops-alerts` SNS topic after 2 consecutive failures. Availability alarms fire when the 1-hour average drops below 99.5%.
+
 ## License
 
 Apache-2.0
