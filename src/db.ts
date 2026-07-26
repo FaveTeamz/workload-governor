@@ -151,6 +151,14 @@ export async function migrate(): Promise<void> {
       label      TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS github_issue_labels (
+      org_id     TEXT    NOT NULL,
+      issue_id   INTEGER NOT NULL,
+      label_name TEXT    NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (org_id, issue_id, label_name)
+    );
   `);
 }
 
