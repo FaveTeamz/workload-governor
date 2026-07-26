@@ -42,6 +42,10 @@ cargo build --target wasm32v1-none --release
 cargo test --features testutils
 ```
 
+If you prefer to interact with the deployed contract directly via CLI rather than
+building from source, see [docs/contributor-guide.md](docs/contributor-guide.md)
+for a complete CLI workflow walkthrough — no frontend required.
+
 ---
 
 ## Reporting Bugs
