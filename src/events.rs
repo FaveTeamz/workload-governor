@@ -1,4 +1,4 @@
-//! Event definitions for WorkloadGovernor contract
+//! Event definitions and emit helpers for WorkloadGovernor contract.
 //!
 //! This module defines all events emitted by the contract for
 //! off-chain indexing and monitoring.

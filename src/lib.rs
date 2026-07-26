@@ -317,7 +317,7 @@ impl WorkloadGovernor {
             panic_with_error!(env, ContractError::ApplicationNotFound);
         }
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {
+        if asgn_count >= storage::get_org_cap(&env, &org_id) {
             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);
         }
         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
@@ -519,7 +519,79 @@ impl WorkloadGovernor {
     // TTL management
     // -----------------------------------------------------------------------
 
-    /// Resets the TTL of a contributor's pending application entries to the full wave
+    /// Sets the per-org assignment cap for an organisation (maintainer-only).
+    ///
+    /// Overrides the default cap of `4` for the given `org_id`. The cap is stored
+    /// persistently under key `("o_cap", org_id)` and takes effect immediately on
+    /// the next `assign_issue` call for that org.
+    ///
+    /// # Who can call
+    /// A maintainer that has been registered for `org_id`.
+    ///
+    /// # Arguments
+    /// * `maintainer` – Registered maintainer address (auth enforced).
+    /// * `org_id`     – Organisation to configure.
+    /// * `new_cap`    – New cap value; must be in range `[1, 20]` inclusive.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
+    /// * [`ContractError::UnauthorizedMaintainer`] — caller not registered for `org_id`.
+    /// * [`ContractError::InvalidOrgCap`]          — `new_cap` is 0 or > 20.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <maintainer-account> \
+    ///   -- set_org_cap \
+    ///   --maintainer <MAINTAINER_ADDRESS> \
+    ///   --org_id my_org --new_cap 8
+    /// ```
+    pub fn set_org_cap(env: Env, maintainer: Address, org_id: Symbol, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        maintainer.require_auth();
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+        }
+        if new_cap < storage::ORG_CAP_MIN || new_cap > storage::ORG_CAP_MAX {
+            panic_with_error!(env, ContractError::InvalidOrgCap);
+        }
+        let old_cap = storage::get_org_cap(&env, &org_id);
+        storage::set_org_cap(&env, &org_id, new_cap);
+        storage::bump_instance(&env);
+        events::emit_org_cap_updated(&env, &org_id, old_cap, new_cap);
+    }
+
+    /// Returns the effective assignment cap for the given organisation.
+    ///
+    /// Returns the per-org cap if one has been set via `set_org_cap`, otherwise
+    /// returns the default of `4`.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Arguments
+    /// * `org_id` – Organisation to query.
+    ///
+    /// # Returns
+    /// The cap as a `u32` in the range `[1, 20]` (or `4` if no cap is configured).
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- get_org_cap \
+    ///   --org_id my_org
+    /// ```
+    pub fn get_org_cap(env: Env, org_id: Symbol) -> u32 {
+        storage::get_org_cap(&env, &org_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // TTL management
+    // -----------------------------------------------------------------------
     /// duration (permissionless — anyone can call this to prevent an application expiring).
     ///
     /// Extends both:
@@ -684,7 +756,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
     ) -> u32 {
         let current = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        storage::ORG_ASSIGNMENT_LIMIT.saturating_sub(current)
+        storage::get_org_cap(&env, &org_id).saturating_sub(current)
     }
 
     /// Returns the number of additional global applications a contributor may submit.
@@ -724,7 +796,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
     ) -> bool {
         let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        count >= storage::ORG_ASSIGNMENT_LIMIT
+        count >= storage::get_org_cap(&env, &org_id)
     }
 
     /// Returns `true` if the contributor has reached their global application limit.

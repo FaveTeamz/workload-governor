@@ -64,6 +64,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | Maintainer | Persistent | `("maint", maintainer, org_id)` | `bool` |
 | Org Assignment Count | Persistent | `("o_asgn", contributor, org_id)` | `u32` |
 | Assignment Entry | Persistent | `("asgn", org_id, issue_id, contributor)` | `bool` |
+| Org Assignment Cap | Persistent | `("o_cap", org_id)` | `u32` |
 
 All six key prefixes are distinct — zero key collision guarantee.
 
