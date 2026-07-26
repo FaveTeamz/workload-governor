@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
+import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
-import { SettingsPage } from "./components/SettingsPage";
+import { ActivityFeed } from "./components/ActivityFeed";
 import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
-import { useSettings } from "./hooks/useSettings";
+import { IssueDetailPage } from "./pages/IssueDetailPage";
 import "./app.css";
 
-// Demo data — replace with real API calls
 const DEMO_APPS: Application[] = [
   { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
   { id: "2", contributor: "GCYYY2PQRSTUVWXYZABCDE67890", org: "stellar-org", issueTitle: "Add prop tests for assign_issue", appliedDate: "2026-06-21" },
@@ -21,7 +21,12 @@ const DEMO_ASGNS: Assignment[] = [
   { id: "a2", contributor: "GDWWW4LMNOPQRSTUVWXYZ22222", org: "meridian-dao", issueTitle: "Integration tests for SDK" },
 ];
 
-function AppShell() {
+// ---------------------------------------------------------------------------
+// Home page (existing layout extracted into its own component)
+// ---------------------------------------------------------------------------
+
+function HomePage() {
+  const wallet = useWallet();
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
   const { toasts, add: addToast, remove: removeToast } = useToast();
@@ -52,79 +57,22 @@ function AppShell() {
 
   return (
     <>
-      <a href="#main-content" className="skip-link">
-        Skip to main content
-      </a>
+      <main id="main-content" className="app-main" tabIndex={-1}>
+        <header className="app-header" role="banner">
+          <span className="app-logo" aria-hidden="true">⚙</span>
+          <h1>WorkloadGovernor</h1>
+          <GetStartedButton />
+        </header>
 
-      <header className="app-header" role="banner">
-        <span className="app-logo" aria-hidden="true">⚙</span>
-        <h1>WorkloadGovernor</h1>
-
-        <nav className="app-nav" aria-label="Main navigation">
-          <NavLink
-            to="/"
-            className={({ isActive }) => `app-nav-link${isActive ? " active" : ""}`}
-            end
-          >
-            Dashboard
-          </NavLink>
-          {wallet.address && (
-            <NavLink
-              to="/settings"
-              className={({ isActive }) => `app-nav-link${isActive ? " active" : ""}`}
-            >
-              Settings
-            </NavLink>
-          )}
-        </nav>
-
-        {!wallet.address ? (
-          <button
-            className="btn btn-primary btn-sm wallet-btn"
-            onClick={wallet.connect}
-            disabled={wallet.connecting}
-            aria-busy={wallet.connecting}
-            aria-label="Connect your Freighter wallet"
-          >
-            {wallet.connecting ? "Connecting…" : "Connect Wallet"}
-          </button>
-        ) : (
-          <span className="wallet-address" title={wallet.address} aria-label={`Connected as ${wallet.address}`}>
-            {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)}
-          </span>
-        )}
-
-        {wallet.error && (
-          <span className="wallet-error" role="alert" aria-live="polite">
-            {wallet.error}
-          </span>
-        )}
-
-        <GetStartedButton />
-      </header>
-
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <main id="main-content" className="app-main" tabIndex={-1}>
-              <MaintainerPanel
-                applications={applications}
-                assignments={assignments}
-                onAssign={handleAssign}
-                onComplete={handleComplete}
-                onRevoke={handleRevoke}
-              />
-            </main>
-          }
+        <MaintainerPanel
+          applications={applications}
+          assignments={assignments}
+          onAssign={handleAssign}
+          onComplete={handleComplete}
+          onRevoke={handleRevoke}
         />
-        <Route
-          path="/settings"
-          element={
-            <SettingsPage wallet={wallet} settingsHook={settingsHook} />
-          }
-        />
-      </Routes>
+        <ActivityFeed apiBase="/api" network="testnet" />
+      </main>
 
       <OnboardingWizard />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -132,10 +80,37 @@ function AppShell() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// App shell — NavBar is shared; routes render below it
+// ---------------------------------------------------------------------------
+
 export default function App() {
+  const wallet = useWallet();
+
   return (
-    <BrowserRouter>
-      <AppShell />
-    </BrowserRouter>
+    <>
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
+      <NavBar
+        walletAddress={wallet.publicKey}
+        walletError={wallet.error}
+        networkMismatch={wallet.networkMismatch}
+        onConnect={wallet.connect}
+        onDisconnect={wallet.disconnect}
+      />
+
+      <Routes>
+        {/* Issue detail view */}
+        <Route
+          path="/issues/:org_id/:issue_id"
+          element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Default: home */}
+        <Route path="*" element={<HomePage />} />
+      </Routes>
+    </>
   );
 }

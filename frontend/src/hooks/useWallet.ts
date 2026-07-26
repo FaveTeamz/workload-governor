@@ -1,79 +1,83 @@
-/**
- * useWallet — manages Freighter wallet connection state.
- *
- * In production this would call the @stellar/freighter-api package.
- * Currently provides a simulation layer so the UI can be built and tested
- * without the extension installed.
- *
- * Persists the connected address to sessionStorage so a page refresh keeps
- * the session alive but a tab close / browser restart requires re-connecting
- * (matching Freighter's actual behaviour).
- */
+import { useState, useEffect } from "react";
 
-import { useState, useCallback } from "react";
-
-const SESSION_KEY = "wg_wallet_address";
-
-// Simulated Stellar address for dev mode.
-const DEMO_ADDRESS = "GBXXX1ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTU1234";
+const STORAGE_KEY = "wg_wallet_pubkey";
 
 export interface WalletState {
-  /** Public key of the connected wallet, or null if disconnected. */
-  address: string | null;
-  /** True while a connect/disconnect action is in flight. */
-  connecting: boolean;
-  /** Error from the last failed connect attempt. */
+  publicKey: string | null;
   error: string | null;
-  /** Request wallet connection via Freighter (or demo mode). */
+  connecting: boolean;
+  networkMismatch: boolean;
+}
+
+export interface UseWallet extends WalletState {
   connect: () => Promise<void>;
-  /** Clear session state and disconnect. */
   disconnect: () => void;
 }
 
-export function useWallet(): WalletState {
-  const [address, setAddress] = useState<string | null>(() =>
-    sessionStorage.getItem(SESSION_KEY)
-  );
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function getFreighter() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (globalThis as any).__freighter_api__ ?? null;
+}
 
-  const connect = useCallback(async () => {
+function expectedNetwork(): string {
+  return (import.meta.env.VITE_STELLAR_NETWORK ?? "TESTNET").toUpperCase();
+}
+
+export function useWallet(): UseWallet {
+  const [publicKey, setPublicKey] = useState<string | null>(
+    () => localStorage.getItem(STORAGE_KEY)
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [networkMismatch, setNetworkMismatch] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && !publicKey) setPublicKey(stored);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function connect() {
     setConnecting(true);
     setError(null);
+    setNetworkMismatch(false);
     try {
-      // Try to use real Freighter API if available in window.
-      // The cast avoids importing the extension SDK as a hard dependency.
-      const freighter = (
-        window as Window & {
-          freighter?: { getPublicKey: () => Promise<string> };
+      const freighter = getFreighter();
+      if (!freighter) {
+        setError("Freighter extension not found. Please install it.");
+        return;
+      }
+      const { isConnected } = await freighter.isConnected();
+      if (!isConnected) {
+        setError("Freighter extension not found. Please install it.");
+        return;
+      }
+      const { address, error: addrErr } = await freighter.getAddress();
+      if (addrErr) {
+        setError(addrErr);
+        return;
+      }
+      // Network mismatch detection
+      if (typeof freighter.getNetwork === "function") {
+        const { network } = await freighter.getNetwork();
+        if (network && network.toUpperCase() !== expectedNetwork()) {
+          setNetworkMismatch(true);
         }
-      ).freighter;
-
-      const pubKey = freighter
-        ? await freighter.getPublicKey()
-        : await simulateConnect();
-
-      sessionStorage.setItem(SESSION_KEY, pubKey);
-      setAddress(pubKey);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect wallet");
+      }
+      localStorage.setItem(STORAGE_KEY, address);
+      setPublicKey(address);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setConnecting(false);
     }
-  }, []);
+  }
 
-  const disconnect = useCallback(() => {
-    sessionStorage.removeItem(SESSION_KEY);
-    setAddress(null);
+  function disconnect() {
+    localStorage.removeItem(STORAGE_KEY);
+    setPublicKey(null);
     setError(null);
-  }, []);
+    setNetworkMismatch(false);
+  }
 
-  return { address, connecting, error, connect, disconnect };
-}
-
-/** 400 ms simulated round-trip; returns a demo public key. */
-function simulateConnect(): Promise<string> {
-  return new Promise((resolve) =>
-    setTimeout(() => resolve(DEMO_ADDRESS), 400)
-  );
+  return { publicKey, error, connecting, networkMismatch, connect, disconnect };
 }
