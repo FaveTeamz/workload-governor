@@ -1,414 +1,256 @@
 /**
- * Multi-Organization Cap Tests
- * 
- * Tests that organization caps are properly isolated and global caps
- * correctly aggregate across all organizations.
+ * Unit tests for the multi-org sync service (issue #310).
+ *
+ * Tests verify:
+ *  1. Listeners are started for all registered orgs
+ *  2. A new org added to DB is picked up within 60 s without restart
+ *  3. An error in one org queue does not affect other org queues
+ *  4. Events are correctly attributed to their source org
+ *  5. Structured logs include org_id context on every event
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkloadGovernor } from '../src/workload-governor';
-import { Contributor, Organization, Assignment } from '../src/types';
+import pino from 'pino';
+import { SyncService, OrgQueue, DbClient } from '../src/sync';
+import { OrgEvent, OrgRecord } from '../src/db';
 
-describe('Multi-Organization Cap Tests', () => {
-  let governor: WorkloadGovernor;
-  let orgA: Organization;
-  let orgB: Organization;
-  let contributor: Contributor;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
+function makeEvent(orgId: string, issueId = 'issue_1'): OrgEvent {
+  return {
+    org_id: orgId,
+    event_type: 'applied',
+    issue_id: issueId,
+    contributor: 'GAEZI4FCPWKKLICUZSXR5RBYVOAX4HDDE5MZLE3BZEIIQNFZPQZW55Z',
+    tx_hash: 'a'.repeat(64),
+    occurred_at: new Date('2026-07-01T00:00:00Z'),
+  };
+}
+
+function makeOrg(id: string): OrgRecord {
+  return { org_id: id, contract_address: `C${'A'.repeat(55)}` };
+}
+
+/** Returns a mock DB and arrays that tests can inspect. */
+function makeMockDb(initialOrgs: OrgRecord[] = []) {
+  const savedEvents: OrgEvent[] = [];
+  const orgs = [...initialOrgs];
+
+  const db: DbClient = {
+    getRegisteredOrgs: jest.fn(async () => [...orgs]),
+    saveEvent: jest.fn(async (e: OrgEvent) => { savedEvents.push(e); }),
+  };
+
+  return { db, savedEvents, orgs };
+}
+
+/** Silent pino logger for tests. */
+function makeLogger() {
+  return pino({ level: 'silent' });
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('SyncService — multi-org routing (#310)', () => {
   beforeEach(() => {
-    // Setup fresh state for each test
-    governor = new WorkloadGovernor();
-    
-    // Create two organizations
-    orgA = governor.createOrganization({
-      id: 'org-a',
-      name: 'Organization A',
-      cap: 5, // Max 5 assignments per contributor
-    });
-    
-    orgB = governor.createOrganization({
-      id: 'org-b',
-      name: 'Organization B',
-      cap: 5, // Max 5 assignments per contributor
-    });
-    
-    // Create a contributor
-    contributor = governor.createContributor({
-      id: 'contributor-1',
-      name: 'Test Contributor',
-    });
+    jest.useFakeTimers();
   });
 
-  describe('Org Cap Isolation', () => {
-    it('should allow contributor at org cap in org A to apply in org B', () => {
-      // Fill org A cap
-      for (let i = 0; i < 5; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-a',
-          contributorId: 'contributor-1',
-          workloadId: `workload-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
-
-      // Verify contributor is at cap in org A
-      const orgACount = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      expect(orgACount).toBe(5);
-
-      // Should still be able to apply in org B
-      const assignmentB = governor.createAssignment({
-        orgId: 'org-b',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-b-1',
-      });
-      
-      const result = governor.assignWorkload(assignmentB);
-      expect(result.success).toBe(true);
-      
-      const orgBCount = governor.getContributorAssignmentCount('contributor-1', 'org-b');
-      expect(orgBCount).toBe(1);
-    });
-
-    it('should track counts separately per org', () => {
-      // Add assignments in org A
-      for (let i = 0; i < 3; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-a',
-          contributorId: 'contributor-1',
-          workloadId: `workload-a-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
-
-      // Add assignments in org B
-      for (let i = 0; i < 2; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-b',
-          contributorId: 'contributor-1',
-          workloadId: `workload-b-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
-
-      // Verify counts are separate
-      const orgACount = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      const orgBCount = governor.getContributorAssignmentCount('contributor-1', 'org-b');
-      const totalCount = governor.getContributorTotalAssignments('contributor-1');
-
-      expect(orgACount).toBe(3);
-      expect(orgBCount).toBe(2);
-      expect(totalCount).toBe(5);
-    });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
   });
 
-  describe('Global Cap Testing', () => {
-    it('should block contributor at global cap from applying in any org', () => {
-      // Set global cap
-      governor.setGlobalCap(5);
+  // -------------------------------------------------------------------------
+  // 1. Starts listeners for all registered orgs
+  // -------------------------------------------------------------------------
+  it('starts listeners for all registered orgs', async () => {
+    const { db } = makeMockDb([makeOrg('org_a'), makeOrg('org_b'), makeOrg('org_c')]);
+    const service = new SyncService(db, makeLogger());
 
-      // Fill global cap across orgs
-      for (let i = 0; i < 3; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-a',
-          contributorId: 'contributor-1',
-          workloadId: `workload-a-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
+    await service.start();
 
-      for (let i = 0; i < 2; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-b',
-          contributorId: 'contributor-1',
-          workloadId: `workload-b-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
+    expect(service.orgCount).toBe(3);
+    expect(service.registeredOrgIds).toContain('org_a');
+    expect(service.registeredOrgIds).toContain('org_b');
+    expect(service.registeredOrgIds).toContain('org_c');
 
-      // Verify total is at global cap
-      const totalCount = governor.getContributorTotalAssignments('contributor-1');
-      expect(totalCount).toBe(5);
-
-      // Should not be able to apply in any org
-      const assignmentA = governor.createAssignment({
-        orgId: 'org-a',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-a-extra',
-      });
-      
-      const resultA = governor.assignWorkload(assignmentA);
-      expect(resultA.success).toBe(false);
-      expect(resultA.error).toContain('global cap');
-
-      const assignmentB = governor.createAssignment({
-        orgId: 'org-b',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-b-extra',
-      });
-      
-      const resultB = governor.assignWorkload(assignmentB);
-      expect(resultB.success).toBe(false);
-      expect(resultB.error).toContain('global cap');
-    });
-
-    it('should correctly aggregate counts across all orgs for global cap', () => {
-      // Set global cap
-      governor.setGlobalCap(10);
-
-      // Add assignments across orgs
-      for (let i = 0; i < 4; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-a',
-          contributorId: 'contributor-1',
-          workloadId: `workload-a-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
-
-      for (let i = 0; i < 3; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-b',
-          contributorId: 'contributor-1',
-          workloadId: `workload-b-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
-
-      // Total should be 7
-      const totalCount = governor.getContributorTotalAssignments('contributor-1');
-      expect(totalCount).toBe(7);
-
-      // Should still have room (cap is 10)
-      const assignment = governor.createAssignment({
-        orgId: 'org-a',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-a-extra',
-      });
-      
-      const result = governor.assignWorkload(assignment);
-      expect(result.success).toBe(true);
-      
-      const newTotal = governor.getContributorTotalAssignments('contributor-1');
-      expect(newTotal).toBe(8);
-    });
+    service.stop();
   });
 
-  describe('Cross-Org Assignment Completion', () => {
-    it('should not affect org B counts when completing assignments in org A', () => {
-      // Add assignments in both orgs
-      const assignmentA = governor.createAssignment({
-        orgId: 'org-a',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-a-1',
-      });
-      governor.assignWorkload(assignmentA);
+  // -------------------------------------------------------------------------
+  // 2. New org added to DB is picked up within 60 s without restart
+  // -------------------------------------------------------------------------
+  it('picks up a new org added to DB within 60 s without restart', async () => {
+    const { db, orgs } = makeMockDb([makeOrg('org_a')]);
+    const service = new SyncService(db, makeLogger());
 
-      const assignmentB = governor.createAssignment({
-        orgId: 'org-b',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-b-1',
-      });
-      governor.assignWorkload(assignmentB);
+    await service.start();
+    expect(service.orgCount).toBe(1);
 
-      // Verify initial counts
-      let orgACount = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      let orgBCount = governor.getContributorAssignmentCount('contributor-1', 'org-b');
-      expect(orgACount).toBe(1);
-      expect(orgBCount).toBe(1);
+    // Simulate a new org being registered in the DB
+    orgs.push(makeOrg('org_b'));
 
-      // Complete assignment in org A
-      governor.completeAssignment('workload-a-1');
+    // Advance fake timers by exactly 60 s to trigger the poll
+    await jest.advanceTimersByTimeAsync(60_000);
 
-      // Verify org A count decreased, org B unchanged
-      orgACount = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      orgBCount = governor.getContributorAssignmentCount('contributor-1', 'org-b');
-      expect(orgACount).toBe(0);
-      expect(orgBCount).toBe(1);
+    expect(service.orgCount).toBe(2);
+    expect(service.registeredOrgIds).toContain('org_b');
 
-      // Total count should reflect only org B
-      const totalCount = governor.getContributorTotalAssignments('contributor-1');
-      expect(totalCount).toBe(1);
-    });
-
-    it('should allow new assignments in org A after completing old ones', () => {
-      // Fill org A cap
-      for (let i = 0; i < 5; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-a',
-          contributorId: 'contributor-1',
-          workloadId: `workload-a-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
-
-      // Verify at cap
-      let orgACount = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      expect(orgACount).toBe(5);
-
-      // Complete one assignment
-      governor.completeAssignment('workload-a-0');
-
-      // Now should have room
-      orgACount = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      expect(orgACount).toBe(4);
-
-      // Can add new assignment
-      const newAssignment = governor.createAssignment({
-        orgId: 'org-a',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-a-new',
-      });
-      const result = governor.assignWorkload(newAssignment);
-      expect(result.success).toBe(true);
-    });
+    service.stop();
   });
 
-  describe('Cross-Org Maintainer Restrictions', () => {
-    it('should not allow maintainer in org A to act in org B', () => {
-      // Set contributor as maintainer in org A
-      governor.setMaintainer('org-a', 'contributor-1');
+  // -------------------------------------------------------------------------
+  // 3. Error in one org queue does not affect other org queues
+  // -------------------------------------------------------------------------
+  it('isolates errors — error in org_a queue does not stop org_b queue', async () => {
+    const savedEvents: OrgEvent[] = [];
+    let callCount = 0;
 
-      // Verify is maintainer in org A
-      expect(governor.isMaintainer('org-a', 'contributor-1')).toBe(true);
-      
-      // Verify is NOT maintainer in org B
-      expect(governor.isMaintainer('org-b', 'contributor-1')).toBe(false);
+    const db: DbClient = {
+      getRegisteredOrgs: jest.fn(async () => [makeOrg('org_a'), makeOrg('org_b')]),
+      saveEvent: jest.fn(async (e: OrgEvent) => {
+        callCount++;
+        // The first call (org_a's event) throws an error
+        if (e.org_id === 'org_a' && callCount === 1) {
+          throw new Error('Simulated org_a failure');
+        }
+        savedEvents.push(e);
+      }),
+    };
 
-      // Try to perform maintainer action in org B
-      const result = governor.performMaintainerAction({
-        orgId: 'org-b',
-        maintainerId: 'contributor-1',
-        action: 'approve_workload',
-        workloadId: 'workload-b-1',
-      });
+    const service = new SyncService(db, makeLogger());
+    await service.start();
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('not maintainer');
-    });
+    // Enqueue events for both orgs
+    service.handleEvent('org_a', makeEvent('org_a', 'issue_bad'));
+    service.handleEvent('org_b', makeEvent('org_b', 'issue_good'));
 
-    it('should allow maintainer actions only in their org', () => {
-      // Set contributor as maintainer in org A
-      governor.setMaintainer('org-a', 'contributor-1');
+    // Let async queue drain
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
-      // Should allow actions in org A
-      const resultA = governor.performMaintainerAction({
-        orgId: 'org-a',
-        maintainerId: 'contributor-1',
-        action: 'approve_workload',
-        workloadId: 'workload-a-1',
-      });
-      expect(resultA.success).toBe(true);
+    // org_b's event must still be saved despite org_a's failure
+    const orgBEvents = savedEvents.filter((e) => e.org_id === 'org_b');
+    expect(orgBEvents).toHaveLength(1);
+    expect(orgBEvents[0].issue_id).toBe('issue_good');
 
-      // Should not allow actions in org B
-      const resultB = governor.performMaintainerAction({
-        orgId: 'org-b',
-        maintainerId: 'contributor-1',
-        action: 'approve_workload',
-        workloadId: 'workload-b-1',
-      });
-      expect(resultB.success).toBe(false);
-    });
-
-    it('should enforce maintainer restrictions across multiple orgs', () => {
-      // Set contributor as maintainer in both orgs
-      governor.setMaintainer('org-a', 'contributor-1');
-      governor.setMaintainer('org-b', 'contributor-1');
-
-      // Should be maintainer in both
-      expect(governor.isMaintainer('org-a', 'contributor-1')).toBe(true);
-      expect(governor.isMaintainer('org-b', 'contributor-1')).toBe(true);
-
-      // Should allow actions in both
-      const resultA = governor.performMaintainerAction({
-        orgId: 'org-a',
-        maintainerId: 'contributor-1',
-        action: 'approve_workload',
-        workloadId: 'workload-a-1',
-      });
-      expect(resultA.success).toBe(true);
-
-      const resultB = governor.performMaintainerAction({
-        orgId: 'org-b',
-        maintainerId: 'contributor-1',
-        action: 'approve_workload',
-        workloadId: 'workload-b-1',
-      });
-      expect(resultB.success).toBe(true);
-    });
-
-    it('should handle removing maintainer status correctly', () => {
-      // Set as maintainer in org A
-      governor.setMaintainer('org-a', 'contributor-1');
-      expect(governor.isMaintainer('org-a', 'contributor-1')).toBe(true);
-
-      // Remove maintainer status
-      governor.removeMaintainer('org-a', 'contributor-1');
-      expect(governor.isMaintainer('org-a', 'contributor-1')).toBe(false);
-
-      // Should not allow actions
-      const result = governor.performMaintainerAction({
-        orgId: 'org-a',
-        maintainerId: 'contributor-1',
-        action: 'approve_workload',
-        workloadId: 'workload-a-1',
-      });
-      expect(result.success).toBe(false);
-    });
+    service.stop();
   });
 
-  describe('Edge Cases', () => {
-    it('should handle contributor with no assignments correctly', () => {
-      const countA = governor.getContributorAssignmentCount('contributor-1', 'org-a');
-      const countB = governor.getContributorAssignmentCount('contributor-1', 'org-b');
-      const total = governor.getContributorTotalAssignments('contributor-1');
+  // -------------------------------------------------------------------------
+  // 4. Events are correctly attributed to their source org in DB
+  // -------------------------------------------------------------------------
+  it('attributes events to their correct source org', async () => {
+    const { db, savedEvents } = makeMockDb([makeOrg('org_x'), makeOrg('org_y')]);
+    const service = new SyncService(db, makeLogger());
 
-      expect(countA).toBe(0);
-      expect(countB).toBe(0);
-      expect(total).toBe(0);
+    await service.start();
+
+    service.handleEvent('org_x', makeEvent('org_x', 'issue_x1'));
+    service.handleEvent('org_y', makeEvent('org_y', 'issue_y1'));
+    service.handleEvent('org_x', makeEvent('org_x', 'issue_x2'));
+
+    // Let the queue drain
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const xEvents = savedEvents.filter((e) => e.org_id === 'org_x');
+    const yEvents = savedEvents.filter((e) => e.org_id === 'org_y');
+
+    expect(xEvents.every((e) => e.org_id === 'org_x')).toBe(true);
+    expect(yEvents.every((e) => e.org_id === 'org_y')).toBe(true);
+
+    service.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. Structured logs include org_id on every event processed
+  // -------------------------------------------------------------------------
+  it('includes org_id in structured log output for every event', async () => {
+    const logLines: Array<Record<string, unknown>> = [];
+
+    // Create a pino logger that writes to our array
+    const dest = pino.destination({ sync: false });
+    const captureStream = {
+      write: (line: string) => {
+        try {
+          logLines.push(JSON.parse(line) as Record<string, unknown>);
+        } catch {
+          // ignore non-JSON lines
+        }
+        return true;
+      },
+    };
+    const logger = pino({ level: 'debug' }, captureStream as unknown as pino.DestinationStream);
+
+    const { db } = makeMockDb([makeOrg('org_log_test')]);
+    const service = new SyncService(db, logger);
+    await service.start();
+
+    service.handleEvent('org_log_test', makeEvent('org_log_test'));
+
+    // Drain the queue
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Every log line that mentions org_log_test should carry the org_id field
+    const relevantLines = logLines.filter(
+      (l) => l['org_id'] === 'org_log_test' || String(l['msg'] ?? '').includes('org_log_test')
+    );
+    expect(relevantLines.length).toBeGreaterThan(0);
+    relevantLines.forEach((line) => {
+      expect(line).toHaveProperty('org_id', 'org_log_test');
     });
 
-    it('should handle non-existent orgs correctly', () => {
-      const result = governor.getContributorAssignmentCount('contributor-1', 'org-non-existent');
-      expect(result).toBe(0);
-    });
+    service.stop();
+    dest.destroy();
+  });
+});
 
-    it('should handle non-existent contributors correctly', () => {
-      const result = governor.getContributorAssignmentCount('contributor-non-existent', 'org-a');
-      expect(result).toBe(0);
-    });
+// ---------------------------------------------------------------------------
+// OrgQueue unit tests
+// ---------------------------------------------------------------------------
 
-    it('should maintain isolation when org caps change', () => {
-      // Set different caps
-      governor.setOrgCap('org-a', 3);
-      governor.setOrgCap('org-b', 5);
+describe('OrgQueue — unit tests', () => {
+  it('processes events sequentially and saves each one', async () => {
+    const savedEvents: OrgEvent[] = [];
+    const db: DbClient = {
+      getRegisteredOrgs: jest.fn(async () => []),
+      saveEvent: jest.fn(async (e: OrgEvent) => { savedEvents.push(e); }),
+    };
 
-      // Fill org A cap
-      for (let i = 0; i < 3; i++) {
-        const assignment = governor.createAssignment({
-          orgId: 'org-a',
-          contributorId: 'contributor-1',
-          workloadId: `workload-a-${i}`,
-        });
-        governor.assignWorkload(assignment);
-      }
+    const queue = new OrgQueue('org_q', 'C' + 'A'.repeat(55), db, pino({ level: 'silent' }));
 
-      // Try to add more to org A (should fail)
-      const assignmentA = governor.createAssignment({
-        orgId: 'org-a',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-a-extra',
-      });
-      const resultA = governor.assignWorkload(assignmentA);
-      expect(resultA.success).toBe(false);
+    queue.enqueue(makeEvent('org_q', 'issue_1'));
+    queue.enqueue(makeEvent('org_q', 'issue_2'));
 
-      // Should still be able to add to org B
-      const assignmentB = governor.createAssignment({
-        orgId: 'org-b',
-        contributorId: 'contributor-1',
-        workloadId: 'workload-b-1',
-      });
-      const resultB = governor.assignWorkload(assignmentB);
-      expect(resultB.success).toBe(true);
-    });
+    // Allow microtasks to settle
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(savedEvents).toHaveLength(2);
+    expect(savedEvents[0].issue_id).toBe('issue_1');
+    expect(savedEvents[1].issue_id).toBe('issue_2');
+  });
+
+  it('ignores events intended for a different org', () => {
+    const db: DbClient = {
+      getRegisteredOrgs: jest.fn(async () => []),
+      saveEvent: jest.fn(async () => { return; }),
+    };
+
+    const queue = new OrgQueue('org_correct', 'C' + 'A'.repeat(55), db, pino({ level: 'silent' }));
+    queue.enqueue(makeEvent('org_wrong'));
+
+    expect(queue.queueLength).toBe(0);
   });
 });

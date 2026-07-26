@@ -4,6 +4,7 @@
 [![Backend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/gh/FaveTeamz/workload-governor)
 [![Frontend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=frontend)](https://codecov.io/gh/FaveTeamz/workload-governor)
 [![Contract Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=contract)](https://codecov.io/gh/FaveTeamz/workload-governor)
+![Mutation Score](https://img.shields.io/badge/mutation%20score-75%25-orange)
 
 A production-ready Soroban smart contract for the **AlignmentDrips Wave** platform on the Stellar network.
 
@@ -33,23 +34,25 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `get_org_assignment_count(contributor, org_id)` | Anyone | Query org assignment count |
 | `has_applied(contributor, org_id, issue_id)` | Anyone | Check if application exists |
 | `is_assigned(contributor, org_id, issue_id)` | Anyone | Check if assignment is active |
+| `check_consistency(pairs, issue_ids)` | Anyone | Return `(contributor, org_id)` pairs with counter inconsistency |
+| `check_consistency(pairs, issue_ids)` | Anyone | Return (contributor, org_id) pairs with counter inconsistency |
 
 ## Error Codes
 
 | Code | Variant | Trigger |
 |---|---|---|
-| 1 | `AlreadyInitialized` | `initialize` called twice |
-| 2 | `NotInitialized` | State-changing call before `initialize` |
-| 3 | `UnauthorizedAdmin` | Wrong admin credentials |
-| 4 | `UnauthorizedMaintainer` | Maintainer not registered for org |
-| 5 | `UnauthorizedContributor` | Auth failure on contributor call |
-| 6 | `GlobalApplicationLimitReached` | Contributor has 15 pending applications |
-| 7 | `OrgAssignmentLimitReached` | Contributor has 4 active assignments in org |
-| 8 | `DuplicateApplication` | Same (contributor, org, issue) applied twice |
-| 9 | `ApplicationNotFound` | Application does not exist |
-| 10 | `AssignmentNotFound` | Assignment does not exist |
-| 11 | `AlreadyAssigned` | Issue already has an active assignment |
-| 13 | `CounterInconsistency` | Assignment entry exists but org counter is 0 (post-migration corruption) |
+| 1 | [`AlreadyInitialized`](docs/error-reference.md#error-1--alreadyinitialized) | `initialize` called twice |
+| 2 | [`NotInitialized`](docs/error-reference.md#error-2--notinitialized) | State-changing call before `initialize` |
+| 3 | [`UnauthorizedAdmin`](docs/error-reference.md#error-3--unauthorizedadmin) | Wrong admin credentials |
+| 4 | [`UnauthorizedMaintainer`](docs/error-reference.md#error-4--unauthorizedmaintainer) | Maintainer not registered for org |
+| 5 | [`UnauthorizedContributor`](docs/error-reference.md#error-5--unauthorizedcontributor) | Auth failure on contributor call |
+| 6 | [`GlobalApplicationLimitReached`](docs/error-reference.md#error-6--globalapplicationlimitreached) | Contributor has 15 pending applications |
+| 7 | [`OrgAssignmentLimitReached`](docs/error-reference.md#error-7--orgassignmentlimitreached) | Contributor has 4 active assignments in org |
+| 8 | [`DuplicateApplication`](docs/error-reference.md#error-8--duplicateapplication) | Same (contributor, org, issue) applied twice |
+| 9 | [`ApplicationNotFound`](docs/error-reference.md#error-9--applicationnotfound) | Application does not exist |
+| 10 | [`AssignmentNotFound`](docs/error-reference.md#error-10--assignmentnotfound) | Assignment does not exist |
+| 11 | [`AlreadyAssigned`](docs/error-reference.md#error-11--alreadyassigned) | Issue already has an active assignment |
+| 13 | [`CounterInconsistency`](docs/error-reference.md#error-13--counterinconsistency) | Assignment entry exists but org counter is 0 (post-migration corruption) |
 
 ## Storage Design
 
@@ -61,6 +64,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | Maintainer | Persistent | `("maint", maintainer, org_id)` | `bool` |
 | Org Assignment Count | Persistent | `("o_asgn", contributor, org_id)` | `u32` |
 | Assignment Entry | Persistent | `("asgn", org_id, issue_id, contributor)` | `bool` |
+| Org Assignment Cap | Persistent | `("o_cap", org_id)` | `u32` |
 
 All six key prefixes are distinct — zero key collision guarantee.
 
@@ -68,9 +72,24 @@ All six key prefixes are distinct — zero key collision guarantee.
 
 | Document | Description |
 |---|---|
+| [docs/contributor-guide.md](docs/contributor-guide.md) | CLI workflow guide — apply for issues without the frontend |
+| [docs/fairness-model.md](docs/fairness-model.md) | Formal invariants, proof of cap enforcement, gaming vector analysis |
+| [docs/benchmarks.md](docs/benchmarks.md) | CPU/memory resource benchmarks with CI thresholds |
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
-| [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
+| [docs/error-reference.md](docs/error-reference.md) | All 13 error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+| [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Emergency admin key rotation procedure |
+
+## Operations
+
+Step-by-step operator runbooks for production scenarios:
+
+| Runbook | Description |
+|---|---|
+| [docs/runbooks/contract-upgrade.md](docs/runbooks/contract-upgrade.md) | Build, optimize, upload WASM, call `upgrade` |
+| [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Two-step admin key transfer procedure |
+| [docs/runbooks/cap-emergency-increase.md](docs/runbooks/cap-emergency-increase.md) | Governance vote + contract upgrade to raise contributor caps |
+| [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | What to do when a bug is found post-deploy (freeze strategy included) |
 
 ## Building
 
@@ -139,6 +158,42 @@ cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
 
 Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
 
+### Corpus Generation
+
+Hand-crafted seed inputs covering known edge cases (u32::MAX issue IDs, max-length org symbols, duplicate detection, cap boundaries) are committed to `fuzz/corpus/`. To regenerate them:
+
+```bash
+python3 scripts/generate-corpus.py          # writes to fuzz/corpus/
+python3 scripts/generate-corpus.py --corpus-dir /tmp/fresh-corpus   # custom dir
+```
+
+The script is idempotent — re-running overwrites existing seeds with the canonical values and leaves any fuzzer-discovered inputs untouched.
+
+## Mutation Testing
+
+[cargo-mutants](https://mutants.rs) is used to verify that the test suite catches logic errors in the contract.
+
+```bash
+# Install cargo-mutants
+cargo install cargo-mutants --locked
+
+# Run against contract source (takes several minutes)
+cargo mutants --features testutils -- src/lib.rs
+
+# Generate the HTML + text report
+node scripts/mutation-report.js mutants.out/
+# text-only summary:
+node scripts/mutation-report.js --text-only
+# enforce 90% threshold (exits non-zero if below):
+node scripts/mutation-report.js --threshold=90 --text-only
+```
+
+The mutation score badge in this README reflects the last recorded run. After adding or changing tests, re-run `cargo mutants` and update `mutants.out/` to refresh the badge.
+
+| File | Recorded score | Target |
+|---|---|---|
+| `src/lib.rs` | 75% (21/28 caught) | ≥ 90% |
+
 ## Benchmarking
 
 ```bash
@@ -188,6 +243,16 @@ npm run build-storybook  # static build → storybook-static/
 
 Components covered: **Button** (primary / secondary / ghost), **Badge** (5 semantic variants), **Card**, **Modal**, **Table**, **Gauge**.  
 Dark mode is driven by `@media (prefers-color-scheme: dark)` CSS custom properties — no extra dependency required.
+
+## Status
+
+| Check | Endpoint | Dashboard |
+|---|---|---|
+| Backend health | `GET /api/health` | [Route 53 Health Checks](https://console.aws.amazon.com/route53/healthchecks/home) |
+| Frontend | ALB root `/` | [Route 53 Health Checks](https://console.aws.amazon.com/route53/healthchecks/home) |
+| Horizon network | `GET /api/health/network` | [Route 53 Health Checks](https://console.aws.amazon.com/route53/healthchecks/home) |
+
+SLA target: **99.5% monthly uptime**. Alerts are sent to the `devops-alerts` SNS topic after 2 consecutive failures. Availability alarms fire when the 1-hour average drops below 99.5%.
 
 ## License
 

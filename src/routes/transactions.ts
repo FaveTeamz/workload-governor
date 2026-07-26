@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { Address } from '@stellar/stellar-sdk';
 import { SorobanService } from '../soroban';
 import { Transaction } from '@stellar/stellar-sdk';
+import { verifyTransactionXdr } from '../xdrVerifier';
+import { logger } from '../logger';
 
 const router = Router();
 const soroban = new SorobanService();
@@ -223,6 +225,91 @@ router.post('/revoke', (req: Request, res: Response) => {
       org_id as string, Number(issue_id), sequence as string,
     ),
   );
+});
+
+// ---------------------------------------------------------------------------
+// POST /submit — verify signed XDR then broadcast to Stellar network
+// Issue #314: server-side signature verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Submit a pre-signed Stellar XDR transaction.
+ *
+ * Verifies before broadcasting:
+ *   1. Transaction is signed by the contributor address in the operation args
+ *   2. Transaction has not expired (timeBounds)
+ *   3. Contract ID matches configured CONTRACT_ID
+ *
+ * Returns 403 with a `reason` field if any check fails.
+ * All failed verifications are logged with the requester IP and reason.
+ */
+router.post('/submit', async (req: Request, res: Response) => {
+  const { signed_xdr } = req.body as Record<string, unknown>;
+
+  if (!signed_xdr || typeof signed_xdr !== 'string') {
+    res.status(400).json({ error: 'signed_xdr is required and must be a string' });
+    return;
+  }
+
+  const ip = req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown';
+
+  // --- Verify the signed XDR ---
+  const verification = verifyTransactionXdr(signed_xdr);
+
+  if (!verification.ok) {
+    // Log every failed verification with IP and reason (closes #314 logging req)
+    logger.warn({
+      event: 'signature_verification_failed',
+      reason: verification.reason,
+      detail: verification.detail,
+      ip,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(403).json({
+      error: 'transaction verification failed',
+      reason: verification.reason,
+      detail: verification.detail,
+    });
+    return;
+  }
+
+  // --- Broadcast to network ---
+  try {
+    const { Transaction: StellarTx, xdr } = await import('@stellar/stellar-sdk');
+    const envelope = xdr.TransactionEnvelope.fromXDR(signed_xdr, 'base64');
+    const tx = new StellarTx(
+      envelope,
+      process.env.STELLAR_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015',
+    );
+
+    const result = await soroban.submitTransaction(tx);
+
+    if (result.status === 'error') {
+      res.status(400).json({
+        error: 'transaction submission failed',
+        detail: result.error?.message ?? 'unknown error',
+      });
+      return;
+    }
+
+    logger.info({
+      event: 'transaction_submitted',
+      hash: result.hash,
+      signer: verification.signerAddress,
+      contract: verification.contractId,
+      ip,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({
+      hash: result.hash,
+      status: result.status,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'submission error';
+    res.status(500).json({ error: msg });
+  }
 });
 
 export default router;
