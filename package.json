@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 0",
     "typecheck": "tsc -p tsconfig.dev.json --noEmit",
     "test": "jest --config jest.config.ts --testPathPattern=tests/",
@@ -20,7 +21,8 @@
     "ioredis": "5.4.1",
     "pg": "8.12.0",
     "pino": "9.3.2",
-    "pino-http": "10.2.0"
+    "pino-http": "10.2.0",
+    "zod": "3.23.8"
   },
   "devDependencies": {
     "@types/cors": "2.8.17",

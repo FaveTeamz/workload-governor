@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 
+import { migrate } from './db';
 import healthRouter from './routes/health';
 import orgsRouter from './routes/orgs';
 import contributorsRouter from './routes/contributors';
@@ -47,13 +48,21 @@ export function createApp(): express.Application {
   return app;
 }
 
-// Named export for tests
+// Named export for tests (used by supertest in tests/routes/*.test.ts)
 export const app = createApp();
 
 // Only start the server when run directly (not when imported by tests)
 if (require.main === module) {
   const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
-  app.listen(PORT, () => {
-    logger.info({ port: PORT }, 'Server listening');
-  });
+
+  migrate()
+    .then(() => {
+      app.listen(PORT, () => {
+        logger.info({ port: PORT }, 'Server listening');
+      });
+    })
+    .catch((err) => {
+      logger.error({ err }, 'Failed to run DB migrations');
+      process.exit(1);
+    });
 }

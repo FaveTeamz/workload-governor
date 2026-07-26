@@ -76,7 +76,6 @@ export class OrgQueue {
     }
 
     this.processing = true;
-    // Peek at the head — only shift after success to avoid skipping on error
     const event = this.queue[0];
 
     try {
@@ -85,7 +84,7 @@ export class OrgQueue {
         'Processing event'
       );
       await this.db.saveEvent(event);
-      this.queue.shift(); // Remove only after successful save
+      this.queue.shift();
       this.orgLog.info(
         { event_type: event.event_type, issue_id: event.issue_id, tx_hash: event.tx_hash },
         'Event saved'
@@ -99,16 +98,13 @@ export class OrgQueue {
       );
     }
 
-    // Recurse for the next event in the queue
     await this.processNext();
   }
 
-  /** Current queue depth (useful for tests / metrics). */
   get queueLength(): number {
     return this.queue.length;
   }
 
-  /** Whether the queue is actively draining. */
   get isProcessing(): boolean {
     return this.processing;
   }
@@ -123,7 +119,7 @@ export class OrgQueue {
  *
  * Responsibilities:
  * - On start(): load all registered orgs from DB and create OrgQueue instances
- * - Start simulated event listeners for each org's contract address
+ * - Start event listeners for each org's contract address
  * - Poll the DB every 60 s to detect newly registered orgs (no restart needed)
  * - Route incoming events to the correct OrgQueue
  */
@@ -140,24 +136,16 @@ export class SyncService extends EventEmitter {
     this.log = logger ?? pino({ name: 'sync-service' });
   }
 
-  // -------------------------------------------------------------------------
-  // Lifecycle
-  // -------------------------------------------------------------------------
-
   /** Start the sync service: load orgs, start listeners, begin polling. */
   async start(): Promise<void> {
     this.log.info('SyncService starting');
     await this.loadAndRegisterOrgs();
 
-    // Poll every 60 s for newly registered orgs
     this.pollInterval = setInterval(() => {
       void this.loadAndRegisterOrgs();
     }, 60_000);
 
-    this.log.info(
-      { org_count: this.orgQueues.size },
-      'SyncService started'
-    );
+    this.log.info({ org_count: this.orgQueues.size }, 'SyncService started');
   }
 
   /** Stop the sync service and clear all intervals. */
@@ -168,10 +156,6 @@ export class SyncService extends EventEmitter {
     }
     this.log.info({ org_count: this.orgQueues.size }, 'SyncService stopped');
   }
-
-  // -------------------------------------------------------------------------
-  // Org registration
-  // -------------------------------------------------------------------------
 
   /**
    * Load registered orgs from DB and register any that are new.
@@ -199,16 +183,12 @@ export class SyncService extends EventEmitter {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Event routing
-  // -------------------------------------------------------------------------
-
   /**
    * Start an event listener for a single org's contract.
    *
-   * In production this would subscribe to the Stellar Horizon event stream
-   * for the given contract address. Here we wire it to an EventEmitter so
-   * tests can inject synthetic events with `service.emit('event:<orgId>', ...)`.
+   * In production this subscribes to the Stellar Horizon event stream for the
+   * given contract address. Here we wire it to an EventEmitter so tests can
+   * inject synthetic events with `service.emit('event:<orgId>', ...)`.
    */
   startOrgListener(orgId: string, _contractAddress: string, _queue: OrgQueue): void {
     this.log.info({ org_id: orgId }, 'Starting event listener');
@@ -219,7 +199,7 @@ export class SyncService extends EventEmitter {
 
   /**
    * Route an incoming event to the correct org queue.
-   * If the org is not yet registered, logs a warning and drops the event.
+   * Unknown org events are logged and dropped.
    */
   handleEvent(orgId: string, event: OrgEvent): void {
     const queue = this.orgQueues.get(orgId);
@@ -233,10 +213,6 @@ export class SyncService extends EventEmitter {
     );
     queue.enqueue(event);
   }
-
-  // -------------------------------------------------------------------------
-  // Accessors (used in tests)
-  // -------------------------------------------------------------------------
 
   get registeredOrgIds(): string[] {
     return Array.from(this.orgQueues.keys());
@@ -255,7 +231,6 @@ export class SyncService extends EventEmitter {
 // Convenience factory
 // ---------------------------------------------------------------------------
 
-/** Create and start a SyncService using the default DB client. */
 export async function startSyncService(
   db?: DbClient,
   logger?: Logger
