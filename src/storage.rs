@@ -310,3 +310,32 @@ pub(crate) fn remove_assignment(
     let key = assignment_entry_key(org_id, issue_id, contributor);
     env.storage().persistent().remove(&key);
 }
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Global Application Cap (emergency-settable)
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("g_cap")`
+// Value: `u32`
+//
+// When absent the contract falls back to the compile-time `GLOBAL_APP_LIMIT` constant.
+// Set by `emergency_set_global_cap`; never expires (persistent tier).
+
+fn global_cap_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the currently effective global application cap.
+///
+/// Falls back to [`GLOBAL_APP_LIMIT`] if no override has been stored.
+pub(crate) fn get_global_cap(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&global_cap_key())
+        .unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Writes the global application cap override to persistent storage.
+pub(crate) fn set_global_cap(env: &Env, cap: u32) {
+    env.storage().persistent().set(&global_cap_key(), &cap);
+}
