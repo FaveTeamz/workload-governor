@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1
+# Development image — mounts src/ for hot reload via ts-node --watch
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+# src/ is bind-mounted at runtime; copy tsconfig and remaining files
+COPY tsconfig.json ./
+EXPOSE 3000
+CMD ["npx", "ts-node", "--watch", "src/index.ts"]

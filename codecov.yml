@@ -1,0 +1,88 @@
+coverage:
+  # Overall project coverage — informational only; per-flag thresholds govern failures
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+
+  # ── Per-flag thresholds ────────────────────────────────────────────────
+  # Each flag maps to a separate upload from its CI job.
+  # A PR fails when any flag drops below its configured minimum.
+  flags:
+    backend:
+      paths:
+        - src/
+        - tests/unit/
+        - tests/api/
+      carryforward: true
+      statuses:
+        - type: project
+          target: 80%
+          threshold: 1%
+          name_prefix: "backend/"
+        - type: patch
+          target: 80%
+          threshold: 1%
+          name_prefix: "backend/"
+
+    frontend:
+      paths:
+        - frontend/src/
+      carryforward: true
+      statuses:
+        - type: project
+          target: 75%
+          threshold: 1%
+          name_prefix: "frontend/"
+        - type: patch
+          target: 75%
+          threshold: 1%
+          name_prefix: "frontend/"
+
+    contract:
+      paths:
+        - src/lib.rs
+        - src/storage.rs
+        - src/errors.rs
+        - src/events.rs
+      carryforward: true
+      statuses:
+        - type: project
+          target: 90%
+          threshold: 1%
+          name_prefix: "contract/"
+        - type: patch
+          target: 90%
+          threshold: 1%
+          name_prefix: "contract/"
+
+# ── PR comment configuration ──────────────────────────────────────────────
+comment:
+  layout: "reach,diff,flags,tree,components"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+  show_carryforward_flags: true
+  # Show which individual files decreased in coverage
+  hide_comment_details: false
+
+# ── Ignore generated / non-production files ────────────────────────────────
+ignore:
+  - "src/index.ts"
+  - "src/pages/**"
+  - "src/EventHistoryTable.js"
+  - "src/test.rs"
+  - "tests/load/**"
+  - "tests/smoke/**"
+  - "fuzz/**"
+  - "scripts/**"
+  - "terraform/**"
+  - "infra/**"
+  - "frontend/src/stories/**"
+  - "frontend/src/assets/**"
