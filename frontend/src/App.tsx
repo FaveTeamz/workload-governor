@@ -9,6 +9,7 @@ import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import "./app.css";
+import "../app/animations.css";
 
 const DEMO_APPS: Application[] = [
   { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
@@ -29,9 +30,16 @@ function HomePage() {
   const wallet = useWallet();
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
+  const [activeView, setActiveView] = useState<DashboardView>("overview");
   const { toasts, add: addToast, remove: removeToast } = useToast();
-  const wallet = useWallet();
-  const settingsHook = useSettings(wallet.address);
+  const navigate = useViewTransition({ targetSelector: "#main-content" });
+
+  /** Switch tabs with a directional view transition */
+  function switchView(to: DashboardView) {
+    if (to === activeView) return;
+    const dir = resolveDirection(activeView, to);
+    navigate(() => setActiveView(to), dir);
+  }
 
   async function handleAssign(app: Application) {
     await new Promise((r) => setTimeout(r, 400));
