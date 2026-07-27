@@ -17,11 +17,12 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ErrorBoundary } from '../../frontend/src/components/ErrorBoundary';
+import { ErrorBoundary } from '../../frontend/src/App';
 
 // ── Suppress React's console.error output for expected errors in tests ────────
 
 beforeEach(() => {
+  // React logs caught errors to console.error — suppress for cleaner test output
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 
@@ -31,12 +32,26 @@ afterEach(() => {
 
 // ── Helper components ─────────────────────────────────────────────────────────
 
-/** A component that throws when shouldThrow is true */
+/** A component that always throws when `shouldThrow` is true */
 function ThrowingChild({ shouldThrow = false }: { shouldThrow?: boolean }) {
   if (shouldThrow) {
     throw new Error('Test render error');
   }
   return <div data-testid="child-content">Child content rendered</div>;
+}
+
+/** A controllable component that can be toggled to throw */
+function TogglableChild() {
+  const [doThrow, setDoThrow] = useState(false);
+
+  return (
+    <div>
+      <button data-testid="throw-btn" onClick={() => setDoThrow(true)}>
+        Trigger Error
+      </button>
+      <ThrowingChild shouldThrow={doThrow} />
+    </div>
+  );
 }
 
 // ── Test suite ────────────────────────────────────────────────────────────────
@@ -75,6 +90,10 @@ describe('ErrorBoundary component (Issue #376)', () => {
   // ── Test 3: Retry resets boundary and re-renders child ─────────────────────
 
   it('3. clicking Retry resets the boundary and shows child content again', () => {
+    /**
+     * We render the boundary wrapping a component that is initially healthy.
+     * We force an error by re-rendering with shouldThrow=true, then click Retry.
+     */
     const { rerender } = render(
       <ErrorBoundary>
         <ThrowingChild shouldThrow={false} />
@@ -93,7 +112,7 @@ describe('ErrorBoundary component (Issue #376)', () => {
 
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
-    // Fix child first, then click Retry to reset the boundary
+    // Click Retry — boundary resets; child stops throwing (now renders cleanly)
     rerender(
       <ErrorBoundary>
         <ThrowingChild shouldThrow={false} />
@@ -172,7 +191,7 @@ describe('ErrorBoundary component (Issue #376)', () => {
           <ThrowingChild shouldThrow={false} />
         </ErrorBoundary>
 
-        {/* Sibling 2 — throws */}
+        {/* Sibling 2 — contains an error */}
         <ErrorBoundary>
           <ThrowingChild shouldThrow />
         </ErrorBoundary>
