@@ -7,6 +7,12 @@ export default defineConfig({
   resolve: {
     alias: { '@tokens': resolve(__dirname, 'src/tokens.json') },
   },
+  css: {
+    // Disable PostCSS processing in the test environment so missing plugins
+    // (e.g. tailwindcss) don't break test runs.  CSS class names are not
+    // tested for correctness, only DOM structure.
+    postcss: { plugins: [] },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],

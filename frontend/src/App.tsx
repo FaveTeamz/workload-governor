@@ -8,7 +8,9 @@ import { ActivityFeed } from "./components/ActivityFeed";
 import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
+import { RegisterOrgPage } from "./pages/RegisterOrgPage";
 import "./app.css";
+import "../app/animations.css";
 
 const DEMO_APPS: Application[] = [
   { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
@@ -29,12 +31,24 @@ function HomePage() {
   const wallet = useWallet();
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
+  const [activeView, setActiveView] = useState<DashboardView>("overview");
   const { toasts, add: addToast, remove: removeToast } = useToast();
+  const navigate = useViewTransition({ targetSelector: "#main-content" });
+
+  /** Switch tabs with a directional view transition */
+  function switchView(to: DashboardView) {
+    if (to === activeView) return;
+    const dir = resolveDirection(activeView, to);
+    navigate(() => setActiveView(to), dir);
+  }
 
   async function handleAssign(app: Application) {
     await new Promise((r) => setTimeout(r, 400));
     setApplications((prev) => prev.filter((a) => a.id !== app.id));
-    setAssignments((prev) => [...prev, { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle }]);
+    setAssignments((prev) => [
+      ...prev,
+      { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle },
+    ]);
     addToast(`Assigned "${app.issueTitle}" to ${app.contributor.slice(0, 8)}…`, "success");
   }
 
@@ -101,6 +115,12 @@ export default function App() {
         <Route
           path="/issues/:org_id/:issue_id"
           element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Admin: register new organisation */}
+        <Route
+          path="/admin/register-org"
+          element={<RegisterOrgPage apiBase="/api" />}
         />
 
         {/* Default: home */}
