@@ -666,7 +666,7 @@ impl WorkloadGovernor {
     ///
     /// # Returns
     /// `true` if the contributor has 15 pending applications globally.
-    pub fn is_global_application_limit_reached(env: Env, contributor: Address) -> bool {
+    pub fn is_global_app_limit_reached(env: Env, contributor: Address) -> bool {
         let count = storage::get_global_app_count(&env, &contributor);
         count >= storage::get_global_cap(&env)
     }
