@@ -679,6 +679,186 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Issue #882, Property A:
+// Global count invariant under arbitrary apply/withdraw sequences.
+//
+// Property: after any sequence of apply/withdraw operations,
+// get_global_application_count equals the number of active (non-withdrawn)
+// applications tracked by the test harness.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+    #[test]
+    fn prop_global_count_invariant(
+        // Each element: (true=apply / false=withdraw, issue_id 0..14)
+        // Issue ids are bounded to 0..15 so sequences can fill and drain the cap.
+        actions in proptest::collection::vec(
+            (proptest::bool::ANY, 0u32..15u32),
+            1..50
+        )
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("gcnt");
+        client.initialize(&admin);
+
+        // Mirror of contract state: which issue_ids currently have a pending
+        // application for this contributor+org pair.
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (do_apply, issue_id) in &actions {
+            let do_apply = *do_apply;
+            let issue_id = *issue_id;
+
+            if do_apply {
+                if applied.contains(&issue_id) {
+                    // Would be DuplicateApplication — skip
+                    continue;
+                }
+                if applied.len() >= 15 {
+                    // Would be GlobalApplicationLimitReached — verify contract also rejects
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    prop_assert!(result.is_err(), "expected rejection when count == 15");
+                    // Count must be unchanged
+                    prop_assert_eq!(
+                        client.get_global_application_count(&contributor),
+                        15u32,
+                        "count must stay 15 after rejected apply"
+                    );
+                    continue;
+                }
+                client.apply_for_issue(&contributor, &org, &issue_id);
+                applied.insert(issue_id);
+            } else {
+                if !applied.contains(&issue_id) {
+                    // Nothing to withdraw — skip
+                    continue;
+                }
+                client.withdraw_application(&contributor, &org, &issue_id);
+                applied.remove(&issue_id);
+            }
+
+            // Invariant: contract count == model count at all times
+            let expected = applied.len() as u32;
+            let actual = client.get_global_application_count(&contributor);
+            prop_assert_eq!(
+                actual,
+                expected,
+                "global count mismatch after {:?} issue {}: expected {}, got {}",
+                if do_apply { "apply" } else { "withdraw" },
+                issue_id,
+                expected,
+                actual
+            );
+
+            // Invariant: count is always in [0, 15]
+            prop_assert!(actual <= 15, "count {} exceeded cap 15", actual);
+        }
+    }
+}
+
+// Feature: workload-governor, Issue #882, Property B:
+// Org assignment count invariant under arbitrary assign/complete/revoke sequences.
+//
+// Property: after any sequence of assign/complete/revoke operations,
+// get_org_assignment_count equals the number of active (non-completed,
+// non-revoked) assignments tracked by the test harness.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+    #[test]
+    fn prop_org_count_invariant(
+        // Each element: op code 0=assign, 1=complete, 2=revoke; issue_id 0..3
+        // Issue ids bounded to 0..4 so sequences can saturate the per-org cap.
+        actions in proptest::collection::vec(
+            (0u8..3u8, 0u32..4u32),
+            1..50
+        )
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("ocnt");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        // Mirror of contract state: issue_ids with an active assignment.
+        let mut assigned: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        // Mirror of contract state: issue_ids with a pending application
+        // (needed so assign_issue has a valid application to consume).
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (op, issue_id) in &actions {
+            let issue_id = *issue_id;
+            match op {
+                0 => {
+                    // assign
+                    if assigned.contains(&issue_id) {
+                        // AlreadyAssigned — skip
+                        continue;
+                    }
+                    if assigned.len() >= 4 {
+                        // OrgAssignmentLimitReached — verify contract rejects
+                        // First ensure an application exists for this issue so we
+                        // actually hit the cap guard and not ApplicationNotFound.
+                        if !applied.contains(&issue_id) {
+                            client.apply_for_issue(&contributor, &org, &issue_id);
+                            applied.insert(issue_id);
+                        }
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected rejection when org count == 4");
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            4u32,
+                            "org count must stay 4 after rejected assign"
+                        );
+                        continue;
+                    }
+                    // Ensure application exists before assigning
+                    if !applied.contains(&issue_id) {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                        applied.insert(issue_id);
+                    }
+                    client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                    applied.remove(&issue_id); // assign consumes the application
+                    assigned.insert(issue_id);
+                }
+                1 => {
+                    // complete
+                    if !assigned.contains(&issue_id) {
+                        // AssignmentNotFound — skip
+                        continue;
+                    }
+                    client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+                    assigned.remove(&issue_id);
+                }
+                _ => {
+                    // revoke
+                    if !assigned.contains(&issue_id) {
+                        // AssignmentNotFound — skip
+                        continue;
+                    }
+                    client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+                    assigned.remove(&issue_id);
+                }
+            }
+
+            // Invariant: contract count == model count at all times
+            let expected = assigned.len() as u32;
+            let actual = client.get_org_assignment_count(&contributor, &org);
+            prop_assert_eq!(
+                actual,
+                expected,
+                "org count mismatch after op {} issue {}: expected {}, got {}",
+                op,
+                issue_id,
+                expected,
+                actual
+            );
+
+            // Invariant: count is always in [0, 4]
+            prop_assert!(actual <= 4, "org count {} exceeded cap 4", actual);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // UPGRADE STATE-PRESERVATION TESTS
 // ---------------------------------------------------------------------------
