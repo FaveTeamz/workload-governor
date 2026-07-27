@@ -8,6 +8,7 @@ import { ActivityFeed } from "./components/ActivityFeed";
 import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
+import { RegisterOrgPage } from "./pages/RegisterOrgPage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -114,6 +115,12 @@ export default function App() {
         <Route
           path="/issues/:org_id/:issue_id"
           element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Admin: register new organisation */}
+        <Route
+          path="/admin/register-org"
+          element={<RegisterOrgPage apiBase="/api" />}
         />
 
         {/* Default: home */}
