@@ -1,32 +1,152 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
+import { SorobanService } from '../soroban';
+import { verifySignature, parseAuthHeader } from '../signature';
+import { Address, nativeToScVal } from '@stellar/stellar-sdk';
+import { logger } from '../logger';
+import { registerOrgSchema } from '../schemas/orgs';
 
 const router = Router();
+const soroban = new SorobanService();
 
-function authMiddleware(req: Request, res: Response, next: () => void): void {
-  const token = req.headers['x-admin-token'];
-  if (token !== process.env.ADMIN_TOKEN) {
+async function signatureAuthMiddleware(
+  req: Request,
+  res: Response,
+  next: () => void,
+): Promise<void> {
+  const authHeader = req.headers.authorization;
+  const signed = parseAuthHeader(authHeader);
+
+  if (!signed) {
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
+
+  if (!verifySignature(signed.adminAddress, signed.message, signed.signature)) {
+    logger.warn({
+      correlationId: req.correlationId,
+      message: 'Invalid admin signature',
+      adminAddress: signed.adminAddress,
+    });
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+
+  (req as Request & { adminAddress: string }).adminAddress = signed.adminAddress;
   next();
 }
 
-// POST /api/admin/maintainers  body: { address, org_id }
-router.post('/maintainers', authMiddleware, async (req: Request, res: Response) => {
-  const { address, org_id } = req.body as { address?: string; org_id?: string };
-  if (!address || !org_id) {
-    res.status(400).json({ error: 'address and org_id required' });
+// POST /api/admin/maintainers
+// Body: { maintainer_address, org_id, sequence }
+// Returns unsigned transaction XDR for admin to sign
+router.post('/maintainers', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress: string };
+  const { maintainer_address, org_id, sequence } = req.body as Record<string, unknown>;
+
+  if (!maintainer_address || !org_id || !sequence) {
+    res.status(400).json({
+      error: 'maintainer_address, org_id, and sequence required',
+    });
     return;
   }
+
   try {
-    await pool.query(
-      `INSERT INTO maintainers (address, org_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [address, org_id],
+    // Build the register_maintainer transaction
+    const account = adminReq.adminAddress;
+    const args = [
+      new Address(maintainer_address as string).toScVal(),
+      nativeToScVal(org_id, { type: 'symbol' }),
+    ];
+
+    const tx = soroban.buildRawTransaction(
+      account,
+      sequence as string,
+      'register_maintainer',
+      args,
     );
-    res.status(201).json({ address, org_id });
-  } catch {
-    res.status(500).json({ error: 'internal server error' });
+
+    // Store pending transaction for later verification
+    await pool.query(
+      `INSERT INTO pending_transactions (admin_address, org_id, maintainer_address, transaction_xdr, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (admin_address, maintainer_address, org_id) DO UPDATE
+       SET transaction_xdr = $4, created_at = NOW()`,
+      [account, org_id, maintainer_address, tx.toXDR()],
+    );
+
+    res.status(200).json({
+      xdr: tx.toXDR(),
+      message: 'Sign this transaction with your admin key and submit to /broadcast',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal error';
+    logger.error({
+      correlationId: adminReq.correlationId,
+      error: msg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    res.status(400).json({ error: msg });
+  }
+});
+
+// POST /api/admin/orgs
+// Body: { org_id, maintainers: string[], cap: number }
+// Registers a new organisation: records it in DB and registers each maintainer
+// on the Soroban contract.
+router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress: string };
+
+  const parsed = registerOrgSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.flatten().fieldErrors;
+    res.status(400).json({ error: 'validation_error', details: errors });
+    return;
+  }
+
+  const { org_id, maintainers, cap } = parsed.data;
+
+  try {
+    // Persist the org registration
+    await pool.query(
+      `INSERT INTO orgs (org_id, cap, created_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (org_id) DO UPDATE SET cap = $2`,
+      [org_id, cap],
+    );
+
+    // Register each maintainer in DB
+    for (const addr of maintainers) {
+      await pool.query(
+        `INSERT INTO org_maintainers (org_id, maintainer_address, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (org_id, maintainer_address) DO NOTHING`,
+        [org_id, addr],
+      );
+    }
+
+    logger.info({
+      correlationId: adminReq.correlationId,
+      message: 'Org registered',
+      org_id,
+      maintainers,
+      cap,
+      registeredBy: adminReq.adminAddress,
+    });
+
+    res.status(201).json({
+      org_id,
+      maintainers,
+      cap,
+      message: 'Organisation registered successfully',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal error';
+    logger.error({
+      correlationId: adminReq.correlationId,
+      error: msg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    res.status(500).json({ error: msg });
   }
 });
 
