@@ -175,6 +175,10 @@ export class EventHistoryTable {
     style.textContent = EventHistoryTable.CSS;
     this._container.appendChild(style);
 
+    // Toolbar (hidden in print via @media print)
+    const toolbar = this._buildToolbar();
+    this._container.appendChild(toolbar);
+
     // Desktop table
     const table = this._buildTable();
     this._container.appendChild(table);
@@ -331,6 +335,34 @@ export class EventHistoryTable {
   // ── CSS ───────────────────────────────────────────────────────────────────
 
   static CSS = `
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+.eht-toolbar {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  margin-bottom: .75rem;
+}
+.eht-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .375rem .875rem;
+  border: 1.5px solid currentColor;
+  border-radius: 5px;
+  font-size: .8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.eht-btn:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
+.eht-btn-export { color: #6c8eff; }
+.eht-btn-export:hover { background: #6c8eff; color: #fff; }
+.eht-btn-print  { color: #94a3b8; }
+.eht-btn-print:hover  { background: #94a3b8; color: #fff; }
+
+/* ── Table ───────────────────────────────────────────────────────────── */
 .eht-table { width:100%; border-collapse:collapse; font-size:.9rem; }
 .eht-table th, .eht-table td { padding:.5rem .75rem; border-bottom:1px solid #ddd; text-align:left; }
 .eht-table thead th { background:#f5f5f5; font-weight:600; }
@@ -358,9 +390,32 @@ export class EventHistoryTable {
 .eht-card-action { font-weight:600; }
 .eht-card-status { text-align:right; font-size:.85rem; }
 .eht-card-detail { grid-column:1/-1; margin-top:.5rem; padding-top:.5rem; border-top:1px solid #eee; }
+
 @media (max-width:640px) {
   .eht-table { display:none; }
   .eht-cards { display:block; }
+}
+
+/* ── Print ───────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide interactive chrome inside the component itself */
+  .eht-toolbar   { display: none !important; }
+  .eht-copy-btn  { display: none !important; }
+  .eht-cards     { display: none !important; }
+  .eht-sortable  { cursor: default; }
+
+  /* Force the desktop table regardless of viewport */
+  .eht-table { display: table !important; }
+
+  /* Clean, high-contrast print table */
+  .eht-table th,
+  .eht-table td { border: 1px solid #999; padding: .3rem .5rem; font-size: .8rem; }
+  .eht-table thead th { background: #e0e0e0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .eht-row:hover { background: transparent; }
+  .eht-detail td { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Avoid page breaks inside a row's detail panel */
+  .eht-row, .eht-detail { break-inside: avoid; }
 }
 `;
 }
