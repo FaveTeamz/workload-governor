@@ -93,46 +93,48 @@ impl WorkloadGovernor {
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
-    /// Transfers admin authority from the current admin to a new address.
+    /// Revokes a maintainer's authorisation for a specific organisation (admin-only).
     ///
-    /// **Both** the current and new admin must sign the transaction.  After a
-    /// successful call, `new_admin` becomes the sole admin; the previous admin
-    /// key loses all privileges immediately.
+    /// Deletes the `(maint, maintainer, org_id)` persistent storage entry so that
+    /// subsequent calls to maintainer-gated functions (e.g. `assign_issue`) will fail
+    /// with [`ContractError::UnauthorizedMaintainer`].
     ///
     /// # Who can call
-    /// Any transaction that carries valid signatures for **both** the stored
-    /// admin address (`current_admin`) and the new admin address (`new_admin`).
+    /// The stored admin address only.
     ///
     /// # Arguments
-    /// * `current_admin` – Must match the stored admin address (auth enforced).
-    /// * `new_admin`     – The incoming admin address (auth enforced).
+    /// * `admin`      – Must match the stored admin address (auth enforced).
+    /// * `maintainer` – Address whose maintainer rights are being revoked.
+    /// * `org_id`     – Organisation symbol the maintainer is being deregistered from.
     ///
     /// # Returns
     /// `()` on success.
     ///
     /// # Errors
-    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
-    /// * [`ContractError::UnauthorizedAdmin`] — stored admin auth check fails.
+    /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    /// * [`ContractError::MaintainerNotFound`] — `maintainer` is not currently registered
+    ///   for `org_id` (code 17).
     ///
     /// # Examples
     /// ```text
     /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet \
-    ///   --source <current-admin-account> \
-    ///   -- transfer_admin \
-    ///   --current_admin <CURRENT_ADMIN_ADDRESS> \
-    ///   --new_admin <NEW_ADMIN_ADDRESS>
-    /// # Both current_admin and new_admin must countersign the transaction.
+    ///   --network testnet --source <admin-account> \
+    ///   -- deregister_maintainer \
+    ///   --admin <ADMIN_ADDRESS> \
+    ///   --maintainer <MAINTAINER_ADDRESS> \
+    ///   --org_id my_org
     /// ```
-    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+    pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
-        new_admin.require_auth();
-        let old_admin = stored_admin;
-        storage::set_admin(&env, &new_admin);
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::MaintainerNotFound);
+        }
+        storage::remove_maintainer(&env, &maintainer, &org_id);
         storage::bump_instance(&env);
-        events::emit_admin_transferred(&env, &old_admin, &new_admin);
+        events::emit_maintainer_deregistered(&env, &admin, &maintainer, &org_id);
     }
 
     /// Upgrades the contract WASM to a new hash (admin-only).

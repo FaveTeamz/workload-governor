@@ -153,3 +153,18 @@ pub(crate) fn emit_admin_transferred(
         new_admin.clone(),
     );
 }
+
+/// Emitted by `deregister_maintainer`.
+///
+/// topics: `(symbol_short!("maint_drg"), admin)`
+/// data:   `(maintainer, org_id)`
+pub(crate) fn emit_maintainer_deregistered(
+    env: &Env,
+    admin: &Address,
+    maintainer: &Address,
+    org_id: &Symbol,
+) {
+    let topics = (symbol_short!("maint_drg"), admin.clone());
+    let data = (maintainer.clone(), org_id.clone());
+    env.events().publish(topics, data);
+}
