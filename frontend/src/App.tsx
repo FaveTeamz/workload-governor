@@ -1,118 +1,131 @@
-/**
- * frontend/src/App.tsx
- *
- * Root application component including the ErrorBoundary.
- *
- * The ErrorBoundary:
- *  - Catches errors thrown by any child component
- *  - Renders a fallback UI with a "Retry" button
- *  - Logs the error to the backend via POST /api/errors
- *  - Resets automatically on route/location changes
- */
+import { useState } from "react";
+import { Routes, Route } from "react-router-dom";
+import { NavBar } from "./components/NavBar";
+import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
+import { MaintainerPanel } from "./components/MaintainerPanel";
+import type { Application, Assignment } from "./components/MaintainerPanel";
+import { ActivityFeed } from "./components/ActivityFeed";
+import { ToastContainer, useToast } from "./components/Toast";
+import { useWallet } from "./hooks/useWallet";
+import { IssueDetailPage } from "./pages/IssueDetailPage";
+import { RegisterOrgPage } from "./pages/RegisterOrgPage";
+import "./app.css";
+import "../app/animations.css";
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+const DEMO_APPS: Application[] = [
+  { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
+  { id: "2", contributor: "GCYYY2PQRSTUVWXYZABCDE67890", org: "stellar-org", issueTitle: "Add prop tests for assign_issue", appliedDate: "2026-06-21" },
+  { id: "3", contributor: "GAZZZ3FGHIJKLMNOPQRST11111", org: "meridian-dao", issueTitle: "Docs: storage design overview", appliedDate: "2026-06-22" },
+];
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+const DEMO_ASGNS: Assignment[] = [
+  { id: "a1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Optimize WASM binary size" },
+  { id: "a2", contributor: "GDWWW4LMNOPQRSTUVWXYZ22222", org: "meridian-dao", issueTitle: "Integration tests for SDK" },
+];
 
-interface ErrorPayload {
-  message: string;
-  stack?: string;
-  componentStack?: string;
-}
+// ---------------------------------------------------------------------------
+// Home page (existing layout extracted into its own component)
+// ---------------------------------------------------------------------------
 
-interface ErrorBoundaryProps {
-  children: ReactNode;
-  /** Optional override for the fallback UI */
-  fallback?: ReactNode;
-  /** Optional key that resets the boundary when it changes (e.g., location.pathname) */
-  resetKey?: string | number;
-  /** Optional callback after reset */
-  onReset?: () => void;
-  /** Base URL for the API error endpoint (defaults to '') */
-  apiBase?: string;
-}
+function HomePage() {
+  const wallet = useWallet();
+  const [applications, setApplications] = useState(DEMO_APPS);
+  const [assignments, setAssignments] = useState(DEMO_ASGNS);
+  const [activeView, setActiveView] = useState<DashboardView>("overview");
+  const { toasts, add: addToast, remove: removeToast } = useToast();
+  const navigate = useViewTransition({ targetSelector: "#main-content" });
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error?: Error;
-  errorInfo?: ErrorInfo;
-}
-
-// ── ErrorBoundary class component ─────────────────────────────────────────────
-
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  static displayName = 'ErrorBoundary';
-
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
+  /** Switch tabs with a directional view transition */
+  function switchView(to: DashboardView) {
+    if (to === activeView) return;
+    const dir = resolveDirection(activeView, to);
+    navigate(() => setActiveView(to), dir);
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
+  async function handleAssign(app: Application) {
+    await new Promise((r) => setTimeout(r, 400));
+    setApplications((prev) => prev.filter((a) => a.id !== app.id));
+    setAssignments((prev) => [
+      ...prev,
+      { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle },
+    ]);
+    addToast(`Assigned "${app.issueTitle}" to ${app.contributor.slice(0, 8)}…`, "success");
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    this.setState({ errorInfo });
-    this.logError({ message: error.message, stack: error.stack, componentStack: errorInfo.componentStack ?? undefined });
+  async function handleComplete(asgn: Assignment) {
+    await new Promise((r) => setTimeout(r, 400));
+    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
+    addToast(`Completed "${asgn.issueTitle}"`, "success");
   }
 
-  /** Reset when the resetKey prop changes (e.g. on route navigation) */
-  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
-    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.reset();
-    }
+  async function handleRevoke(asgn: Assignment) {
+    await new Promise((r) => setTimeout(r, 400));
+    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
+    addToast(`Revoked "${asgn.issueTitle}"`, "info");
   }
 
-  private logError(payload: ErrorPayload): void {
-    const base = this.props.apiBase ?? '';
-    fetch(`${base}/api/errors`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch(() => {
-      // Never throw from an error boundary
-    });
-  }
-
-  private reset(): void {
-    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
-    this.props.onReset?.();
-  }
-
-  render(): ReactNode {
-    if (!this.state.hasError) {
-      return this.props.children;
-    }
-
-    if (this.props.fallback) {
-      return this.props.fallback;
-    }
-
-    return (
-      <div role="alert" aria-live="assertive" style={{ padding: '2rem', textAlign: 'center' }}>
-        <h2>Something went wrong</h2>
-        <p>{this.state.error?.message}</p>
-        <button
-          type="button"
-          onClick={() => this.reset()}
-          aria-label="Retry"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-}
-
-// ── App root ──────────────────────────────────────────────────────────────────
-
-export default function App(): JSX.Element {
   return (
-    <ErrorBoundary>
-      <main>
-        <h1>WorkloadGovernor</h1>
+    <>
+      <main id="main-content" className="app-main" tabIndex={-1}>
+        <header className="app-header" role="banner">
+          <span className="app-logo" aria-hidden="true">⚙</span>
+          <h1>WorkloadGovernor</h1>
+          <GetStartedButton />
+        </header>
+
+        <MaintainerPanel
+          applications={applications}
+          assignments={assignments}
+          onAssign={handleAssign}
+          onComplete={handleComplete}
+          onRevoke={handleRevoke}
+        />
+        <ActivityFeed apiBase="/api" network="testnet" />
       </main>
-    </ErrorBoundary>
+
+      <OnboardingWizard />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// App shell — NavBar is shared; routes render below it
+// ---------------------------------------------------------------------------
+
+export default function App() {
+  const wallet = useWallet();
+
+  return (
+    <>
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
+      <NavBar
+        walletAddress={wallet.publicKey}
+        walletError={wallet.error}
+        networkMismatch={wallet.networkMismatch}
+        onConnect={wallet.connect}
+        onDisconnect={wallet.disconnect}
+      />
+
+      <Routes>
+        {/* Issue detail view */}
+        <Route
+          path="/issues/:org_id/:issue_id"
+          element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Admin: register new organisation */}
+        <Route
+          path="/admin/register-org"
+          element={<RegisterOrgPage apiBase="/api" />}
+        />
+
+        {/* Default: home */}
+        <Route path="*" element={<HomePage />} />
+      </Routes>
+    </>
   );
 }

@@ -1,0 +1,5 @@
+{
+  "_comment": "npm audit snooze list. Each entry MUST have an 'expires' field (ISO date). Entries without an expiry are rejected by the CI verify step. Expiry should not exceed 90 days. Example below is commented-out — uncomment and add real CVEs only after triaging.",
+  "exceptions": [
+  ]
+}
