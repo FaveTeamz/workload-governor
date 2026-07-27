@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Error | AlignmentDrips</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100dvh; display: flex; flex-direction: column; }
+
+    .ag-nav { display:flex; align-items:center; gap:1.5rem; padding:.75rem 1.5rem; background:#0f172a; color:#f1f5f9; }
+    .ag-nav-brand { font-weight:700; font-size:1.1rem; color:#38bdf8; text-decoration:none; margin-right:auto; }
+    .ag-nav-links { display:flex; gap:1.25rem; list-style:none; }
+    .ag-nav-links a { color:#cbd5e1; text-decoration:none; font-size:.9rem; }
+    .ag-nav-links a:hover { color:#f1f5f9; }
+
+    main { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; text-align:center; gap:1.5rem; }
+    .ag-error-code { font-size:5rem; font-weight:800; color:#ef4444; line-height:1; }
+    h1 { font-size:1.75rem; font-weight:700; }
+    p  { color:#475569; max-width:40ch; line-height:1.6; }
+    .ag-actions { display:flex; gap:1rem; flex-wrap:wrap; justify-content:center; }
+    .ag-btn         { display:inline-block; padding:.6rem 1.5rem; background:#0ea5e9; color:#fff; border-radius:6px; text-decoration:none; font-weight:600; font-size:.95rem; border:none; cursor:pointer; }
+    .ag-btn:hover   { background:#0284c7; }
+    .ag-btn-outline { background:transparent; border:2px solid #0ea5e9; color:#0ea5e9; }
+    .ag-btn-outline:hover { background:#e0f2fe; }
+  </style>
+</head>
+<body>
+  <nav class="ag-nav" aria-label="Main navigation">
+    <a class="ag-nav-brand" href="/">AlignmentDrips</a>
+    <ul class="ag-nav-links" role="list">
+      <li><a href="/dashboard">Dashboard</a></li>
+      <li><a href="/issues">Issues</a></li>
+      <li><a href="/history">History</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <!-- Error code is injected server-side or via JS; defaults to 500 -->
+    <div class="ag-error-code" id="ag-error-code" aria-live="polite">500</div>
+    <h1>Something went wrong</h1>
+    <p id="ag-error-msg">An unexpected error occurred. You can retry or return to the dashboard.</p>
+    <div class="ag-actions">
+      <button class="ag-btn" onclick="location.reload()" type="button">Retry</button>
+      <a class="ag-btn ag-btn-outline" href="/dashboard">Back to Dashboard</a>
+    </div>
+  </main>
+
+  <script>
+    // Allow callers to surface error details without a framework.
+    // Usage: ErrorPage.set(500, 'Custom message')
+    window.ErrorPage = {
+      set(code, message) {
+        document.getElementById('ag-error-code').textContent = code ?? 500;
+        if (message) document.getElementById('ag-error-msg').textContent = message;
+      }
+    };
+  </script>
+</body>
+</html>
