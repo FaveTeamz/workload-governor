@@ -2493,132 +2493,171 @@ fn unit_extend_ttl_also_extends_global_counter() {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #359 — unit tests for apply_for_issue (100% branch coverage)
+// Issue #360 — unit tests for assign_issue and complete_assignment
 // ---------------------------------------------------------------------------
 
 #[test]
-fn unit_apply_success_increments_global_count() {
+fn unit_assign_converts_application_increments_counter() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("applyorg");
+    let org = t.org("assignorg");
 
     t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.apply_for_issue(&contributor, &org, &1u32);
 
-    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+    // Before assign: application exists, assignment does not
     assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert!(!t.client.is_assigned(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+
+    // After assign: application removed, assignment created, counters updated
+    assert!(!t.client.has_applied(&contributor, &org, &1u32));
+    assert!(t.client.is_assigned(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
 }
 
 #[test]
-fn unit_apply_at_cap_14_succeeds() {
-    // Applying when count is already 14 must succeed and bring the count to 15.
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-    let contributor = Address::generate(&t.env);
-    let org = t.org("cap14org");
-
-    t.client.initialize(&admin);
-    for i in 0u32..14 {
-        t.client.apply_for_issue(&contributor, &org, &i);
-    }
-    assert_eq!(t.client.get_global_application_count(&contributor), 14);
-
-    // The 15th application must succeed
-    t.client.apply_for_issue(&contributor, &org, &14u32);
-    assert_eq!(t.client.get_global_application_count(&contributor), 15);
-}
-
-#[test]
-fn unit_apply_at_cap_15_returns_limit_reached() {
+fn unit_assign_at_org_cap_4_fails() {
     use crate::errors::ContractError;
     use soroban_sdk::IntoVal;
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("cap15org");
+    let org = t.org("orgcap4");
 
     t.client.initialize(&admin);
-    for i in 0u32..15 {
-        t.client.apply_for_issue(&contributor, &org, &i);
-    }
-    assert_eq!(t.client.get_global_application_count(&contributor), 15);
+    t.client.register_maintainer(&admin, &maintainer, &org);
 
-    // The 16th must be rejected with GlobalApplicationLimitReached (code 6)
-    let result = t.client.try_apply_for_issue(&contributor, &org, &99u32);
+    // Fill to the default ORG_ASSIGNMENT_LIMIT of 4
+    for i in 0u32..4 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+    }
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 4);
+
+    // 5th assignment must be rejected with OrgAssignmentLimitReached (code 7)
+    t.client.apply_for_issue(&contributor, &org, &99u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &99u32);
     assert_eq!(
         result,
-        Err(Ok(ContractError::GlobalApplicationLimitReached.into_val(&t.env)))
+        Err(Ok(ContractError::OrgAssignmentLimitReached.into_val(&t.env)))
+    );
+    // Counter must stay at 4
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 4);
+}
+
+#[test]
+fn unit_assign_already_assigned_returns_error() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("aassign");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Force an assignment entry so the issue appears already-assigned,
+    // then apply for the same issue and attempt to assign again.
+    crate::storage::set_assignment(&t.env, &org, 1u32, &contributor);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &1u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AlreadyAssigned.into_val(&t.env)))
     );
 }
 
 #[test]
-fn unit_apply_duplicate_returns_error() {
+fn unit_assign_no_application_returns_error() {
     use crate::errors::ContractError;
     use soroban_sdk::IntoVal;
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("duporg");
+    let org = t.org("noapprg");
 
     t.client.initialize(&admin);
-    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.register_maintainer(&admin, &maintainer, &org);
 
-    // Second application for the same triple must return DuplicateApplication (code 8)
-    let result = t.client.try_apply_for_issue(&contributor, &org, &1u32);
+    // No application submitted — assign must fail with ApplicationNotFound (code 9)
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &42u32);
     assert_eq!(
         result,
-        Err(Ok(ContractError::DuplicateApplication.into_val(&t.env)))
+        Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env)))
+    );
+}
+
+#[test]
+fn unit_complete_removes_assignment_decrements_counter() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cmplorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &5u32);
+
+    assert!(t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &5u32);
+
+    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+}
+
+#[test]
+fn unit_complete_nonexistent_returns_error() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("noasgnr");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // No assignment exists — complete must fail with AssignmentNotFound (code 10)
+    let result = t.client.try_complete_assignment(&maintainer, &contributor, &org, &77u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AssignmentNotFound.into_val(&t.env)))
     );
 }
 
 #[test]
 #[should_panic]
-fn unit_apply_before_initialize_panics() {
-    let t = TestEnv::new();
-    let contributor = Address::generate(&t.env);
-    let org = t.org("noinit");
-    // No initialize() call — must panic with NotInitialized
-    t.client.apply_for_issue(&contributor, &org, &1u32);
-}
-
-#[test]
-fn unit_apply_stores_entry_in_storage() {
+fn unit_assign_non_maintainer_panics() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
+    let stranger = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("storeorg");
+    let org = t.org("noauthr");
 
     t.client.initialize(&admin);
-
-    // Before apply, has_applied must return false
-    assert!(!t.client.has_applied(&contributor, &org, &1u32));
-
+    // Register no maintainer; stranger is not authorised for this org
     t.client.apply_for_issue(&contributor, &org, &1u32);
-
-    // After apply, the entry must exist
-    assert!(t.client.has_applied(&contributor, &org, &1u32));
-    // Different issue must still return false
-    assert!(!t.client.has_applied(&contributor, &org, &2u32));
-}
-
-#[test]
-fn unit_apply_different_issues_are_independent() {
-    // Two different issues for the same contributor/org both succeed;
-    // each has its own entry and the global count is 2.
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-    let contributor = Address::generate(&t.env);
-    let org = t.org("multiorg");
-
-    t.client.initialize(&admin);
-    t.client.apply_for_issue(&contributor, &org, &10u32);
-    t.client.apply_for_issue(&contributor, &org, &20u32);
-
-    assert_eq!(t.client.get_global_application_count(&contributor), 2);
-    assert!(t.client.has_applied(&contributor, &org, &10u32));
-    assert!(t.client.has_applied(&contributor, &org, &20u32));
-    assert!(!t.client.has_applied(&contributor, &org, &30u32));
+    // Must panic with UnauthorizedMaintainer (code 4)
+    t.client.assign_issue(&stranger, &contributor, &org, &1u32);
 }

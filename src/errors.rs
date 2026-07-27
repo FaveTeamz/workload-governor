@@ -58,12 +58,9 @@ pub enum ContractError {
     /// Discriminant: `11`.
     AlreadyAssigned = 11,
 
-    /// The org assignment counter is 0 but an assignment entry still exists —
-    /// indicates storage was corrupted or manually zeroed by a migration script.
-    /// Discriminant: `13`.
-    CounterInconsistency = 13,
-
-    /// The requested org cap is outside the allowed range `[1, 20]`.
-    /// Discriminant: `16`.
-    InvalidOrgCap = 16,
+    /// The specified maintainer is not registered for the given organisation.
+    /// Returned by `deregister_maintainer` when attempting to deregister a maintainer
+    /// that was never registered (or was already deregistered).
+    /// Discriminant: `17`.
+    MaintainerNotFound = 17,
 }
