@@ -86,8 +86,15 @@ interface Props {
 export function OnboardingWizard({ onComplete }: Props) {
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
+  /**
+   * "idle"    — content is fully visible, no animation running
+   * "exiting" — old step sliding out
+   * "entering"— new step sliding in (set after state change)
+   */
+  const [stepPhase, setStepPhase] = useState<"idle" | "exiting" | "entering">("idle");
   const dialogRef = useRef<HTMLDivElement>(null);
   const firstFocusRef = useRef<HTMLButtonElement>(null);
+  const animFrameRef = useRef<number | null>(null);
 
   // Show only for first-time visitors (no wallet, never dismissed)
   useEffect(() => {
@@ -112,6 +119,26 @@ export function OnboardingWizard({ onComplete }: Props) {
     onComplete?.();
   }
 
+  /**
+   * Animate to a new step:
+   * 1. Set phase → "exiting" (CSS animates the current content out)
+   * 2. After 200ms, update the step index and set phase → "entering"
+   * 3. After the enter animation, set phase → "idle"
+   */
+  const goToStep = useCallback((targetStep: number) => {
+    if (stepPhase !== "idle") return; // block mid-animation navigation
+    setStepPhase("exiting");
+
+    setTimeout(() => {
+      setStep(targetStep);
+      // Use rAF so the new content is in the DOM before adding the enter class
+      animFrameRef.current = requestAnimationFrame(() => {
+        setStepPhase("entering");
+        setTimeout(() => setStepPhase("idle"), 210);
+      });
+    }, 200);
+  }, [stepPhase]);
+
   function next() {
     if (step < STEPS.length - 1) {
       setStep((s) => s + 1);
@@ -121,7 +148,7 @@ export function OnboardingWizard({ onComplete }: Props) {
   }
 
   function prev() {
-    if (step > 0) setStep((s) => s - 1);
+    if (step > 0) goToStep(step - 1);
   }
 
   /** Keyboard: Escape = close (non-permanent), arrows navigate */
@@ -157,6 +184,13 @@ export function OnboardingWizard({ onComplete }: Props) {
   const isLast  = step === STEPS.length - 1;
   const canSkip = step >= 1; // Skip available after step 2 (index ≥ 1)
   const progressPct = ((step + 1) / STEPS.length) * 100;
+
+  const stepContentClass = [
+    "onboarding-step-content",
+    stepPhase === "exiting" ? "step-exiting" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
@@ -255,6 +289,7 @@ export function OnboardingWizard({ onComplete }: Props) {
             ref={firstFocusRef}
             className="btn btn-primary"
             onClick={next}
+            disabled={stepPhase !== "idle"}
             aria-label={
               isLast
                 ? "Finish onboarding"

@@ -50,6 +50,14 @@ export interface Issue {
   applicantCount: number;
 }
 
+/**
+ * mode controls which column(s) are shown:
+ *   "all"          — both columns side-by-side (default, legacy)
+ *   "applications" — only the Pending Applications column
+ *   "assignments"  — only the Active Assignments column
+ */
+export type PanelMode = "all" | "applications" | "assignments";
+
 interface Props {
   applications: Application[];
   assignments: Assignment[];
@@ -57,6 +65,7 @@ interface Props {
   onAssign: (app: Application) => Promise<void>;
   onComplete: (assignment: Assignment) => Promise<void>;
   onRevoke: (assignment: Assignment) => Promise<void>;
+  mode?: PanelMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +255,7 @@ export function MaintainerPanel({
   onAssign,
   onComplete,
   onRevoke,
+  mode = "all",
 }: Props) {
   const [open, setOpen] = useState(true);
   const [pinned, setPinned] = useState(false);
