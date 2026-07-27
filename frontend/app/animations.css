@@ -1,290 +1,63 @@
-/* ============================================================
-   animations.css — Page & component transition system
-   WorkloadGovernor dashboard
-
-   Strategy:
-     1. CSS View Transitions API for browsers that support it
-        (Chrome 111+, Edge 111+, Safari 18+)
-     2. CSS class-toggle fallback (.vt-enter / .vt-exit) for
-        older browsers — applied by useViewTransition.ts
-     3. prefers-reduced-motion: all motion disabled at the root
-   ============================================================ */
-
-/* ------------------------------------------------------------
-   Keyframes
-   ------------------------------------------------------------ */
-
-/* Cross-fade (default — all view transitions) */
-@keyframes vt-fade-in {
+/* Keyframes */
+@keyframes backdropIn {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-@keyframes vt-fade-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+@keyframes modalSlideIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
 }
 
-/* Slide entering from the right (forward / detail view) */
-@keyframes vt-slide-in-right {
-  from { opacity: 0; transform: translateX(32px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-/* Slide exiting to the left (forward navigation — old view) */
-@keyframes vt-slide-out-left {
-  from { opacity: 1; transform: translateX(0); }
-  to   { opacity: 0; transform: translateX(-32px); }
-}
-
-/* Slide entering from the left (back navigation) */
-@keyframes vt-slide-in-left {
-  from { opacity: 0; transform: translateX(-32px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-/* Slide exiting to the right (back navigation — old view) */
-@keyframes vt-slide-out-right {
-  from { opacity: 1; transform: translateX(0); }
-  to   { opacity: 0; transform: translateX(32px); }
-}
-
-/* Panel row enter from below */
-@keyframes row-enter {
+@keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Panel row exit upward */
-@keyframes row-exit {
-  from { opacity: 1; transform: translateY(0); max-height: 64px; }
-  to   { opacity: 0; transform: translateY(-8px); max-height: 0; padding-top: 0; padding-bottom: 0; margin: 0; }
+@keyframes slideOut {
+  from { opacity: 1; transform: translateX(0); max-height: 200px; }
+  to   { opacity: 0; transform: translateX(-100%); max-height: 0; overflow: hidden; }
 }
 
-/* Onboarding step slide — forward */
-@keyframes step-slide-in {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
-@keyframes step-slide-out {
-  from { opacity: 1; transform: translateX(0); }
-  to   { opacity: 0; transform: translateX(-20px); }
+/* Utility classes */
+.fade-in {
+  animation: fadeIn 300ms ease-out both;
 }
 
-/* Onboarding overlay fade-in */
-@keyframes overlay-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+.slide-out {
+  animation: slideOut 300ms ease-in forwards;
 }
 
-@keyframes dialog-in {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+.modal-slide-in {
+  animation: modalSlideIn 220ms ease-out both;
 }
 
-/* ------------------------------------------------------------
-   CSS View Transitions API
-   Default rule: cross-fade on ::view-transition-old/new(root)
-   ------------------------------------------------------------ */
-
-/* Suppress the default browser cross-fade so we control it */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
 }
 
-/* Default cross-fade for the whole root */
-:root:not([data-vt-dir]) {
-  & ::view-transition-old(root) {
-    animation: 200ms ease vt-fade-out both;
-  }
-  & ::view-transition-new(root) {
-    animation: 200ms ease vt-fade-in both;
-  }
-}
-
-/* Forward direction (detail views, next tab) */
-:root[data-vt-dir="forward"] {
-  & ::view-transition-old(root) {
-    animation: 200ms ease vt-slide-out-left both;
-  }
-  & ::view-transition-new(root) {
-    animation: 200ms ease vt-slide-in-right both;
-  }
-}
-
-/* Backward direction (back navigation, prev tab) */
-:root[data-vt-dir="back"] {
-  & ::view-transition-old(root) {
-    animation: 200ms ease vt-slide-out-right both;
-  }
-  & ::view-transition-new(root) {
-    animation: 200ms ease vt-slide-in-left both;
-  }
-}
-
-/* Named view-transition for the main dashboard view
-   (allows shared-element-style continuity on the panel) */
-.dashboard-view {
-  view-transition-name: dashboard-view;
-  contain: layout;
-}
-
-::view-transition-old(dashboard-view),
-::view-transition-new(dashboard-view) {
-  animation: none;
-}
-
-:root[data-vt-dir="forward"] {
-  & ::view-transition-old(dashboard-view) {
-    animation: 200ms ease vt-slide-out-left both;
-  }
-  & ::view-transition-new(dashboard-view) {
-    animation: 200ms ease vt-slide-in-right both;
-  }
-}
-
-:root[data-vt-dir="back"] {
-  & ::view-transition-old(dashboard-view) {
-    animation: 200ms ease vt-slide-out-right both;
-  }
-  & ::view-transition-new(dashboard-view) {
-    animation: 200ms ease vt-slide-in-left both;
-  }
-}
-
-/* ------------------------------------------------------------
-   CSS Class-toggle fallback
-   Applied by useViewTransition when startViewTransition is
-   unavailable. Classes are set on the transitioning element.
-   ------------------------------------------------------------ */
-
-.vt-exit {
-  animation: 200ms ease vt-fade-out both;
-  pointer-events: none;
-}
-
-.vt-enter {
-  animation: 200ms ease vt-fade-in both;
-}
-
-.vt-exit-forward {
-  animation: 200ms ease vt-slide-out-left both;
-  pointer-events: none;
-}
-
-.vt-enter-forward {
-  animation: 200ms ease vt-slide-in-right both;
-}
-
-.vt-exit-back {
-  animation: 200ms ease vt-slide-out-right both;
-  pointer-events: none;
-}
-
-.vt-enter-back {
-  animation: 200ms ease vt-slide-in-left both;
-}
-
-/* ------------------------------------------------------------
-   Panel row lifecycle animations
-   ------------------------------------------------------------ */
-
-/* Every new row enters smoothly */
-.panel-row {
-  animation: row-enter 200ms ease both;
-}
-
-/* Row being removed (JS adds .row-removing before DOM removal) */
-.panel-row.row-removing {
-  animation: row-exit 200ms ease both;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* ------------------------------------------------------------
-   Onboarding wizard animations
-   ------------------------------------------------------------ */
-
-.onboarding-overlay {
-  animation: overlay-in 150ms ease both;
-}
-
-.onboarding-dialog {
-  animation: dialog-in 200ms ease both;
-}
-
-/* Step content transitions */
-.onboarding-step-content {
-  animation: step-slide-in 200ms ease both;
-}
-
-.onboarding-step-content.step-exiting {
-  animation: step-slide-out 200ms ease both;
-  pointer-events: none;
-}
-
-/* ------------------------------------------------------------
-   Tab switcher (dashboard view tabs)
-   ------------------------------------------------------------ */
-
-.view-tab-panel {
-  /* Becomes the target for .vt-enter / .vt-exit-forward etc. */
-}
-
-/* Ensure the animating element never steals scroll position */
-.view-tab-panel[class*="vt-"] {
-  will-change: opacity, transform;
-}
-
-/* ------------------------------------------------------------
-   Transition does NOT block interactivity
-   (all animations use pointer-events: none only on exit)
-   ------------------------------------------------------------ */
-
-/* ::view-transition pseudo-element should not intercept clicks */
-::view-transition {
-  pointer-events: none;
-}
-
-/* ------------------------------------------------------------
-   prefers-reduced-motion — disable ALL motion
-   ------------------------------------------------------------ */
-
+/* Disable all animations when user prefers reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  /* Kill all keyframe animations globally */
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-
-  /* View Transitions: instant swap, no animation */
-  ::view-transition-old(root),
-  ::view-transition-new(root),
-  ::view-transition-old(dashboard-view),
-  ::view-transition-new(dashboard-view) {
+  .fade-in,
+  .slide-out,
+  .modal-slide-in,
+  .spinner {
     animation: none !important;
-  }
-
-  /* Class-fallback: remove all motion classes immediately */
-  .vt-exit, .vt-enter,
-  .vt-exit-forward, .vt-enter-forward,
-  .vt-exit-back, .vt-enter-back {
-    animation: none !important;
-    opacity: 1 !important;
+    transition: none !important;
     transform: none !important;
-  }
-
-  .panel-row {
-    animation: none !important;
-  }
-
-  .panel-row.row-removing {
-    animation: none !important;
+    opacity: 1 !important;
+    max-height: none !important;
   }
 }
