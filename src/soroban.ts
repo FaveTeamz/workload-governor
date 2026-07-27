@@ -6,6 +6,7 @@ import {
   Account,
   Address,
   nativeToScVal,
+  scValToNative,
   Transaction,
   xdr,
 } from '@stellar/stellar-sdk';
@@ -17,10 +18,80 @@ export interface ResourceEstimate {
   writeBytes: number;
 }
 
+export interface TransactionSubmissionResult {
+  hash: string;
+  status: 'success' | 'error';
+  error?: SorobanContractError;
+}
+
+export type SorobanErrorCode =
+  | 'InternalError'
+  | 'AlreadyInitialized'
+  | 'UnauthorizedByAdmin'
+  | 'UnauthorizedByMaintainer'
+  | 'NegativeAmount'
+  | 'BalanceError'
+  | 'InvalidIssueState'
+  | 'NoAssignment'
+  | 'NoApplication'
+  | 'AmountTooLow'
+  | 'UnclosedPeriod';
+
+export interface SorobanContractError {
+  code: SorobanErrorCode | 'Unknown';
+  message: string;
+  details?: string;
+}
+
+const CONTRACT_ERROR_CODES: Record<number, SorobanErrorCode> = {
+  0: 'InternalError',
+  1: 'AlreadyInitialized',
+  2: 'UnauthorizedByAdmin',
+  3: 'UnauthorizedByMaintainer',
+  4: 'NegativeAmount',
+  5: 'BalanceError',
+  6: 'InvalidIssueState',
+  7: 'NoAssignment',
+  8: 'NoApplication',
+  9: 'AmountTooLow',
+  10: 'UnclosedPeriod',
+};
+
 const NETWORK = process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET;
 const CONTRACT_ID =
   process.env.CONTRACT_ID ??
   'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+
+// ─── Typed error classes for read functions ───────────────────────────────────
+
+/**
+ * Thrown when the Soroban RPC node returns a network-level error (connection
+ * refused, timeout, non-200 HTTP status, etc.).
+ */
+export class SorobanRpcError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'SorobanRpcError';
+  }
+}
+
+/**
+ * Thrown when the RPC response is received successfully but its payload
+ * cannot be parsed into the expected type (missing fields, wrong ScVal type,
+ * null retval, etc.).
+ */
+export class SorobanParseError extends Error {
+  constructor(
+    message: string,
+    public readonly raw?: unknown,
+  ) {
+    super(message);
+    this.name = 'SorobanParseError';
+  }
+}
 
 export class SorobanService {
   private server: SorobanRpc.Server;
@@ -48,18 +119,152 @@ export class SorobanService {
       .build();
   }
 
-  async simulate(tx: Transaction): Promise<ResourceEstimate> {
-    const result = await this.server.simulateTransaction(tx);
-    if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(result.error);
+  buildRawTransaction(
+    sourceAddress: string,
+    sequence: string,
+    fnName: string,
+    args: xdr.ScVal[],
+  ): Transaction {
+    return this.buildRaw(sourceAddress, sequence, fnName, args);
+  }
+
+  private parseContractError(errorMessage: string): SorobanContractError {
+    // Try to extract error code from Soroban error message
+    const codeMatch = errorMessage.match(/error code=(\d+)/);
+    if (codeMatch) {
+      const code = parseInt(codeMatch[1], 10);
+      const errorCodeName = CONTRACT_ERROR_CODES[code] || 'Unknown';
+      return {
+        code: errorCodeName,
+        message: errorMessage,
+        details: `Contract error code: ${code}`,
+      };
     }
-    const sim = result as SorobanRpc.Api.SimulateTransactionSuccessResponse;
+
     return {
+      code: 'Unknown',
+      message: errorMessage,
+    };
+  }
+
+  async simulate(tx: Transaction): Promise<ResourceEstimate> {
+    console.log('[Soroban] Simulating transaction...');
+    const result = await this.server.simulateTransaction(tx);
+
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      const contractError = this.parseContractError(result.error);
+      console.error('[Soroban] Simulation error:', contractError);
+      throw new Error(
+        `Simulation failed: ${contractError.code} - ${contractError.message}`,
+      );
+    }
+
+    const sim = result as SorobanRpc.Api.SimulateTransactionSuccessResponse;
+    const estimate = {
       fee: sim.minResourceFee,
       instructions: sim.transactionData.build().resources().instructions(),
       readBytes: sim.transactionData.build().resources().readBytes(),
       writeBytes: sim.transactionData.build().resources().writeBytes(),
     };
+
+    console.log('[Soroban] Simulation successful:', {
+      fee: estimate.fee,
+      instructions: estimate.instructions,
+      readBytes: estimate.readBytes,
+      writeBytes: estimate.writeBytes,
+    });
+
+    return estimate;
+  }
+
+  async submitTransaction(
+    tx: Transaction,
+  ): Promise<TransactionSubmissionResult> {
+    try {
+      console.log('[Soroban] Submitting transaction...');
+      const result = await this.server.sendTransaction(tx);
+
+      console.log('[Soroban] Transaction submitted:', {
+        hash: result.hash,
+        status: result.status,
+      });
+
+      if (result.status === 'PENDING') {
+        // Poll for transaction status
+        let pollCount = 0;
+        const maxPolls = 30;
+        const pollInterval = 1000; // 1 second
+
+        while (pollCount < maxPolls) {
+          const txStatus = await this.server.getTransaction(result.hash);
+
+          if (txStatus.status === 'SUCCESS') {
+            console.log('[Soroban] Transaction confirmed:', result.hash);
+            return {
+              hash: result.hash,
+              status: 'success',
+            };
+          }
+
+          if (txStatus.status === 'FAILED') {
+            const error = this.parseContractError(
+              txStatus.resultXdr?.toString() || 'Unknown error',
+            );
+            console.error('[Soroban] Transaction failed:', error);
+            return {
+              hash: result.hash,
+              status: 'error',
+              error,
+            };
+          }
+
+          pollCount++;
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        }
+
+        // Timeout
+        console.warn('[Soroban] Transaction polling timeout:', result.hash);
+        return {
+          hash: result.hash,
+          status: 'success', // Assume success if still pending after timeout
+        };
+      }
+
+      return {
+        hash: result.hash,
+        status: 'success',
+      };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const contractError = this.parseContractError(errorMsg);
+
+      console.error('[Soroban] Submission error:', contractError);
+
+      return {
+        hash: '',
+        status: 'error',
+        error: contractError,
+      };
+    }
+  }
+
+  async getContractData(key: xdr.ScVal): Promise<unknown> {
+    try {
+      console.log('[Soroban] Fetching contract data...');
+      const data = await this.server.getContractData(
+        CONTRACT_ID,
+        key,
+        SorobanRpc.Durability.Persistent,
+      );
+
+      console.log('[Soroban] Contract data retrieved');
+      // Return the raw data for the caller to process
+      return data;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[Soroban] Failed to fetch contract data:', errorMsg);
+      return null;
+    }
   }
 
   buildApplyTx(
@@ -131,5 +336,161 @@ export class SorobanService {
       nativeToScVal(orgId, { type: 'symbol' }),
       nativeToScVal(issueId, { type: 'u32' }),
     ]);
+  }
+
+  // ─── Read-only contract query helpers ───────────────────────────────────────
+  //
+  // These helpers submit a simulate-only call (no fee, no sequence bump) and
+  // parse the return value.  They throw typed errors so callers can distinguish
+  // network failures (SorobanRpcError) from bad payloads (SorobanParseError).
+
+  /**
+   * Call a read-only contract function and return the simulation retval as a
+   * native JS value.
+   *
+   * @throws SorobanRpcError on network / RPC failure
+   * @throws SorobanParseError when the response cannot be decoded
+   */
+  private async callReadOnly(
+    fnName: string,
+    args: xdr.ScVal[],
+    callerAddress?: string,
+  ): Promise<unknown> {
+    // Use a canonical Stellar testnet account as the source for read-only simulations.
+    // Any valid Stellar G-address works — the account does not need to exist on-chain
+    // for simulate-only calls.
+    const sourceAddress =
+      callerAddress ?? 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+    const dummyAccount = new Account(sourceAddress, '0');
+    const tx = new TransactionBuilder(dummyAccount, {
+      fee: '100',
+      networkPassphrase: NETWORK,
+    })
+      .addOperation(this.contract.call(fnName, ...args))
+      .setTimeout(30)
+      .build();
+
+    let result: SorobanRpc.Api.SimulateTransactionResponse;
+    try {
+      result = await this.server.simulateTransaction(tx);
+    } catch (err) {
+      throw new SorobanRpcError(
+        `RPC network error calling ${fnName}: ${err instanceof Error ? err.message : String(err)}`,
+        err,
+      );
+    }
+
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new SorobanRpcError(
+        `RPC simulation error for ${fnName}: ${result.error}`,
+        result,
+      );
+    }
+
+    const success = result as SorobanRpc.Api.SimulateTransactionSuccessResponse;
+    if (!success.result?.retval) {
+      throw new SorobanParseError(
+        `No retval in simulation response for ${fnName}`,
+        result,
+      );
+    }
+
+    try {
+      return scValToNative(success.result.retval);
+    } catch (err) {
+      throw new SorobanParseError(
+        `Failed to parse retval for ${fnName}: ${err instanceof Error ? err.message : String(err)}`,
+        success.result.retval,
+      );
+    }
+  }
+
+  /**
+   * Query the global pending-application count for a contributor.
+   *
+   * Maps to contract function: `get_global_application_count(contributor: Address) → u32`
+   *
+   * @throws SorobanRpcError on network failure
+   * @throws SorobanParseError when the response cannot be decoded as a number
+   */
+  async getGlobalApplicationCount(contributor: string): Promise<number> {
+    const raw = await this.callReadOnly('get_global_application_count', [
+      new Address(contributor).toScVal(),
+    ], contributor);
+    if (typeof raw !== 'number' && typeof raw !== 'bigint') {
+      throw new SorobanParseError(
+        `Expected u32 for get_global_application_count, got ${typeof raw}`,
+        raw,
+      );
+    }
+    return Number(raw);
+  }
+
+  /**
+   * Query the active-assignment count for a contributor within a specific org.
+   *
+   * Maps to contract function: `get_org_assignment_count(contributor: Address, org_id: Symbol) → u32`
+   *
+   * @throws SorobanRpcError on network failure
+   * @throws SorobanParseError when the response cannot be decoded as a number
+   */
+  async getOrgAssignmentCount(contributor: string, orgId: string): Promise<number> {
+    const raw = await this.callReadOnly('get_org_assignment_count', [
+      new Address(contributor).toScVal(),
+      nativeToScVal(orgId, { type: 'symbol' }),
+    ], contributor);
+    if (typeof raw !== 'number' && typeof raw !== 'bigint') {
+      throw new SorobanParseError(
+        `Expected u32 for get_org_assignment_count, got ${typeof raw}`,
+        raw,
+      );
+    }
+    return Number(raw);
+  }
+
+  /**
+   * Check whether a contributor has an active application for a given issue.
+   *
+   * Maps to contract function: `has_applied(contributor: Address, org_id: Symbol, issue_id: u32) → bool`
+   *
+   * @throws SorobanRpcError on network failure
+   * @throws SorobanParseError when the response cannot be decoded as boolean
+   */
+  async hasApplied(contributor: string, orgId: string, issueId: number): Promise<boolean> {
+    const raw = await this.callReadOnly('has_applied', [
+      new Address(contributor).toScVal(),
+      nativeToScVal(orgId, { type: 'symbol' }),
+      nativeToScVal(issueId, { type: 'u32' }),
+    ], contributor);
+    if (typeof raw !== 'boolean') {
+      throw new SorobanParseError(
+        `Expected bool for has_applied, got ${typeof raw}`,
+        raw,
+      );
+    }
+    return raw;
+  }
+
+  /**
+   * Check whether a contributor is actively assigned to a given issue.
+   *
+   * Maps to contract function: `is_assigned(contributor: Address, org_id: Symbol, issue_id: u32) → bool`
+   *
+   * @throws SorobanRpcError on network failure
+   * @throws SorobanParseError when the response cannot be decoded as boolean
+   */
+  async isAssigned(contributor: string, orgId: string, issueId: number): Promise<boolean> {
+    const raw = await this.callReadOnly('is_assigned', [
+      new Address(contributor).toScVal(),
+      nativeToScVal(orgId, { type: 'symbol' }),
+      nativeToScVal(issueId, { type: 'u32' }),
+    ], contributor);
+    if (typeof raw !== 'boolean') {
+      throw new SorobanParseError(
+        `Expected bool for is_assigned, got ${typeof raw}`,
+        raw,
+      );
+    }
+    return raw;
   }
 }
