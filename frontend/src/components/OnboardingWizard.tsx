@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { KeyboardEvent } from "react";
 
 const STORAGE_KEY = "wg_onboarding_done";
@@ -35,8 +35,15 @@ interface Props {
 export function OnboardingWizard({ onComplete }: Props) {
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
+  /**
+   * "idle"    — content is fully visible, no animation running
+   * "exiting" — old step sliding out
+   * "entering"— new step sliding in (set after state change)
+   */
+  const [stepPhase, setStepPhase] = useState<"idle" | "exiting" | "entering">("idle");
   const dialogRef = useRef<HTMLDivElement>(null);
   const firstFocusRef = useRef<HTMLButtonElement>(null);
+  const animFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!localStorage.getItem(STORAGE_KEY)) setVisible(true);
@@ -46,19 +53,46 @@ export function OnboardingWizard({ onComplete }: Props) {
     if (visible) firstFocusRef.current?.focus();
   }, [visible, step]);
 
+  // Clean up any pending rAF on unmount
+  useEffect(() => {
+    return () => {
+      if (animFrameRef.current !== null) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, []);
+
   function dismiss(permanent: boolean) {
     if (permanent) localStorage.setItem(STORAGE_KEY, "1");
     setVisible(false);
     onComplete?.();
   }
 
+  /**
+   * Animate to a new step:
+   * 1. Set phase → "exiting" (CSS animates the current content out)
+   * 2. After 200ms, update the step index and set phase → "entering"
+   * 3. After the enter animation, set phase → "idle"
+   */
+  const goToStep = useCallback((targetStep: number) => {
+    if (stepPhase !== "idle") return; // block mid-animation navigation
+    setStepPhase("exiting");
+
+    setTimeout(() => {
+      setStep(targetStep);
+      // Use rAF so the new content is in the DOM before adding the enter class
+      animFrameRef.current = requestAnimationFrame(() => {
+        setStepPhase("entering");
+        setTimeout(() => setStepPhase("idle"), 210);
+      });
+    }, 200);
+  }, [stepPhase]);
+
   function next() {
-    if (step < STEPS.length - 1) setStep((s) => s + 1);
+    if (step < STEPS.length - 1) goToStep(step + 1);
     else dismiss(true);
   }
 
   function prev() {
-    if (step > 0) setStep((s) => s - 1);
+    if (step > 0) goToStep(step - 1);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -87,6 +121,13 @@ export function OnboardingWizard({ onComplete }: Props) {
 
   const current = STEPS[step];
 
+  const stepContentClass = [
+    "onboarding-step-content",
+    stepPhase === "exiting" ? "step-exiting" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
       role="dialog"
@@ -96,7 +137,7 @@ export function OnboardingWizard({ onComplete }: Props) {
       onKeyDown={handleKeyDown}
     >
       <div className="onboarding-dialog" ref={dialogRef}>
-        {/* Step indicators */}
+        {/* Step indicators — always visible, not animated */}
         <div className="onboarding-steps" aria-label="Progress">
           {STEPS.map((_, i) => (
             <span
@@ -107,32 +148,42 @@ export function OnboardingWizard({ onComplete }: Props) {
           ))}
         </div>
 
-        <h2 id="onboarding-title">{current.title}</h2>
-        <p>{current.content}</p>
+        {/* Animated step content */}
+        <div className={stepContentClass} aria-live="polite" aria-atomic="true">
+          <h2 id="onboarding-title">{current.title}</h2>
+          <p>{current.content}</p>
 
-        {current.link && (
-          <a
-            href={current.link.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-secondary"
-            aria-label={`${current.link.label} (opens in new tab)`}
-          >
-            {current.link.label}
-          </a>
-        )}
+          {current.link && (
+            <a
+              href={current.link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-secondary"
+              aria-label={`${current.link.label} (opens in new tab)`}
+              style={{ marginTop: "8px", display: "inline-flex" }}
+            >
+              {current.link.label}
+            </a>
+          )}
 
-        {current.cta && (
-          <button className="btn btn-primary" onClick={() => dismiss(true)}>
-            {current.cta}
-          </button>
-        )}
+          {current.cta && (
+            <button
+              className="btn btn-primary"
+              onClick={() => dismiss(true)}
+              style={{ marginTop: "8px" }}
+            >
+              {current.cta}
+            </button>
+          )}
+        </div>
 
+        {/* Navigation actions — not animated */}
         <div className="onboarding-actions">
           {step > 0 && (
             <button
               className="btn btn-ghost"
               onClick={prev}
+              disabled={stepPhase !== "idle"}
               aria-label="Previous step"
             >
               Back
@@ -143,6 +194,7 @@ export function OnboardingWizard({ onComplete }: Props) {
             ref={firstFocusRef}
             className="btn btn-primary"
             onClick={next}
+            disabled={stepPhase !== "idle"}
             aria-label={
               step < STEPS.length - 1
                 ? `Next step (${step + 1} of ${STEPS.length})`

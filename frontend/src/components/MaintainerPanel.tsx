@@ -16,12 +16,21 @@ export interface Assignment {
   issueTitle: string;
 }
 
+/**
+ * mode controls which column(s) are shown:
+ *   "all"          — both columns side-by-side (default, legacy)
+ *   "applications" — only the Pending Applications column
+ *   "assignments"  — only the Active Assignments column
+ */
+export type PanelMode = "all" | "applications" | "assignments";
+
 interface Props {
   applications: Application[];
   assignments: Assignment[];
   onAssign: (app: Application) => Promise<void>;
   onComplete: (assignment: Assignment) => Promise<void>;
   onRevoke: (assignment: Assignment) => Promise<void>;
+  mode?: PanelMode;
 }
 
 function truncate(addr: string) {
@@ -190,74 +199,82 @@ export function MaintainerPanel({
   onAssign,
   onComplete,
   onRevoke,
+  mode = "all",
 }: Props) {
+  const showApplications = mode === "all" || mode === "applications";
+  const showAssignments = mode === "all" || mode === "assignments";
+
   return (
     <section className="maintainer-panel" aria-label="Maintainer Panel">
-      <div className="panel-columns">
-        {/* Left: pending applications */}
-        <div className="panel-column">
-          <h2 id="applications-heading">
-            Pending Applications
-            <span
-              className="count-badge"
-              aria-live="polite"
-              aria-atomic="true"
-              aria-label={`${applications.length} pending applications`}
-            >
-              {applications.length}
-            </span>
-          </h2>
-          {applications.length === 0 ? (
-            <p className="empty-state" role="status">
-              No pending applications.
-            </p>
-          ) : (
-            <ul
-              className="panel-list"
-              aria-labelledby="applications-heading"
-              aria-label="Pending applications list"
-            >
-              {applications.map((app) => (
-                <AppRow key={app.id} app={app} onAssign={onAssign} />
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className={`panel-columns${mode !== "all" ? " panel-columns--single" : ""}`}>
+        {/* Left / only: pending applications */}
+        {showApplications && (
+          <div className="panel-column">
+            <h2 id="applications-heading">
+              Pending Applications
+              <span
+                className="count-badge"
+                aria-live="polite"
+                aria-atomic="true"
+                aria-label={`${applications.length} pending applications`}
+              >
+                {applications.length}
+              </span>
+            </h2>
+            {applications.length === 0 ? (
+              <p className="empty-state" role="status">
+                No pending applications.
+              </p>
+            ) : (
+              <ul
+                className="panel-list"
+                aria-labelledby="applications-heading"
+                aria-label="Pending applications list"
+              >
+                {applications.map((app) => (
+                  <AppRow key={app.id} app={app} onAssign={onAssign} />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
-        {/* Right: active assignments */}
-        <div className="panel-column">
-          <h2 id="assignments-heading">
-            Active Assignments
-            <span
-              className="count-badge"
-              aria-live="polite"
-              aria-atomic="true"
-              aria-label={`${assignments.length} active assignments`}
-            >
-              {assignments.length}
-            </span>
-          </h2>
-          {assignments.length === 0 ? (
-            <p className="empty-state" role="status">
-              No active assignments.
-            </p>
-          ) : (
-            <ul
-              className="panel-list"
-              aria-labelledby="assignments-heading"
-              aria-label="Active assignments list"
-            >
-              {assignments.map((asgn) => (
-                <AssignRow
-                  key={asgn.id}
-                  asgn={asgn}
-                  onComplete={onComplete}
-                  onRevoke={onRevoke}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
+        {/* Right / only: active assignments */}
+        {showAssignments && (
+          <div className="panel-column">
+            <h2 id="assignments-heading">
+              Active Assignments
+              <span
+                className="count-badge"
+                aria-live="polite"
+                aria-atomic="true"
+                aria-label={`${assignments.length} active assignments`}
+              >
+                {assignments.length}
+              </span>
+            </h2>
+            {assignments.length === 0 ? (
+              <p className="empty-state" role="status">
+                No active assignments.
+              </p>
+            ) : (
+              <ul
+                className="panel-list"
+                aria-labelledby="assignments-heading"
+                aria-label="Active assignments list"
+              >
+                {assignments.map((asgn) => (
+                  <AssignRow
+                    key={asgn.id}
+                    asgn={asgn}
+                    onComplete={onComplete}
+                    onRevoke={onRevoke}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
