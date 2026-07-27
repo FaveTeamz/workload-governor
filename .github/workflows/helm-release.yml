@@ -1,0 +1,59 @@
+name: Helm Release
+
+# Publishes the vesting-backend Helm chart to GitHub Pages.
+# Triggers on tags matching helm-v* (e.g. helm-v0.1.0).
+on:
+  push:
+    tags:
+      - 'helm-v*'
+  # Allow manual trigger for initial publish
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Package & Publish Helm Chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push to gh-pages branch
+      pages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.14.0'
+
+      - name: Package chart
+        run: |
+          mkdir -p docs/helm-charts
+          helm package helm/vesting-backend --destination docs/helm-charts/
+
+      - name: Update Helm repo index
+        run: |
+          helm repo index docs/helm-charts/ \
+            --url https://faveteamz.github.io/workload-governor/helm-charts \
+            --merge docs/helm-charts/index.yaml
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push updated index
+        run: |
+          git add docs/helm-charts/
+          git commit -m "chore: publish Helm chart ${{ github.ref_name }}" || echo "Nothing to commit"
+          git push origin HEAD:main
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/helm-charts
+          destination_dir: helm-charts
+          keep_files: true

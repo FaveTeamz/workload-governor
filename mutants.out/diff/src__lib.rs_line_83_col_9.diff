@@ -1,0 +1,26 @@
+--- src/lib.rs
++++ replace WorkloadGovernor::register_maintainer with ()
+@@ -75,22 +75,17 @@
+     /// # Returns
+     /// `()` on success.
+     ///
+     /// # Errors
+     /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+     /// * [`ContractError::UnauthorizedAdmin`] — `admin` auth check fails (enforced by
+     ///   `require_auth` on the stored admin, not a direct comparison).
+     pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
+-        storage::require_initialized(&env, &ContractError::NotInitialized);
+-        let stored_admin = storage::get_admin(&env).unwrap();
+-        stored_admin.require_auth();
+-        storage::set_maintainer(&env, &maintainer, &org_id);
+-        storage::bump_instance(&env);
+-        events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Upgrades the contract WASM to a new hash (admin-only).
+     ///
+     /// This is the standard Soroban upgrade path. The new WASM must already be
+     /// uploaded to the network before calling this function.
+     ///
+     /// # Who can call
