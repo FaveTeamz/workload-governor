@@ -17,6 +17,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 |---|---|---|
 | `initialize(admin)` | Admin | One-time contract setup |
 | `register_maintainer(admin, maintainer, org_id)` | Admin | Authorize a maintainer for an org |
+| `deregister_maintainer(admin, maintainer, org_id)` | Admin | Revoke a maintainer's authorization for an org |
 | `upgrade(new_wasm_hash)` | Admin | Upgrade the contract WASM |
 | `apply_for_issue(contributor, org_id, issue_id)` | Contributor | Submit a pending application |
 | `withdraw_application(contributor, org_id, issue_id)` | Contributor | Cancel a pending application |
@@ -44,6 +45,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
+| 17 | `MaintainerNotFound` | Maintainer not registered for the org (returned by `deregister_maintainer`) |
 
 ## Storage Design
 
@@ -62,8 +64,9 @@ All six key prefixes are distinct — zero key collision guarantee.
 
 | Document | Description |
 |---|---|
+| [docs/admin-guide.md](docs/admin-guide.md) | Admin operational procedures: initialisation, maintainer onboarding/offboarding, upgrades |
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
-| [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
+| [docs/error-reference.md](docs/error-reference.md) | All error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
 
 ## Building

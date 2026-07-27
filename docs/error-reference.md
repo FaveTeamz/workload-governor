@@ -17,6 +17,7 @@ All errors raised by WorkloadGovernor are variants of `ContractError` — a `#[c
 | 9 | `ApplicationNotFound` | No pending application found for the given triple | The application may have expired (Wave TTL elapsed) or was never submitted. Re-apply with `apply_for_issue`. |
 | 10 | `AssignmentNotFound` | No active assignment found for the given `(org_id, issue_id, contributor)` triple | The assignment does not exist or was already removed. Verify the triple with `is_assigned` before calling. |
 | 11 | `AlreadyAssigned` | An active assignment already exists for this issue and contributor | Call `complete_assignment` or `revoke_assignment` to close the existing assignment before re-assigning. |
+| 17 | `MaintainerNotFound` | `deregister_maintainer` was called for a `(maintainer, org_id)` pair that is not currently registered | Verify the maintainer is registered before deregistering. Check that the correct address and `org_id` are supplied. |
 
 ---
 
@@ -107,6 +108,7 @@ assign_issue(maintainer, frank, "org-f", 20)
 |---|---|
 | `initialize` | 1, 3 |
 | `register_maintainer` | 2, 3 |
+| `deregister_maintainer` | 2, 3, 17 |
 | `upgrade` | 2, 3 |
 | `apply_for_issue` | 2, 5, 6, 8 |
 | `withdraw_application` | 2, 5, 9 |

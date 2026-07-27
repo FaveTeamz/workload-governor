@@ -213,6 +213,12 @@ pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
     env.storage().persistent().set(&key, &true);
 }
 
+/// Removes the maintainer registration for `(maintainer, org_id)`.
+pub(crate) fn remove_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
+    let key = maintainer_key(maintainer, org_id);
+    env.storage().persistent().remove(&key);
+}
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Org Assignment Count
 // ---------------------------------------------------------------------------
