@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { validateBody } from '../middleware/validation';
+import { orgApplyBodySchema, OrgApplyBody } from '../schemas/orgs';
 
 const router = Router();
 
@@ -9,13 +11,6 @@ const KNOWN_ORGS = ['stellar-oss', 'org_stellar_001'];
 
 function isKnownOrg(orgId: string): boolean {
   return KNOWN_ORGS.includes(orgId);
-}
-
-/** Validate a Stellar account address (starts with G, base32 chars, 50-56 chars). */
-function isValidStellarAddress(addr: string): boolean {
-  // Stellar StrKey public keys start with G and contain only uppercase base32 chars.
-  // Lengths range 55-56 depending on encoding variant; reject obvious non-addresses.
-  return addr.length >= 50 && addr.length <= 56 && /^G[A-Z2-7]+$/.test(addr);
 }
 
 // ---------------------------------------------------------------------------
@@ -100,28 +95,28 @@ router.get('/orgs/:orgId/assignments', (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 router.post(
   '/orgs/:orgId/issues/:issueId/apply',
-  (req: Request, res: Response) => {
+  (req: Request, res: Response, next) => {
+    // Org existence check must happen before body validation so we can return
+    // 404 instead of 400 when the org is unknown.
     const { orgId } = req.params;
     if (!isKnownOrg(orgId)) {
       res.status(404).json({ error: 'not_found', message: `Org '${orgId}' not found`, code: 'NOT_FOUND' });
       return;
     }
-    const { contributor } = req.body as { contributor?: string };
-    if (!contributor) {
-      res.status(400).json({ error: 'bad_request', message: 'contributor is required', code: 'INVALID_REQUEST' });
-      return;
-    }
-    if (!isValidStellarAddress(contributor)) {
-      res.status(400).json({ error: 'bad_request', message: 'Invalid Stellar address', code: 'INVALID_REQUEST' });
-      return;
-    }
+    next();
+  },
+  validateBody(orgApplyBodySchema),
+  (req: Request, res: Response) => {
+    const { contributor } = req.body as OrgApplyBody;
     // Return 200 with success (tests expect 200, not 201 for this endpoint)
     res.status(200).json({
       success: true,
       tx_hash: 'a'.repeat(64),
       message: 'Application submitted successfully',
     });
-  }
+    // contributor is captured for future use (e.g. event logging)
+    void contributor;
+  },
 );
 
 // ---------------------------------------------------------------------------
