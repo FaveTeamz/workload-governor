@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { Address } from '@stellar/stellar-sdk';
-import { SorobanService } from '../soroban';
+import { SorobanService, SUPPORTED_FUNCTIONS } from '../soroban';
+import type { SupportedFunction, FeeEstimate } from '../soroban';
 import { Transaction } from '@stellar/stellar-sdk';
 import { verifyTransactionXdr } from '../xdrVerifier';
 import { logger } from '../logger';
+import { getCached, setCached } from '../cache';
 
 const router = Router();
 const soroban = new SorobanService();
@@ -67,6 +69,55 @@ async function buildAndSimulate(
     res.status(400).json({ error: msg });
   }
 }
+
+// ---------------------------------------------------------------------------
+// GET /estimate-fee — return current fee estimate for a given contract function
+// ---------------------------------------------------------------------------
+
+/**
+ * Return a fee breakdown for the requested Soroban contract function.
+ *
+ * Query params:
+ *   function  — one of apply_for_issue | withdraw_application | assign_issue |
+ *               complete_assignment | revoke_assignment
+ *
+ * Response (200):
+ *   { base_fee_xlm, resource_fee_xlm, total_fee_xlm, fee_cushion_pct }
+ *
+ * The resource_fee_xlm already includes a 20% cushion.
+ * Results are cached per function name for 10 seconds.
+ *
+ * Response (400): unknown or missing function name.
+ */
+router.get('/estimate-fee', async (req: Request, res: Response) => {
+  const fnName = req.query['function'];
+
+  if (typeof fnName !== 'string' || !(SUPPORTED_FUNCTIONS as readonly string[]).includes(fnName)) {
+    res.status(400).json({
+      error: 'invalid function name',
+      supported: SUPPORTED_FUNCTIONS,
+    });
+    return;
+  }
+
+  const cacheKey = `fee_estimate:${fnName}`;
+  const CACHE_TTL_SECONDS = 10;
+
+  try {
+    const cached = await getCached<FeeEstimate>(cacheKey);
+    if (cached !== null) {
+      res.json(cached);
+      return;
+    }
+
+    const estimate = await soroban.estimateFee(fnName as SupportedFunction);
+    await setCached(cacheKey, estimate, CACHE_TTL_SECONDS);
+    res.json(estimate);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'fee estimation failed';
+    res.status(500).json({ error: msg });
+  }
+});
 
 router.post('/apply', (req: Request, res: Response) => {
   const { contributor, org_id, issue_id, sequence } = req.body as Record<string, unknown>;
