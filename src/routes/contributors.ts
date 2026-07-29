@@ -180,9 +180,7 @@ router.get('/:address/stats', (req: Request, res: Response) => {
   res.json({
     address,
     global_application_count: 2,
-    org_assignment_counts: {
-      org_stellar_001: 1,
-    },
+    org_assignment_counts: { org_stellar_001: 1 },
   });
 });
 
@@ -332,11 +330,9 @@ router.get('/:address/counts', async (req: Request, res: Response) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/contributors/:address/activity
-// Returns monthly applied / assigned / completed counts for the last 12
-// calendar months (oldest → newest), suitable for a bar chart.
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /:address/activity — monthly bar-chart data (last 12 months)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface MonthlyActivityRow {
   /** "YYYY-MM" — first day of the calendar month */
@@ -355,8 +351,12 @@ router.get('/:address/activity', async (req: Request, res: Response) => {
   }
 
   try {
-    // Build the 12-month window ending at the current month (inclusive)
-    const rows = await pool.query<{ month: string; applied: string; assigned: string; completed: string }>(
+    const rows = await pool.query<{
+      month: string;
+      applied: string;
+      assigned: string;
+      completed: string;
+    }>(
       `WITH months AS (
         SELECT to_char(date_trunc('month', NOW()) - (n || ' months')::interval, 'YYYY-MM') AS month
         FROM generate_series(0, 11) AS gs(n)
