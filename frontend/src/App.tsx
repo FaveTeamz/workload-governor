@@ -9,6 +9,8 @@ import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { OrgIssuesPage } from "./pages/OrgIssuesPage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -111,6 +113,18 @@ export default function App() {
       />
 
       <Routes>
+        {/* Contributor dashboard */}
+        <Route
+          path="/dashboard"
+          element={<DashboardPage apiBase="/api" />}
+        />
+
+        {/* Org issue browser with apply/withdraw */}
+        <Route
+          path="/orgs/:org_id/issues"
+          element={<OrgIssuesPage apiBase="/api" />}
+        />
+
         {/* Issue detail view */}
         <Route
           path="/issues/:org_id/:issue_id"
