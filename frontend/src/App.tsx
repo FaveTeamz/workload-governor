@@ -4,6 +4,7 @@ import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizar
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useTheme } from "./hooks/useTheme";
 import "./app.css";
 
 // Demo data — replace with real API calls
@@ -18,10 +19,6 @@ const DEMO_ASGNS: Assignment[] = [
   { id: "a2", contributor: "GDWWW4LMNOPQRSTUVWXYZ22222", org: "meridian-dao", issueTitle: "Integration tests for SDK" },
 ];
 
-/**
- * Wraps a transaction promise with pending → success/error toast transitions
- * using react-hot-toast (issue #13).
- */
 async function withToast<T>(
   promise: Promise<T>,
   messages: { pending: string; success: string; error?: string },
@@ -36,6 +33,9 @@ async function withToast<T>(
 }
 
 export default function App() {
+  // ── Theme toggle (#14) ──────────────────────────────────────────────────
+  const { theme, toggle: toggleTheme } = useTheme();
+
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
 
@@ -89,10 +89,18 @@ export default function App() {
         <span className="app-logo" aria-hidden="true">⚙</span>
         <h1>WorkloadGovernor</h1>
         <GetStartedButton />
+        {/* Theme toggle (#14) */}
+        <button
+          className="theme-toggle"
+          onClick={toggleTheme}
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        >
+          {theme === "dark" ? "☀" : "🌙"}
+        </button>
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
-        {/* Dashboard section — isolated error boundary (#16) */}
         <ErrorBoundary sectionName="Dashboard">
           <MaintainerPanel
             applications={applications}
@@ -104,12 +112,10 @@ export default function App() {
         </ErrorBoundary>
       </main>
 
-      {/* Onboarding — isolated so a wizard crash doesn't kill the main panel (#16) */}
       <ErrorBoundary sectionName="Onboarding">
         <OnboardingWizard />
       </ErrorBoundary>
 
-      {/* react-hot-toast container (#13) */}
       <Toaster
         position="bottom-right"
         toastOptions={{
