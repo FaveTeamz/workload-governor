@@ -159,6 +159,23 @@ export async function migrate(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (org_id, issue_id, label_name)
     );
+
+    CREATE TABLE IF NOT EXISTS org_webhooks (
+      id          SERIAL PRIMARY KEY,
+      org_id      TEXT NOT NULL,
+      url         TEXT NOT NULL,
+      secret      TEXT NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS webhook_dead_letters (
+      id           SERIAL PRIMARY KEY,
+      webhook_id   INTEGER NOT NULL,
+      payload      JSONB NOT NULL,
+      last_error   TEXT,
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }
 
