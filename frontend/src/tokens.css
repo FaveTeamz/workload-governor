@@ -154,3 +154,32 @@
     --color-complete:     var(--color-success-600);  /* #16a34a on #f8fafc = 5.1:1 ✅ (was #22c55e = 2.4:1 ❌) */
   }
 }
+
+/* =============================================================
+   Class-based theme overrides — closes #14
+   Applied via data-theme attribute on <html> by useTheme hook.
+   Supplements the media-query rule above.
+   ============================================================= */
+
+/* Force dark regardless of OS preference */
+:root.theme-dark,
+[data-theme="dark"] {
+  --color-bg:      #0f1117;
+  --color-surface: #1c1f2b;
+  --color-border:  #2e3347;
+  --color-text:    #e2e8f0;
+  --color-muted:   #94a3b8;
+}
+
+/* Force light regardless of OS preference */
+:root.theme-light,
+[data-theme="light"] {
+  --color-bg:      #f8fafc;
+  --color-surface: #ffffff;
+  --color-border:  #e2e8f0;
+  --color-text:    #0f172a;
+  --color-muted:   #64748b;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.08);
+  --shadow:    0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -1px rgba(0,0,0,.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.08), 0 4px 6px -2px rgba(0,0,0,.04);
+}

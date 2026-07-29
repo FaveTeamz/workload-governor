@@ -42,6 +42,22 @@ function HomePage() {
     navigate(() => setActiveView(to), dir);
   }
 
+  // ── Data + loading state for skeletons (#15) ────────────────────────────
+  const [loading, setLoading] = useState(true);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+
+  useEffect(() => {
+    // Simulate async data fetch; replace with real API call
+    const timer = setTimeout(() => {
+      setApplications(DEMO_APPS);
+      setAssignments(DEMO_ASGNS);
+      setLoading(false);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ── Transaction handlers with toast feedback (#13) ─────────────────────
   async function handleAssign(app: Application) {
     await new Promise((r) => setTimeout(r, 400));
     setApplications((prev) => prev.filter((a) => a.id !== app.id));
