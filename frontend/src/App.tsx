@@ -9,6 +9,8 @@ import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { OrgIssuesPage } from "./pages/OrgIssuesPage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -42,6 +44,22 @@ function HomePage() {
     navigate(() => setActiveView(to), dir);
   }
 
+  // ── Data + loading state for skeletons (#15) ────────────────────────────
+  const [loading, setLoading] = useState(true);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+
+  useEffect(() => {
+    // Simulate async data fetch; replace with real API call
+    const timer = setTimeout(() => {
+      setApplications(DEMO_APPS);
+      setAssignments(DEMO_ASGNS);
+      setLoading(false);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ── Transaction handlers with toast feedback (#13) ─────────────────────
   async function handleAssign(app: Application) {
     await new Promise((r) => setTimeout(r, 400));
     setApplications((prev) => prev.filter((a) => a.id !== app.id));
@@ -53,15 +71,27 @@ function HomePage() {
   }
 
   async function handleComplete(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
+    await withToast(
+      new Promise<void>((r) => setTimeout(r, 400)),
+      {
+        pending: `Completing "${asgn.issueTitle}"…`,
+        success: `"${asgn.issueTitle}" marked as complete.`,
+        error: `Failed to complete "${asgn.issueTitle}". Please try again.`,
+      },
+    );
     setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Completed "${asgn.issueTitle}"`, "success");
   }
 
   async function handleRevoke(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
+    await withToast(
+      new Promise<void>((r) => setTimeout(r, 400)),
+      {
+        pending: `Revoking "${asgn.issueTitle}"…`,
+        success: `Assignment for "${asgn.issueTitle}" revoked.`,
+        error: `Failed to revoke "${asgn.issueTitle}". Please try again.`,
+      },
+    );
     setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Revoked "${asgn.issueTitle}"`, "info");
   }
 
   return (
@@ -83,8 +113,36 @@ function HomePage() {
         <ActivityFeed apiBase="/api" network="testnet" />
       </main>
 
-      <OnboardingWizard />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      {/* Onboarding — isolated so a wizard crash doesn't kill the main panel (#16) */}
+      <ErrorBoundary sectionName="Onboarding">
+        <OnboardingWizard />
+      </ErrorBoundary>
+
+      {/* react-hot-toast container (#13) */}
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: "var(--color-surface)",
+            color: "var(--color-text)",
+            border: "1px solid var(--color-border)",
+            fontSize: "0.875rem",
+          },
+          success: {
+            iconTheme: {
+              primary: "var(--color-complete, #22c55e)",
+              secondary: "var(--color-surface)",
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: "var(--color-revoke, #ef4444)",
+              secondary: "var(--color-surface)",
+            },
+          },
+        }}
+      />
     </>
   );
 }
@@ -111,6 +169,18 @@ export default function App() {
       />
 
       <Routes>
+        {/* Contributor dashboard */}
+        <Route
+          path="/dashboard"
+          element={<DashboardPage apiBase="/api" />}
+        />
+
+        {/* Org issue browser with apply/withdraw */}
+        <Route
+          path="/orgs/:org_id/issues"
+          element={<OrgIssuesPage apiBase="/api" />}
+        />
+
         {/* Issue detail view */}
         <Route
           path="/issues/:org_id/:issue_id"

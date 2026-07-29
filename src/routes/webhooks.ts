@@ -155,4 +155,158 @@ router.post('/github', async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// POST /webhooks/org — register a new webhook URL for an org
+// ---------------------------------------------------------------------------
+
+router.post('/org', async (req: Request, res: Response) => {
+  const { org_id, url, secret } = req.body as {
+    org_id?: string;
+    url?: string;
+    secret?: string;
+  };
+
+  if (!org_id || typeof org_id !== 'string' || org_id.trim() === '') {
+    return res.status(400).json({ error: 'org_id is required' });
+  }
+
+  if (!url || typeof url !== 'string' || !url.startsWith('https://')) {
+    return res.status(400).json({ error: 'url must start with https://' });
+  }
+
+  if (!secret || typeof secret !== 'string' || secret.trim() === '') {
+    return res.status(400).json({ error: 'secret is required' });
+  }
+
+  try {
+    const result = await pool.query<{
+      id: number;
+      org_id: string;
+      url: string;
+      created_at: string;
+    }>(
+      `INSERT INTO org_webhooks (org_id, url, secret)
+       VALUES ($1, $2, $3)
+       RETURNING id, org_id, url, created_at`,
+      [org_id.trim(), url, secret],
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Database error registering webhook:', error);
+    return res.status(500).json({ error: 'database error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /webhooks/org/:id — remove a registered webhook
+// ---------------------------------------------------------------------------
+
+router.delete('/org/:id', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'invalid id' });
+  }
+
+  try {
+    const result = await pool.query(
+      'DELETE FROM org_webhooks WHERE id = $1',
+      [id],
+    );
+
+    // result.rows contains the deleted rows (real pg) or deleted array (MockPool)
+    const deletedCount = (result as { rowCount?: number | null; rows: unknown[] }).rowCount
+      ?? result.rows.length;
+    if (!deletedCount || deletedCount === 0) {
+      return res.status(404).json({ error: 'webhook not found' });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Database error removing webhook:', error);
+    return res.status(500).json({ error: 'database error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /webhooks/org  — register an org webhook endpoint (issue #196)
+// ---------------------------------------------------------------------------
+
+interface RegisterWebhookBody {
+  org_id?: string;
+  url?: string;
+  secret?: string;
+}
+
+router.post('/org', async (req: Request, res: Response) => {
+  const body = req.body as RegisterWebhookBody;
+
+  if (!body.org_id || typeof body.org_id !== 'string' || body.org_id.trim() === '') {
+    return res.status(400).json({ error: 'org_id is required' });
+  }
+
+  if (!body.url || typeof body.url !== 'string') {
+    return res.status(400).json({ error: 'url is required' });
+  }
+
+  if (!body.url.startsWith('https://')) {
+    return res.status(400).json({ error: 'url must start with https://' });
+  }
+
+  if (!body.secret || typeof body.secret !== 'string' || body.secret.trim() === '') {
+    return res.status(400).json({ error: 'secret is required' });
+  }
+
+  try {
+    const result = await pool.query<{ id: number; org_id: string; url: string; created_at: string }>(
+      `INSERT INTO org_webhooks (org_id, url, secret)
+       VALUES ($1, $2, $3)
+       RETURNING id, org_id, url, created_at`,
+      [body.org_id.trim(), body.url.trim(), body.secret.trim()],
+    );
+
+    const row = result.rows[0];
+    return res.status(201).json({
+      id: row.id,
+      org_id: row.org_id,
+      url: row.url,
+      created_at: row.created_at,
+    });
+  } catch (error) {
+    console.error('Database error registering webhook:', error);
+    return res.status(500).json({ error: 'database error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /webhooks/org/:id  — remove a registered org webhook (issue #196)
+// ---------------------------------------------------------------------------
+
+router.delete('/org/:id', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+
+  if (isNaN(id) || id <= 0) {
+    return res.status(400).json({ error: 'invalid webhook id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM org_webhooks WHERE id = $1`,
+      [id],
+    );
+
+    // rowCount is null-safe: 0 means no row was deleted
+    const deleted = (result as unknown as { rowCount: number }).rowCount ?? 0;
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'webhook not found' });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Database error deleting webhook:', error);
+    return res.status(500).json({ error: 'database error' });
+  }
+});
+
 export default router;

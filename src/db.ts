@@ -106,22 +106,96 @@ export async function healthCheck(): Promise<void> {
  * begins accepting requests.
  */
 export async function migrate(): Promise<void> {
-  const databaseUrl =
-    process.env['DATABASE_URL'] ??
-    (() => {
-      throw new Error('DATABASE_URL environment variable is required for migrations');
-    })();
+  await getPool().query(`
+    CREATE TABLE IF NOT EXISTS orgs (
+      org_id           TEXT PRIMARY KEY,
+      contract_address TEXT NOT NULL,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
-  await pgMigrateRun({
-    databaseUrl,
-    migrationsTable: 'pgmigrations',
-    dir: path.join(__dirname, '..', 'migrations'),
-    direction: 'up',
-    // Ensure we apply ALL pending migrations (not just one)
-    count: Infinity,
-    // Log migration output via console so it appears in startup logs
-    log: (msg: string) => console.log('[migrate]', msg),
-  });
+    CREATE TABLE IF NOT EXISTS events (
+      id          SERIAL PRIMARY KEY,
+      org_id      TEXT NOT NULL,
+      event_type  TEXT NOT NULL,
+      issue_id    TEXT NOT NULL,
+      contributor TEXT NOT NULL,
+      tx_hash     TEXT NOT NULL,
+      occurred_at TIMESTAMPTZ NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_org_id ON events(org_id);
+    CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON events(occurred_at);
+
+    CREATE TABLE IF NOT EXISTS issues (
+      id         SERIAL PRIMARY KEY,
+      org_id     TEXT NOT NULL,
+      title      TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS maintainers (
+      address TEXT NOT NULL,
+      org_id  TEXT NOT NULL,
+      PRIMARY KEY (address, org_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS applications (
+      contributor TEXT NOT NULL,
+      org_id      TEXT NOT NULL,
+      issue_id    INTEGER NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (contributor, org_id, issue_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assignments (
+      contributor TEXT NOT NULL,
+      org_id      TEXT NOT NULL,
+      issue_id    INTEGER NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (contributor, org_id, issue_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id         SERIAL PRIMARY KEY,
+      key_hash   TEXT NOT NULL UNIQUE,
+      label      TEXT NOT NULL,
+      scopes     TEXT[] NOT NULL DEFAULT '{}',
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS github_issue_labels (
+      org_id     TEXT    NOT NULL,
+      issue_id   INTEGER NOT NULL,
+      label_name TEXT    NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (org_id, issue_id, label_name)
+    );
+
+    -- Contract events indexed from the Soroban RPC node
+    CREATE TABLE IF NOT EXISTS contract_events (
+      id          SERIAL PRIMARY KEY,
+      event_type  TEXT        NOT NULL,
+      contributor TEXT,
+      org_id      TEXT,
+      issue_id    INTEGER,
+      tx_hash     TEXT        NOT NULL,
+      event_index INTEGER     NOT NULL DEFAULT 0,
+      ledger_seq  INTEGER     NOT NULL,
+      timestamp   TIMESTAMPTZ NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tx_hash, event_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contract_events_contributor
+      ON contract_events(contributor);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_ledger
+      ON contract_events(ledger_seq);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp
+      ON contract_events(timestamp DESC);
+  `);
 }
 
 // ---------------------------------------------------------------------------
