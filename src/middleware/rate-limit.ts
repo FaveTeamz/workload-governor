@@ -81,4 +81,9 @@ export function cleanupExpiredLimits() {
   }
 }
 
+/** Clear all in-process wallet limit counters — exposed for test teardown only. */
+export function clearWalletLimitStore() {
+  walletLimitStore.clear();
+}
+
 setInterval(cleanupExpiredLimits, 60 * 1000);
