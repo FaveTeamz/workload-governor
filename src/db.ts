@@ -1,4 +1,8 @@
 import { Pool, PoolClient } from 'pg';
+import path from 'path';
+// node-pg-migrate exposes `default` in CJS interop; use dynamic require to handle both
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pgMigrateRun: typeof import('node-pg-migrate').default = require('node-pg-migrate').default ?? require('node-pg-migrate');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,73 +97,31 @@ export async function healthCheck(): Promise<void> {
 // Migrations
 // ---------------------------------------------------------------------------
 
+/**
+ * Run all pending database migrations using node-pg-migrate.
+ * Migrations are loaded from the `migrations/` directory at the repo root.
+ * State is tracked in the `pgmigrations` table (created automatically).
+ *
+ * Called automatically on app startup in src/index.ts before the server
+ * begins accepting requests.
+ */
 export async function migrate(): Promise<void> {
-  await getPool().query(`
-    CREATE TABLE IF NOT EXISTS orgs (
-      org_id           TEXT PRIMARY KEY,
-      contract_address TEXT NOT NULL,
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+  const databaseUrl =
+    process.env['DATABASE_URL'] ??
+    (() => {
+      throw new Error('DATABASE_URL environment variable is required for migrations');
+    })();
 
-    CREATE TABLE IF NOT EXISTS events (
-      id          SERIAL PRIMARY KEY,
-      org_id      TEXT NOT NULL,
-      event_type  TEXT NOT NULL,
-      issue_id    TEXT NOT NULL,
-      contributor TEXT NOT NULL,
-      tx_hash     TEXT NOT NULL,
-      occurred_at TIMESTAMPTZ NOT NULL,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_events_org_id ON events(org_id);
-    CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON events(occurred_at);
-
-    CREATE TABLE IF NOT EXISTS issues (
-      id         SERIAL PRIMARY KEY,
-      org_id     TEXT NOT NULL,
-      title      TEXT NOT NULL,
-      status     TEXT NOT NULL DEFAULT 'open',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS maintainers (
-      address TEXT NOT NULL,
-      org_id  TEXT NOT NULL,
-      PRIMARY KEY (address, org_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS applications (
-      contributor TEXT NOT NULL,
-      org_id      TEXT NOT NULL,
-      issue_id    TEXT NOT NULL,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (contributor, org_id, issue_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS assignments (
-      contributor TEXT NOT NULL,
-      org_id      TEXT NOT NULL,
-      issue_id    TEXT NOT NULL,
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (contributor, org_id, issue_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS api_keys (
-      id         SERIAL PRIMARY KEY,
-      key_hash   TEXT NOT NULL UNIQUE,
-      label      TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS github_issue_labels (
-      org_id     TEXT    NOT NULL,
-      issue_id   INTEGER NOT NULL,
-      label_name TEXT    NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (org_id, issue_id, label_name)
-    );
-  `);
+  await pgMigrateRun({
+    databaseUrl,
+    migrationsTable: 'pgmigrations',
+    dir: path.join(__dirname, '..', 'migrations'),
+    direction: 'up',
+    // Ensure we apply ALL pending migrations (not just one)
+    count: Infinity,
+    // Log migration output via console so it appears in startup logs
+    log: (msg: string) => console.log('[migrate]', msg),
+  });
 }
 
 // ---------------------------------------------------------------------------
