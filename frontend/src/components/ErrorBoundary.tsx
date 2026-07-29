@@ -1,86 +1,123 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 
-interface Props {
-  /** Content to protect */
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface ErrorPayload {
+  message: string;
+  stack?: string;
+  componentStack?: string;
+}
+
+interface ErrorBoundaryProps {
   children: ReactNode;
-  /** Optional display name shown in the fallback UI */
-  sectionName?: string;
+  /** Optional custom fallback element */
+  fallback?: ReactNode;
+  /**
+   * A value whose identity is compared on each render.
+   * When it changes the boundary resets automatically —
+   * used to reset on navigation (pass the current route / hash).
+   */
+  resetKey?: string | number;
+  /** Called after the boundary resets */
+  onReset?: () => void;
+  /** Base URL prepended to /api/errors (defaults to '') */
+  apiBase?: string;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
-  /** Increment to force a re-mount of the children subtree */
-  retryKey: number;
+  error?: Error;
+  errorInfo?: ErrorInfo;
 }
+
+// ── ErrorBoundary ─────────────────────────────────────────────────────────────
 
 /**
- * Generic error boundary that catches uncaught render errors in the
- * wrapped subtree, logs them to the console (or a future error-tracking
- * service), and renders a fallback UI with a retry button.
+ * React class-based error boundary.
  *
- * Usage:
- *   <ErrorBoundary sectionName="Dashboard">
- *     <Dashboard />
- *   </ErrorBoundary>
+ * Catches errors thrown in any descendant, renders a fallback UI with a
+ * "Retry" button, logs the error to POST /api/errors, and resets automatically
+ * when `resetKey` changes (navigation).
  */
-export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, error: null, retryKey: 0 };
+export class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
+  static displayName = "ErrorBoundary";
 
-  static getDerivedStateFromError(error: Error): Partial<State> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+    this.handleRetry = this.handleRetry.bind(this);
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    // Log to console now; swap this call for Sentry / Datadog / etc. later.
-    console.error(
-      `[ErrorBoundary] Uncaught error in "${this.props.sectionName ?? "section"}"`,
-      error,
-      info.componentStack,
-    );
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    this.setState({ errorInfo });
+    this.logError({
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack ?? undefined,
+    });
   }
 
-  handleRetry = () => {
-    this.setState((prev) => ({
-      hasError: false,
-      error: null,
-      retryKey: prev.retryKey + 1,
-    }));
-  };
+  /** Auto-reset when navigation key changes */
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    if (
+      this.state.hasError &&
+      prevProps.resetKey !== this.props.resetKey
+    ) {
+      this.reset();
+    }
+  }
 
-  render() {
-    const { hasError, error, retryKey } = this.state;
-    const { children, sectionName = "This section" } = this.props;
+  private logError(payload: ErrorPayload): void {
+    const base = this.props.apiBase ?? "";
+    fetch(`${base}/api/errors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Never throw from an error boundary
+    });
+  }
 
-    if (hasError) {
-      return (
-        <div className="error-boundary" role="alert" aria-live="assertive">
-          <div className="error-boundary__icon" aria-hidden="true">⚠</div>
-          <h2 className="error-boundary__title">Something went wrong</h2>
-          <p className="error-boundary__desc">
-            {sectionName} encountered an unexpected error and could not be
-            displayed.
-          </p>
-          {error && (
-            <pre className="error-boundary__detail">
-              {error.message}
-            </pre>
-          )}
-          <button
-            className="btn btn-primary"
-            onClick={this.handleRetry}
-            aria-label={`Retry loading ${sectionName}`}
-          >
-            Retry
-          </button>
-        </div>
-      );
+  private reset(): void {
+    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+    this.props.onReset?.();
+  }
+
+  handleRetry(): void {
+    this.reset();
+  }
+
+  render(): ReactNode {
+    if (!this.state.hasError) {
+      return this.props.children;
     }
 
-    // key change re-mounts the entire subtree on retry
+    if (this.props.fallback) {
+      return this.props.fallback;
+    }
+
     return (
-      <div key={retryKey} style={{ display: "contents" }}>
-        {children}
+      <div
+        role="alert"
+        aria-live="assertive"
+        style={{ padding: "2rem", textAlign: "center" }}
+      >
+        <h2>Something went wrong</h2>
+        <p>{this.state.error?.message}</p>
+        <button
+          type="button"
+          onClick={this.handleRetry}
+          aria-label="Retry"
+        >
+          Retry
+        </button>
       </div>
     );
   }
