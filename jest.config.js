@@ -50,17 +50,13 @@ module.exports = {
       testEnvironment: 'node',
       testMatch: ['<rootDir>/tests/api/**/*.test.ts'],
       globalSetup: '<rootDir>/tests/api/setup.ts',
-      moduleNameMapper: {
-        '^@stellar/stellar-sdk$': '<rootDir>/__mocks__/@stellar/stellar-sdk.js',
-      },
+      setupFilesAfterEnv: ['<rootDir>/tests/api/jest.setup.ts'],
       transform: {
         '^.+\\.tsx?$': [
           'ts-jest',
           {
             tsconfig: '<rootDir>/tsconfig.dev.json',
-            diagnostics: {
-              ignoreCodes: ['TS2307', 'TS2305', 'TS7016', 'TS2724', 'TS2345', 'TS2554', 'TS2339', 'TS2358'],
-            },
+            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016', 'TS2554', 'TS7006'] },
           },
         ],
       },
