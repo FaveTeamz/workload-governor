@@ -181,9 +181,18 @@ export class EventIndexer {
   private cursor: string | undefined;
   private isRunning = false;
 
-  constructor() {
-    this.server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
+// ---------------------------------------------------------------------------
+// Event parsing helpers
+// ---------------------------------------------------------------------------
+const KNOWN_TOPICS = new Set(['applied', 'withdrawn', 'assigned', 'completed', 'revoked']);
+
+function safeBase64Decode(b64: string): string {
+  try {
+    return Buffer.from(b64, 'base64').toString('utf8');
+  } catch {
+    return b64;
   }
+}
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -397,10 +406,8 @@ function sleep(ms: number): Promise<void> {
 let indexer: EventIndexer | null = null;
 
 export function getEventIndexer(): EventIndexer {
-  if (!indexer) {
-    indexer = new EventIndexer();
-  }
-  return indexer;
+  if (!_indexer) _indexer = new EventIndexer();
+  return _indexer;
 }
 
 export async function startEventIndexer(): Promise<void> {
@@ -408,7 +415,5 @@ export async function startEventIndexer(): Promise<void> {
 }
 
 export function stopEventIndexer(): void {
-  if (indexer) {
-    indexer.stop();
-  }
+  _indexer?.stop();
 }
