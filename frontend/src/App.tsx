@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PanelRowSkeleton } from "./components/Skeleton";
 import { useTheme } from "./hooks/useTheme";
 import "./app.css";
 
@@ -36,9 +37,22 @@ export default function App() {
   // ── Theme toggle (#14) ──────────────────────────────────────────────────
   const { theme, toggle: toggleTheme } = useTheme();
 
-  const [applications, setApplications] = useState(DEMO_APPS);
-  const [assignments, setAssignments] = useState(DEMO_ASGNS);
+  // ── Data + loading state for skeletons (#15) ────────────────────────────
+  const [loading, setLoading] = useState(true);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
 
+  useEffect(() => {
+    // Simulate async data fetch; replace with real API call
+    const timer = setTimeout(() => {
+      setApplications(DEMO_APPS);
+      setAssignments(DEMO_ASGNS);
+      setLoading(false);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ── Transaction handlers with toast feedback (#13) ─────────────────────
   async function handleAssign(app: Application) {
     await withToast(
       new Promise<void>((r) => setTimeout(r, 400)),
@@ -101,21 +115,54 @@ export default function App() {
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
+        {/* Dashboard section — isolated error boundary (#16) */}
         <ErrorBoundary sectionName="Dashboard">
-          <MaintainerPanel
-            applications={applications}
-            assignments={assignments}
-            onAssign={handleAssign}
-            onComplete={handleComplete}
-            onRevoke={handleRevoke}
-          />
+          {/* Skeleton loaders while data is fetching (#15) */}
+          {loading ? (
+            <div className="maintainer-panel">
+              <div className="panel-columns">
+                <div className="panel-column">
+                  <h2>
+                    Pending Applications
+                    <span className="count-badge" aria-hidden="true">…</span>
+                  </h2>
+                  <ul className="panel-list" aria-label="Loading applications">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <PanelRowSkeleton key={i} />
+                    ))}
+                  </ul>
+                </div>
+                <div className="panel-column">
+                  <h2>
+                    Active Assignments
+                    <span className="count-badge" aria-hidden="true">…</span>
+                  </h2>
+                  <ul className="panel-list" aria-label="Loading assignments">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <PanelRowSkeleton key={i} />
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <MaintainerPanel
+              applications={applications}
+              assignments={assignments}
+              onAssign={handleAssign}
+              onComplete={handleComplete}
+              onRevoke={handleRevoke}
+            />
+          )}
         </ErrorBoundary>
       </main>
 
+      {/* Onboarding — isolated so a wizard crash doesn't kill the main panel (#16) */}
       <ErrorBoundary sectionName="Onboarding">
         <OnboardingWizard />
       </ErrorBoundary>
 
+      {/* react-hot-toast container (#13) */}
       <Toaster
         position="bottom-right"
         toastOptions={{
