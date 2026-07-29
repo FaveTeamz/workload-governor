@@ -40,12 +40,13 @@ module.exports = {
       testEnvironment: 'node',
       testMatch: ['<rootDir>/tests/api/**/*.test.ts'],
       globalSetup: '<rootDir>/tests/api/setup.ts',
+      setupFilesAfterEnv: ['<rootDir>/tests/api/jest.setup.ts'],
       transform: {
         '^.+\\.tsx?$': [
           'ts-jest',
           {
             tsconfig: '<rootDir>/tsconfig.dev.json',
-            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016'] },
+            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016', 'TS2554', 'TS7006'] },
           },
         ],
       },

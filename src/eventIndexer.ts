@@ -1,91 +1,185 @@
 /**
- * EventIndexer — issue #194
+ * eventIndexer.ts
  *
- * Subscribes to the Stellar Horizon SSE event stream, filters for
- * WorkloadGovernor contract events, and persists them to Postgres.
+ * Polls the Soroban RPC node every 5 seconds for WorkloadGovernor contract events,
+ * parses them into typed DB records, and persists them with deduplication.
  *
- * Architecture:  Horizon SSE → EventIndexer → Postgres (events table)
+ * Supported event types (matching src/events.rs emit helpers):
+ *   applied, withdrew, assigned, completed, revoked, maintainer_registered
  *
- * Resilience guarantees:
- *  - Resumes from the last indexed ledger on restart (stored in `indexer_cursor`)
- *  - Handles Horizon 429 / 503 with exponential back-off (cap: 60 s)
+ * Deduplication key: (tx_hash, event_index)  — ON CONFLICT DO NOTHING
+ * Resume: on startup, reads the highest ledger already stored and continues from there.
  */
-import EventSource from 'eventsource';
+
+import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
 import { pool } from './db';
 import { logger } from './logger';
 
 // ---------------------------------------------------------------------------
-// Config
+// Configuration
 // ---------------------------------------------------------------------------
+
 const CONTRACT_ID =
   process.env['CONTRACT_ID'] ??
   'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
 
-const HORIZON_URL =
-  process.env['HORIZON_URL'] ?? 'https://horizon-testnet.stellar.org';
+const RPC_URL =
+  process.env['SOROBAN_RPC_URL'] ?? 'https://soroban-testnet.stellar.org';
 
-/** SSE endpoint that streams contract events for our contract */
-function buildSseUrl(cursor: string): string {
-  const params = new URLSearchParams({
-    contract_id: CONTRACT_ID,
-    cursor,
-    limit: '200',
-  });
-  return `${HORIZON_URL}/contract_events?${params.toString()}`;
-}
+const POLL_INTERVAL_MS = 5_000;
+const ERROR_BACKOFF_MS = 10_000;
 
 // ---------------------------------------------------------------------------
-// Types
+// Event types
 // ---------------------------------------------------------------------------
-interface HorizonContractEvent {
-  id: string;
-  paging_token: string;
-  ledger: number;
-  ledger_closed_at: string;
-  transaction_hash: string;
-  topic: string[];   // base64-XDR encoded topic values
-  value: string;     // base64-XDR encoded data value
-  in_successful_contract_call: boolean;
-}
 
-interface ParsedEvent {
-  ledger: number;
-  txHash: string;
-  topic: string;
-  orgId: string | null;
-  issueId: number | null;
+export type ContractEventType =
+  | 'applied'
+  | 'withdrew'
+  | 'assigned'
+  | 'completed'
+  | 'revoked'
+  | 'maintainer_registered';
+
+/**
+ * Normalized DB record for a single contract event.
+ * Stored in the `contract_events` table.
+ */
+export interface ContractEventRecord {
+  event_type: ContractEventType;
   contributor: string | null;
-  createdAt: Date;
+  org_id: string | null;
+  issue_id: number | null;
+  tx_hash: string;
+  event_index: number;
+  ledger: number;
+  timestamp: Date;
 }
 
 // ---------------------------------------------------------------------------
-// Cursor persistence helpers
+// XDR helpers
 // ---------------------------------------------------------------------------
-const CURSOR_KEY = 'event_indexer_cursor';
 
-async function loadCursor(): Promise<string> {
+/**
+ * Safely decode an XDR base64 string to its native JS value.
+ * Returns null if decoding fails.
+ */
+function decodeScVal(xdrBase64: string): unknown {
   try {
-    const res = await pool.query<{ value: string }>(
-      `SELECT value FROM indexer_state WHERE key = $1`,
-      [CURSOR_KEY],
-    );
-    if (res.rows.length > 0) {
-      return res.rows[0]!.value;
-    }
+    const scVal = stellarXdr.ScVal.fromXDR(xdrBase64, 'base64');
+    return scValToNative(scVal);
   } catch {
-    // table may not exist yet — will be created by migrate()
+    return null;
   }
-  return 'now';
 }
 
-async function saveCursor(cursor: string): Promise<void> {
-  await pool.query(
-    `INSERT INTO indexer_state (key, value)
-     VALUES ($1, $2)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-    [CURSOR_KEY, cursor],
-  );
+/**
+ * Extract the symbol string from a Soroban ScVal topic (first topic slot).
+ * The event type is emitted as a Symbol in slot[0].
+ */
+function extractEventType(topics: string[]): ContractEventType | null {
+  if (topics.length === 0) return null;
+  const val = decodeScVal(topics[0]);
+  if (typeof val !== 'string') return null;
+  const known: ContractEventType[] = [
+    'applied',
+    'withdrew',
+    'assigned',
+    'completed',
+    'revoked',
+    'maintainer_registered',
+  ];
+  return known.includes(val as ContractEventType) ? (val as ContractEventType) : null;
 }
+
+/**
+ * Extract the contributor address from a Soroban ScVal topic (second topic slot).
+ * For all 5 state-change events the contributor is in topics[1].
+ */
+function extractContributorFromTopic(topics: string[]): string | null {
+  if (topics.length < 2) return null;
+  const val = decodeScVal(topics[1]);
+  if (typeof val === 'string') return val;
+  return null;
+}
+
+/**
+ * Parse the data value tuple emitted with each event.
+ *
+ * Event data layouts (from src/events.rs):
+ *   applied    → data = (org_id: Symbol, issue_id: u32)
+ *   withdrew   → data = (org_id: Symbol, issue_id: u32)
+ *   assigned   → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
+ *   completed  → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
+ *   revoked    → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
+ *   maintainer_registered → data = org_id: Symbol (scalar, not tuple)
+ */
+interface ParsedData {
+  org_id: string | null;
+  issue_id: number | null;
+}
+
+function parseEventData(dataXdr: string, eventType: ContractEventType): ParsedData {
+  const raw = decodeScVal(dataXdr);
+
+  if (eventType === 'maintainer_registered') {
+    // data is a plain Symbol
+    return {
+      org_id: typeof raw === 'string' ? raw : null,
+      issue_id: null,
+    };
+  }
+
+  // All other events emit a tuple
+  if (!Array.isArray(raw)) {
+    return { org_id: null, issue_id: null };
+  }
+
+  if (eventType === 'applied' || eventType === 'withdrew') {
+    // (org_id, issue_id)
+    const [orgId, issueId] = raw as [unknown, unknown];
+    return {
+      org_id: typeof orgId === 'string' ? orgId : null,
+      issue_id: typeof issueId === 'number' ? issueId : null,
+    };
+  }
+
+  // assigned / completed / revoked → (maintainer, org_id, issue_id)
+  const [, orgId, issueId] = raw as [unknown, unknown, unknown];
+  return {
+    org_id: typeof orgId === 'string' ? orgId : null,
+    issue_id: typeof issueId === 'number' ? issueId : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// RPC event shape (SDK v11 / RPC spec)
+// ---------------------------------------------------------------------------
+
+interface RpcEvent {
+  /** "contract" | "system" | "diagnostic" */
+  type: string;
+  /** "<ledger>-<tx_index>-<event_index>" — paging cursor */
+  id: string;
+  pagingToken: string;
+  /** ledger sequence number as string */
+  ledger: string;
+  /** ISO-8601 creation timestamp */
+  createdAt: string;
+  txHash?: string;
+  topic: Array<{ type: string; xdr: string }>;
+  value: { type: string; xdr: string };
+}
+
+// ---------------------------------------------------------------------------
+// EventIndexer class
+// ---------------------------------------------------------------------------
+
+export class EventIndexer {
+  private server: SorobanRpc.Server;
+  /** Paging cursor for the next RPC call. Undefined means start from resume ledger. */
+  private cursor: string | undefined;
+  private isRunning = false;
 
 // ---------------------------------------------------------------------------
 // Event parsing helpers
@@ -100,181 +194,216 @@ function safeBase64Decode(b64: string): string {
   }
 }
 
-function extractTopic(topics: string[]): string | null {
-  for (const t of topics) {
-    const decoded = safeBase64Decode(t).toLowerCase();
-    for (const k of KNOWN_TOPICS) {
-      if (decoded.includes(k)) return k;
-    }
-  }
-  return null;
-}
-
-function extractOrgId(topics: string[]): string | null {
-  if (topics.length < 2) return null;
-  const raw = safeBase64Decode(topics[1]!);
-  // Strip non-printable / non-ASCII characters
-  return raw.replace(/[^\x20-\x7E]/g, '').trim() || null;
-}
-
-function extractIssueId(topics: string[]): number | null {
-  if (topics.length < 3) return null;
-  const raw = safeBase64Decode(topics[2]!);
-  const m = raw.match(/\d+/);
-  return m ? parseInt(m[0], 10) : null;
-}
-
-function extractContributor(value: string): string | null {
-  const raw = safeBase64Decode(value);
-  // Stellar G-addresses are 56 chars, base32 [A-Z2-7]
-  const m = raw.match(/G[A-Z2-7]{54,55}/);
-  return m ? m[0] : null;
-}
-
-function parseEvent(raw: HorizonContractEvent): ParsedEvent | null {
-  const topic = extractTopic(raw.topic);
-  if (!topic) return null;
-
-  return {
-    ledger: raw.ledger,
-    txHash: raw.transaction_hash,
-    topic,
-    orgId: extractOrgId(raw.topic),
-    issueId: extractIssueId(raw.topic),
-    contributor: extractContributor(raw.value),
-    createdAt: new Date(raw.ledger_closed_at),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Storage
-// ---------------------------------------------------------------------------
-async function storeEvent(ev: ParsedEvent): Promise<void> {
-  await pool.query(
-    `INSERT INTO events (ledger, tx_hash, topic, org_id, issue_id, contributor, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (tx_hash, topic) DO NOTHING`,
-    [ev.ledger, ev.txHash, ev.topic, ev.orgId, ev.issueId, ev.contributor, ev.createdAt],
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Back-off helper
-// ---------------------------------------------------------------------------
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-/** Exponential back-off: 1 s → 2 s → 4 s … cap 60 s */
-function backoffMs(attempt: number): number {
-  return Math.min(1000 * 2 ** attempt, 60_000);
-}
-
-// ---------------------------------------------------------------------------
-// EventIndexer class
-// ---------------------------------------------------------------------------
-export class EventIndexer {
-  private es: EventSource | null = null;
-  private isRunning = false;
-  private backoffAttempt = 0;
+  // ── Lifecycle ────────────────────────────────────────────────────────────
 
   async start(): Promise<void> {
     if (this.isRunning) return;
     this.isRunning = true;
-    logger.info({ message: 'EventIndexer starting' });
-    await this.ensureSchema();
-    this.connect();
+
+    // Resume from the last successfully indexed ledger
+    await this.initCursor();
+
+    logger.info({ message: 'Event indexer started', contract: CONTRACT_ID, rpc: RPC_URL });
+
+    this.pollForEvents().catch((err) => {
+      logger.error({
+        message: 'Event indexer fatal error',
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      this.isRunning = false;
+    });
   }
 
   stop(): void {
     this.isRunning = false;
-    this.es?.close();
-    this.es = null;
-    logger.info({ message: 'EventIndexer stopped' });
+    logger.info({ message: 'Event indexer stopped' });
   }
 
-  // ── Private ──────────────────────────────────────────────────────────────
+  // ── Cursor / resume ──────────────────────────────────────────────────────
 
-  private async ensureSchema(): Promise<void> {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS indexer_state (
-        key        TEXT PRIMARY KEY,
-        value      TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  /**
+   * On restart, re-process from the last finalized ledger to handle reorgs.
+   * Uses the highest ledger_seq stored in contract_events as the resume point.
+   */
+  private async initCursor(): Promise<void> {
+    try {
+      const { rows } = await pool.query<{ max_ledger: string | null }>(
+        'SELECT MAX(ledger_seq) AS max_ledger FROM contract_events',
       );
+      const maxLedger = rows[0]?.max_ledger != null ? parseInt(rows[0].max_ledger, 10) : null;
 
-      CREATE TABLE IF NOT EXISTS events (
-        id          BIGSERIAL PRIMARY KEY,
-        ledger      INT NOT NULL,
-        tx_hash     TEXT NOT NULL,
-        topic       TEXT NOT NULL,
-        org_id      TEXT,
-        issue_id    INT,
-        contributor TEXT,
-        created_at  TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (tx_hash, topic)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_events_org_id      ON events (org_id);
-      CREATE INDEX IF NOT EXISTS idx_events_contributor ON events (contributor);
-      CREATE INDEX IF NOT EXISTS idx_events_ledger      ON events (ledger);
-    `);
+      if (maxLedger !== null && maxLedger > 0) {
+        // Use the last finalized ledger as the start cursor so we re-fetch
+        // that ledger's events and handle any potential reorg.
+        // The cursor format expected by getEvents is "<ledger>-<tx>-<event>"
+        // Passing just the ledger number as a numeric string is also accepted.
+        this.cursor = String(maxLedger);
+        logger.info({ message: 'Resuming indexer from ledger', ledger: maxLedger });
+      } else {
+        this.cursor = undefined;
+        logger.info({ message: 'Starting indexer from genesis (no stored events)' });
+      }
+    } catch (err) {
+      // Table might not exist yet; start from genesis
+      logger.warn({
+        message: 'Could not read resume ledger, starting from genesis',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      this.cursor = undefined;
+    }
   }
 
-  private async connect(): Promise<void> {
-    if (!this.isRunning) return;
+  // ── Poll loop ────────────────────────────────────────────────────────────
 
-    const cursor = await loadCursor();
-    const url = buildSseUrl(cursor);
-
-    logger.info({ message: 'EventIndexer opening SSE connection', cursor, url });
-
-    this.es = new EventSource(url);
-
-    this.es.onmessage = async (msg: MessageEvent) => {
+  private async pollForEvents(): Promise<void> {
+    while (this.isRunning) {
       try {
-        const raw: HorizonContractEvent = JSON.parse(msg.data as string);
-        const parsed = parseEvent(raw);
-        if (parsed) {
-          await storeEvent(parsed);
-          await saveCursor(raw.paging_token);
-          this.backoffAttempt = 0; // reset on success
-          logger.info({ message: 'Event indexed', topic: parsed.topic, ledger: parsed.ledger });
+        const response = await this.server.getEvents({
+          filters: [
+            {
+              type: 'contract',
+              contractIds: [CONTRACT_ID],
+            },
+          ],
+          cursor: this.cursor,
+          limit: 200,
+        });
+
+        const events = response.events as unknown as RpcEvent[];
+
+        if (events.length > 0) {
+          let persisted = 0;
+          let skipped = 0;
+
+          for (const raw of events) {
+            const record = this.parseRpcEvent(raw);
+            if (!record) {
+              skipped++;
+              continue;
+            }
+            const stored = await this.storeEvent(record);
+            if (stored) persisted++;
+            else skipped++;
+          }
+
+          // Advance cursor to the last event's pagingToken
+          const last = events[events.length - 1];
+          this.cursor = last.pagingToken ?? last.id;
+
+          logger.info({
+            message: 'Indexed event batch',
+            ledger: parseInt(events[events.length - 1].ledger, 10),
+            total: events.length,
+            persisted,
+            skipped,
+          });
         }
+
+        await sleep(POLL_INTERVAL_MS);
       } catch (err) {
         logger.error({
-          message: 'EventIndexer parse/store error',
+          message: 'Event polling error',
           error: err instanceof Error ? err.message : String(err),
         });
+        await sleep(ERROR_BACKOFF_MS);
       }
-    };
+    }
+  }
 
-    this.es.onerror = async (err: Event & { status?: number }) => {
-      const status = (err as { status?: number }).status;
-      logger.warn({
-        message: 'EventIndexer SSE error',
-        status,
-        attempt: this.backoffAttempt,
-      });
+  // ── Event parsing ────────────────────────────────────────────────────────
 
-      this.es?.close();
-      this.es = null;
+  /**
+   * Convert a raw RPC event object into a ContractEventRecord.
+   * Returns null if the event is unknown or malformed.
+   */
+  private parseRpcEvent(raw: RpcEvent): ContractEventRecord | null {
+    try {
+      // Only process contract events
+      if (raw.type !== 'contract') return null;
 
-      if (!this.isRunning) return;
+      const topics = raw.topic?.map((t) => t.xdr) ?? [];
+      const dataXdr = raw.value?.xdr ?? '';
 
-      const delay = backoffMs(this.backoffAttempt);
-      this.backoffAttempt++;
-      logger.info({ message: `EventIndexer reconnecting in ${delay}ms` });
-      await sleep(delay);
-      this.connect();
-    };
+      const eventType = extractEventType(topics);
+      if (!eventType) return null;
+
+      const contributor =
+        eventType === 'maintainer_registered'
+          ? null
+          : extractContributorFromTopic(topics);
+
+      const { org_id, issue_id } = parseEventData(dataXdr, eventType);
+
+      // Parse the event index from the id string: "<ledger>-<tx_index>-<event_index>"
+      const idParts = raw.id.split('-');
+      const eventIndex = idParts.length >= 3 ? parseInt(idParts[2], 10) : 0;
+
+      // tx_hash may be undefined for some synthetic events; fall back to id
+      const txHash = raw.txHash ?? raw.id;
+
+      const ledger = parseInt(raw.ledger, 10);
+      const timestamp = new Date(raw.createdAt);
+
+      return {
+        event_type: eventType,
+        contributor,
+        org_id,
+        issue_id,
+        tx_hash: txHash,
+        event_index: eventIndex,
+        ledger,
+        timestamp,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Persistence ──────────────────────────────────────────────────────────
+
+  /**
+   * Insert a contract event record.
+   * Uses (tx_hash, event_index) as the deduplication key — duplicate rows are
+   * silently skipped (ON CONFLICT DO NOTHING).
+   *
+   * @returns true if a new row was inserted, false if it was a duplicate.
+   */
+  private async storeEvent(record: ContractEventRecord): Promise<boolean> {
+    const result = await pool.query(
+      `INSERT INTO contract_events
+         (event_type, contributor, org_id, issue_id, tx_hash, event_index, ledger_seq, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (tx_hash, event_index) DO NOTHING`,
+      [
+        record.event_type,
+        record.contributor,
+        record.org_id,
+        record.issue_id,
+        record.tx_hash,
+        record.event_index,
+        record.ledger,
+        record.timestamp,
+      ],
+    );
+    // rowCount > 0 means a row was actually inserted
+    return (result as { rowCount?: number }).rowCount === 1;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Singleton helpers
+// Utilities
 // ---------------------------------------------------------------------------
-let _indexer: EventIndexer | null = null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Module-level singleton helpers
+// ---------------------------------------------------------------------------
+
+let indexer: EventIndexer | null = null;
 
 export function getEventIndexer(): EventIndexer {
   if (!_indexer) _indexer = new EventIndexer();

@@ -132,7 +132,7 @@ export async function migrate(): Promise<void> {
     CREATE TABLE IF NOT EXISTS applications (
       contributor TEXT NOT NULL,
       org_id      TEXT NOT NULL,
-      issue_id    TEXT NOT NULL,
+      issue_id    INTEGER NOT NULL,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (contributor, org_id, issue_id)
     );
@@ -140,7 +140,7 @@ export async function migrate(): Promise<void> {
     CREATE TABLE IF NOT EXISTS assignments (
       contributor TEXT NOT NULL,
       org_id      TEXT NOT NULL,
-      issue_id    TEXT NOT NULL,
+      issue_id    INTEGER NOT NULL,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (contributor, org_id, issue_id)
     );
@@ -149,6 +149,8 @@ export async function migrate(): Promise<void> {
       id         SERIAL PRIMARY KEY,
       key_hash   TEXT NOT NULL UNIQUE,
       label      TEXT NOT NULL,
+      scopes     TEXT[] NOT NULL DEFAULT '{}',
+      expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -159,6 +161,28 @@ export async function migrate(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (org_id, issue_id, label_name)
     );
+
+    -- Contract events indexed from the Soroban RPC node
+    CREATE TABLE IF NOT EXISTS contract_events (
+      id          SERIAL PRIMARY KEY,
+      event_type  TEXT        NOT NULL,
+      contributor TEXT,
+      org_id      TEXT,
+      issue_id    INTEGER,
+      tx_hash     TEXT        NOT NULL,
+      event_index INTEGER     NOT NULL DEFAULT 0,
+      ledger_seq  INTEGER     NOT NULL,
+      timestamp   TIMESTAMPTZ NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tx_hash, event_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contract_events_contributor
+      ON contract_events(contributor);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_ledger
+      ON contract_events(ledger_seq);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp
+      ON contract_events(timestamp DESC);
   `);
 }
 
