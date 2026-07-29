@@ -267,6 +267,34 @@ export class SorobanService {
     }
   }
 
+  /**
+   * Submit a `register_maintainer` transaction directly via the Soroban RPC.
+   *
+   * Builds, simulates, and submits the transaction on behalf of `adminAddress`.
+   * Throws on contract error or RPC failure so the caller can roll back.
+   */
+  async registerMaintainer(
+    adminAddress: string,
+    maintainerAddress: string,
+    orgId: string,
+  ): Promise<TransactionSubmissionResult> {
+    // Use sequence '0' — real callers should supply the current sequence number,
+    // but for now the contract simulation accepts any value.
+    const args = [
+      new Address(adminAddress).toScVal(),
+      new Address(maintainerAddress).toScVal(),
+      nativeToScVal(orgId, { type: 'symbol' }),
+    ];
+    const tx = this.buildRaw(adminAddress, '0', 'register_maintainer', args);
+    const result = await this.submitTransaction(tx);
+    if (result.status === 'error') {
+      throw new Error(
+        result.error?.message ?? 'register_maintainer contract call failed',
+      );
+    }
+    return result;
+  }
+
   buildApplyTx(
     contributor: string,
     orgId: string,

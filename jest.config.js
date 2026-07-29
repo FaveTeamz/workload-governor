@@ -40,6 +40,12 @@ module.exports = {
       testEnvironment: 'node',
       testMatch: ['<rootDir>/tests/api/**/*.test.ts'],
       globalSetup: '<rootDir>/tests/api/setup.ts',
+      // Redirect @noble/hashes from the nested ESM-only v2 copy inside
+      // @stellar/stellar-sdk to the top-level CJS-compatible v1 copy so that
+      // Jest (running in CommonJS mode) can load it without an ESM error.
+      moduleNameMapper: {
+        '^@noble/hashes/(.*)$': '<rootDir>/node_modules/@noble/hashes/$1',
+      },
       transform: {
         '^.+\\.tsx?$': [
           'ts-jest',

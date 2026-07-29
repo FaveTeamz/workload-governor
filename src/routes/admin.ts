@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { SorobanService } from '../soroban';
+import { GitHubService } from '../github';
 import { verifySignature, parseAuthHeader } from '../signature';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { logger } from '../logger';
@@ -8,6 +9,7 @@ import { registerOrgSchema } from '../schemas/orgs';
 
 const router = Router();
 const soroban = new SorobanService();
+const github = new GitHubService();
 
 async function signatureAuthMiddleware(
   req: Request,
@@ -90,9 +92,12 @@ router.post('/maintainers', signatureAuthMiddleware, async (req: Request, res: R
 });
 
 // POST /api/admin/orgs
-// Body: { org_id, maintainers: string[], cap: number }
-// Registers a new organisation: records it in DB and registers each maintainer
-// on the Soroban contract.
+// Body: { github_org: string, org_id: string, maintainers: string[], org_cap?: number }
+// 1. Validates github_org exists via the GitHub API (422 if not found)
+// 2. Checks for duplicate org_id (409 if already registered)
+// 3. Inserts the org into the DB
+// 4. Calls register_maintainer on the Soroban contract for each maintainer
+// 5. Rolls back the DB insert if any contract call fails
 router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response) => {
   const adminReq = req as Request & { adminAddress: string };
 
@@ -103,51 +108,104 @@ router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response
     return;
   }
 
-  const { org_id, maintainers, cap } = parsed.data;
+  const { github_org, org_id, maintainers, org_cap } = parsed.data;
 
+  // ── Step 1: Validate that the GitHub org exists ──────────────────────────
+  let orgExists: boolean;
   try {
-    // Persist the org registration
-    await pool.query(
-      `INSERT INTO orgs (org_id, cap, created_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (org_id) DO UPDATE SET cap = $2`,
-      [org_id, cap],
-    );
-
-    // Register each maintainer in DB
-    for (const addr of maintainers) {
-      await pool.query(
-        `INSERT INTO org_maintainers (org_id, maintainer_address, created_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (org_id, maintainer_address) DO NOTHING`,
-        [org_id, addr],
-      );
-    }
-
-    logger.info({
-      correlationId: adminReq.correlationId,
-      message: 'Org registered',
-      org_id,
-      maintainers,
-      cap,
-      registeredBy: adminReq.adminAddress,
-    });
-
-    res.status(201).json({
-      org_id,
-      maintainers,
-      cap,
-      message: 'Organisation registered successfully',
-    });
+    orgExists = await github.validateOrg(github_org);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'internal error';
+    const msg = err instanceof Error ? err.message : 'GitHub API error';
     logger.error({
       correlationId: adminReq.correlationId,
       error: msg,
       stack: err instanceof Error ? err.stack : undefined,
     });
-    res.status(500).json({ error: msg });
+    res.status(502).json({ error: 'github_api_error', message: msg });
+    return;
   }
+
+  if (!orgExists) {
+    res.status(422).json({
+      error: 'invalid_github_org',
+      message: `GitHub organisation '${github_org}' does not exist`,
+    });
+    return;
+  }
+
+  // ── Step 2: Check for duplicate org_id ──────────────────────────────────
+  const existing = await pool.query(
+    'SELECT org_id FROM orgs WHERE org_id = $1',
+    [org_id],
+  );
+  if (existing.rows.length > 0) {
+    res.status(409).json({
+      error: 'conflict',
+      message: `Organisation '${org_id}' is already registered`,
+    });
+    return;
+  }
+
+  // ── Step 3: Insert the org record ────────────────────────────────────────
+  await pool.query(
+    `INSERT INTO orgs (org_id, github_org, org_cap, created_at)
+     VALUES ($1, $2, $3, NOW())`,
+    [org_id, github_org, org_cap],
+  );
+
+  // ── Step 4: Register each maintainer on the Soroban contract ─────────────
+  // If any call fails we delete the newly-inserted org row (rollback).
+  const registered: string[] = [];
+  for (const maintainer of maintainers) {
+    try {
+      await soroban.registerMaintainer(adminReq.adminAddress, maintainer, org_id);
+      registered.push(maintainer);
+    } catch (err) {
+      // ── Step 5: Rollback — remove the org row we just inserted ───────────
+      try {
+        await pool.query('DELETE FROM orgs WHERE org_id = $1', [org_id]);
+      } catch (rollbackErr) {
+        logger.error({
+          correlationId: adminReq.correlationId,
+          message: 'Rollback failed',
+          error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
+        });
+      }
+
+      const msg = err instanceof Error ? err.message : 'contract error';
+      logger.error({
+        correlationId: adminReq.correlationId,
+        message: 'register_maintainer contract call failed — DB rolled back',
+        maintainer,
+        org_id,
+        error: msg,
+      });
+      res.status(502).json({
+        error: 'contract_error',
+        message: `Failed to register maintainer ${maintainer}: ${msg}`,
+        registered,
+      });
+      return;
+    }
+  }
+
+  logger.info({
+    correlationId: adminReq.correlationId,
+    message: 'Org registered',
+    org_id,
+    github_org,
+    maintainers,
+    org_cap,
+    registeredBy: adminReq.adminAddress,
+  });
+
+  res.status(201).json({
+    org_id,
+    github_org,
+    maintainers,
+    org_cap,
+    message: 'Organisation registered successfully',
+  });
 });
 
 export default router;
