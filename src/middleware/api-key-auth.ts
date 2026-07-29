@@ -169,6 +169,7 @@ export async function apiKeyAuth(
   if (raw !== null) {
     // Admin token bypass — admin routes handle their own auth check
     if (raw === process.env['ADMIN_TOKEN']) {
+      // Attach minimal context and pass through
       next();
       return;
     }
