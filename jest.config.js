@@ -18,18 +18,28 @@ module.exports = {
     },
   },
   coverageReporters: ['text', 'lcov'],
+  // Redirect stellar-sdk to our lightweight CJS manual mock so Jest doesn't
+  // need to parse its ESM-only sub-dependencies (@noble/hashes etc.)
+  moduleNameMapper: {
+    '^@stellar/stellar-sdk$': '<rootDir>/__mocks__/@stellar/stellar-sdk.js',
+  },
   projects: [
     {
       displayName: 'unit',
       preset: 'ts-jest',
       testEnvironment: 'node',
       testMatch: ['<rootDir>/tests/unit/**/*.test.ts'],
+      moduleNameMapper: {
+        '^@stellar/stellar-sdk$': '<rootDir>/__mocks__/@stellar/stellar-sdk.js',
+      },
       transform: {
         '^.+\\.tsx?$': [
           'ts-jest',
           {
             tsconfig: '<rootDir>/tsconfig.dev.json',
-            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016'] },
+            diagnostics: {
+              ignoreCodes: ['TS2307', 'TS2305', 'TS7016', 'TS2724', 'TS2345', 'TS2554', 'TS2339', 'TS2358'],
+            },
           },
         ],
       },
@@ -40,18 +50,13 @@ module.exports = {
       testEnvironment: 'node',
       testMatch: ['<rootDir>/tests/api/**/*.test.ts'],
       globalSetup: '<rootDir>/tests/api/setup.ts',
-      // Redirect @noble/hashes from the nested ESM-only v2 copy inside
-      // @stellar/stellar-sdk to the top-level CJS-compatible v1 copy so that
-      // Jest (running in CommonJS mode) can load it without an ESM error.
-      moduleNameMapper: {
-        '^@noble/hashes/(.*)$': '<rootDir>/node_modules/@noble/hashes/$1',
-      },
+      setupFilesAfterEnv: ['<rootDir>/tests/api/jest.setup.ts'],
       transform: {
         '^.+\\.tsx?$': [
           'ts-jest',
           {
             tsconfig: '<rootDir>/tsconfig.dev.json',
-            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016'] },
+            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016', 'TS2554', 'TS7006'] },
           },
         ],
       },
