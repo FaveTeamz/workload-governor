@@ -53,15 +53,27 @@ function HomePage() {
   }
 
   async function handleComplete(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
+    await withToast(
+      new Promise<void>((r) => setTimeout(r, 400)),
+      {
+        pending: `Completing "${asgn.issueTitle}"…`,
+        success: `"${asgn.issueTitle}" marked as complete.`,
+        error: `Failed to complete "${asgn.issueTitle}". Please try again.`,
+      },
+    );
     setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Completed "${asgn.issueTitle}"`, "success");
   }
 
   async function handleRevoke(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
+    await withToast(
+      new Promise<void>((r) => setTimeout(r, 400)),
+      {
+        pending: `Revoking "${asgn.issueTitle}"…`,
+        success: `Assignment for "${asgn.issueTitle}" revoked.`,
+        error: `Failed to revoke "${asgn.issueTitle}". Please try again.`,
+      },
+    );
     setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Revoked "${asgn.issueTitle}"`, "info");
   }
 
   return (
@@ -83,8 +95,36 @@ function HomePage() {
         <ActivityFeed apiBase="/api" network="testnet" />
       </main>
 
-      <OnboardingWizard />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      {/* Onboarding — isolated so a wizard crash doesn't kill the main panel (#16) */}
+      <ErrorBoundary sectionName="Onboarding">
+        <OnboardingWizard />
+      </ErrorBoundary>
+
+      {/* react-hot-toast container (#13) */}
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: "var(--color-surface)",
+            color: "var(--color-text)",
+            border: "1px solid var(--color-border)",
+            fontSize: "0.875rem",
+          },
+          success: {
+            iconTheme: {
+              primary: "var(--color-complete, #22c55e)",
+              secondary: "var(--color-surface)",
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: "var(--color-revoke, #ef4444)",
+              secondary: "var(--color-surface)",
+            },
+          },
+        }}
+      />
     </>
   );
 }
