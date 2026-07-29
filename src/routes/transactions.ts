@@ -1,9 +1,23 @@
 import { Router, Request, Response } from 'express';
-import { Address } from '@stellar/stellar-sdk';
 import { SorobanService } from '../soroban';
 import { Transaction } from '@stellar/stellar-sdk';
 import { verifyTransactionXdr } from '../xdrVerifier';
 import { logger } from '../logger';
+import { validateBody } from '../middleware/validation';
+import {
+  applySchema,
+  withdrawSchema,
+  assignSchema,
+  completeSchema,
+  revokeSchema,
+  submitSchema,
+  ApplyInput,
+  WithdrawInput,
+  AssignInput,
+  CompleteInput,
+  RevokeInput,
+  SubmitInput,
+} from '../schemas/transactions';
 
 const router = Router();
 const soroban = new SorobanService();
@@ -14,37 +28,6 @@ interface TransactionResponse {
   instructions: number;
   readBytes: number;
   writeBytes: number;
-}
-
-interface ValidationError {
-  field: string;
-  message: string;
-}
-
-function isValidStellarAddress(address: unknown): boolean {
-  if (typeof address !== 'string') return false;
-  try {
-    new Address(address);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isValidOrgId(orgId: unknown): boolean {
-  if (typeof orgId !== 'string') return false;
-  return orgId.length > 0 && orgId.length <= 256;
-}
-
-function isValidIssueId(issueId: unknown): boolean {
-  const num = Number(issueId);
-  return Number.isInteger(num) && num > 0;
-}
-
-function isValidSequence(sequence: unknown): boolean {
-  if (typeof sequence !== 'string') return false;
-  const num = BigInt(sequence);
-  return num >= 0n;
 }
 
 async function buildAndSimulate(
@@ -68,162 +51,38 @@ async function buildAndSimulate(
   }
 }
 
-router.post('/apply', (req: Request, res: Response) => {
-  const { contributor, org_id, issue_id, sequence } = req.body as Record<string, unknown>;
-  const errors: ValidationError[] = [];
-
-  if (!isValidStellarAddress(contributor)) {
-    errors.push({ field: 'contributor', message: 'invalid stellar address' });
-  }
-  if (!isValidOrgId(org_id)) {
-    errors.push({ field: 'org_id', message: 'org_id must be a non-empty string' });
-  }
-  if (!isValidIssueId(issue_id)) {
-    errors.push({ field: 'issue_id', message: 'issue_id must be a positive integer' });
-  }
-  if (!isValidSequence(sequence)) {
-    errors.push({ field: 'sequence', message: 'sequence must be a valid number string' });
-  }
-
-  if (errors.length > 0) {
-    res.status(400).json({ error: 'validation failed', details: errors });
-    return;
-  }
-
+router.post('/apply', validateBody(applySchema), (req: Request, res: Response) => {
+  const { contributor, org_id, issue_id, sequence } = req.body as ApplyInput;
   buildAndSimulate(res, () =>
-    soroban.buildApplyTx(
-      contributor as string, org_id as string,
-      Number(issue_id), sequence as string,
-    ),
+    soroban.buildApplyTx(contributor, org_id, Number(issue_id), sequence),
   );
 });
 
-router.post('/withdraw', (req: Request, res: Response) => {
-  const { contributor, org_id, issue_id, sequence } = req.body as Record<string, unknown>;
-  const errors: ValidationError[] = [];
-
-  if (!isValidStellarAddress(contributor)) {
-    errors.push({ field: 'contributor', message: 'invalid stellar address' });
-  }
-  if (!isValidOrgId(org_id)) {
-    errors.push({ field: 'org_id', message: 'org_id must be a non-empty string' });
-  }
-  if (!isValidIssueId(issue_id)) {
-    errors.push({ field: 'issue_id', message: 'issue_id must be a positive integer' });
-  }
-  if (!isValidSequence(sequence)) {
-    errors.push({ field: 'sequence', message: 'sequence must be a valid number string' });
-  }
-
-  if (errors.length > 0) {
-    res.status(400).json({ error: 'validation failed', details: errors });
-    return;
-  }
-
+router.post('/withdraw', validateBody(withdrawSchema), (req: Request, res: Response) => {
+  const { contributor, org_id, issue_id, sequence } = req.body as WithdrawInput;
   buildAndSimulate(res, () =>
-    soroban.buildWithdrawTx(
-      contributor as string, org_id as string,
-      Number(issue_id), sequence as string,
-    ),
+    soroban.buildWithdrawTx(contributor, org_id, Number(issue_id), sequence),
   );
 });
 
-router.post('/assign', (req: Request, res: Response) => {
-  const { maintainer, contributor, org_id, issue_id, sequence } = req.body as Record<string, unknown>;
-  const errors: ValidationError[] = [];
-
-  if (!isValidStellarAddress(maintainer)) {
-    errors.push({ field: 'maintainer', message: 'invalid stellar address' });
-  }
-  if (!isValidStellarAddress(contributor)) {
-    errors.push({ field: 'contributor', message: 'invalid stellar address' });
-  }
-  if (!isValidOrgId(org_id)) {
-    errors.push({ field: 'org_id', message: 'org_id must be a non-empty string' });
-  }
-  if (!isValidIssueId(issue_id)) {
-    errors.push({ field: 'issue_id', message: 'issue_id must be a positive integer' });
-  }
-  if (!isValidSequence(sequence)) {
-    errors.push({ field: 'sequence', message: 'sequence must be a valid number string' });
-  }
-
-  if (errors.length > 0) {
-    res.status(400).json({ error: 'validation failed', details: errors });
-    return;
-  }
-
+router.post('/assign', validateBody(assignSchema), (req: Request, res: Response) => {
+  const { maintainer, contributor, org_id, issue_id, sequence } = req.body as AssignInput;
   buildAndSimulate(res, () =>
-    soroban.buildAssignTx(
-      maintainer as string, contributor as string,
-      org_id as string, Number(issue_id), sequence as string,
-    ),
+    soroban.buildAssignTx(maintainer, contributor, org_id, Number(issue_id), sequence),
   );
 });
 
-router.post('/complete', (req: Request, res: Response) => {
-  const { maintainer, contributor, org_id, issue_id, sequence } = req.body as Record<string, unknown>;
-  const errors: ValidationError[] = [];
-
-  if (!isValidStellarAddress(maintainer)) {
-    errors.push({ field: 'maintainer', message: 'invalid stellar address' });
-  }
-  if (!isValidStellarAddress(contributor)) {
-    errors.push({ field: 'contributor', message: 'invalid stellar address' });
-  }
-  if (!isValidOrgId(org_id)) {
-    errors.push({ field: 'org_id', message: 'org_id must be a non-empty string' });
-  }
-  if (!isValidIssueId(issue_id)) {
-    errors.push({ field: 'issue_id', message: 'issue_id must be a positive integer' });
-  }
-  if (!isValidSequence(sequence)) {
-    errors.push({ field: 'sequence', message: 'sequence must be a valid number string' });
-  }
-
-  if (errors.length > 0) {
-    res.status(400).json({ error: 'validation failed', details: errors });
-    return;
-  }
-
+router.post('/complete', validateBody(completeSchema), (req: Request, res: Response) => {
+  const { maintainer, contributor, org_id, issue_id, sequence } = req.body as CompleteInput;
   buildAndSimulate(res, () =>
-    soroban.buildCompleteTx(
-      maintainer as string, contributor as string,
-      org_id as string, Number(issue_id), sequence as string,
-    ),
+    soroban.buildCompleteTx(maintainer, contributor, org_id, Number(issue_id), sequence),
   );
 });
 
-router.post('/revoke', (req: Request, res: Response) => {
-  const { maintainer, contributor, org_id, issue_id, sequence } = req.body as Record<string, unknown>;
-  const errors: ValidationError[] = [];
-
-  if (!isValidStellarAddress(maintainer)) {
-    errors.push({ field: 'maintainer', message: 'invalid stellar address' });
-  }
-  if (!isValidStellarAddress(contributor)) {
-    errors.push({ field: 'contributor', message: 'invalid stellar address' });
-  }
-  if (!isValidOrgId(org_id)) {
-    errors.push({ field: 'org_id', message: 'org_id must be a non-empty string' });
-  }
-  if (!isValidIssueId(issue_id)) {
-    errors.push({ field: 'issue_id', message: 'issue_id must be a positive integer' });
-  }
-  if (!isValidSequence(sequence)) {
-    errors.push({ field: 'sequence', message: 'sequence must be a valid number string' });
-  }
-
-  if (errors.length > 0) {
-    res.status(400).json({ error: 'validation failed', details: errors });
-    return;
-  }
-
+router.post('/revoke', validateBody(revokeSchema), (req: Request, res: Response) => {
+  const { maintainer, contributor, org_id, issue_id, sequence } = req.body as RevokeInput;
   buildAndSimulate(res, () =>
-    soroban.buildRevokeTx(
-      maintainer as string, contributor as string,
-      org_id as string, Number(issue_id), sequence as string,
-    ),
+    soroban.buildRevokeTx(maintainer, contributor, org_id, Number(issue_id), sequence),
   );
 });
 
@@ -243,13 +102,8 @@ router.post('/revoke', (req: Request, res: Response) => {
  * Returns 403 with a `reason` field if any check fails.
  * All failed verifications are logged with the requester IP and reason.
  */
-router.post('/submit', async (req: Request, res: Response) => {
-  const { signed_xdr } = req.body as Record<string, unknown>;
-
-  if (!signed_xdr || typeof signed_xdr !== 'string') {
-    res.status(400).json({ error: 'signed_xdr is required and must be a string' });
-    return;
-  }
+router.post('/submit', validateBody(submitSchema), async (req: Request, res: Response) => {
+  const { signed_xdr } = req.body as SubmitInput;
 
   const ip = req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown';
 

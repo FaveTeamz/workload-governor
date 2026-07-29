@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Stellar StrKey public key: starts with G, uppercase base32, 55–56 chars */
+/** Stellar StrKey public key: starts with G, uppercase base32, 50–56 chars */
 const stellarAddress = z
   .string()
   .min(50)
@@ -35,4 +35,10 @@ export const registerOrgSchema = z.object({
     .default(4),
 });
 
+/** Body for POST /orgs/:orgId/issues/:issueId/apply */
+export const orgApplyBodySchema = z.object({
+  contributor: stellarAddress,
+});
+
 export type RegisterOrgInput = z.infer<typeof registerOrgSchema>;
+export type OrgApplyBody = z.infer<typeof orgApplyBodySchema>;
