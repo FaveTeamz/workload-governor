@@ -1,4 +1,8 @@
 import { Pool, PoolClient } from 'pg';
+import path from 'path';
+// node-pg-migrate exposes `default` in CJS interop; use dynamic require to handle both
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pgMigrateRun: typeof import('node-pg-migrate').default = require('node-pg-migrate').default ?? require('node-pg-migrate');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,6 +97,14 @@ export async function healthCheck(): Promise<void> {
 // Migrations
 // ---------------------------------------------------------------------------
 
+/**
+ * Run all pending database migrations using node-pg-migrate.
+ * Migrations are loaded from the `migrations/` directory at the repo root.
+ * State is tracked in the `pgmigrations` table (created automatically).
+ *
+ * Called automatically on app startup in src/index.ts before the server
+ * begins accepting requests.
+ */
 export async function migrate(): Promise<void> {
   await getPool().query(`
     CREATE TABLE IF NOT EXISTS orgs (

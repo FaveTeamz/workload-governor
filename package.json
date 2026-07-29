@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts' --max-warnings 0",
     "typecheck": "tsc --noEmit",
+    "migrate:up": "node-pg-migrate up --migrations-dir migrations --migrations-table pgmigrations",
+    "migrate:down": "node-pg-migrate down --migrations-dir migrations --migrations-table pgmigrations",
     "test": "jest --runInBand --forceExit",
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
