@@ -12,9 +12,10 @@
  *  - Wallet not connected → prompt to connect
  */
 import { useParams } from 'react-router-dom';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useOrgIssues, type OrgIssue, type IssueStatus } from '../hooks/useOrgIssues';
+import SlideOutRow from '../../components/SlideOutRow';
 import './OrgIssuesPage.css';
 
 const GLOBAL_CAP = 15;
@@ -38,80 +39,84 @@ interface IssueRowProps {
   onWithdraw: (issueId: string) => void;
   busy: boolean;
   txHash: string | null;
+  isRemoved: boolean;
+  onRemoved: () => void;
 }
 
-function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy, txHash }: IssueRowProps) {
+function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy, txHash, isRemoved, onRemoved }: IssueRowProps) {
   const showApply    = issue.status === 'open';
   const showWithdraw = issue.status === 'applied';
   const isDisabled   = !canApply || busy;
   const network      = (import.meta.env.VITE_STELLAR_NETWORK ?? 'TESTNET').toLowerCase();
 
   return (
-    <div className="org-issue-row">
-      <div className="org-issue-row__info">
-        <h3 className="org-issue-row__title">{issue.title}</h3>
-        <div className="org-issue-row__meta">
-          <span className="org-issue-row__id">{issue.issue_id}</span>
-          {issue.reward_xlm && (
-            <span className="org-issue-row__reward">{issue.reward_xlm} XLM</span>
+    <SlideOutRow isRemoved={isRemoved} onRemoved={onRemoved}>
+      <div className="org-issue-row">
+        <div className="org-issue-row__info">
+          <h3 className="org-issue-row__title">{issue.title}</h3>
+          <div className="org-issue-row__meta">
+            <span className="org-issue-row__id">{issue.issue_id}</span>
+            {issue.reward_xlm && (
+              <span className="org-issue-row__reward">{issue.reward_xlm} XLM</span>
+            )}
+            <span className={`org-issue-row__chip org-issue-row__chip--${issue.status}`}>
+              {STATUS_LABEL[issue.status]}
+            </span>
+          </div>
+        </div>
+
+        <div className="org-issue-row__actions">
+          {showApply && (
+            <button
+              className="org-issue-row__btn org-issue-row__btn--apply"
+              onClick={() => onApply(issue.issue_id)}
+              disabled={isDisabled}
+              aria-label={`Apply for issue: ${issue.title}`}
+              title={capReachedReason ?? undefined}
+              type="button"
+            >
+              {busy ? (
+                <>
+                  <span className="org-issue-row__spinner" aria-hidden="true" />
+                  Applying…
+                </>
+              ) : (
+                'Apply'
+              )}
+            </button>
           )}
-          <span className={`org-issue-row__chip org-issue-row__chip--${issue.status}`}>
-            {STATUS_LABEL[issue.status]}
-          </span>
+          {showWithdraw && (
+            <button
+              className="org-issue-row__btn org-issue-row__btn--withdraw"
+              onClick={() => onWithdraw(issue.issue_id)}
+              disabled={busy}
+              aria-label={`Withdraw application for: ${issue.title}`}
+              type="button"
+            >
+              {busy ? (
+                <>
+                  <span className="org-issue-row__spinner" aria-hidden="true" />
+                  Withdrawing…
+                </>
+              ) : (
+                'Withdraw'
+              )}
+            </button>
+          )}
+          {txHash && (
+            <a
+              className="org-issue-row__tx-link"
+              href={`https://stellar.expert/explorer/${network}/tx/${txHash}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View transaction on Stellar Explorer"
+            >
+              View Tx →
+            </a>
+          )}
         </div>
       </div>
-
-      <div className="org-issue-row__actions">
-        {showApply && (
-          <button
-            className="org-issue-row__btn org-issue-row__btn--apply"
-            onClick={() => onApply(issue.issue_id)}
-            disabled={isDisabled}
-            aria-label={`Apply for issue: ${issue.title}`}
-            title={capReachedReason ?? undefined}
-            type="button"
-          >
-            {busy ? (
-              <>
-                <span className="org-issue-row__spinner" aria-hidden="true" />
-                Applying…
-              </>
-            ) : (
-              'Apply'
-            )}
-          </button>
-        )}
-        {showWithdraw && (
-          <button
-            className="org-issue-row__btn org-issue-row__btn--withdraw"
-            onClick={() => onWithdraw(issue.issue_id)}
-            disabled={busy}
-            aria-label={`Withdraw application for: ${issue.title}`}
-            type="button"
-          >
-            {busy ? (
-              <>
-                <span className="org-issue-row__spinner" aria-hidden="true" />
-                Withdrawing…
-              </>
-            ) : (
-              'Withdraw'
-            )}
-          </button>
-        )}
-        {txHash && (
-          <a
-            className="org-issue-row__tx-link"
-            href={`https://stellar.expert/explorer/${network}/tx/${txHash}`}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="View transaction on Stellar Explorer"
-          >
-            View Tx →
-          </a>
-        )}
-      </div>
-    </div>
+    </SlideOutRow>
   );
 }
 
@@ -136,6 +141,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   const [busyIssue, setBusyIssue] = useState<string | null>(null);
   const [txHash, setTxHash]       = useState<string | null>(null);
+  const [removingIssues, setRemovingIssues] = useState<string[]>([]);
 
   // ── Cap logic ──────────────────────────────────────────────────────────
   const globalCapReached = globalAppCount >= GLOBAL_CAP;
@@ -154,10 +160,8 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     setTxHash(null);
 
     try {
-      // Optimistic UI
       setIssueStatus(issueId, 'applied');
 
-      // Invoke contract via Freighter (stub: just POST to backend)
       const res = await fetch(`${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,10 +170,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
       if (!res.ok) throw new Error(`Apply failed: ${res.status}`);
       const data = await res.json() as { tx_hash?: string };
       if (data.tx_hash) setTxHash(data.tx_hash);
-
-      // Success — keep optimistic state
     } catch (err) {
-      // Revert optimistic
       setIssueStatus(issueId, 'open');
       alert(`Apply failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
@@ -179,17 +180,43 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   async function handleWithdraw(issueId: string) {
     if (!wallet.publicKey) return;
+    const confirmed = window.confirm('Withdraw this application? This will free one global cap slot.');
+    if (!confirmed) return;
+
     setBusyIssue(issueId);
     setTxHash(null);
 
     try {
       setIssueStatus(issueId, 'open');
 
-      const res = await fetch(
-        `${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply?contributor=${encodeURIComponent(wallet.publicKey)}`,
-        { method: 'DELETE' },
+      const txRes = await fetch(
+        `${apiBase}/transactions/withdraw`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contributor: wallet.publicKey, org_id: org_id, issue_id: Number(issueId), sequence: '0' }),
+        },
       );
-      if (!res.ok) throw new Error(`Withdraw failed: ${res.status}`);
+      if (!txRes.ok) throw new Error(`Withdraw failed: ${txRes.status}`);
+
+      const txData = await txRes.json() as { xdr?: string };
+      if (!txData.xdr) throw new Error('Withdraw transaction was not created.');
+
+      const signedXdr = await (wallet as typeof wallet & { signTransaction?: (xdr: string) => Promise<string | null> }).signTransaction?.(txData.xdr);
+      if (!signedXdr) throw new Error('Wallet signing was cancelled.');
+
+      const submitRes = await fetch(`${apiBase}/transactions/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signed_xdr: signedXdr }),
+      });
+      if (!submitRes.ok) throw new Error(`Submit failed: ${submitRes.status}`);
+
+      const submitData = await submitRes.json() as { hash?: string };
+      if (submitData.hash) setTxHash(submitData.hash);
+
+      setRemovingIssues((prev) => [...prev, issueId]);
+      await refresh();
     } catch (err) {
       setIssueStatus(issueId, 'applied');
       alert(`Withdraw failed: ${err instanceof Error ? err.message : 'unknown error'}`);
@@ -258,7 +285,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
         <p className="org-issues-page__empty">No open issues for this org.</p>
       ) : (
         <div className="org-issues-page__list">
-          {issues.map((issue) => (
+          {issues.filter((issue) => !removingIssues.includes(issue.issue_id)).map((issue) => (
             <IssueRow
               key={issue.issue_id}
               issue={issue}
@@ -268,6 +295,8 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
               onWithdraw={handleWithdraw}
               busy={busyIssue === issue.issue_id}
               txHash={busyIssue === issue.issue_id ? txHash : null}
+              isRemoved={removingIssues.includes(issue.issue_id)}
+              onRemoved={() => setRemovingIssues((prev) => prev.filter((id) => id !== issue.issue_id))}
             />
           ))}
         </div>
