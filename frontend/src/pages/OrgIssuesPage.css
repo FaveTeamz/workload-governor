@@ -48,6 +48,88 @@
 .org-issues-page__refresh-btn:hover:not(:disabled) { background: var(--color-border); }
 .org-issues-page__refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Filters ───────────────────────────────────────────────────── */
+.org-issues-page__filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.org-issues-page__filters-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.org-issues-page__search {
+  flex: 1;
+  min-width: 220px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.org-issues-page__filter-btn,
+.org-issues-page__clear-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.org-issues-page__filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 0 6px;
+}
+
+.org-issues-page__filter-panel {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+}
+
+.org-issues-page__filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.org-issues-page__filter-group h2 {
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.org-issues-page__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.org-issues-page__labels {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
 /* ── Cap banner ─────────────────────────────────────────────────── */
 .org-issues-page__cap-banner {
   display: flex;
