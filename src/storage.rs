@@ -27,7 +27,7 @@ pub const APP_TTL_MIN: u32 = 1;
 /// Maximum valid value for `APP_TTL_LEDGERS` (Soroban platform cap).
 pub const APP_TTL_MAX: u32 = 535_000;
 
-/// Maximum number of pending applications a contributor may hold globally.
+/// Default maximum number of pending applications a contributor may hold globally.
 pub const GLOBAL_APP_LIMIT: u32 = 15;
 
 /// Maximum number of active assignments a contributor may hold per org.
@@ -164,6 +164,27 @@ pub(crate) fn extend_app_entry_ttl(
     env.storage()
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Global application cap
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("g_cap")`
+// Value: `u32`
+
+fn global_cap_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
+pub(crate) fn get_global_cap(env: &Env) -> u32 {
+    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Stores a new global application cap.
+pub(crate) fn set_global_cap(env: &Env, cap: u32) {
+    env.storage().persistent().set(&global_cap_key(), &cap);
 }
 
 // ---------------------------------------------------------------------------

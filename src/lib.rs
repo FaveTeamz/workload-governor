@@ -16,7 +16,7 @@ mod storage;
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::ContractError;
 use crate::events;
@@ -41,8 +41,25 @@ impl WorkloadGovernor {
         }
         admin.require_auth();
         storage::set_admin(&env, &admin);
+        storage::set_global_cap(&env, storage::GLOBAL_APP_LIMIT);
         storage::bump_instance(&env);
         events::emit_initialized(&env, &admin);
+    }
+
+    /// Updates the configurable global application cap (admin-only).
+    pub fn set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if new_cap == 0 || new_cap > 100 {
+            panic_with_error!(env, ContractError::InvalidCapValue);
+        }
+        let old_cap = storage::get_global_cap(&env);
+        if new_cap != old_cap {
+            storage::set_global_cap(&env, new_cap);
+            storage::bump_instance(&env);
+            events::emit_global_cap_updated(&env, &admin, old_cap, new_cap);
+        }
     }
 
     /// Registers a maintainer for an organisation (idempotent).
@@ -80,7 +97,8 @@ impl WorkloadGovernor {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
-        if count >= storage::GLOBAL_APP_LIMIT {
+        let cap = storage::get_global_cap(&env);
+        if count >= cap {
             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
         }
         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
@@ -92,6 +110,35 @@ impl WorkloadGovernor {
         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
         storage::bump_instance(&env);
         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);
+    }
+
+    /// Applies the contributor to many issues atomically in a single transaction.
+    pub fn batch_apply_for_issues(env: Env, contributor: Address, org_id: Symbol, issue_ids: Vec<u32>) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        contributor.require_auth();
+        if issue_ids.len() > 10 {
+            panic_with_error!(env, ContractError::BatchTooLarge);
+        }
+        let cap = storage::get_global_cap(&env);
+        let current_count = storage::get_global_app_count(&env, &contributor);
+        if current_count + issue_ids.len() > cap {
+            panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
+        }
+        for issue_id in issue_ids.iter() {
+            if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+                panic_with_error!(env, ContractError::DuplicateApplication);
+            }
+        }
+        let mut next_count = current_count;
+        for issue_id in issue_ids.iter() {
+            next_count += 1;
+            storage::set_global_app_count(&env, &contributor, next_count);
+            storage::set_app_entry(&env, &contributor, &org_id, issue_id);
+            storage::extend_global_app_count_ttl(&env, &contributor);
+            storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+            events::emit_application_submitted(&env, &contributor, &org_id, issue_id);
+        }
+        storage::bump_instance(&env);
     }
 
     /// Withdraws a contributor's pending application for a specific issue.
@@ -242,6 +289,11 @@ impl WorkloadGovernor {
     // Read-only query functions — no storage mutations, no events
     // -----------------------------------------------------------------------
 
+    /// Returns the current configured global application cap.
+    pub fn get_global_cap(env: Env) -> u32 {
+        storage::get_global_cap(&env)
+    }
+
     /// Returns the contributor's current global pending-application count (0 if absent/expired).
     pub fn get_global_application_count(env: Env, contributor: Address) -> u32 {
         storage::get_global_app_count(&env, &contributor)
@@ -281,11 +333,12 @@ impl WorkloadGovernor {
 
     /// Returns the global application capacity remaining for a contributor.
     /// 
-    /// Returns: `GLOBAL_APP_LIMIT - current_count` (minimum 0).
+    /// Returns: `configured_cap - current_count` (minimum 0).
     /// Useful for determining if a contributor can apply to more issues globally.
     pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {
         let current = storage::get_global_app_count(&env, &contributor);
-        storage::GLOBAL_APP_LIMIT.saturating_sub(current)
+        let cap = storage::get_global_cap(&env);
+        cap.saturating_sub(current)
     }
 
     /// Checks if a contributor has reached their org assignment limit.
@@ -302,9 +355,10 @@ impl WorkloadGovernor {
 
     /// Checks if a contributor has reached their global application limit.
     ///
-    /// Returns `true` if the contributor has 15 pending applications globally.
+    /// Returns `true` if the contributor has reached the configured pending-application cap.
     pub fn is_global_application_limit_reached(env: Env, contributor: Address) -> bool {
         let count = storage::get_global_app_count(&env, &contributor);
-        count >= storage::GLOBAL_APP_LIMIT
+        let cap = storage::get_global_cap(&env);
+        count >= cap
     }
 }

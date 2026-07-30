@@ -72,6 +72,36 @@ fn unit_full_lifecycle() {
 }
 
 #[test]
+fn unit_set_global_cap_updates_cap() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("captest");
+
+    t.client.initialize(&admin);
+    t.client.set_global_cap(&admin, &20u32);
+    assert_eq!(t.client.get_global_cap(), 20);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+#[test]
+fn unit_batch_apply_for_issues_creates_multiple_entries() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("batch");
+    let issue_ids = soroban_sdk::Vec::from_array(&t.env, [1u32, 2u32, 3u32]);
+
+    t.client.initialize(&admin);
+    t.client.batch_apply_for_issues(&contributor, &org, &issue_ids);
+    assert_eq!(t.client.get_global_application_count(&contributor), 3);
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert!(t.client.has_applied(&contributor, &org, &2u32));
+    assert!(t.client.has_applied(&contributor, &org, &3u32));
+}
+
+#[test]
 fn unit_revoke_lifecycle() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -368,9 +398,11 @@ fn unit_event_initialized_has_two_topics() {
     t.client.initialize(&admin);
 
     let events = t.env.events().all();
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let payload = soroban_sdk::vec![&t.env, 1u32, admin.clone()];
+    assert_eq!(data, payload.into_val(&t.env));
 }
 
 #[test]
@@ -387,9 +419,11 @@ fn unit_event_application_submitted_has_two_topics() {
 
     let events = t.env.events().all();
     assert!(!events.is_empty());
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let payload = soroban_sdk::vec![&t.env, 1u32, contributor.clone(), org.clone(), 5u32];
+    assert_eq!(data, payload.into_val(&t.env));
 }
 
 // ---------------------------------------------------------------------------

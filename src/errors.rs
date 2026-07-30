@@ -17,4 +17,6 @@ pub enum ContractError {
     ApplicationNotFound           = 9,
     AssignmentNotFound            = 10,
     AlreadyAssigned               = 11,
+    InvalidCapValue               = 14,
+    BatchTooLarge                 = 15,
 }
