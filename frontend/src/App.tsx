@@ -11,6 +11,7 @@ import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { OrgIssuesPage } from "./pages/OrgIssuesPage";
+import { ContributorProfilePage } from "./pages/ContributorProfilePage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -191,6 +192,12 @@ export default function App() {
         <Route
           path="/admin/register-org"
           element={<RegisterOrgPage apiBase="/api" />}
+        />
+
+        {/* Contributor public profile */}
+        <Route
+          path="/contributor/:address"
+          element={<ContributorProfilePage />}
         />
 
         {/* Default: home */}
