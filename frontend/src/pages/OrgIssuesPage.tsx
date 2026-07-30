@@ -30,6 +30,8 @@ interface IssueRowProps {
   onWithdraw: (issueId: string) => void;
   busy: boolean;
   txHash: string | null;
+  isRemoved: boolean;
+  onRemoved: () => void;
 }
 
 function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy, txHash }: IssueRowProps) {
@@ -51,59 +53,59 @@ function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy
             {STATUS_LABEL[issue.status]}
           </span>
         </div>
-      </div>
 
-      <div className="org-issue-row__actions">
-        {showApply && (
-          <button
-            className="org-issue-row__btn org-issue-row__btn--apply"
-            onClick={() => onApply(issue.issue_id)}
-            disabled={isDisabled}
-            aria-label={`Apply for issue: ${issue.title}`}
-            title={capReachedReason ?? undefined}
-            type="button"
-          >
-            {busy ? (
-              <>
-                <span className="org-issue-row__spinner" aria-hidden="true" />
-                Applying…
-              </>
-            ) : (
-              'Apply'
-            )}
-          </button>
-        )}
-        {showWithdraw && (
-          <button
-            className="org-issue-row__btn org-issue-row__btn--withdraw"
-            onClick={() => onWithdraw(issue.issue_id)}
-            disabled={busy}
-            aria-label={`Withdraw application for: ${issue.title}`}
-            type="button"
-          >
-            {busy ? (
-              <>
-                <span className="org-issue-row__spinner" aria-hidden="true" />
-                Withdrawing…
-              </>
-            ) : (
-              'Withdraw'
-            )}
-          </button>
-        )}
-        {txHash && (
-          <a
-            className="org-issue-row__tx-link"
-            href={`https://stellar.expert/explorer/${network}/tx/${txHash}`}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="View transaction on Stellar Explorer"
-          >
-            View Tx →
-          </a>
-        )}
+        <div className="org-issue-row__actions">
+          {showApply && (
+            <button
+              className="org-issue-row__btn org-issue-row__btn--apply"
+              onClick={() => onApply(issue.issue_id)}
+              disabled={isDisabled}
+              aria-label={`Apply for issue: ${issue.title}`}
+              title={capReachedReason ?? undefined}
+              type="button"
+            >
+              {busy ? (
+                <>
+                  <span className="org-issue-row__spinner" aria-hidden="true" />
+                  Applying…
+                </>
+              ) : (
+                'Apply'
+              )}
+            </button>
+          )}
+          {showWithdraw && (
+            <button
+              className="org-issue-row__btn org-issue-row__btn--withdraw"
+              onClick={() => onWithdraw(issue.issue_id)}
+              disabled={busy}
+              aria-label={`Withdraw application for: ${issue.title}`}
+              type="button"
+            >
+              {busy ? (
+                <>
+                  <span className="org-issue-row__spinner" aria-hidden="true" />
+                  Withdrawing…
+                </>
+              ) : (
+                'Withdraw'
+              )}
+            </button>
+          )}
+          {txHash && (
+            <a
+              className="org-issue-row__tx-link"
+              href={`https://stellar.expert/explorer/${network}/tx/${txHash}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View transaction on Stellar Explorer"
+            >
+              View Tx →
+            </a>
+          )}
+        </div>
       </div>
-    </div>
+    </SlideOutRow>
   );
 }
 
@@ -217,15 +219,22 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   async function handleWithdraw(issueId: string) {
     if (!wallet.publicKey) return;
+    const confirmed = window.confirm('Withdraw this application? This will free one global cap slot.');
+    if (!confirmed) return;
+
     setBusyIssue(issueId);
     setTxHash(null);
 
     try {
       setIssueStatus(issueId, 'open');
 
-      const res = await fetch(
-        `${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply?contributor=${encodeURIComponent(wallet.publicKey)}`,
-        { method: 'DELETE' },
+      const txRes = await fetch(
+        `${apiBase}/transactions/withdraw`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contributor: wallet.publicKey, org_id: org_id, issue_id: Number(issueId), sequence: '0' }),
+        },
       );
       if (!res.ok) throw new Error(`Withdraw failed: ${res.status}`);
       const issue = issues.find((entry) => entry.issue_id === issueId);
@@ -386,6 +395,8 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
               onWithdraw={handleWithdraw}
               busy={busyIssue === issue.issue_id}
               txHash={busyIssue === issue.issue_id ? txHash : null}
+              isRemoved={removingIssues.includes(issue.issue_id)}
+              onRemoved={() => setRemovingIssues((prev) => prev.filter((id) => id !== issue.issue_id))}
             />
           ))}
         </div>

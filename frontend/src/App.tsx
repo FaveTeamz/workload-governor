@@ -80,6 +80,7 @@ function HomePage() {
           onRevoke={handleRevoke}
         />
         <ActivityFeed apiBase="/api" network="testnet" />
+        {loading && <p className="app-main__status">Loading demo data…</p>}
       </main>
 
       <ErrorBoundary>
@@ -91,6 +92,9 @@ function HomePage() {
 
 export default function App() {
   const wallet = useWallet();
+  const { toasts, remove: removeToast } = useToast();
+  const isPreviewRoute = window.location.search.includes("preview=1");
+  const isProduction = import.meta.env.PROD;
 
   return (
     <ToastProvider>
@@ -109,10 +113,19 @@ export default function App() {
       />
 
       <Routes>
-        {/* Contributor dashboard */}
+        <Route path="/dashboard" element={<DashboardPage apiBase="/api" />} />
+        <Route path="/orgs/:org_id/issues" element={<OrgIssuesPage apiBase="/api" />} />
+        <Route path="/issues/:org_id/:issue_id" element={<IssueDetailPage apiBase="/api" />} />
+        <Route path="/admin/register-org" element={<RegisterOrgPage apiBase="/api" />} />
         <Route
-          path="/dashboard"
-          element={<DashboardPage apiBase="/api" />}
+          path="/design"
+          element={
+            isProduction && !isPreviewRoute ? (
+              <Navigate to="/" replace />
+            ) : (
+              <DesignSystemPage />
+            )
+          }
         />
 
         {/* Org issue browser with apply/withdraw */}
