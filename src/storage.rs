@@ -234,6 +234,27 @@ pub(crate) fn extend_app_entry_ttl(
 }
 
 // ---------------------------------------------------------------------------
+// Persistent storage — Global application cap
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("g_cap")`
+// Value: `u32`
+
+fn global_cap_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
+pub(crate) fn get_global_cap(env: &Env) -> u32 {
+    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Stores a new global application cap.
+pub(crate) fn set_global_cap(env: &Env, cap: u32) {
+    env.storage().persistent().set(&global_cap_key(), &cap);
+}
+
+// ---------------------------------------------------------------------------
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //

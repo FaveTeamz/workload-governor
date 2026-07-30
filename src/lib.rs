@@ -62,6 +62,7 @@ impl WorkloadGovernor {
         }
         admin.require_auth();
         storage::set_admin(&env, &admin);
+        storage::set_global_cap(&env, storage::GLOBAL_APP_LIMIT);
         storage::bump_instance(&env);
         events::emit_initialized(&env, &admin);
     }
