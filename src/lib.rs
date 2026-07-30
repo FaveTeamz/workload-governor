@@ -161,6 +161,39 @@ impl WorkloadGovernor {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
+    /// Sets the global application cap via the normal (non-emergency) operator path.
+    ///
+    /// Emits `GlobalCapUpdated` event. Admin auth is required.
+    /// Cap must be in range 0..=100.
+    pub fn set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if new_cap > 100 {
+            panic_with_error!(env, ContractError::InvalidCap);
+        }
+        storage::set_global_cap(&env, new_cap);
+        storage::bump_instance(&env);
+        events::emit_global_cap_updated(&env, &admin, new_cap);
+    }
+
+    /// Emergency: immediately set the global application cap to `new_cap`.
+    ///
+    /// This bypasses any standard operator gating and emits `EmergencyCapUpdated`.
+    /// Admin auth is required. Cap must be in range 0..=100.
+    pub fn emergency_set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if new_cap > 100 {
+            panic_with_error!(env, ContractError::InvalidCap);
+        }
+        // Immediate effect
+        storage::set_global_cap(&env, new_cap);
+        storage::bump_instance(&env);
+        events::emit_emergency_cap_updated(&env, &admin, new_cap);
+    }
+
     // -----------------------------------------------------------------------
     // Contributor functions
     // -----------------------------------------------------------------------
@@ -202,7 +235,8 @@ impl WorkloadGovernor {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
-        if count >= storage::GLOBAL_APP_LIMIT {
+        let cap = storage::get_global_cap(&env);
+        if count >= cap {
             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
         }
         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
@@ -776,7 +810,8 @@ impl WorkloadGovernor {
     /// Remaining capacity as a `u32` in `[0, GLOBAL_APP_LIMIT]`.
     pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {
         let current = storage::get_global_app_count(&env, &contributor);
-        storage::GLOBAL_APP_LIMIT.saturating_sub(current)
+        let cap = storage::get_global_cap(&env);
+        cap.saturating_sub(current)
     }
 
     /// Returns `true` if the contributor has reached their per-org assignment limit.
@@ -815,6 +850,7 @@ impl WorkloadGovernor {
     /// `true` if the contributor has 15 pending applications globally.
     pub fn global_app_limit_reached(env: Env, contributor: Address) -> bool {
         let count = storage::get_global_app_count(&env, &contributor);
-        count >= storage::GLOBAL_APP_LIMIT
+        let cap = storage::get_global_cap(&env);
+        count >= cap
     }
 }
