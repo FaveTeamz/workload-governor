@@ -1,0 +1,33 @@
+{
+  "name": "workload-governor-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --coverage"
+  },
+  "devDependencies": {
+    "@types/jest": "29.5.12",
+    "@types/node": "20.14.2",
+    "@types/nock": "11.1.0",
+    "jest": "29.7.0",
+    "nock": "13.5.4",
+    "ts-jest": "29.1.5",
+    "typescript": "5.4.5"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "coverageThreshold": {
+      "global": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      }
+    },
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/**/__tests__/**"
+    ]
+  }
+}
