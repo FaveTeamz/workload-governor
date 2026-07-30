@@ -24,3 +24,25 @@ export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 export type UpdateIssueInput = z.infer<typeof updateIssueSchema>;
 export type IssueParams = z.infer<typeof issueParamsSchema>;
 export type IssueQuery = z.infer<typeof issueQuerySchema>;
+
+export const applyIssueSchema = z.object({
+  contributor: z
+    .string({ required_error: 'contributor is required' })
+    .min(50, 'invalid stellar address')
+    .max(56, 'invalid stellar address')
+    .regex(/^G[A-Z2-7]+$/, 'invalid stellar address'),
+  org_id: z
+    .string({ required_error: 'org_id is required' })
+    .min(1, 'org_id is required'),
+  issue_id: z.union([
+    z.string().min(1, 'issue_id is required'),
+    z.number().int().positive('issue_id must be positive'),
+  ], { required_error: 'issue_id is required' }).refine((val) => {
+    const num = Number(val);
+    return !isNaN(num) && num > 0;
+  }, { message: 'issue_id must be a positive number' }),
+  sequence: z.string().optional(),
+});
+
+export type ApplyIssueInput = z.infer<typeof applyIssueSchema>;
+
