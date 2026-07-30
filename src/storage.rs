@@ -67,18 +67,38 @@ pub const APP_TTL_MIN: u32 = 1;
 /// Maximum valid value for `APP_TTL_LEDGERS` (Soroban platform cap).
 pub const APP_TTL_MAX: u32 = 535_000;
 
-/// Default maximum number of pending applications a contributor may hold globally.
+/// Maximum number of pending applications a contributor may hold globally.
+/// This constant serves as the default when no persistent override has been set.
 pub const GLOBAL_APP_LIMIT: u32 = 15;
 
 /// Default maximum number of active assignments a contributor may hold per org
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum allowed value for a per-org cap set via `set_org_cap`.
-pub const ORG_CAP_MIN: u32 = 1;
+// ---------------------------------------------------------------------------
+// Persistent storage — Global cap override
+// ---------------------------------------------------------------------------
+// Key: `symbol_short!("g_cap")`
+// Value: `u32` (allowed range 0..=100)
 
-/// Maximum allowed value for a per-org cap set via `set_org_cap`.
-pub const ORG_CAP_MAX: u32 = 20;
+fn global_cap_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the currently configured global application cap. If no persistent value
+/// exists, returns the compile-time `GLOBAL_APP_LIMIT` default.
+pub(crate) fn get_global_cap(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&global_cap_key())
+        .unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Writes the persistent global application cap value.
+pub(crate) fn set_global_cap(env: &Env, cap: u32) {
+    env.storage().persistent().set(&global_cap_key(), &cap);
+}
+
 
 /// TTL threshold/extend-to for the contract instance (persistent) entry.
 /// ~30 days at 5 s/ledger — keeps the contract alive between operator bumps.

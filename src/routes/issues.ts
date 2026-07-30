@@ -6,10 +6,13 @@ import { issueQuerySchema } from '../schemas/issues';
 
 const router = Router();
 
-// Public routes (optional authentication)
-router.get('/', getIssues);
-router.get('/stats', getIssueStats);
-router.get('/:id', getIssueById);
+interface IssuesListParams {
+  org_id?: string;
+  status?: string;
+  search?: string;
+  page?: string;
+  limit?: string;
+}
 
 interface IssueRow {
   id: number;
