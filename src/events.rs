@@ -108,3 +108,24 @@ pub(crate) fn emit_assignment_revoked(
     let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_global_cap` when the operator updates the cap via the normal path.
+///
+/// topics: `(symbol_short!("cap_upd"), admin)`
+/// data:   `(admin, new_cap)`
+pub(crate) fn emit_global_cap_updated(env: &Env, admin: &Address, new_cap: u32) {
+    let topics = (symbol_short!("cap_upd"), admin.clone());
+    let data = (admin.clone(), new_cap);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `emergency_set_global_cap` when the admin performs an immediate cap change
+/// to unblock contributors during a wave.
+///
+/// topics: `(symbol_short!("cap_emg"), admin)`
+/// data:   `(admin, new_cap)`
+pub(crate) fn emit_emergency_cap_updated(env: &Env, admin: &Address, new_cap: u32) {
+    let topics = (symbol_short!("cap_emg"), admin.clone());
+    let data = (admin.clone(), new_cap);
+    env.events().publish(topics, data);
+}
