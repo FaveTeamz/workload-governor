@@ -161,6 +161,17 @@ export class SorobanService {
     return this.buildRaw(sourceAddress, sequence, fnName, args);
   }
 
+  async getAccountSequence(address: string): Promise<string> {
+    try {
+      const account = await this.server.getAccount(address);
+      return typeof account.sequenceNumber === 'function'
+        ? account.sequenceNumber()
+        : (account as any).sequence ?? '1';
+    } catch {
+      return '1';
+    }
+  }
+
   private parseContractError(errorMessage: string): SorobanContractError {
     // Try to extract error code from Soroban error message
     const codeMatch = errorMessage.match(/error code=(\d+)/);

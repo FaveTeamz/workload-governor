@@ -11,8 +11,7 @@ import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { OrgIssuesPage } from "./pages/OrgIssuesPage";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import NetworkBanner from "../components/NetworkBanner";
+import { ContributorProfilePage } from "./pages/ContributorProfilePage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -110,10 +109,37 @@ export default function App() {
       />
 
       <Routes>
-        <Route path="/dashboard" element={<DashboardPage apiBase="/api" />} />
-        <Route path="/orgs/:org_id/issues" element={<OrgIssuesPage apiBase="/api" />} />
-        <Route path="/issues/:org_id/:issue_id" element={<IssueDetailPage apiBase="/api" />} />
-        <Route path="/admin/register-org" element={<RegisterOrgPage apiBase="/api" />} />
+        {/* Contributor dashboard */}
+        <Route
+          path="/dashboard"
+          element={<DashboardPage apiBase="/api" />}
+        />
+
+        {/* Org issue browser with apply/withdraw */}
+        <Route
+          path="/orgs/:org_id/issues"
+          element={<OrgIssuesPage apiBase="/api" />}
+        />
+
+        {/* Issue detail view */}
+        <Route
+          path="/issues/:org_id/:issue_id"
+          element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Admin: register new organisation */}
+        <Route
+          path="/admin/register-org"
+          element={<RegisterOrgPage apiBase="/api" />}
+        />
+
+        {/* Contributor public profile */}
+        <Route
+          path="/contributor/:address"
+          element={<ContributorProfilePage />}
+        />
+
+        {/* Default: home */}
         <Route path="*" element={<HomePage />} />
       </Routes>
     </ToastProvider>
