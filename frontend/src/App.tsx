@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
-import { ToastContainer, useToast } from "./components/Toast";
+import { ToastProvider, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { OrgIssuesPage } from "./pages/OrgIssuesPage";
-import { DesignSystemPage } from "./pages/DesignSystemPage";
+import { ContributorProfilePage } from "./pages/ContributorProfilePage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -54,13 +54,13 @@ function HomePage() {
   async function handleComplete(asgn: Assignment) {
     await new Promise((resolve) => window.setTimeout(resolve, 400));
     setAssignments((prev) => prev.filter((item) => item.id !== asgn.id));
-    addToast(`Completed "${asgn.issueTitle}".`, "success");
+    addToast(`"${asgn.issueTitle}" marked as complete.`, "success");
   }
 
   async function handleRevoke(asgn: Assignment) {
     await new Promise((resolve) => window.setTimeout(resolve, 400));
     setAssignments((prev) => prev.filter((item) => item.id !== asgn.id));
-    addToast(`Revoked "${asgn.issueTitle}".`, "success");
+    addToast(`Assignment for "${asgn.issueTitle}" revoked.`, "info");
   }
 
   return (
@@ -83,7 +83,9 @@ function HomePage() {
         {loading && <p className="app-main__status">Loading demo data…</p>}
       </main>
 
-      <OnboardingWizard />
+      <ErrorBoundary>
+        <OnboardingWizard />
+      </ErrorBoundary>
     </>
   );
 }
@@ -95,10 +97,12 @@ export default function App() {
   const isProduction = import.meta.env.PROD;
 
   return (
-    <>
+    <ToastProvider>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
+
+      <NetworkBanner />
 
       <NavBar
         walletAddress={wallet.publicKey}
@@ -123,10 +127,34 @@ export default function App() {
             )
           }
         />
+
+        {/* Org issue browser with apply/withdraw */}
+        <Route
+          path="/orgs/:org_id/issues"
+          element={<OrgIssuesPage apiBase="/api" />}
+        />
+
+        {/* Issue detail view */}
+        <Route
+          path="/issues/:org_id/:issue_id"
+          element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Admin: register new organisation */}
+        <Route
+          path="/admin/register-org"
+          element={<RegisterOrgPage apiBase="/api" />}
+        />
+
+        {/* Contributor public profile */}
+        <Route
+          path="/contributor/:address"
+          element={<ContributorProfilePage />}
+        />
+
+        {/* Default: home */}
         <Route path="*" element={<HomePage />} />
       </Routes>
-
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </>
+    </ToastProvider>
   );
 }

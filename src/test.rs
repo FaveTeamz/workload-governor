@@ -528,9 +528,11 @@ fn unit_event_initialized_has_two_topics() {
     t.client.initialize(&admin);
 
     let events = t.env.events().all();
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let payload = soroban_sdk::vec![&t.env, 1u32, admin.clone()];
+    assert_eq!(data, payload.into_val(&t.env));
 }
 
 #[test]
@@ -547,9 +549,11 @@ fn unit_event_application_submitted_has_two_topics() {
 
     let events = t.env.events().all();
     assert!(!events.is_empty());
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let payload = soroban_sdk::vec![&t.env, 1u32, contributor.clone(), org.clone(), 5u32];
+    assert_eq!(data, payload.into_val(&t.env));
 }
 
 // ---------------------------------------------------------------------------
