@@ -401,6 +401,17 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
           ))}
         </div>
       )}
+
+      {/* Withdraw confirmation modal */}
+      <WithdrawConfirmModal
+        target={withdraw.pendingTarget}
+        loading={withdraw.loading}
+        onConfirm={withdraw.handleConfirm}
+        onCancel={withdraw.handleCancel}
+      />
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </main>
   );
 }
