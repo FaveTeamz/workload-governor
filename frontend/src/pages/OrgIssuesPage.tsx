@@ -10,11 +10,15 @@
  *  - Optimistic UI update after transaction submitted
  *  - Transaction spinner → Stellar Explorer deeplink on success
  *  - Wallet not connected → prompt to connect
+ *  - Withdraw shows confirmation dialog then triggers on-chain tx
  */
 import { useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useOrgIssues, type OrgIssue, type IssueStatus } from '../hooks/useOrgIssues';
+import { useToast, ToastContainer } from '../components/Toast';
+import { WithdrawConfirmModal } from '../components/WithdrawConfirmModal';
+import { useWithdraw } from '../hooks/useWithdraw';
 import './OrgIssuesPage.css';
 
 const GLOBAL_CAP = 15;
@@ -136,6 +140,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   const [busyIssue, setBusyIssue] = useState<string | null>(null);
   const [txHash, setTxHash]       = useState<string | null>(null);
+  const { toasts, add: addToast, remove: removeToast } = useToast();
 
   // ── Cap logic ──────────────────────────────────────────────────────────
   const globalCapReached = globalAppCount >= GLOBAL_CAP;
@@ -146,6 +151,23 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   if (!wallet.publicKey)       capReachedReason = 'Connect your wallet to apply.';
   else if (globalCapReached)   capReachedReason = `Global limit reached: ${globalAppCount}/${GLOBAL_CAP} applications.`;
   else if (orgCapReached)      capReachedReason = `Org limit reached: ${orgAssignCount}/${ORG_CAP} assignments.`;
+
+  // ── Withdraw flow (on-chain via confirmation modal) ────────────────────
+  const withdraw = useWithdraw({
+    publicKey: wallet.publicKey,
+    apiBase,
+    onSuccess: (issueId) => {
+      setIssueStatus(issueId, 'open');
+      setBusyIssue(null);
+      addToast('Application withdrawn successfully.', 'success');
+      // Refresh counts
+      void refresh();
+    },
+    onError: (msg) => {
+      setBusyIssue(null);
+      addToast(`Withdraw failed: ${msg}`, 'error');
+    },
+  });
 
   // ── Action handlers ────────────────────────────────────────────────────
   async function handleApply(issueId: string) {
@@ -167,35 +189,26 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
       const data = await res.json() as { tx_hash?: string };
       if (data.tx_hash) setTxHash(data.tx_hash);
 
+      addToast('Application submitted!', 'success');
       // Success — keep optimistic state
     } catch (err) {
       // Revert optimistic
       setIssueStatus(issueId, 'open');
-      alert(`Apply failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      addToast(`Apply failed: ${err instanceof Error ? err.message : 'unknown error'}`, 'error');
     } finally {
       setBusyIssue(null);
     }
   }
 
-  async function handleWithdraw(issueId: string) {
-    if (!wallet.publicKey) return;
+  function handleWithdraw(issueId: string) {
+    const issue = issues.find((i) => i.issue_id === issueId);
+    if (!issue) return;
     setBusyIssue(issueId);
-    setTxHash(null);
-
-    try {
-      setIssueStatus(issueId, 'open');
-
-      const res = await fetch(
-        `${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply?contributor=${encodeURIComponent(wallet.publicKey)}`,
-        { method: 'DELETE' },
-      );
-      if (!res.ok) throw new Error(`Withdraw failed: ${res.status}`);
-    } catch (err) {
-      setIssueStatus(issueId, 'applied');
-      alert(`Withdraw failed: ${err instanceof Error ? err.message : 'unknown error'}`);
-    } finally {
-      setBusyIssue(null);
-    }
+    withdraw.initiateWithdraw({
+      issueId,
+      issueTitle: issue.title,
+      orgId: org_id ?? issue.org_id,
+    });
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -272,6 +285,17 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
           ))}
         </div>
       )}
+
+      {/* Withdraw confirmation modal */}
+      <WithdrawConfirmModal
+        target={withdraw.pendingTarget}
+        loading={withdraw.loading}
+        onConfirm={withdraw.handleConfirm}
+        onCancel={withdraw.handleCancel}
+      />
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </main>
   );
 }
