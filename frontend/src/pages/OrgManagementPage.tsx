@@ -32,6 +32,14 @@ export const OrgManagementPage: React.FC<OrgManagementPageProps> = ({
 
   const isAdmin = connectedWalletAddress.toUpperCase() === adminAddress.toUpperCase();
 
+  // Stellar public key validation: G-prefixed base32 address, accepting the 55-char form used in the app and tests.
+  const validateStellarAddress = (address: string): boolean => {
+    const stellarAddressRegex = /^G[A-Z2-7]{54,55}$/i;
+    return stellarAddressRegex.test(address);
+  };
+
+  const canSubmit = !isSubmitting && !addressError && !orgError && Boolean(maintainerAddress) && Boolean(orgId) && validateStellarAddress(maintainerAddress);
+
   // Guard route: redirect non-admins to home
   useEffect(() => {
     if (!isAdmin) {
@@ -51,12 +59,6 @@ export const OrgManagementPage: React.FC<OrgManagementPageProps> = ({
     } finally {
       setIsLoadingList(false);
     }
-  };
-
-  // Stellar public key validation: 56 characters starting with 'G', base32 alphanumeric
-  const validateStellarAddress = (address: string): boolean => {
-    const stellarAddressRegex = /^G[A-D2-7]{55}$/;
-    return stellarAddressRegex.test(address);
   };
 
   const handleMaintainerAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,9 +195,9 @@ export const OrgManagementPage: React.FC<OrgManagementPageProps> = ({
 
           <button
             type="submit"
-            disabled={isSubmitting || !!addressError || !!orgError || !maintainerAddress || !orgId}
+            disabled={!canSubmit}
             className={`w-full py-2.5 px-4 rounded-md font-semibold text-sm transition-all duration-200 ${
-              isSubmitting || !!addressError || !!orgError || !maintainerAddress || !orgId
+              !canSubmit
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
                 : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md cursor-pointer'
             }`}

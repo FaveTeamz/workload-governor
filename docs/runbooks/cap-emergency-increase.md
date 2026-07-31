@@ -1,109 +1,48 @@
-# Runbook: Contributor Cap Emergency Increase
+Cap emergency increase runbook
 
-Increases the global application cap (default 15) or the per-org assignment cap (default 4) in response to an operational emergency. This change requires a governance vote and a contract upgrade because both limits are compile-time constants.
+Purpose
 
-## Prerequisites
+When a wave experiences an unexpectedly high surge of contributors joining simultaneously, the global pending-application cap may block legitimate contributors from participating. This runbook documents when and how to use an emergency cap increase, the approval process, rollback steps, and monitoring/alerts.
 
-- Governance vote passed and recorded (link the vote in your incident report)
-- Admin keypair (`ADMIN_SECRET`)
-- Contract ID (`CONTRACT_ID`)
-- Stellar CLI installed
+When to use
 
----
+- Use only when monitoring or operator reports show a sudden, sustained supply-side blockage (many contributors unable to apply) that impacts wave throughput.
+- Do NOT use for routine tuning or to workaround bugs in contributor clients.
+- Confirm incident characteristics: a) spike in failed application attempts; b) application backlog increasing; c) normal operator interventions (e.g., TTL) don't resolve quickly.
 
-## Steps
+Approval process
 
-### 1. Hold the governance vote
+- Owner: protocol operators / on-call.
+- Emergency cap changes require one admin to approve and execute the emergency_set_global_cap(admin, new_cap) contract call.
+- When possible, notify the broader ops on-call and an engineering lead before change; if not possible due to urgency, execute and document immediately afterwards.
 
-Cap changes must be approved before any code change. Document:
+How to execute
 
-- Proposed new global cap (`NEW_GLOBAL_CAP`)
-- Proposed new org cap (`NEW_ORG_CAP`)
-- Vote outcome and link (e.g. GitHub Discussion or on-chain proposal)
+1. Choose a conservative temporary cap increase (e.g. from 15 to 30) — prefer the smallest change that restores flow.
+2. Call the on-chain function emergency_set_global_cap(admin, new_cap) from the admin address.
+   - This function requires admin auth and immediately changes the cap.
+   - It emits an EmergencyCapUpdated event for monitoring.
+3. Record rationale, chosen cap, expected duration, and who approved in the incident log.
 
-Do **not** proceed until the vote passes.
+Rollback procedure
 
-### 2. Update the constants in source
+- Monitor the system for the desired throughput improvement.
+- When the surge subsides, rollback to the previous cap using set_global_cap(admin, previous_value) (normal operator path) or emergency_set_global_cap if immediate rollback is required.
+- Document the rollback time, actor, and reason.
 
-Edit `src/storage.rs`:
+Monitoring and alerts
 
-```rust
-// Before
-pub const GLOBAL_APP_LIMIT: u32 = 15;
-pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
+- Emergency cap updates emit an `EmergencyCapUpdated` event. Monitor the event stream for unexpected cap usage.
+- Add an alert: trigger if the global cap has been changed more than twice in a 24-hour window. Criteria:
+  - Count both normal (`GlobalCapUpdated`) and emergency (`EmergencyCapUpdated`) updates.
+  - If > 2 changes in 24h, page on-call and create an incident ticket to investigate root cause (frequent manual changes indicate oscillation or underlying issue).
 
-// After (example: raise global cap to 20)
-pub const GLOBAL_APP_LIMIT: u32 = 20;
-pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
-```
+Post-incident actions
 
-Update the README `## Error Codes` table with the new limits.
+- After rollback, run a short post-mortem: why did the surge occur, was the cap change effective, any client or infra fixes required?
+- If the incident required more than two emergency adjustments in 24 hours, escalate to platform engineering for a permanent fix.
 
-### 3. Run all tests
+Notes
 
-```bash
-cargo test --features testutils
-# Expected output: test result: ok. N passed; 0 failed
-```
-
-Fix any failing tests (property tests reference the old cap values and must be updated to match).
-
-### 4. Build, optimise, and upload
-
-```bash
-stellar contract build
-stellar contract optimize \
-  --wasm target/wasm32v1-none/release/workload_governor.wasm
-
-stellar contract upload \
-  --wasm target/wasm32v1-none/release/workload_governor.optimized.wasm \
-  --network testnet \
-  --source "$ADMIN_SECRET"
-# Expected output: <NEW_WASM_HASH>
-export NEW_WASM_HASH=<output>
-```
-
-### 5. Upgrade the contract
-
-```bash
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network testnet \
-  --source "$ADMIN_SECRET" \
-  -- upgrade \
-  --new_wasm_hash "$NEW_WASM_HASH"
-# Expected output: null
-```
-
-### 6. Verify the new caps
-
-```bash
-# Confirm a contributor can now apply for more than the old limit
-# (requires a test account with existing applications)
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network testnet \
-  -- get_global_application_capacity \
-  --contributor "$TEST_CONTRIBUTOR"
-# Expected output: capacity reflecting the new limit
-```
-
-### 7. Update monitoring alerts
-
-If you have CloudWatch or Datadog alerts based on the old cap values, update the thresholds to match the new constants.
-
----
-
-## Rollback
-
-To revert the cap increase, restore the original constants in `src/storage.rs`, re-run tests, build/upload, and call `upgrade` with the reverted WASM hash.
-
----
-
-## Troubleshooting
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| Test failures after constant change | Property tests reference hardcoded limit | Update `15` / `4` literals in `src/test.rs` |
-| `UnauthorizedAdmin` on upgrade | Wrong signing key | Use the original admin keypair |
-| `OrgAssignmentLimitReached` still fires | Old WASM still in use | Confirm `upgrade` transaction was finalised |
+- The on-chain cap is range-limited to 0..=100 to prevent misconfiguration.
+- Emergency changes take effect immediately and are designed to unblock contributors during active waves; prefer narrowly-scoped, short-duration changes.

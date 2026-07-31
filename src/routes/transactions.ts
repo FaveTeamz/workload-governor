@@ -4,14 +4,14 @@ import { Transaction } from '@stellar/stellar-sdk';
 import { verifyTransactionXdr } from '../xdrVerifier';
 import { logger } from '../logger';
 import { validateBody } from '../middleware/validation';
+import { pool } from '../db';
+import { applyIssueSchema, ApplyIssueInput } from '../schemas/issues';
 import {
-  applySchema,
   withdrawSchema,
   assignSchema,
   completeSchema,
   revokeSchema,
   submitSchema,
-  ApplyInput,
   WithdrawInput,
   AssignInput,
   CompleteInput,
@@ -25,9 +25,10 @@ const soroban = new SorobanService();
 interface TransactionResponse {
   xdr: string;
   fee: string;
-  instructions: number;
-  readBytes: number;
-  writeBytes: number;
+  instructions?: number;
+  readBytes?: number;
+  writeBytes?: number;
+  network_passphrase?: string;
 }
 
 async function buildAndSimulate(
@@ -51,11 +52,94 @@ async function buildAndSimulate(
   }
 }
 
-router.post('/apply', validateBody(applySchema), (req: Request, res: Response) => {
-  const { contributor, org_id, issue_id, sequence } = req.body as ApplyInput;
-  buildAndSimulate(res, () =>
-    soroban.buildApplyTx(contributor, org_id, Number(issue_id), sequence),
-  );
+router.post('/apply', validateBody(applyIssueSchema), async (req: Request, res: Response) => {
+  try {
+    const { contributor, org_id, issue_id, sequence } = req.body as ApplyIssueInput;
+    const issueIdNum = parseInt(String(issue_id), 10);
+
+    // 1. Check if contributor already applied
+    if (pool && typeof pool.query === 'function') {
+      const appCheck = await pool.query(
+        'SELECT id FROM applications WHERE contributor = $1 AND org_id = $2 AND issue_id = $3 LIMIT 1',
+        [contributor, org_id, issueIdNum],
+      );
+      if (appCheck.rows && appCheck.rows.length > 0) {
+        return res.status(409).json({ error: 'Contributor has already applied for this issue' });
+      }
+    }
+
+    try {
+      const alreadyAppliedOnChain = await soroban.hasApplied(contributor, org_id, issueIdNum);
+      if (alreadyAppliedOnChain) {
+        return res.status(409).json({ error: 'Contributor has already applied for this issue' });
+      }
+    } catch {
+      // Ignore simulation/soroban lookup error during fallback check
+    }
+
+    // 2. Check Global / Org caps
+    if (pool && typeof pool.query === 'function') {
+      // Global cap check
+      const globalAppsRes = await pool.query<{ count: string }>(
+        'SELECT COUNT(*) as count FROM applications WHERE contributor = $1 AND status = $2',
+        [contributor, 'pending'],
+      );
+      const globalAppsCount = parseInt(globalAppsRes.rows[0]?.count ?? '0', 10);
+      const GLOBAL_CAP = 15;
+      if (globalAppsCount >= GLOBAL_CAP) {
+        return res.status(429).json({
+          error: 'Global application cap reached',
+          details: { cap_type: 'global', limit: GLOBAL_CAP, current: globalAppsCount },
+        });
+      }
+
+      // Org cap check
+      const orgCapRes = await pool.query<{ org_cap: number }>(
+        'SELECT org_cap FROM orgs WHERE org_id = $1 LIMIT 1',
+        [org_id],
+      );
+      const orgCap = orgCapRes.rows[0]?.org_cap ?? 4;
+      const orgAppsRes = await pool.query<{ count: string }>(
+        'SELECT COUNT(*) as count FROM applications WHERE contributor = $1 AND org_id = $2 AND status = $3',
+        [contributor, org_id, 'pending'],
+      );
+      const orgAppsCount = parseInt(orgAppsRes.rows[0]?.count ?? '0', 10);
+      if (orgAppsCount >= orgCap) {
+        return res.status(429).json({
+          error: 'Org application cap reached',
+          details: { cap_type: 'org', limit: orgCap, current: orgAppsCount },
+        });
+      }
+    }
+
+    // 3. Fetch sequence number if not explicitly supplied
+    let seq = sequence;
+    if (!seq) {
+      seq = await soroban.getAccountSequence(contributor);
+    }
+
+    // 4. Build unsigned XDR transaction
+    const tx = soroban.buildApplyTx(contributor, org_id, issueIdNum, seq);
+    let fee = '100';
+    try {
+      const estimate = await soroban.simulate(tx);
+      fee = estimate.fee || '100';
+    } catch {
+      // Use default base fee if simulation fails
+    }
+
+    const network_passphrase =
+      process.env.STELLAR_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015';
+
+    return res.json({
+      xdr: tx.toXDR(),
+      fee,
+      network_passphrase,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'failed to build apply transaction';
+    return res.status(500).json({ error: msg });
+  }
 });
 
 router.post('/withdraw', validateBody(withdrawSchema), (req: Request, res: Response) => {
