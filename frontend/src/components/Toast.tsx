@@ -1,93 +1,93 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
-export type ToastType = "success" | "error" | "info" | "pending";
+export type ToastType = "success" | "error" | "warning" | "info";
 
 export interface Toast {
   id: number;
   message: string;
   type: ToastType;
+  duration: number;
 }
+
+interface ToastOptions {
+  duration?: number;
+}
+
+interface ToastContextValue {
+  toasts: Toast[];
+  add: (message: string, type?: ToastType, options?: ToastOptions) => void;
+  remove: (id: number) => void;
+}
+
+const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
 let _nextId = 0;
 
-export function useToast() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  // Track timeout handles so we can cancel them when a toast is updated
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [visibleToasts, setVisibleToasts] = useState<Toast[]>([]);
+  const [queuedToasts, setQueuedToasts] = useState<Toast[]>([]);
+  const visibleRef = useRef<Toast[]>([]);
+  const queuedRef = useRef<Toast[]>([]);
 
-  const remove = useCallback((id: number) => {
-    clearTimeout(timers.current.get(id));
-    timers.current.delete(id);
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  const add = useCallback((message: string, type: ToastType = "info", options: ToastOptions = {}) => {
+    const toast: Toast = {
+      id: ++_nextId,
+      message,
+      type,
+      duration: options.duration ?? 5000,
+    };
+
+    if (visibleRef.current.length >= 3) {
+      queuedRef.current = [...queuedRef.current, toast];
+      setQueuedToasts(queuedRef.current);
+      return;
+    }
+
+    visibleRef.current = [...visibleRef.current, toast];
+    setVisibleToasts(visibleRef.current);
+
+    window.setTimeout(() => remove(toast.id), toast.duration);
   }, []);
 
-  const add = useCallback(
-    (message: string, type: ToastType = "info"): number => {
-      const id = ++_nextId;
-      setToasts((prev) => [...prev, { id, message, type }]);
+  const remove = useCallback((id: number) => {
+    visibleRef.current = visibleRef.current.filter((toast) => toast.id !== id);
+    setVisibleToasts(visibleRef.current);
 
-      // Pending toasts stay until explicitly updated/removed
-      if (type !== "pending") {
-        const handle = setTimeout(() => {
-          timers.current.delete(id);
-          setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 4000);
-        timers.current.set(id, handle);
-      }
+    if (queuedRef.current.length > 0) {
+      const [nextToast, ...rest] = queuedRef.current;
+      queuedRef.current = rest;
+      setQueuedToasts(rest);
+      visibleRef.current = [...visibleRef.current, nextToast];
+      setVisibleToasts(visibleRef.current);
+      window.setTimeout(() => remove(nextToast.id), nextToast.duration);
+    }
+  }, []);
 
-      return id;
-    },
-    []
-  );
-
-  /**
-   * Replace a pending toast (by id) with a resolved success/error/info toast.
-   * The resolved toast auto-dismisses after 4 s.
-   */
-  const update = useCallback(
-    (id: number, message: string, type: Exclude<ToastType, "pending">) => {
-      // Cancel any existing timer for this id (shouldn't exist for pending, but
-      // guard anyway)
-      clearTimeout(timers.current.get(id));
-      timers.current.delete(id);
-
-      setToasts((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, message, type } : t))
-      );
-
-      const handle = setTimeout(() => {
-        timers.current.delete(id);
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 4000);
-      timers.current.set(id, handle);
-    },
-    []
-  );
-
-  return { toasts, add, update, remove };
-}
-
-interface Props {
-  toasts: Toast[];
-  onRemove: (id: number) => void;
-}
-
-export function ToastContainer({ toasts, onRemove }: Props) {
   return (
-    // aria-live="assertive" so screen readers announce immediately
-    <div
-      className="toast-container"
-      role="region"
-      aria-label="Notifications"
-      aria-live="assertive"
-      aria-atomic="false"
-      aria-relevant="additions"
-    >
-      {toasts.map((t) => (
-        <ToastItem key={t.id} toast={t} onRemove={onRemove} />
-      ))}
-    </div>
+    <ToastContext.Provider value={{ toasts: visibleToasts, add, remove }}>
+      {children}
+      <div
+        className="toast-container"
+        role="region"
+        aria-label="Notifications"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-relevant="additions"
+      >
+        {visibleToasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onRemove={remove} />
+        ))}
+      </div>
+    </ToastContext.Provider>
   );
+}
+
+export function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error("useToast must be used inside ToastProvider");
+  }
+  return context;
 }
 
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) => void }) {
@@ -97,10 +97,14 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) =
     ref.current?.focus();
   }, []);
 
+  const liveRole = toast.type === "error" ? "alert" : "status";
+  const liveValue = toast.type === "error" ? "assertive" : "polite";
+
   return (
     <div
       ref={ref}
-      role="alert"
+      role={liveRole}
+      aria-live={liveValue}
       className={`toast toast-${toast.type}`}
       tabIndex={-1}
       aria-busy={toast.type === "pending"}
@@ -109,16 +113,14 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) =
         <span className="toast-spinner" aria-hidden="true" />
       )}
       <span>{toast.message}</span>
-      {/* Don't show dismiss button on pending — it will be replaced */}
-      {toast.type !== "pending" && (
-        <button
-          className="toast-close"
-          onClick={() => onRemove(toast.id)}
-          aria-label="Dismiss notification"
-        >
-          ✕
-        </button>
-      )}
+      <button
+        className="toast-close"
+        onClick={() => onRemove(toast.id)}
+        aria-label="Dismiss notification"
+        type="button"
+      >
+        ✕
+      </button>
     </div>
   );
 }

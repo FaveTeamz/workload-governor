@@ -1,0 +1,39 @@
+[package]
+name = "workload-governor-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+workload-governor = { path = "..", features = ["testutils"] }
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+
+# Disable overflow checks for fuzz targets so arithmetic panics surface as
+# sanitizer findings rather than Rust's own abort.
+[profile.release]
+panic = "abort"
+opt-level = 3
+debug = false
+lto = false
+
+[[bin]]
+name = "fuzz_apply"
+path = "fuzz_targets/fuzz_apply.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_assign"
+path = "fuzz_targets/fuzz_assign.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_batch_apply"
+path = "fuzz_targets/fuzz_batch_apply.rs"
+test = false
+doc = false
