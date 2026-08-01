@@ -3,6 +3,9 @@
  *
  * In production NODE_ENV the transport is the raw JSON stream.
  * In development it uses pino-pretty for human-readable output.
+ *
+ * Log level is fully configurable via the LOG_LEVEL environment variable.
+ * Valid values: error | warn | info | debug | trace  (default: info in production, debug in dev)
  */
 
 import pino from "pino";

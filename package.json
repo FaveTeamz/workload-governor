@@ -50,6 +50,7 @@
     "@types/node": "20.14.14",
     "@types/pg": "8.11.6",
     "@types/supertest": "6.0.2",
+    "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "7.16.1",
     "@typescript-eslint/parser": "7.16.1",
     "@vitejs/plugin-react": "^6.0.3",
