@@ -107,7 +107,11 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) =
       aria-live={liveValue}
       className={`toast toast-${toast.type}`}
       tabIndex={-1}
+      aria-busy={toast.type === "pending"}
     >
+      {toast.type === "pending" && (
+        <span className="toast-spinner" aria-hidden="true" />
+      )}
       <span>{toast.message}</span>
       <button
         className="toast-close"
