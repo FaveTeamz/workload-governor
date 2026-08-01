@@ -20,25 +20,46 @@ const DEMO_ASGNS: Assignment[] = [
 export default function App() {
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
-  const { toasts, add: addToast, remove: removeToast } = useToast();
+  const { toasts, add: addToast, update: updateToast, remove: removeToast } = useToast();
 
   async function handleAssign(app: Application) {
-    await new Promise((r) => setTimeout(r, 400)); // simulate network
-    setApplications((prev) => prev.filter((a) => a.id !== app.id));
-    setAssignments((prev) => [...prev, { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle }]);
-    addToast(`Assigned "${app.issueTitle}" to ${app.contributor.slice(0, 8)}…`, "success");
+    const toastId = addToast(`Assigning "${app.issueTitle}"…`, "pending");
+    try {
+      await new Promise((r) => setTimeout(r, 400)); // simulate network
+      setApplications((prev) => prev.filter((a) => a.id !== app.id));
+      setAssignments((prev) => [
+        ...prev,
+        { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle },
+      ]);
+      updateToast(toastId, `Assigned "${app.issueTitle}" to ${app.contributor.slice(0, 8)}…`, "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to assign issue. Please try again.";
+      updateToast(toastId, message, "error");
+    }
   }
 
   async function handleComplete(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
-    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Completed "${asgn.issueTitle}"`, "success");
+    const toastId = addToast(`Completing "${asgn.issueTitle}"…`, "pending");
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
+      updateToast(toastId, `Completed "${asgn.issueTitle}"`, "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to complete assignment. Please try again.";
+      updateToast(toastId, message, "error");
+    }
   }
 
   async function handleRevoke(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
-    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Revoked "${asgn.issueTitle}"`, "info");
+    const toastId = addToast(`Revoking "${asgn.issueTitle}"…`, "pending");
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
+      updateToast(toastId, `Revoked "${asgn.issueTitle}"`, "info");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to revoke assignment. Please try again.";
+      updateToast(toastId, message, "error");
+    }
   }
 
   return (
