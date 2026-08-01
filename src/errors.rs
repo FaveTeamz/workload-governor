@@ -58,7 +58,14 @@ pub enum ContractError {
     /// Discriminant: `11`.
     AlreadyAssigned = 11,
 
-    /// Provided cap was out of the allowed range (0-100).
+    /// The requested global cap value is outside the permitted range `[0, 100]`.
+    /// Returned by `emergency_set_global_cap` when `new_cap > 100`.
     /// Discriminant: `12`.
-    InvalidCap = 12,
+    CapOutOfRange = 12,
+
+    /// The specified maintainer is not registered for the given organisation.
+    /// Returned by `deregister_maintainer` when attempting to deregister a maintainer
+    /// that was never registered (or was already deregistered).
+    /// Discriminant: `17`.
+    MaintainerNotFound = 17,
 }

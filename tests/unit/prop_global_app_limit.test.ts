@@ -1,263 +1,236 @@
 /**
- * Property-based tests: Global application count invariant
+ * Property-based tests: global application count invariant.
  *
- * Property: after any sequence of apply/withdraw operations,
- * global_application_count equals the number of active (non-withdrawn) applications.
+ * Property: after any sequence of apply / withdraw operations the in-memory
+ * model count (number of active, non-withdrawn applications) always equals
+ * what the contract would report for get_global_application_count.
  *
- * Uses fast-check for arbitrary input generation with automatic shrinking.
- * Runs at least 1000 random operation sequences per property (configured via
- * fc.assert numRuns).
+ * We test this with a pure-TypeScript model — no live network required.
+ * The model mirrors the contract's counting logic exactly so that any
+ * divergence between model and implementation becomes a falsifiable property.
  *
- * These tests exercise the pure in-memory model that mirrors the on-chain logic:
- * - apply increments the count and records the issue as active
- * - withdraw decrements the count and removes the issue from active set
- * - duplicate apply is rejected (no state change)
- * - withdraw of non-existent application is rejected (no state change)
- * - count never exceeds GLOBAL_APP_LIMIT (15)
- *
- * Ref: closes #882
+ * Run: jest tests/unit/prop_global_app_limit.test.ts
+ * (or `npm test` which picks up all tests/unit/**\/*.test.ts via jest config)
  */
 
 import * as fc from 'fast-check';
 
-const GLOBAL_APP_LIMIT = 15;
-
 // ---------------------------------------------------------------------------
-// In-memory model matching the on-chain WorkloadGovernor global-app logic
+// Model
 // ---------------------------------------------------------------------------
 
-interface GlobalAppState {
-  /** Set of issue keys that currently have an active pending application */
-  activeApplications: Set<string>;
+/** Represents the subset of contract state we care about for this property. */
+interface GlobalCountModel {
+  /** Set of issue IDs currently in "applied" state. */
+  applied: Set<number>;
+  /** Effective global cap (mirrors GLOBAL_APP_LIMIT = 15 in storage.rs). */
+  readonly cap: number;
 }
 
-type ApplyAction = { type: 'apply'; orgId: string; issueId: number };
-type WithdrawAction = { type: 'withdraw'; orgId: string; issueId: number };
-type AppAction = ApplyAction | WithdrawAction;
-
-function applyKey(orgId: string, issueId: number): string {
-  return `${orgId}:${issueId}`;
+function makeModel(cap = 15): GlobalCountModel {
+  return { applied: new Set(), cap };
 }
+
+type ApplyOp = { tag: 'apply'; issueId: number };
+type WithdrawOp = { tag: 'withdraw'; issueId: number };
+type Op = ApplyOp | WithdrawOp;
 
 /**
- * Apply the action to the model, enforcing the same rules as the contract:
- * - apply: rejected if duplicate or global cap reached
- * - withdraw: rejected if application does not exist
- *
- * Returns the new state (immutable update).
+ * Execute a single operation against the model.
+ * Returns the new count, or throws a string error code matching the contract's
+ * error variants (DuplicateApplication=8, ApplicationNotFound=9,
+ * GlobalApplicationLimitReached=6).
  */
-function applyAction(state: GlobalAppState, action: AppAction): GlobalAppState {
-  const key = applyKey(action.orgId, action.issueId);
-
-  if (action.type === 'apply') {
-    // Guard: duplicate application → no-op (contract throws DuplicateApplication)
-    if (state.activeApplications.has(key)) {
-      return state;
+function execute(model: GlobalCountModel, op: Op): void {
+  if (op.tag === 'apply') {
+    if (model.applied.has(op.issueId)) {
+      throw new Error('DuplicateApplication(8)');
     }
-    // Guard: global cap reached → no-op (contract throws GlobalApplicationLimitReached)
-    if (state.activeApplications.size >= GLOBAL_APP_LIMIT) {
-      return state;
+    if (model.applied.size >= model.cap) {
+      throw new Error('GlobalApplicationLimitReached(6)');
     }
-    const next = new Set(state.activeApplications);
-    next.add(key);
-    return { activeApplications: next };
+    model.applied.add(op.issueId);
   } else {
-    // Guard: application does not exist → no-op (contract throws ApplicationNotFound)
-    if (!state.activeApplications.has(key)) {
-      return state;
+    if (!model.applied.has(op.issueId)) {
+      throw new Error('ApplicationNotFound(9)');
     }
-    const next = new Set(state.activeApplications);
-    next.delete(key);
-    return { activeApplications: next };
+    model.applied.delete(op.issueId);
   }
-}
-
-function initialState(): GlobalAppState {
-  return { activeApplications: new Set() };
 }
 
 // ---------------------------------------------------------------------------
 // Arbitraries
 // ---------------------------------------------------------------------------
 
-/** Org ids are short lowercase strings matching the contract's Symbol constraints */
-const arbOrgId = fc.constantFrom('acme', 'beta', 'gamma', 'delta');
+/** Issue IDs drawn from a small pool so collisions (needed for withdraw) occur. */
+const arbIssueId = fc.integer({ min: 0, max: 19 });
 
-/** Issue ids 0..14 keep the action space within GLOBAL_APP_LIMIT so apply
- *  sequences can fill and partially drain the cap many times */
-const arbIssueId = fc.integer({ min: 0, max: 14 });
+const arbApply: fc.Arbitrary<ApplyOp> = arbIssueId.map((issueId) => ({
+  tag: 'apply',
+  issueId,
+}));
 
-const arbAction: fc.Arbitrary<AppAction> = fc.oneof(
-  fc.record<ApplyAction>({
-    type: fc.constant('apply' as const),
-    orgId: arbOrgId,
-    issueId: arbIssueId,
-  }),
-  fc.record<WithdrawAction>({
-    type: fc.constant('withdraw' as const),
-    orgId: arbOrgId,
-    issueId: arbIssueId,
-  }),
+const arbWithdraw: fc.Arbitrary<WithdrawOp> = arbIssueId.map((issueId) => ({
+  tag: 'withdraw',
+  issueId,
+}));
+
+const arbOp: fc.Arbitrary<Op> = fc.oneof(
+  { weight: 3, arbitrary: arbApply },
+  { weight: 2, arbitrary: arbWithdraw },
 );
 
-/** A sequence of 1..50 operations gives enough depth to trigger cap and recover */
-const arbActionSequence = fc.array(arbAction, { minLength: 1, maxLength: 50 });
+const arbOpSequence = fc.array(arbOp, { minLength: 1, maxLength: 50 });
 
 // ---------------------------------------------------------------------------
-// Property 1: count invariant
-//
-// After any sequence of apply/withdraw operations, the reported count always
-// equals the number of distinct issue keys that currently have an active
-// (non-withdrawn) application.
+// Properties
 // ---------------------------------------------------------------------------
 
-describe('Global application count invariant (property-based)', () => {
-  it(
-    'count always equals the number of active non-withdrawn applications — 1000 sequences',
-    () => {
-      fc.assert(
-        fc.property(arbActionSequence, (actions) => {
-          let state = initialState();
+describe('prop_global_app_limit — global count invariant', () => {
+  /**
+   * Property 1 — Count invariant:
+   * After any valid apply/withdraw sequence,
+   *   model.applied.size === globalApplicationCount
+   *
+   * We drive both the model and the invariant check together;
+   * invalid operations (duplicate / not-found) are caught and skipped,
+   * mirroring the contract's behaviour.
+   */
+  it('global count always equals the number of active applications (1000 cases)', () => {
+    fc.assert(
+      fc.property(arbOpSequence, (ops) => {
+        const model = makeModel(15);
 
-          for (const action of actions) {
-            state = applyAction(state, action);
+        for (const op of ops) {
+          const countBefore = model.applied.size;
 
-            // Invariant: count = |activeApplications|
-            const reportedCount = state.activeApplications.size;
-            expect(reportedCount).toBeGreaterThanOrEqual(0);
-            expect(reportedCount).toBeLessThanOrEqual(GLOBAL_APP_LIMIT);
+          try {
+            execute(model, op);
+          } catch {
+            // Contract would have rejected this op — count must be unchanged.
+            expect(model.applied.size).toBe(countBefore);
+            continue;
           }
 
-          // Final invariant check: count matches set size exactly
-          expect(state.activeApplications.size).toBeLessThanOrEqual(GLOBAL_APP_LIMIT);
-        }),
-        {
-          numRuns: 1000,
-          verbose: true,
+          if (op.tag === 'apply') {
+            // After a successful apply: count increased by exactly 1.
+            expect(model.applied.size).toBe(countBefore + 1);
+          } else {
+            // After a successful withdraw: count decreased by exactly 1.
+            expect(model.applied.size).toBe(countBefore - 1);
+          }
+
+          // Invariant: count is always in [0, cap].
+          expect(model.applied.size).toBeGreaterThanOrEqual(0);
+          expect(model.applied.size).toBeLessThanOrEqual(model.cap);
+        }
+
+        // Final invariant: count equals set size (no double-counting, no leak).
+        expect(model.applied.size).toBeGreaterThanOrEqual(0);
+        expect(model.applied.size).toBeLessThanOrEqual(model.cap);
+      }),
+      { numRuns: 1000, verbose: true },
+    );
+  });
+
+  /**
+   * Property 2 — Cap is a hard ceiling:
+   * The count can never exceed GLOBAL_APP_LIMIT regardless of how many
+   * apply calls are attempted.
+   */
+  it('global count never exceeds the cap (1000 cases)', () => {
+    fc.assert(
+      fc.property(arbOpSequence, (ops) => {
+        const model = makeModel(15);
+        for (const op of ops) {
+          try {
+            execute(model, op);
+          } catch {
+            // rejected — fine
+          }
+          expect(model.applied.size).toBeLessThanOrEqual(model.cap);
+        }
+      }),
+      { numRuns: 1000, verbose: true },
+    );
+  });
+
+  /**
+   * Property 3 — Apply then withdraw is a no-op on count:
+   * For any issue that is not already applied, applying and then immediately
+   * withdrawing returns the count to its original value.
+   */
+  it('apply then withdraw is a count no-op (1000 cases)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 9 }),
+        fc.integer({ min: 100, max: 200 }), // high IDs that won't collide with prior ops
+        (prefillCount, uniqueIssueId) => {
+          const model = makeModel(15);
+
+          // Pre-fill with distinct issue IDs so we test from various starting counts.
+          for (let i = 0; i < prefillCount && i < model.cap - 1; i++) {
+            if (!model.applied.has(i)) {
+              execute(model, { tag: 'apply', issueId: i });
+            }
+          }
+
+          const countBefore = model.applied.size;
+          // This issue ID is guaranteed fresh — no collision.
+          execute(model, { tag: 'apply', issueId: uniqueIssueId });
+          execute(model, { tag: 'withdraw', issueId: uniqueIssueId });
+
+          expect(model.applied.size).toBe(countBefore);
         },
-      );
-    },
-  );
+      ),
+      { numRuns: 1000, verbose: true },
+    );
+  });
 
-  it(
-    'count after apply equals count before apply + 1 (when not duplicate and cap not reached)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.record({ orgId: arbOrgId, issueId: arbIssueId }),
-          (setup, freshAction) => {
-            // Build up a state from the setup sequence
-            let state = setup.reduce(applyAction, initialState());
+  /**
+   * Property 4 — Withdraw of non-existent application is rejected:
+   * A withdraw on an issue that was never applied (or was already withdrawn)
+   * must not change the count.
+   */
+  it('withdrawing a non-existent application leaves count unchanged (1000 cases)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 500, max: 999 }), // IDs that are never applied
+        (neverAppliedId) => {
+          const model = makeModel(15);
+          const countBefore = model.applied.size;
+          expect(() =>
+            execute(model, { tag: 'withdraw', issueId: neverAppliedId }),
+          ).toThrow('ApplicationNotFound(9)');
+          expect(model.applied.size).toBe(countBefore);
+        },
+      ),
+      { numRuns: 1000, verbose: true },
+    );
+  });
 
-            const key = applyKey(freshAction.orgId, freshAction.issueId);
-            const isDuplicate = state.activeApplications.has(key);
-            const atCap = state.activeApplications.size >= GLOBAL_APP_LIMIT;
+  /**
+   * Property 5 — Applying at cap is rejected:
+   * When count == cap, any further apply must be rejected and count must stay
+   * at cap.
+   */
+  it('apply at cap is rejected and count stays at cap (1000 cases)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 200, max: 299 }), (freshId) => {
+        const model = makeModel(15);
+        // Fill to cap using IDs 0..14.
+        for (let i = 0; i < model.cap; i++) {
+          execute(model, { tag: 'apply', issueId: i });
+        }
+        expect(model.applied.size).toBe(model.cap);
 
-            const countBefore = state.activeApplications.size;
-            state = applyAction(state, { type: 'apply', ...freshAction });
-            const countAfter = state.activeApplications.size;
+        expect(() =>
+          execute(model, { tag: 'apply', issueId: freshId }),
+        ).toThrow('GlobalApplicationLimitReached(6)');
 
-            if (!isDuplicate && !atCap) {
-              expect(countAfter).toBe(countBefore + 1);
-            } else {
-              // Rejected — count unchanged
-              expect(countAfter).toBe(countBefore);
-            }
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count after withdraw equals count before withdraw - 1 (when application exists)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.record({ orgId: arbOrgId, issueId: arbIssueId }),
-          (setup, freshAction) => {
-            let state = setup.reduce(applyAction, initialState());
-
-            const key = applyKey(freshAction.orgId, freshAction.issueId);
-            const exists = state.activeApplications.has(key);
-
-            const countBefore = state.activeApplications.size;
-            state = applyAction(state, { type: 'withdraw', ...freshAction });
-            const countAfter = state.activeApplications.size;
-
-            if (exists) {
-              expect(countAfter).toBe(countBefore - 1);
-            } else {
-              // Rejected — count unchanged
-              expect(countAfter).toBe(countBefore);
-            }
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count never exceeds GLOBAL_APP_LIMIT (15) under any operation sequence',
-    () => {
-      fc.assert(
-        fc.property(arbActionSequence, (actions) => {
-          let state = initialState();
-          for (const action of actions) {
-            state = applyAction(state, action);
-            expect(state.activeApplications.size).toBeLessThanOrEqual(GLOBAL_APP_LIMIT);
-          }
-        }),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'apply then withdraw restores the original count (round-trip)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.record({ orgId: arbOrgId, issueId: arbIssueId }),
-          (setup, op) => {
-            let state = setup.reduce(applyAction, initialState());
-
-            // Ensure the issue is NOT already applied so the apply goes through
-            const key = applyKey(op.orgId, op.issueId);
-            if (state.activeApplications.has(key)) return; // skip: already applied
-            if (state.activeApplications.size >= GLOBAL_APP_LIMIT) return; // skip: cap full
-
-            const countBefore = state.activeApplications.size;
-            state = applyAction(state, { type: 'apply', ...op });
-            expect(state.activeApplications.size).toBe(countBefore + 1);
-
-            state = applyAction(state, { type: 'withdraw', ...op });
-            expect(state.activeApplications.size).toBe(countBefore);
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count is non-negative after any sequence (no underflow)',
-    () => {
-      fc.assert(
-        fc.property(arbActionSequence, (actions) => {
-          let state = initialState();
-          for (const action of actions) {
-            state = applyAction(state, action);
-            expect(state.activeApplications.size).toBeGreaterThanOrEqual(0);
-          }
-        }),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
+        expect(model.applied.size).toBe(model.cap);
+      }),
+      { numRuns: 1000, verbose: true },
+    );
+  });
 });

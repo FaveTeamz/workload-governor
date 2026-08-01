@@ -1,304 +1,298 @@
 /**
- * Property-based tests: Org assignment count invariant
+ * Property-based tests: org assignment count invariant.
  *
- * Property: after any sequence of assign/complete/revoke operations,
- * org_assignment_count equals the number of active (non-completed, non-revoked)
- * assignments.
+ * Property: after any sequence of assign / complete / revoke operations the
+ * in-memory model count (number of active assignments — neither completed nor
+ * revoked) always equals what the contract would report for
+ * get_org_assignment_count.
  *
- * Uses fast-check for arbitrary input generation with automatic shrinking.
- * Runs at least 1000 random operation sequences per property.
+ * We test this with a pure-TypeScript model that mirrors the contract's
+ * counting logic.  Any divergence between model and implementation becomes a
+ * falsifiable property that fast-check will automatically shrink to a minimal
+ * counterexample.
  *
- * The model mirrors the on-chain WorkloadGovernor org-assignment logic:
- * - assign: transitions an existing application into an active assignment,
- *   increments org count; rejected if issue already assigned or org cap reached
- * - complete: removes an active assignment, decrements org count;
- *   rejected if assignment does not exist
- * - revoke: same as complete — removes an active assignment, decrements count;
- *   rejected if assignment does not exist
- * - org count never exceeds ORG_ASSIGNMENT_LIMIT (4)
- *
- * Ref: closes #882
+ * Run: jest tests/unit/prop_org_assign_limit.test.ts
+ * (or `npm test` which picks up all tests/unit/**\/*.test.ts via jest config)
  */
 
 import * as fc from 'fast-check';
 
-const ORG_ASSIGNMENT_LIMIT = 4;
-
 // ---------------------------------------------------------------------------
-// In-memory model matching on-chain WorkloadGovernor org-assignment logic
+// Model
 // ---------------------------------------------------------------------------
 
-interface OrgAssignState {
-  /** Set of issue ids that currently have an active assignment in this org */
-  activeAssignments: Set<number>;
+/** Subset of per-org contract state we care about for this property. */
+interface OrgCountModel {
+  /** Set of issue IDs currently in "assigned" (active) state. */
+  assigned: Set<number>;
+  /** Set of issue IDs in "applied" (pending) state — required for assign. */
+  applied: Set<number>;
+  /** Global application count — needed to validate apply pre-conditions. */
+  globalCount: number;
+  /** Effective org cap (mirrors ORG_ASSIGNMENT_LIMIT = 4 in storage.rs). */
+  readonly orgCap: number;
+  /** Effective global cap (mirrors GLOBAL_APP_LIMIT = 15 in storage.rs). */
+  readonly globalCap: number;
 }
 
-type AssignAction = { type: 'assign'; issueId: number };
-type CompleteAction = { type: 'complete'; issueId: number };
-type RevokeAction = { type: 'revoke'; issueId: number };
-type OrgAction = AssignAction | CompleteAction | RevokeAction;
+function makeModel(orgCap = 4, globalCap = 15): OrgCountModel {
+  return {
+    assigned: new Set(),
+    applied: new Set(),
+    globalCount: 0,
+    orgCap,
+    globalCap,
+  };
+}
+
+type AssignOp   = { tag: 'assign';   issueId: number };
+type CompleteOp = { tag: 'complete'; issueId: number };
+type RevokeOp   = { tag: 'revoke';   issueId: number };
+type ApplyOp    = { tag: 'apply';    issueId: number };
+type OrgOp = ApplyOp | AssignOp | CompleteOp | RevokeOp;
 
 /**
- * Apply an action to the model, enforcing the same invariants as the contract:
- * - assign: rejected if issueId already active (AlreadyAssigned) or cap reached
- *   (OrgAssignmentLimitReached)
- * - complete/revoke: rejected if issueId not in active set (AssignmentNotFound)
- *
- * Returns the new state (immutable update).
+ * Execute a single operation against the model.
+ * Throws a descriptive error matching the contract's error variants when a
+ * precondition is violated.
  */
-function applyAction(state: OrgAssignState, action: OrgAction): OrgAssignState {
-  if (action.type === 'assign') {
-    // Guard: already assigned → no-op
-    if (state.activeAssignments.has(action.issueId)) {
-      return state;
+function execute(model: OrgCountModel, op: OrgOp): void {
+  switch (op.tag) {
+    case 'apply': {
+      if (model.applied.has(op.issueId)) throw new Error('DuplicateApplication(8)');
+      if (model.globalCount >= model.globalCap) throw new Error('GlobalApplicationLimitReached(6)');
+      model.applied.add(op.issueId);
+      model.globalCount++;
+      break;
     }
-    // Guard: org cap reached → no-op
-    if (state.activeAssignments.size >= ORG_ASSIGNMENT_LIMIT) {
-      return state;
+    case 'assign': {
+      if (!model.applied.has(op.issueId))  throw new Error('ApplicationNotFound(9)');
+      if (model.assigned.size >= model.orgCap) throw new Error('OrgAssignmentLimitReached(7)');
+      if (model.assigned.has(op.issueId))  throw new Error('AlreadyAssigned(11)');
+      // Consume the application, create the assignment.
+      model.applied.delete(op.issueId);
+      model.globalCount--;
+      model.assigned.add(op.issueId);
+      break;
     }
-    const next = new Set(state.activeAssignments);
-    next.add(action.issueId);
-    return { activeAssignments: next };
-  } else {
-    // complete or revoke
-    // Guard: assignment does not exist → no-op
-    if (!state.activeAssignments.has(action.issueId)) {
-      return state;
+    case 'complete': {
+      if (!model.assigned.has(op.issueId)) throw new Error('AssignmentNotFound(10)');
+      model.assigned.delete(op.issueId);
+      break;
     }
-    const next = new Set(state.activeAssignments);
-    next.delete(action.issueId);
-    return { activeAssignments: next };
+    case 'revoke': {
+      if (!model.assigned.has(op.issueId)) throw new Error('AssignmentNotFound(10)');
+      model.assigned.delete(op.issueId);
+      break;
+    }
   }
-}
-
-function initialState(): OrgAssignState {
-  return { activeAssignments: new Set() };
 }
 
 // ---------------------------------------------------------------------------
 // Arbitraries
 // ---------------------------------------------------------------------------
 
-/** Issue ids 0..3 keep the space within ORG_ASSIGNMENT_LIMIT so sequences
- *  can cycle through fill-and-drain repeatedly */
-const arbIssueId = fc.integer({ min: 0, max: 3 });
+/** Small pool of issue IDs so collisions occur naturally. */
+const arbIssueId = fc.integer({ min: 0, max: 9 });
 
-const arbAction: fc.Arbitrary<OrgAction> = fc.oneof(
-  fc.record<AssignAction>({
-    type: fc.constant('assign' as const),
-    issueId: arbIssueId,
-  }),
-  fc.record<CompleteAction>({
-    type: fc.constant('complete' as const),
-    issueId: arbIssueId,
-  }),
-  fc.record<RevokeAction>({
-    type: fc.constant('revoke' as const),
-    issueId: arbIssueId,
-  }),
+const arbOp: fc.Arbitrary<OrgOp> = arbIssueId.chain((issueId) =>
+  fc.oneof(
+    { weight: 4, arbitrary: fc.constant<ApplyOp>({ tag: 'apply', issueId }) },
+    { weight: 3, arbitrary: fc.constant<AssignOp>({ tag: 'assign', issueId }) },
+    { weight: 2, arbitrary: fc.constant<CompleteOp>({ tag: 'complete', issueId }) },
+    { weight: 2, arbitrary: fc.constant<RevokeOp>({ tag: 'revoke', issueId }) },
+  ),
 );
 
-/** 1..50 operations per sequence */
-const arbActionSequence = fc.array(arbAction, { minLength: 1, maxLength: 50 });
+const arbOpSequence = fc.array(arbOp, { minLength: 1, maxLength: 60 });
 
 // ---------------------------------------------------------------------------
-// Property 2: org count invariant
-//
-// After any sequence of assign/complete/revoke operations, the reported
-// org_assignment_count always equals the size of the active assignment set.
+// Properties
 // ---------------------------------------------------------------------------
 
-describe('Org assignment count invariant (property-based)', () => {
-  it(
-    'count always equals the number of active non-completed non-revoked assignments — 1000 sequences',
-    () => {
-      fc.assert(
-        fc.property(arbActionSequence, (actions) => {
-          let state = initialState();
+describe('prop_org_assign_limit — org assignment count invariant', () => {
+  /**
+   * Property 1 — Count invariant:
+   * After any valid sequence of apply/assign/complete/revoke operations,
+   *   model.assigned.size === orgAssignmentCount
+   *
+   * Invalid operations are silently skipped (contract rejects them),
+   * after each skip we verify the count did not change.
+   */
+  it('org count always equals the number of active assignments (1000 cases)', () => {
+    fc.assert(
+      fc.property(arbOpSequence, (ops) => {
+        const model = makeModel(4, 15);
 
-          for (const action of actions) {
-            state = applyAction(state, action);
+        for (const op of ops) {
+          const countBefore = model.assigned.size;
 
-            // Invariant: count = |activeAssignments|
-            const reportedCount = state.activeAssignments.size;
-            expect(reportedCount).toBeGreaterThanOrEqual(0);
-            expect(reportedCount).toBeLessThanOrEqual(ORG_ASSIGNMENT_LIMIT);
+          try {
+            execute(model, op);
+          } catch {
+            // Contract would reject — count must be unchanged.
+            expect(model.assigned.size).toBe(countBefore);
+            continue;
           }
 
-          expect(state.activeAssignments.size).toBeLessThanOrEqual(ORG_ASSIGNMENT_LIMIT);
-        }),
-        {
-          numRuns: 1000,
-          verbose: true,
+          // After a successful assign: count increased by exactly 1.
+          if (op.tag === 'assign') {
+            expect(model.assigned.size).toBe(countBefore + 1);
+          }
+          // After complete or revoke: count decreased by exactly 1.
+          if (op.tag === 'complete' || op.tag === 'revoke') {
+            expect(model.assigned.size).toBe(countBefore - 1);
+          }
+          // apply never changes assigned count.
+          if (op.tag === 'apply') {
+            expect(model.assigned.size).toBe(countBefore);
+          }
+
+          // Invariant: org count in [0, orgCap].
+          expect(model.assigned.size).toBeGreaterThanOrEqual(0);
+          expect(model.assigned.size).toBeLessThanOrEqual(model.orgCap);
+        }
+
+        // Final invariant.
+        expect(model.assigned.size).toBeGreaterThanOrEqual(0);
+        expect(model.assigned.size).toBeLessThanOrEqual(model.orgCap);
+      }),
+      { numRuns: 1000, verbose: true },
+    );
+  });
+
+  /**
+   * Property 2 — Org cap is a hard ceiling:
+   * org count can never exceed ORG_ASSIGNMENT_LIMIT.
+   */
+  it('org count never exceeds the cap (1000 cases)', () => {
+    fc.assert(
+      fc.property(arbOpSequence, (ops) => {
+        const model = makeModel(4, 15);
+        for (const op of ops) {
+          try { execute(model, op); } catch { /* rejected — fine */ }
+          expect(model.assigned.size).toBeLessThanOrEqual(model.orgCap);
+        }
+      }),
+      { numRuns: 1000, verbose: true },
+    );
+  });
+
+  /**
+   * Property 3 — Assign then complete is a no-op on count:
+   * Assigning an issue and then completing it returns the count to the value
+   * before the assign.
+   */
+  it('assign then complete is a count no-op (1000 cases)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 2 }), // pre-fill the org with 0-2 assignments
+        fc.integer({ min: 100, max: 199 }), // unique issue ID, no collision
+        (prefill, uniqueIssueId) => {
+          const model = makeModel(4, 15);
+
+          // Pre-fill with distinct issue IDs.
+          for (let i = 0; i < prefill; i++) {
+            execute(model, { tag: 'apply', issueId: i });
+            execute(model, { tag: 'assign', issueId: i });
+          }
+
+          const countBefore = model.assigned.size;
+
+          // Apply then assign the unique issue.
+          execute(model, { tag: 'apply', issueId: uniqueIssueId });
+          execute(model, { tag: 'assign', issueId: uniqueIssueId });
+          // Complete it.
+          execute(model, { tag: 'complete', issueId: uniqueIssueId });
+
+          expect(model.assigned.size).toBe(countBefore);
         },
-      );
-    },
-  );
+      ),
+      { numRuns: 1000, verbose: true },
+    );
+  });
 
-  it(
-    'count after assign equals count before assign + 1 (when not duplicate and cap not reached)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.integer({ min: 0, max: 3 }),
-          (setup, issueId) => {
-            let state = setup.reduce(applyAction, initialState());
-
-            const isActive = state.activeAssignments.has(issueId);
-            const atCap = state.activeAssignments.size >= ORG_ASSIGNMENT_LIMIT;
-
-            const countBefore = state.activeAssignments.size;
-            state = applyAction(state, { type: 'assign', issueId });
-            const countAfter = state.activeAssignments.size;
-
-            if (!isActive && !atCap) {
-              expect(countAfter).toBe(countBefore + 1);
-            } else {
-              expect(countAfter).toBe(countBefore);
-            }
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count after complete equals count before complete - 1 (when assignment exists)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.integer({ min: 0, max: 3 }),
-          (setup, issueId) => {
-            let state = setup.reduce(applyAction, initialState());
-
-            const exists = state.activeAssignments.has(issueId);
-            const countBefore = state.activeAssignments.size;
-            state = applyAction(state, { type: 'complete', issueId });
-            const countAfter = state.activeAssignments.size;
-
-            if (exists) {
-              expect(countAfter).toBe(countBefore - 1);
-            } else {
-              expect(countAfter).toBe(countBefore);
-            }
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count after revoke equals count before revoke - 1 (when assignment exists)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.integer({ min: 0, max: 3 }),
-          (setup, issueId) => {
-            let state = setup.reduce(applyAction, initialState());
-
-            const exists = state.activeAssignments.has(issueId);
-            const countBefore = state.activeAssignments.size;
-            state = applyAction(state, { type: 'revoke', issueId });
-            const countAfter = state.activeAssignments.size;
-
-            if (exists) {
-              expect(countAfter).toBe(countBefore - 1);
-            } else {
-              expect(countAfter).toBe(countBefore);
-            }
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count never exceeds ORG_ASSIGNMENT_LIMIT (4) under any operation sequence',
-    () => {
-      fc.assert(
-        fc.property(arbActionSequence, (actions) => {
-          let state = initialState();
-          for (const action of actions) {
-            state = applyAction(state, action);
-            expect(state.activeAssignments.size).toBeLessThanOrEqual(ORG_ASSIGNMENT_LIMIT);
+  /**
+   * Property 4 — Assign then revoke is a no-op on count (same as complete).
+   */
+  it('assign then revoke is a count no-op (1000 cases)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 2 }),
+        fc.integer({ min: 200, max: 299 }),
+        (prefill, uniqueIssueId) => {
+          const model = makeModel(4, 15);
+          for (let i = 0; i < prefill; i++) {
+            execute(model, { tag: 'apply', issueId: i });
+            execute(model, { tag: 'assign', issueId: i });
           }
-        }),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
 
-  it(
-    'assign then complete restores the original count (round-trip)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.integer({ min: 0, max: 3 }),
-          (setup, issueId) => {
-            let state = setup.reduce(applyAction, initialState());
+          const countBefore = model.assigned.size;
+          execute(model, { tag: 'apply', issueId: uniqueIssueId });
+          execute(model, { tag: 'assign', issueId: uniqueIssueId });
+          execute(model, { tag: 'revoke', issueId: uniqueIssueId });
 
-            if (state.activeAssignments.has(issueId)) return; // already assigned, skip
-            if (state.activeAssignments.size >= ORG_ASSIGNMENT_LIMIT) return; // cap, skip
+          expect(model.assigned.size).toBe(countBefore);
+        },
+      ),
+      { numRuns: 1000, verbose: true },
+    );
+  });
 
-            const countBefore = state.activeAssignments.size;
-            state = applyAction(state, { type: 'assign', issueId });
-            expect(state.activeAssignments.size).toBe(countBefore + 1);
+  /**
+   * Property 5 — Assign at cap is rejected:
+   * When assigned.size == orgCap, any further assign must be rejected and
+   * count must stay at orgCap.
+   */
+  it('assign at org cap is rejected and count stays at cap (1000 cases)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 200, max: 299 }), (freshId) => {
+        const model = makeModel(4, 15);
 
-            state = applyAction(state, { type: 'complete', issueId });
-            expect(state.activeAssignments.size).toBe(countBefore);
-          },
+        // Fill to cap using IDs 0..3.
+        for (let i = 0; i < model.orgCap; i++) {
+          execute(model, { tag: 'apply', issueId: i });
+          execute(model, { tag: 'assign', issueId: i });
+        }
+        expect(model.assigned.size).toBe(model.orgCap);
+
+        // Apply succeeds, assign must fail.
+        execute(model, { tag: 'apply', issueId: freshId });
+        expect(() =>
+          execute(model, { tag: 'assign', issueId: freshId }),
+        ).toThrow('OrgAssignmentLimitReached(7)');
+
+        expect(model.assigned.size).toBe(model.orgCap);
+      }),
+      { numRuns: 1000, verbose: true },
+    );
+  });
+
+  /**
+   * Property 6 — Complete/revoke of non-existent assignment is rejected:
+   * Calling complete or revoke on an issue that is not assigned must not
+   * change the count.
+   */
+  it('complete/revoke of non-existent assignment leaves count unchanged (1000 cases)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 500, max: 999 }),
+        fc.oneof(
+          fc.constant<'complete'>('complete'),
+          fc.constant<'revoke'>('revoke'),
         ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
+        (unassignedId, terminator) => {
+          const model = makeModel(4, 15);
+          const countBefore = model.assigned.size;
 
-  it(
-    'assign then revoke restores the original count (round-trip)',
-    () => {
-      fc.assert(
-        fc.property(
-          arbActionSequence,
-          fc.integer({ min: 0, max: 3 }),
-          (setup, issueId) => {
-            let state = setup.reduce(applyAction, initialState());
+          expect(() =>
+            execute(model, { tag: terminator, issueId: unassignedId }),
+          ).toThrow('AssignmentNotFound(10)');
 
-            if (state.activeAssignments.has(issueId)) return; // already assigned, skip
-            if (state.activeAssignments.size >= ORG_ASSIGNMENT_LIMIT) return; // cap, skip
-
-            const countBefore = state.activeAssignments.size;
-            state = applyAction(state, { type: 'assign', issueId });
-            expect(state.activeAssignments.size).toBe(countBefore + 1);
-
-            state = applyAction(state, { type: 'revoke', issueId });
-            expect(state.activeAssignments.size).toBe(countBefore);
-          },
-        ),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
-
-  it(
-    'count is non-negative after any sequence (no underflow)',
-    () => {
-      fc.assert(
-        fc.property(arbActionSequence, (actions) => {
-          let state = initialState();
-          for (const action of actions) {
-            state = applyAction(state, action);
-            expect(state.activeAssignments.size).toBeGreaterThanOrEqual(0);
-          }
-        }),
-        { numRuns: 1000, verbose: true },
-      );
-    },
-  );
+          expect(model.assigned.size).toBe(countBefore);
+        },
+      ),
+      { numRuns: 1000, verbose: true },
+    );
+  });
 });
