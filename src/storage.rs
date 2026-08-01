@@ -406,10 +406,11 @@ pub(crate) fn remove_assignment(
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Persistent storage — Per-Org Assignment Cap  (Issue #1)
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("o_cap"), org_id: Symbol)`
+// Key: `(symbol_short!(\"o_cap\"), org_id: Symbol)`
 // Value: `u32`
 //
 // Stores an org-specific override for the assignment cap. When absent, callers
@@ -437,4 +438,3 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
 }
-
