@@ -23,6 +23,7 @@
   "devDependencies": {
     "@chromatic-com/storybook": "^5.2.1",
     "@playwright/test": "1.61.1",
+    "@stellar/freighter-api": "^6.0.1",
     "@storybook/addon-a11y": "^10.4.6",
     "@storybook/addon-docs": "^10.4.6",
     "@storybook/addon-mcp": "^0.6.0",
