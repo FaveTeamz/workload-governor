@@ -1,0 +1,103 @@
+/* =============================================================
+   Tooltip — closes #323
+   ============================================================= */
+
+.tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Bubble ──────────────────────────────────────────────── */
+.tooltip__bubble {
+  position: absolute;
+  /* default: top-center */
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+
+  background: var(--color-surface, #1c1f2b);
+  border: 1px solid var(--color-border, #2e3347);
+  color: var(--color-text, #e2e8f0);
+  font-size: var(--text-xs, 0.75rem);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  line-height: var(--leading-normal, 1.5);
+  border-radius: var(--radius-md, 8px);
+  padding: 6px 10px;
+  max-width: 240px;
+  white-space: normal;
+  word-break: break-word;
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal, 0.15s ease);
+  box-shadow: var(--elevation-2, 0 4px 6px -1px rgba(0,0,0,.45));
+}
+
+/* Arrow caret — default top */
+.tooltip__bubble::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--color-border, #2e3347);
+}
+
+/* ── Visible state ──────────────────────────────────────── */
+.tooltip-wrapper--visible .tooltip__bubble {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Position modifiers ─────────────────────────────────── */
+
+/* bottom */
+.tooltip__bubble--bottom {
+  bottom: auto;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.tooltip__bubble--bottom::before {
+  top: auto;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top-color: transparent;
+  border-bottom-color: var(--color-border, #2e3347);
+}
+
+/* left */
+.tooltip__bubble--left {
+  bottom: auto;
+  top: 50%;
+  left: auto;
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+.tooltip__bubble--left::before {
+  top: 50%;
+  left: 100%;
+  right: auto;
+  transform: translateY(-50%);
+  border-top-color: transparent;
+  border-left-color: var(--color-border, #2e3347);
+}
+
+/* right */
+.tooltip__bubble--right {
+  bottom: auto;
+  top: 50%;
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+.tooltip__bubble--right::before {
+  top: 50%;
+  left: auto;
+  right: 100%;
+  transform: translateY(-50%);
+  border-top-color: transparent;
+  border-right-color: var(--color-border, #2e3347);
+}

@@ -1,6 +1,45 @@
 services:
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: workload-governor-backend
+    command: npx ts-node --watch src/index.ts
+    environment:
+      NODE_ENV: development
+      PORT: ${PORT:-3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-workload_governor}
+      REDIS_URL: redis://redis:6379
+      SOROBAN_RPC_URL: http://stellar:8000/soroban/rpc
+      STELLAR_NETWORK_PASSPHRASE: ${STELLAR_NETWORK_PASSPHRASE:-Standalone Network ; February 2017}
+      CONTRACT_ID: ${CONTRACT_ID:-}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stellar:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-3000}/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - workload-governor-network
+    restart: unless-stopped
+
+  # ── PostgreSQL 15 ──────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:${POSTGRES_VERSION:-16}-alpine
     container_name: workload-governor-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -11,13 +50,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-workload_governor}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - workload-governor-network
+    restart: unless-stopped
 
+  # ── Redis 7 ────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: workload-governor-redis
@@ -31,9 +73,34 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     networks:
       - workload-governor-network
+    restart: unless-stopped
 
+  # ── Stellar Quickstart (local Soroban RPC) ────────────────────────────────
+  stellar:
+    image: stellar/quickstart:latest
+    container_name: workload-governor-stellar
+    platform: linux/amd64
+    command: --standalone --enable-soroban-rpc
+    environment:
+      ENABLE_LOGS: "true"
+    ports:
+      - "${STELLAR_PORT:-8000}:8000"
+    volumes:
+      - stellar_data:/opt/stellar
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - workload-governor-network
+    restart: unless-stopped
+
+  # ── pgAdmin (optional dev tool) ────────────────────────────────────────────
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: workload-governor-pgadmin
@@ -47,11 +114,65 @@ services:
         condition: service_healthy
     networks:
       - workload-governor-network
+    profiles:
+      - tools
+
+  # ── Event Indexer (issue #194) ────────────────────────────────────────────
+  event-indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: workload-governor-indexer
+    command: npx ts-node src/eventIndexer.ts
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-workload_governor}
+      HORIZON_URL: ${HORIZON_URL:-https://horizon-testnet.stellar.org}
+      CONTRACT_ID: ${CONTRACT_ID:-}
+    volumes:
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - workload-governor-network
+    restart: unless-stopped
+
+  # Test runner service — used by:
+  #   docker compose up --abort-on-container-exit test
+  # Runs the full Jest integration test suite against real Postgres + Redis.
+  test:
+    image: node:20-alpine
+    container_name: workload-governor-test
+    working_dir: /app
+    command: ["sh", "-c", "npm ci && npm test -- --forceExit"]
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-workload_governor}
+      REDIS_URL: redis://redis:6379
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-test-admin-token}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-test-secret}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - workload-governor-network
+    profiles:
+      - test
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  stellar_data:
     driver: local
 
 networks:
