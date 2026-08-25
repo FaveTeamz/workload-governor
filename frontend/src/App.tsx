@@ -1,13 +1,19 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Routes, Route } from "react-router-dom";
 import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
-import { ActivityPage } from "./components/ActivityPage";
-import { ToastContainer, useToast } from "./components/Toast";
+import { ToastProvider, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
+import { IssueDetailPage } from "./pages/IssueDetailPage";
+import { RegisterOrgPage } from "./pages/RegisterOrgPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { OrgIssuesPage } from "./pages/OrgIssuesPage";
+import { ContributorProfilePage } from "./pages/ContributorProfilePage";
 import "./app.css";
+import "../app/animations.css";
 
 const DEMO_APPS: Application[] = [
   { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
@@ -20,47 +26,83 @@ const DEMO_ASGNS: Assignment[] = [
   { id: "a2", contributor: "GDWWW4LMNOPQRSTUVWXYZ22222", org: "meridian-dao", issueTitle: "Integration tests for SDK" },
 ];
 
-function useHash() {
-  const [hash, setHash] = useState(() => window.location.hash);
-  useEffect(() => {
-    const handler = () => setHash(window.location.hash);
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
-  }, []);
-  return hash;
-}
+function HomePage() {
+  const [applications, setApplications] = useState<Application[]>(DEMO_APPS);
+  const [assignments, setAssignments] = useState<Assignment[]>(DEMO_ASGNS);
+  const [loading, setLoading] = useState(true);
+  const { add: addToast } = useToast();
 
-export default function App() {
-  const hash = useHash();
-  const wallet = useWallet();
-  const [applications, setApplications] = useState(DEMO_APPS);
-  const [assignments, setAssignments] = useState(DEMO_ASGNS);
-  const { toasts, add: addToast, remove: removeToast } = useToast();
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setApplications(DEMO_APPS);
+      setAssignments(DEMO_ASGNS);
+      setLoading(false);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   async function handleAssign(app: Application) {
-    await new Promise((r) => setTimeout(r, 400));
-    setApplications((prev) => prev.filter((a) => a.id !== app.id));
-    setAssignments((prev) => [...prev, { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle }]);
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    setApplications((prev) => prev.filter((item) => item.id !== app.id));
+    setAssignments((prev) => [
+      ...prev,
+      { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle },
+    ]);
     addToast(`Assigned "${app.issueTitle}" to ${app.contributor.slice(0, 8)}…`, "success");
   }
 
   async function handleComplete(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
-    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Completed "${asgn.issueTitle}"`, "success");
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    setAssignments((prev) => prev.filter((item) => item.id !== asgn.id));
+    addToast(`"${asgn.issueTitle}" marked as complete.`, "success");
   }
 
   async function handleRevoke(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
-    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Revoked "${asgn.issueTitle}"`, "info");
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    setAssignments((prev) => prev.filter((item) => item.id !== asgn.id));
+    addToast(`Assignment for "${asgn.issueTitle}" revoked.`, "info");
   }
 
   return (
     <>
+      <main id="main-content" className="app-main" tabIndex={-1}>
+        <header className="app-header" role="banner">
+          <span className="app-logo" aria-hidden="true">⚙</span>
+          <h1>WorkloadGovernor</h1>
+          <GetStartedButton />
+        </header>
+
+        <MaintainerPanel
+          applications={applications}
+          assignments={assignments}
+          onAssign={handleAssign}
+          onComplete={handleComplete}
+          onRevoke={handleRevoke}
+        />
+        <ActivityFeed apiBase="/api" network="testnet" />
+        {loading && <p className="app-main__status">Loading demo data…</p>}
+      </main>
+
+      <ErrorBoundary>
+        <OnboardingWizard />
+      </ErrorBoundary>
+    </>
+  );
+}
+
+export default function App() {
+  const wallet = useWallet();
+  const { toasts, remove: removeToast } = useToast();
+  const isPreviewRoute = window.location.search.includes("preview=1");
+  const isProduction = import.meta.env.PROD;
+
+  return (
+    <ToastProvider>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
+
+      <NetworkBanner />
 
       <NavBar
         walletAddress={wallet.publicKey}
@@ -70,31 +112,49 @@ export default function App() {
         onDisconnect={wallet.disconnect}
       />
 
-      <main id="main-content" className="app-main" tabIndex={-1}>
-        {hash === "#/activity" ? (
-          <ActivityPage />
-        ) : (
-          <>
-            <header className="app-header" role="banner">
-              <span className="app-logo" aria-hidden="true">⚙</span>
-              <h1>WorkloadGovernor</h1>
-              <GetStartedButton />
-            </header>
+      <Routes>
+        <Route path="/dashboard" element={<DashboardPage apiBase="/api" />} />
+        <Route path="/orgs/:org_id/issues" element={<OrgIssuesPage apiBase="/api" />} />
+        <Route path="/issues/:org_id/:issue_id" element={<IssueDetailPage apiBase="/api" />} />
+        <Route path="/admin/register-org" element={<RegisterOrgPage apiBase="/api" />} />
+        <Route
+          path="/design"
+          element={
+            isProduction && !isPreviewRoute ? (
+              <Navigate to="/" replace />
+            ) : (
+              <DesignSystemPage />
+            )
+          }
+        />
 
-            <MaintainerPanel
-              applications={applications}
-              assignments={assignments}
-              onAssign={handleAssign}
-              onComplete={handleComplete}
-              onRevoke={handleRevoke}
-            />
-            <ActivityFeed apiBase="/api" network="testnet" />
-          </>
-        )}
-      </main>
+        {/* Org issue browser with apply/withdraw */}
+        <Route
+          path="/orgs/:org_id/issues"
+          element={<OrgIssuesPage apiBase="/api" />}
+        />
 
-      <OnboardingWizard />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </>
+        {/* Issue detail view */}
+        <Route
+          path="/issues/:org_id/:issue_id"
+          element={<IssueDetailPage apiBase="/api" />}
+        />
+
+        {/* Admin: register new organisation */}
+        <Route
+          path="/admin/register-org"
+          element={<RegisterOrgPage apiBase="/api" />}
+        />
+
+        {/* Contributor public profile */}
+        <Route
+          path="/contributor/:address"
+          element={<ContributorProfilePage />}
+        />
+
+        {/* Default: home */}
+        <Route path="*" element={<HomePage />} />
+      </Routes>
+    </ToastProvider>
   );
 }
