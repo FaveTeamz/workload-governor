@@ -1,0 +1,47 @@
+# CODEOWNERS — path-to-owner mappings for WorkloadGovernor
+#
+# Each pattern follows the same rules as .gitignore.
+# The LAST matching rule takes precedence.
+# Owners are required to approve any PR that touches their paths.
+# GitHub enforces these rules when branch protection is enabled with
+# "Require review from code owners".
+#
+# Owners listed here must have at least read access to the repo.
+# Use GitHub teams (@org/team) wherever possible to avoid coupling
+# to individual GitHub handles.
+
+# ── Catch-all (fallback for any path not matched below) ──────────────────────
+*                               @FaveTeamz/core-maintainers
+
+# ── GitHub Actions & CI ───────────────────────────────────────────────────────
+.github/                        @FaveTeamz/core-maintainers @FaveTeamz/devops
+
+# ── Infrastructure / Terraform ───────────────────────────────────────────────
+terraform/                      @FaveTeamz/devops
+infra/                          @FaveTeamz/devops
+
+# ── Soroban smart contract ────────────────────────────────────────────────────
+src/lib.rs                      @FaveTeamz/contract-team
+src/storage.rs                  @FaveTeamz/contract-team
+src/errors.rs                   @FaveTeamz/contract-team
+src/events.rs                   @FaveTeamz/contract-team
+fuzz/                           @FaveTeamz/contract-team
+
+# ── Backend (Node/TypeScript) ─────────────────────────────────────────────────
+src/*.ts                        @FaveTeamz/backend-team
+backend/                        @FaveTeamz/backend-team
+
+# ── Frontend (React/Vite) ─────────────────────────────────────────────────────
+frontend/                       @FaveTeamz/frontend-team
+
+# ── Deployment & rollback scripts ─────────────────────────────────────────────
+scripts/                        @FaveTeamz/devops @FaveTeamz/core-maintainers
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+docs/                           @FaveTeamz/core-maintainers
+*.md                            @FaveTeamz/core-maintainers
+
+# ── Security-sensitive files ──────────────────────────────────────────────────
+.github/workflows/dependency-audit.yml   @FaveTeamz/security-team
+.trivyignore                             @FaveTeamz/security-team
+.nsprc                                   @FaveTeamz/security-team
