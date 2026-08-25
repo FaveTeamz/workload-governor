@@ -1,6 +1,9 @@
 import type { Preview } from '@storybook/react-vite';
 import '../src/tokens.css';
 import '../src/app.css';
+import type { Preview } from '@storybook/react-vite'
+import '../src/tokens.css'
+import '../src/app.css'
 
 const preview: Preview = {
   parameters: {
@@ -24,3 +27,11 @@ const preview: Preview = {
 };
 
 export default preview;
+        date:  /Date$/i,
+      },
+    },
+    a11y: { test: 'error' },
+  },
+}
+
+export default preview

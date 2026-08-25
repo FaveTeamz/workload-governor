@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { CopyButton } from './CopyButton';
 
-interface WalletAddressProps {
+export interface WalletAddressProps {
   address: string;
 }
 
@@ -13,27 +13,22 @@ export function truncateAddress(address: string): string {
 /**
  * Displays a Stellar wallet address truncated to first 4 + last 4 chars.
  * - Hover tooltip shows the full address.
- * - Copy button copies the full address; shows a checkmark for 1.5 s.
+ * - Copy button copies the full address; shows a check icon for 2 s.
+ * - Screen reader is notified on copy success via aria-live.
  */
 export function WalletAddress({ address }: WalletAddressProps) {
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
   return (
-    <span className="wallet-address" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+    <span
+      className="wallet-address"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+    >
       <span title={address} style={{ fontFamily: 'monospace', cursor: 'default' }}>
         {truncateAddress(address)}
       </span>
-      <button
-        type="button"
-        onClick={handleCopy}
-        aria-label={`Copy address ${address}`}
-        title="Copy address"
+      <CopyButton
+        text={address}
+        label={`Copy address ${address}`}
+        copiedLabel="Address copied"
         style={{
           background: 'none',
           border: 'none',
@@ -41,10 +36,11 @@ export function WalletAddress({ address }: WalletAddressProps) {
           padding: '0 2px',
           lineHeight: 1,
           color: 'inherit',
+          fontSize: '1em',
+          display: 'inline-flex',
+          alignItems: 'center',
         }}
-      >
-        {copied ? '✓' : '⧉'}
-      </button>
+      />
     </span>
   );
 }
