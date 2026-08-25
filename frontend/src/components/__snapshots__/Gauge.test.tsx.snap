@@ -1,0 +1,272 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Gauge snapshot > matches snapshot at ~47% (value=7, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications: 7 of 15"
+    aria-valuemax="15"
+    aria-valuemin="0"
+    aria-valuenow="7"
+    class="gauge gauge--green"
+    role="meter"
+    style="--gauge-size: 120px;"
+  >
+    <svg
+      aria-hidden="true"
+      class="gauge__svg"
+      focusable="false"
+      height="120"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        class="gauge__track"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        class="gauge__fill"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-success-500)"
+        stroke-dasharray="214.88493750554184 214.88493750554184"
+        stroke-dashoffset="214.88493750554184"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        dominant-baseline="middle"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="55.2"
+      >
+        47
+        %
+      </text>
+      <text
+        class="gauge__value"
+        dominant-baseline="middle"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="76.8"
+      >
+        7
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshot > matches snapshot at 0% (value=0, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications: 0 of 15"
+    aria-valuemax="15"
+    aria-valuemin="0"
+    aria-valuenow="0"
+    class="gauge gauge--green"
+    role="meter"
+    style="--gauge-size: 120px;"
+  >
+    <svg
+      aria-hidden="true"
+      class="gauge__svg"
+      focusable="false"
+      height="120"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        class="gauge__track"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        dominant-baseline="middle"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="55.2"
+      >
+        0
+        %
+      </text>
+      <text
+        class="gauge__value"
+        dominant-baseline="middle"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="76.8"
+      >
+        0
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshot > matches snapshot at 100% (value=15, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications: 15 of 15"
+    aria-valuemax="15"
+    aria-valuemin="0"
+    aria-valuenow="15"
+    class="gauge gauge--red"
+    role="meter"
+    style="--gauge-size: 120px;"
+  >
+    <svg
+      aria-hidden="true"
+      class="gauge__svg"
+      focusable="false"
+      height="120"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        class="gauge__track"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        class="gauge__fill"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-error-500)"
+        stroke-dasharray="214.88493750554184 214.88493750554184"
+        stroke-dashoffset="214.88493750554184"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        dominant-baseline="middle"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="55.2"
+      >
+        100
+        %
+      </text>
+      <text
+        class="gauge__value"
+        dominant-baseline="middle"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="76.8"
+      >
+        15
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshot > matches snapshot for org variant (value=2, max=4) 1`] = `
+<div>
+  <figure
+    aria-label="Org: stellar-org: 2 of 4"
+    aria-valuemax="4"
+    aria-valuemin="0"
+    aria-valuenow="2"
+    class="gauge gauge--green"
+    data-variant="org"
+    role="meter"
+    style="--gauge-size: 120px;"
+  >
+    <svg
+      aria-hidden="true"
+      class="gauge__svg"
+      focusable="false"
+      height="120"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        class="gauge__track"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        class="gauge__fill"
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-success-500)"
+        stroke-dasharray="214.88493750554184 214.88493750554184"
+        stroke-dashoffset="214.88493750554184"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        dominant-baseline="middle"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="55.2"
+      >
+        50
+        %
+      </text>
+      <text
+        class="gauge__value"
+        dominant-baseline="middle"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="76.8"
+      >
+        2
+        /
+        4
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Org: stellar-org
+    </figcaption>
+  </figure>
+</div>
+`;

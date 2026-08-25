@@ -168,3 +168,31 @@ pub(crate) fn emit_maintainer_deregistered(
     let data = (maintainer.clone(), org_id.clone());
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_global_cap` when the operator updates the cap via the normal path.
+///
+/// topics: `(symbol_short!("cap_upd"), admin)`
+/// data:   `(admin, new_cap)`
+pub(crate) fn emit_global_cap_updated(env: &Env, admin: &Address, new_cap: u32) {
+    let topics = (symbol_short!("cap_upd"), admin.clone());
+    let data = (admin.clone(), new_cap);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `emergency_set_global_cap`.
+///
+/// Intentionally distinct from any `GlobalCapUpdated` event so that monitors
+/// and event indexers can unambiguously identify emergency cap changes.
+///
+/// topics: `(symbol_short!("emrg_cap"), admin)`
+/// data:   `(old_cap, new_cap)`
+pub(crate) fn emit_emergency_cap_updated(
+    env: &Env,
+    admin: &Address,
+    old_cap: u32,
+    new_cap: u32,
+) {
+    let topics = (symbol_short!("emrg_cap"), admin.clone());
+    let data = (old_cap, new_cap);
+    env.events().publish(topics, data);
+}

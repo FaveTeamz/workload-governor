@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route } from "react-router-dom";
 import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
-import { ToastContainer, useToast } from "./components/Toast";
+import { ToastProvider, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { OrgIssuesPage } from "./pages/OrgIssuesPage";
+import { ContributorProfilePage } from "./pages/ContributorProfilePage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -23,28 +26,24 @@ const DEMO_ASGNS: Assignment[] = [
   { id: "a2", contributor: "GDWWW4LMNOPQRSTUVWXYZ22222", org: "meridian-dao", issueTitle: "Integration tests for SDK" },
 ];
 
-// ---------------------------------------------------------------------------
-// Home page (existing layout extracted into its own component)
-// ---------------------------------------------------------------------------
-
 function HomePage() {
-  const wallet = useWallet();
-  const [applications, setApplications] = useState(DEMO_APPS);
-  const [assignments, setAssignments] = useState(DEMO_ASGNS);
-  const [activeView, setActiveView] = useState<DashboardView>("overview");
-  const { toasts, add: addToast, remove: removeToast } = useToast();
-  const navigate = useViewTransition({ targetSelector: "#main-content" });
+  const [applications, setApplications] = useState<Application[]>(DEMO_APPS);
+  const [assignments, setAssignments] = useState<Assignment[]>(DEMO_ASGNS);
+  const [loading, setLoading] = useState(true);
+  const { add: addToast } = useToast();
 
-  /** Switch tabs with a directional view transition */
-  function switchView(to: DashboardView) {
-    if (to === activeView) return;
-    const dir = resolveDirection(activeView, to);
-    navigate(() => setActiveView(to), dir);
-  }
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setApplications(DEMO_APPS);
+      setAssignments(DEMO_ASGNS);
+      setLoading(false);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   async function handleAssign(app: Application) {
-    await new Promise((r) => setTimeout(r, 400));
-    setApplications((prev) => prev.filter((a) => a.id !== app.id));
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    setApplications((prev) => prev.filter((item) => item.id !== app.id));
     setAssignments((prev) => [
       ...prev,
       { id: app.id, contributor: app.contributor, org: app.org, issueTitle: app.issueTitle },
@@ -53,15 +52,15 @@ function HomePage() {
   }
 
   async function handleComplete(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
-    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Completed "${asgn.issueTitle}"`, "success");
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    setAssignments((prev) => prev.filter((item) => item.id !== asgn.id));
+    addToast(`"${asgn.issueTitle}" marked as complete.`, "success");
   }
 
   async function handleRevoke(asgn: Assignment) {
-    await new Promise((r) => setTimeout(r, 400));
-    setAssignments((prev) => prev.filter((a) => a.id !== asgn.id));
-    addToast(`Revoked "${asgn.issueTitle}"`, "info");
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    setAssignments((prev) => prev.filter((item) => item.id !== asgn.id));
+    addToast(`Assignment for "${asgn.issueTitle}" revoked.`, "info");
   }
 
   return (
@@ -81,26 +80,29 @@ function HomePage() {
           onRevoke={handleRevoke}
         />
         <ActivityFeed apiBase="/api" network="testnet" />
+        {loading && <p className="app-main__status">Loading demo data…</p>}
       </main>
 
-      <OnboardingWizard />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ErrorBoundary>
+        <OnboardingWizard />
+      </ErrorBoundary>
     </>
   );
 }
 
-// ---------------------------------------------------------------------------
-// App shell — NavBar is shared; routes render below it
-// ---------------------------------------------------------------------------
-
 export default function App() {
   const wallet = useWallet();
+  const { toasts, remove: removeToast } = useToast();
+  const isPreviewRoute = window.location.search.includes("preview=1");
+  const isProduction = import.meta.env.PROD;
 
   return (
-    <>
+    <ToastProvider>
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
+
+      <NetworkBanner />
 
       <NavBar
         walletAddress={wallet.publicKey}
@@ -111,6 +113,27 @@ export default function App() {
       />
 
       <Routes>
+        <Route path="/dashboard" element={<DashboardPage apiBase="/api" />} />
+        <Route path="/orgs/:org_id/issues" element={<OrgIssuesPage apiBase="/api" />} />
+        <Route path="/issues/:org_id/:issue_id" element={<IssueDetailPage apiBase="/api" />} />
+        <Route path="/admin/register-org" element={<RegisterOrgPage apiBase="/api" />} />
+        <Route
+          path="/design"
+          element={
+            isProduction && !isPreviewRoute ? (
+              <Navigate to="/" replace />
+            ) : (
+              <DesignSystemPage />
+            )
+          }
+        />
+
+        {/* Org issue browser with apply/withdraw */}
+        <Route
+          path="/orgs/:org_id/issues"
+          element={<OrgIssuesPage apiBase="/api" />}
+        />
+
         {/* Issue detail view */}
         <Route
           path="/issues/:org_id/:issue_id"
@@ -123,9 +146,15 @@ export default function App() {
           element={<RegisterOrgPage apiBase="/api" />}
         />
 
+        {/* Contributor public profile */}
+        <Route
+          path="/contributor/:address"
+          element={<ContributorProfilePage />}
+        />
+
         {/* Default: home */}
         <Route path="*" element={<HomePage />} />
       </Routes>
-    </>
+    </ToastProvider>
   );
 }

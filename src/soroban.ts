@@ -18,6 +18,39 @@ export interface ResourceEstimate {
   writeBytes: number;
 }
 
+/** Fee breakdown returned by estimateFee(), with XLM-denominated values. */
+export interface FeeEstimate {
+  /** Base network fee in XLM (fixed per-operation fee). */
+  base_fee_xlm: string;
+  /** Resource fee in XLM, with 20% cushion applied. */
+  resource_fee_xlm: string;
+  /** Total fee in XLM (base + cushioned resource fee). */
+  total_fee_xlm: string;
+  /** Cushion percentage applied to the resource fee (always 20). */
+  fee_cushion_pct: number;
+}
+
+/**
+ * Contract functions supported by estimateFee().
+ * Kept as a const tuple so callers can do type-safe membership checks.
+ */
+export const SUPPORTED_FUNCTIONS = [
+  'apply_for_issue',
+  'withdraw_application',
+  'assign_issue',
+  'complete_assignment',
+  'revoke_assignment',
+] as const;
+
+export type SupportedFunction = (typeof SUPPORTED_FUNCTIONS)[number];
+
+/** Stroops per XLM. */
+const STROOPS_PER_XLM = 10_000_000n;
+
+/** Dummy G-address used as the source for fee-estimation transactions. */
+const FEE_ESTIMATE_SOURCE =
+  'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+
 export interface TransactionSubmissionResult {
   hash: string;
   status: 'success' | 'error';
@@ -126,6 +159,17 @@ export class SorobanService {
     args: xdr.ScVal[],
   ): Transaction {
     return this.buildRaw(sourceAddress, sequence, fnName, args);
+  }
+
+  async getAccountSequence(address: string): Promise<string> {
+    try {
+      const account = await this.server.getAccount(address);
+      return typeof account.sequenceNumber === 'function'
+        ? account.sequenceNumber()
+        : (account as any).sequence ?? '1';
+    } catch {
+      return '1';
+    }
   }
 
   private parseContractError(errorMessage: string): SorobanContractError {
@@ -265,6 +309,78 @@ export class SorobanService {
       console.error('[Soroban] Failed to fetch contract data:', errorMsg);
       return null;
     }
+  }
+
+  /**
+   * Estimate the transaction fee for a given contract function name.
+   *
+   * Builds a representative dummy transaction (with placeholder argument
+   * values) and runs simulateTransaction to obtain the real resource fee
+   * from the Soroban RPC node.  A 20% cushion is added to the resource fee
+   * to reduce the chance of fee-insufficient errors under network congestion.
+   *
+   * @param fnName - One of the {@link SUPPORTED_FUNCTIONS} values.
+   * @returns A {@link FeeEstimate} with all amounts denominated in XLM.
+   * @throws Error if `fnName` is not in SUPPORTED_FUNCTIONS or simulation fails.
+   */
+  async estimateFee(fnName: SupportedFunction): Promise<FeeEstimate> {
+    // Build a dummy placeholder transaction for the requested function.
+    // We use a fixed dummy contributor / maintainer address so no real
+    // account is needed for the simulation (simulate-only calls never
+    // debit the source account).
+    const dummy = FEE_ESTIMATE_SOURCE;
+    const dummyOrg = 'sample_org';
+    const dummyIssue = 1;
+    const dummySeq = '0';
+
+    let tx: Transaction;
+    switch (fnName) {
+      case 'apply_for_issue':
+        tx = this.buildApplyTx(dummy, dummyOrg, dummyIssue, dummySeq);
+        break;
+      case 'withdraw_application':
+        tx = this.buildWithdrawTx(dummy, dummyOrg, dummyIssue, dummySeq);
+        break;
+      case 'assign_issue':
+        tx = this.buildAssignTx(dummy, dummy, dummyOrg, dummyIssue, dummySeq);
+        break;
+      case 'complete_assignment':
+        tx = this.buildCompleteTx(dummy, dummy, dummyOrg, dummyIssue, dummySeq);
+        break;
+      case 'revoke_assignment':
+        tx = this.buildRevokeTx(dummy, dummy, dummyOrg, dummyIssue, dummySeq);
+        break;
+    }
+
+    const estimate = await this.simulate(tx);
+
+    // Base fee is the fixed 100 stroops set in TransactionBuilder (per
+    // operation).  Resource fee comes from the simulation.
+    const BASE_FEE_STROOPS = 100n;
+    const CUSHION_PCT = 20;
+
+    const resourceFeeStroops = BigInt(estimate.fee);
+    const cushionedResourceFeeStroops =
+      resourceFeeStroops + (resourceFeeStroops * BigInt(CUSHION_PCT)) / 100n;
+
+    const toXlm = (stroops: bigint): string => {
+      const whole = stroops / STROOPS_PER_XLM;
+      const frac = stroops % STROOPS_PER_XLM;
+      // Zero-pad fractional part to 7 digits and strip trailing zeros.
+      const fracStr = frac.toString().padStart(7, '0').replace(/0+$/, '') || '0';
+      return `${whole}.${fracStr}`;
+    };
+
+    const baseFeeXlm = toXlm(BASE_FEE_STROOPS);
+    const resourceFeeXlm = toXlm(cushionedResourceFeeStroops);
+    const totalFeeXlm = toXlm(BASE_FEE_STROOPS + cushionedResourceFeeStroops);
+
+    return {
+      base_fee_xlm: baseFeeXlm,
+      resource_fee_xlm: resourceFeeXlm,
+      total_fee_xlm: totalFeeXlm,
+      fee_cushion_pct: CUSHION_PCT,
+    };
   }
 
   buildApplyTx(
