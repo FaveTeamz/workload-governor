@@ -146,7 +146,10 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
 }
-.panel-row:hover { border-color: var(--color-primary); }
+.panel-row:hover,
+.panel-row:focus { border-color: var(--color-primary); outline: none; }
+/* Show visible focus ring for keyboard users (closes #281) */
+.panel-row:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -1px; }
 
 .row-info {
   display: flex;
@@ -350,3 +353,266 @@
   .issue-card__actions { flex-direction: column; }
   .issue-card__actions .btn { width: 100%; justify-content: center; }
 }
+
+/* ============================================================
+   Keyboard Shortcut Help Modal — closes #281
+   ============================================================ */
+.shortcut-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.shortcut-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  max-width: 440px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shortcut-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcut-dialog__header h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+}
+
+.shortcut-dialog__close {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  line-height: 1;
+}
+.shortcut-dialog__close:hover { color: var(--color-text); }
+
+.shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.shortcut-table th {
+  text-align: left;
+  color: var(--color-muted);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.shortcut-table td {
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.shortcut-table__keys { width: 45%; vertical-align: middle; }
+.shortcut-table__label { color: var(--color-text); vertical-align: middle; }
+
+.shortcut-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px 7px;
+  min-width: 26px;
+  color: var(--color-primary);
+  box-shadow: 0 1px 0 var(--color-border);
+}
+
+.shortcut-then {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  margin: 0 4px;
+}
+
+.shortcut-dialog__note {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  margin-top: 4px;
+}
+
+/* Hint button in app header */
+.shortcut-hint-btn {
+  margin-left: auto;
+  padding: 4px 8px;
+}
+.shortcut-hint-btn .shortcut-kbd {
+  pointer-events: none;
+}
+
+/* Shortcut first-visit tooltip banner */
+.shortcut-banner {
+  position: fixed;
+  bottom: 80px;
+  right: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--shadow-lg);
+  animation: slideIn .25s ease;
+  max-width: 320px;
+}
+
+.shortcut-banner__text {
+  flex: 1;
+  line-height: var(--leading-normal);
+}
+
+.shortcut-banner__dismiss {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.shortcut-banner__dismiss:hover { color: var(--color-text); }
+
+/* ============================================================
+   Error Boundary — closes #280
+   ============================================================ */
+.eb-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 24px;
+}
+
+.eb-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 40px 48px;
+  max-width: 520px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.eb-illustration { color: var(--color-error-500); margin-bottom: 8px; }
+.eb-svg { width: 72px; height: 72px; }
+
+.eb-title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text);
+}
+
+.eb-message {
+  color: var(--color-muted);
+  line-height: var(--leading-normal);
+  max-width: 380px;
+}
+
+.eb-error-summary {
+  background: var(--color-error-900, #7f1d1d);
+  border: 1px solid var(--color-error-500);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-error-100, #fee2e2);
+  max-width: 100%;
+  overflow-x: auto;
+  text-align: left;
+}
+
+.eb-retry { min-width: 120px; margin-top: 4px; }
+
+.eb-details {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.eb-details__summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  background: var(--color-bg);
+  user-select: none;
+}
+.eb-details__summary:hover { color: var(--color-text); }
+
+.eb-pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--color-muted);
+  background: var(--color-bg);
+  padding: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* Inline/panel variant */
+.eb-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-error-500);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.eb-panel__icon { font-size: 1.25rem; flex-shrink: 0; color: var(--color-error-500); }
+.eb-panel__body { flex: 1; min-width: 0; }
+.eb-panel__title { font-size: var(--text-sm); font-weight: var(--font-semibold); }
+.eb-panel__msg {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eb-panel__retry { flex-shrink: 0; align-self: center; }
+
+.eb-details--panel { width: 100%; flex-basis: 100%; }

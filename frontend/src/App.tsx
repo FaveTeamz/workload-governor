@@ -3,6 +3,10 @@ import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizar
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ToastContainer, useToast } from "./components/Toast";
+import { ShortcutHelpModal, ShortcutHintButton } from "./components/ShortcutHelpModal";
+import { ShortcutHintBanner } from "./components/ShortcutHintBanner";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./app.css";
 
 // Demo data — replace with real API calls
@@ -21,6 +25,24 @@ export default function App() {
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
   const { toasts, add: addToast, remove: removeToast } = useToast();
+
+  // Shortcut help modal state
+  const [shortcutModalOpen, setShortcutModalOpen] = useState(false);
+
+  // Keyboard shortcut integration (closes #281)
+  useKeyboardShortcuts({
+    onHelp:    () => setShortcutModalOpen((prev) => !prev),
+    onEscape:  () => setShortcutModalOpen(false),
+    onEnter:   (_el) => {
+      // Future: open TxConfirmModal for the focused issue card.
+      // For now we show a toast as a placeholder until the modal is wired.
+      addToast("Apply modal coming soon — press Enter on a focused issue", "info");
+    },
+    onOrgSelector: () => {
+      // Future: focus org selector dropdown when implemented.
+      addToast("Org selector: G → O shortcut registered", "info");
+    },
+  });
 
   async function handleAssign(app: Application) {
     await new Promise((r) => setTimeout(r, 400)); // simulate network
@@ -51,20 +73,32 @@ export default function App() {
         <span className="app-logo" aria-hidden="true">⚙</span>
         <h1>WorkloadGovernor</h1>
         <GetStartedButton />
+        {/* Keyboard shortcut hint button — closes #281 */}
+        <ShortcutHintButton onClick={() => setShortcutModalOpen(true)} />
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
-        <MaintainerPanel
-          applications={applications}
-          assignments={assignments}
-          onAssign={handleAssign}
-          onComplete={handleComplete}
-          onRevoke={handleRevoke}
-        />
+        {/* Panel-level boundary for partial recovery — closes #280 */}
+        <ErrorBoundary variant="panel" label="Maintainer Panel">
+          <MaintainerPanel
+            applications={applications}
+            assignments={assignments}
+            onAssign={handleAssign}
+            onComplete={handleComplete}
+            onRevoke={handleRevoke}
+          />
+        </ErrorBoundary>
       </main>
 
       <OnboardingWizard />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* Keyboard shortcut system — closes #281 */}
+      <ShortcutHelpModal
+        open={shortcutModalOpen}
+        onClose={() => setShortcutModalOpen(false)}
+      />
+      <ShortcutHintBanner onShowHelp={() => setShortcutModalOpen(true)} />
     </>
   );
 }
