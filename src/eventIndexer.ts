@@ -1,6 +1,7 @@
 import { SorobanRpc } from '@stellar/stellar-sdk';
 import { pool } from './db';
 import { logger } from './logger';
+import { publishLiveEvent } from './services/event-bus';
 
 interface ContractEvent {
   type: string;
@@ -187,6 +188,17 @@ export class EventIndexer {
         JSON.stringify(event.data),
       ],
     );
+
+    const liveType = event.type === 'applied'
+      ? 'application_created'
+      : event.type === 'assigned'
+        ? 'assignment_created'
+        : 'cap_updated';
+
+    publishLiveEvent({
+      type: liveType,
+      data: { eventType: event.type, orgId: event.orgId, issueId: event.issueId },
+    });
   }
 
   stop(): void {

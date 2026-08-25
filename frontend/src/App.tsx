@@ -7,6 +7,8 @@ import { ShortcutHelpModal, ShortcutHintButton } from "./components/ShortcutHelp
 import { ShortcutHintBanner } from "./components/ShortcutHintBanner";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { CapacityBars } from "./components/CapacityBars";
+import { useLiveUpdates } from "./hooks/useLiveUpdates";
 import "./app.css";
 
 // Demo data — replace with real API calls
@@ -25,6 +27,7 @@ export default function App() {
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
   const { toasts, add: addToast, remove: removeToast } = useToast();
+  const { liveStatus, globalApplications, orgCounts } = useLiveUpdates();
 
   // Shortcut help modal state
   const [shortcutModalOpen, setShortcutModalOpen] = useState(false);
@@ -72,12 +75,16 @@ export default function App() {
       <header className="app-header" role="banner">
         <span className="app-logo" aria-hidden="true">⚙</span>
         <h1>WorkloadGovernor</h1>
+        <span className={`live-indicator live-indicator--${liveStatus}`} role="status" aria-label={`Updates ${liveStatus}`}>
+          <span aria-hidden="true" /> {liveStatus === "connected" ? "Live" : liveStatus === "polling" ? "Polling" : "Connecting"}
+        </span>
         <GetStartedButton />
         {/* Keyboard shortcut hint button — closes #281 */}
         <ShortcutHintButton onClick={() => setShortcutModalOpen(true)} />
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
+        <CapacityBars globalApplications={globalApplications} orgCounts={orgCounts} />
         {/* Panel-level boundary for partial recovery — closes #280 */}
         <ErrorBoundary variant="panel" label="Maintainer Panel">
           <MaintainerPanel
