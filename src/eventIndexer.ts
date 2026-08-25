@@ -14,6 +14,7 @@
 import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
 import { pool } from './db';
 import { logger } from './logger';
+import { publishLiveEvent } from './services/event-bus';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -386,6 +387,22 @@ function safeBase64Decode(b64: string): string {
         record.timestamp,
       ],
     );
+
+    const liveType = event.type === 'applied'
+      ? 'application_created'
+      : event.type === 'assigned'
+        ? 'assignment_created'
+        : 'cap_updated';
+
+    publishLiveEvent({
+      type: liveType,
+      data: { eventType: event.type, orgId: event.orgId, issueId: event.issueId },
+    });
+  }
+
+  stop(): void {
+    this.isRunning = false;
+    logger.info({ message: 'Event indexer stopped' });
     // rowCount > 0 means a row was actually inserted
     return (result as { rowCount?: number }).rowCount === 1;
   }

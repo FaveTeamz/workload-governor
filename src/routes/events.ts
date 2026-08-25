@@ -12,9 +12,29 @@
  */
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
+import { subscribeToLiveEvents } from '../services/event-bus';
 
 const router = Router();
 
+router.get('/stream', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15000);
+  const unsubscribe = subscribeToLiveEvents((event) => {
+    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+  });
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+});
+
+// GET /api/events?org_id=&limit=&offset=&event_type=&start_date=&end_date=
 router.get('/', async (req: Request, res: Response) => {
   const {
     org_id,

@@ -58,6 +58,11 @@ a, button, input, select, textarea {
   flex-wrap: wrap;   /* prevents overflow on narrow viewports */
   min-width: 0;
 }
+.app-header h1 { font-size: 1.25rem; }
+.app-logo { font-size: 1.5rem; }
+.live-indicator { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: .75rem; }
+.live-indicator > span { width: 7px; height: 7px; border-radius: 50%; background: var(--color-muted); }
+.live-indicator--connected > span { background: var(--color-complete); box-shadow: 0 0 0 3px rgba(34,197,94,.15); }
 .app-header h1 { font-size: 1.25rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-logo { font-size: 1.5rem; flex-shrink: 0; }
 
