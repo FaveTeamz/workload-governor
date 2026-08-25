@@ -1,640 +1,549 @@
-openapi: 3.1.0
+openapi: '3.0.3'
 info:
-  title: Workload Governor API
-  description: REST API for managing workload assignments on Stellar blockchain
-  version: 1.0.0
+  title: WorkloadGovernor API
+  version: '1.0.0'
+  description: >
+    REST API for the WorkloadGovernor contributor platform. Provides org management,
+    issue tracking, assignment routing, and event history backed by the
+    Soroban smart contract on the Stellar network.
   contact:
-    name: Workload Governor Team
+    name: FaveTeamz
+    url: https://github.com/FaveTeamz/workload-governor
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
 
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:3001
     description: Local development server
-  - url: https://api.workload-governor.io
+  - url: https://api.workload-governor.example.com
     description: Production server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+    description: Service health checks
+  - name: orgs
+    description: Registered organizations
+  - name: issues
+    description: Open issues within an org
+  - name: assignments
+    description: Active issue assignments
+  - name: events
+    description: On-chain event history
+  - name: contributors
+    description: Contributor statistics
 
 paths:
   /health:
     get:
-      summary: Health check endpoint
       operationId: getHealth
-      tags:
-        - System
+      tags: [health]
+      summary: Health check
+      security: []
       responses:
         '200':
-          description: Server is healthy
+          description: Service is healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [ok]
-                required:
-                  - status
+                $ref: '#/components/schemas/HealthResponse'
 
-  /api/issues:
+  /orgs:
     get:
-      summary: List issues with optional filtering
-      operationId: listIssues
-      tags:
-        - Issues
-      parameters:
-        - name: org_id
-          in: query
-          schema:
-            type: string
-          description: Filter by organization ID
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [open, closed, in_progress]
-          description: Filter by issue status
+      operationId: listOrgs
+      tags: [orgs]
+      summary: List registered organizations
       responses:
         '200':
-          description: List of issues
+          description: List of registered orgs
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Issue'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/contributors:
-    get:
-      summary: List contributors
-      operationId: listContributors
-      tags:
-        - Contributors
-      responses:
-        '200':
-          description: List of contributors
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Contributor'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/admin/maintainers:
-    post:
-      summary: Register a maintainer (admin only)
-      operationId: registerMaintainer
-      tags:
-        - Admin
-      security:
-        - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                maintainer_address:
-                  type: string
-                  description: Stellar account address of the maintainer
-                org_id:
-                  type: string
-                  description: Organization ID
-                sequence:
-                  type: string
-                  description: Current sequence number of the admin account
-              required:
-                - maintainer_address
-                - org_id
-                - sequence
-      responses:
-        '200':
-          description: Unsigned transaction XDR for admin to sign
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  xdr:
-                    type: string
-                    description: Unsigned transaction XDR
-                  message:
-                    type: string
-                    description: Instructions for admin
-                required:
-                  - xdr
-                  - message
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                  $ref: '#/components/schemas/Org'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
-          $ref: '#/components/responses/InternalServerError'
+          $ref: '#/components/responses/InternalError'
 
-  /api/transactions/apply:
-    post:
-      summary: Build transaction for applying to an issue
-      operationId: buildApplyTransaction
-      tags:
-        - Transactions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApplyTransactionRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/TransactionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/transactions/withdraw:
-    post:
-      summary: Build transaction for withdrawing application
-      operationId: buildWithdrawTransaction
-      tags:
-        - Transactions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WithdrawTransactionRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/TransactionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/transactions/assign:
-    post:
-      summary: Build transaction for assigning issue to contributor
-      operationId: buildAssignTransaction
-      tags:
-        - Transactions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AssignTransactionRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/TransactionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/transactions/complete:
-    post:
-      summary: Build transaction for marking issue as complete
-      operationId: buildCompleteTransaction
-      tags:
-        - Transactions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CompleteTransactionRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/TransactionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/transactions/revoke:
-    post:
-      summary: Build transaction for revoking assignment
-      operationId: buildRevokeTransaction
-      tags:
-        - Transactions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RevokeTransactionRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/TransactionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /api/events:
+  /orgs/{orgId}/issues:
     get:
-      summary: List contract events with pagination and filtering
-      operationId: listEvents
-      tags:
-        - Events
+      operationId: listOrgIssues
+      tags: [issues]
+      summary: List open issues for an org
       parameters:
-        - name: org_id
-          in: query
-          schema:
-            type: string
-          description: Filter by organization ID
-        - name: event_type
-          in: query
-          schema:
-            type: string
-            enum: [applied, withdrawn, assigned, completed, revoked]
-          description: Filter by event type
-        - name: start_date
-          in: query
-          schema:
-            type: string
-            format: date-time
-          description: Filter events after this date
-        - name: end_date
-          in: query
-          schema:
-            type: string
-            format: date-time
-          description: Filter events before this date
+        - $ref: '#/components/parameters/orgId'
         - name: limit
           in: query
           schema:
             type: integer
             minimum: 1
-            maximum: 1000
-            default: 50
-          description: Number of events to return
+            maximum: 100
+            default: 20
         - name: offset
           in: query
           schema:
             type: integer
             minimum: 0
             default: 0
-          description: Number of events to skip
       responses:
         '200':
-          description: List of contract events with pagination info
+          description: List of open issues
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  events:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ContractEvent'
-                  pagination:
-                    $ref: '#/components/schemas/Pagination'
-                required:
-                  - events
-                  - pagination
+                type: array
+                items:
+                  $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
-          $ref: '#/components/responses/InternalServerError'
+          $ref: '#/components/responses/InternalError'
 
-  /docs:
+  /orgs/{orgId}/applications:
     get:
-      summary: Swagger UI documentation
-      operationId: getDocs
-      tags:
-        - System
+      operationId: listOrgApplications
+      tags: [orgs]
+      summary: List pending applications for an org
+      description: >
+        Returns all pending applications for a given org aggregated from on-chain
+        state via Soroban RPC. Results are cached in Redis with a 30-second TTL.
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+        - name: page
+          in: query
+          description: 1-based page number
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Results per page (max 50)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
       responses:
         '200':
-          description: Swagger UI HTML page
-          content:
-            text/html:
+          description: Paginated list of pending applications
+          headers:
+            X-Cache:
+              description: HIT when served from Redis cache, MISS otherwise
               schema:
                 type: string
+                enum: [HIT, MISS]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /orgs/{orgId}/assignments:
+    get:
+      operationId: listOrgAssignments
+      tags: [assignments]
+      summary: List active assignments for an org
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+        - name: contributor
+          in: query
+          description: Filter by contributor address
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of active assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Assignment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /orgs/{orgId}/issues/{issueId}/apply:
+    post:
+      operationId: applyForIssue
+      tags: [issues]
+      summary: Apply for an open issue
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+        - $ref: '#/components/parameters/issueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyRequest'
+      responses:
+        '201':
+          description: Application submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: withdrawApplication
+      tags: [issues]
+      summary: Withdraw an application for an issue
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+        - $ref: '#/components/parameters/issueId'
+        - name: contributor
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Contributor address withdrawing the application
+      responses:
+        '204':
+          description: Application withdrawn successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /orgs/{orgId}/events:
+    get:
+      operationId: listOrgEvents
+      tags: [events]
+      summary: List on-chain events for an org
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+        - name: contributor
+          in: query
+          description: Filter by contributor address
+          schema:
+            type: string
+        - name: event_type
+          in: query
+          description: Filter by event type
+          schema:
+            type: string
+            enum: [applied, withdrawn, assigned, completed, revoked]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /contributors/{address}/stats:
+    get:
+      operationId: getContributorStats
+      tags: [contributors]
+      summary: Get global stats for a contributor
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Contributor Stellar address
+      responses:
+        '200':
+          description: Contributor statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributorStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
 components:
-  schemas:
-    Issue:
-      type: object
-      properties:
-        id:
-          type: integer
-          description: Issue ID
-        org_id:
-          type: string
-          description: Organization ID
-        title:
-          type: string
-          description: Issue title
-        status:
-          type: string
-          enum: [open, closed, in_progress]
-          description: Issue status
-        created_at:
-          type: string
-          format: date-time
-          description: Issue creation timestamp
-      required:
-        - id
-        - org_id
-        - title
-        - status
-        - created_at
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 
-    Contributor:
-      type: object
-      properties:
-        address:
-          type: string
-          description: Stellar account address
-        org_id:
-          type: string
-          description: Organization ID
-      required:
-        - address
-        - org_id
-
-    Maintainer:
-      type: object
-      properties:
-        address:
-          type: string
-          description: Stellar account address
-        org_id:
-          type: string
-          description: Organization ID
-      required:
-        - address
-        - org_id
-
-    ContractEvent:
-      type: object
-      properties:
-        id:
-          type: integer
-          description: Event ID
-        event_type:
-          type: string
-          enum: [applied, withdrawn, assigned, completed, revoked]
-          description: Type of contract event
-        ledger_seq:
-          type: integer
-          description: Ledger sequence number
-        timestamp:
-          type: string
-          format: date-time
-          description: Event timestamp
-        actor:
-          type: string
-          description: Address of the actor who triggered the event
-        org_id:
-          type: string
-          description: Organization ID
-        issue_id:
-          type: integer
-          nullable: true
-          description: Issue ID if applicable
-        contributor:
-          type: string
-          nullable: true
-          description: Contributor address if applicable
-        data:
-          type: object
-          nullable: true
-          description: Additional event data
-        created_at:
-          type: string
-          format: date-time
-          description: Record creation timestamp
-      required:
-        - id
-        - event_type
-        - ledger_seq
-        - timestamp
-        - actor
-        - org_id
-
-    Pagination:
-      type: object
-      properties:
-        total:
-          type: integer
-          description: Total number of items
-        limit:
-          type: integer
-          description: Items per page
-        offset:
-          type: integer
-          description: Items skipped
-        hasMore:
-          type: boolean
-          description: Whether more items exist
-      required:
-        - total
-        - limit
-        - offset
-        - hasMore
-
-    TransactionResponse:
-      type: object
-      properties:
-        xdr:
-          type: string
-          description: Transaction XDR string
-        fee:
-          type: string
-          description: Estimated fee in stroops
-        instructions:
-          type: integer
-          description: Estimated CPU instructions
-        readBytes:
-          type: integer
-          description: Estimated bytes to read
-        writeBytes:
-          type: integer
-          description: Estimated bytes to write
-      required:
-        - xdr
-        - fee
-
-    ApplyTransactionRequest:
-      type: object
-      properties:
-        contributor:
-          type: string
-          description: Contributor Stellar address
-        org_id:
-          type: string
-          description: Organization ID
-        issue_id:
-          type: integer
-          description: Issue ID
-        sequence:
-          type: string
-          description: Current sequence number
-      required:
-        - contributor
-        - org_id
-        - issue_id
-        - sequence
-
-    WithdrawTransactionRequest:
-      type: object
-      properties:
-        contributor:
-          type: string
-          description: Contributor Stellar address
-        org_id:
-          type: string
-          description: Organization ID
-        issue_id:
-          type: integer
-          description: Issue ID
-        sequence:
-          type: string
-          description: Current sequence number
-      required:
-        - contributor
-        - org_id
-        - issue_id
-        - sequence
-
-    AssignTransactionRequest:
-      type: object
-      properties:
-        maintainer:
-          type: string
-          description: Maintainer Stellar address
-        contributor:
-          type: string
-          description: Contributor Stellar address
-        org_id:
-          type: string
-          description: Organization ID
-        issue_id:
-          type: integer
-          description: Issue ID
-        sequence:
-          type: string
-          description: Current sequence number
-      required:
-        - maintainer
-        - contributor
-        - org_id
-        - issue_id
-        - sequence
-
-    CompleteTransactionRequest:
-      type: object
-      properties:
-        maintainer:
-          type: string
-          description: Maintainer Stellar address
-        contributor:
-          type: string
-          description: Contributor Stellar address
-        org_id:
-          type: string
-          description: Organization ID
-        issue_id:
-          type: integer
-          description: Issue ID
-        sequence:
-          type: string
-          description: Current sequence number
-      required:
-        - maintainer
-        - contributor
-        - org_id
-        - issue_id
-        - sequence
-
-    RevokeTransactionRequest:
-      type: object
-      properties:
-        maintainer:
-          type: string
-          description: Maintainer Stellar address
-        contributor:
-          type: string
-          description: Contributor Stellar address
-        org_id:
-          type: string
-          description: Organization ID
-        issue_id:
-          type: integer
-          description: Issue ID
-        sequence:
-          type: string
-          description: Current sequence number
-      required:
-        - maintainer
-        - contributor
-        - org_id
-        - issue_id
-        - sequence
-
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-          description: Error message
-        correlationId:
-          type: string
-          nullable: true
-          description: Correlation ID for tracing
-      required:
-        - error
+  parameters:
+    orgId:
+      name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Organization identifier
+    issueId:
+      name: issueId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Issue identifier
 
   responses:
     BadRequest:
-      description: Bad request - invalid parameters
+      description: Invalid request parameters
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
+            $ref: '#/components/schemas/Error'
     Unauthorized:
-      description: Unauthorized - invalid or missing authentication
+      description: Missing or invalid authentication token
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
-    InternalServerError:
-      description: Internal server error
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
-    TransactionResponse:
-      description: Transaction built successfully
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict with current state (e.g. duplicate application)
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/TransactionResponse'
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: base64
-      description: |
-        Bearer token containing signed message in base64 format.
-        Format: Bearer <base64(JSON.stringify({admin_address, message, signature}))>
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
 
-tags:
-  - name: System
-    description: System endpoints
-  - name: Issues
-    description: Issue management
-  - name: Contributors
-    description: Contributor management
-  - name: Admin
-    description: Admin-only endpoints
-  - name: Transactions
-    description: Transaction building
-  - name: Events
-    description: Event audit trail
+    Org:
+      type: object
+      required: [org_id, contract_address, created_at]
+      properties:
+        org_id:
+          type: string
+          example: org_stellar_001
+        contract_address:
+          type: string
+          example: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM
+        created_at:
+          type: string
+          format: date-time
+
+    Issue:
+      type: object
+      required: [issue_id, org_id, title, status, created_at]
+      properties:
+        issue_id:
+          type: string
+          example: issue_42
+        org_id:
+          type: string
+          example: org_stellar_001
+        title:
+          type: string
+          example: Fix memory leak in sync service
+        description:
+          type: string
+        status:
+          type: string
+          enum: [open, assigned, completed]
+        reward_xlm:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+
+    Assignment:
+      type: object
+      required: [assignment_id, org_id, issue_id, contributor, assigned_at]
+      properties:
+        assignment_id:
+          type: string
+        org_id:
+          type: string
+        issue_id:
+          type: string
+        contributor:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+
+    Event:
+      type: object
+      required: [event_id, org_id, event_type, issue_id, contributor, tx_hash, occurred_at]
+      properties:
+        event_id:
+          type: string
+        org_id:
+          type: string
+        event_type:
+          type: string
+          enum: [applied, withdrawn, assigned, completed, revoked]
+        issue_id:
+          type: string
+        contributor:
+          type: string
+        tx_hash:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+
+    ApplyRequest:
+      type: object
+      required: [contributor]
+      properties:
+        contributor:
+          type: string
+          description: Stellar address of the contributor applying
+
+    ApplicationEntry:
+      type: object
+      required: [contributor, issue_id, applied_at_ledger]
+      properties:
+        contributor:
+          type: string
+          description: Stellar address of the contributor
+          example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+        issue_id:
+          type: integer
+          description: Numeric issue identifier on-chain
+          example: 42
+        applied_at_ledger:
+          type: integer
+          description: Ledger sequence number when the application was submitted
+          example: 1234567
+
+    ApplicationsResponse:
+      type: object
+      required: [org_id, total, page, limit, applications]
+      properties:
+        org_id:
+          type: string
+          example: stellar-oss
+        total:
+          type: integer
+          description: Total number of pending applications for the org
+          example: 12
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        applications:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplicationEntry'
+
+    ApplyResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        tx_hash:
+          type: string
+        message:
+          type: string
+
+    ContributorStats:
+      type: object
+      required: [address, global_application_count, org_assignment_counts]
+      properties:
+        address:
+          type: string
+        global_application_count:
+          type: integer
+          minimum: 0
+          maximum: 15
+        org_assignment_counts:
+          type: object
+          additionalProperties:
+            type: integer
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
