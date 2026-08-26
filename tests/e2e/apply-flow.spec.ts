@@ -1,18 +1,28 @@
 import { test, expect } from '@playwright/test';
 
 const TEST_PUBLIC_KEY = 'GAHJJJKMOKYE4RVPZEWZTKH5FVI4PA3VL7GK2LFNUBSGBWE3ITMG4YOS';
-const FIXED_XDR = 'AAAAAgAAAAA...FIXEDXDR...AAAAA==';
+
+interface Window {
+  freighter: {
+    isConnected: () => Promise<boolean>;
+    getPublicKey: () => Promise<string>;
+    signTransaction: (xdr: string) => Promise<string>;
+  };
+}
 
 test('contributor apply flow', async ({ page }) => {
   // Inject Freighter mock before any page script runs
-  await page.addInitScript((pubkey) => {
-    (window as any).freighter = {
+  await page.addInitScript(() => {
+    const window_ = window as unknown as Window;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    window_.freighter = {
       isConnected: () => Promise.resolve(true),
-      getPublicKey: () => Promise.resolve(pubkey),
+      getPublicKey: () => Promise.resolve(TEST_PUBLIC_KEY),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       signTransaction: (_xdr: string) =>
         Promise.resolve('AAAAAgAAAAA...FIXEDXDR...AAAAA=='),
     };
-  }, TEST_PUBLIC_KEY);
+  });
 
   await page.goto('/issues');
 

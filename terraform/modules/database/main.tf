@@ -38,6 +38,7 @@ resource "aws_db_instance" "this" {
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
+  backup_retention_period = var.environment == "production" ? 30 : 7
   multi_az               = var.environment == "production"
   skip_final_snapshot    = var.environment != "production"
   deletion_protection    = var.environment == "production"
