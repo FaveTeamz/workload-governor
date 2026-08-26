@@ -135,6 +135,18 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.environment == "production" ? 2 : 1
   launch_type     = "FARGATE"
 
+  # Blue/green rolling deployment: keep old tasks running until new ones are
+  # healthy (min 100 %), allow double capacity during the transition (max 200 %).
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  # Circuit breaker: ECS automatically rolls back to the previous task
+  # definition if the new deployment fails health checks.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]

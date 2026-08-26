@@ -1,0 +1,992 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Badge snapshots > error 1`] = `
+<div>
+  <span
+    class="badge badge--error"
+  >
+    Failed
+  </span>
+</div>
+`;
+
+exports[`Badge snapshots > info 1`] = `
+<div>
+  <span
+    class="badge badge--info"
+  >
+    Draft
+  </span>
+</div>
+`;
+
+exports[`Badge snapshots > neutral (default) 1`] = `
+<div>
+  <span
+    class="badge badge--neutral"
+  >
+    Unknown
+  </span>
+</div>
+`;
+
+exports[`Badge snapshots > success 1`] = `
+<div>
+  <span
+    class="badge badge--success"
+  >
+    Completed
+  </span>
+</div>
+`;
+
+exports[`Badge snapshots > warning 1`] = `
+<div>
+  <span
+    class="badge badge--warning"
+  >
+    Pending
+  </span>
+</div>
+`;
+
+exports[`Button snapshots > disabled 1`] = `
+<div>
+  <button
+    class="btn btn-primary"
+    disabled=""
+  >
+    Unavailable
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > ghost 1`] = `
+<div>
+  <button
+    class="btn btn-ghost"
+  >
+    Learn more
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > ghost sm 1`] = `
+<div>
+  <button
+    class="btn btn-ghost btn-sm"
+  >
+    Dismiss
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > primary (default) 1`] = `
+<div>
+  <button
+    class="btn btn-primary"
+  >
+    Submit
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > primary sm 1`] = `
+<div>
+  <button
+    class="btn btn-primary btn-sm"
+  >
+    Save
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > secondary 1`] = `
+<div>
+  <button
+    class="btn btn-secondary"
+  >
+    Cancel
+  </button>
+</div>
+`;
+
+exports[`Button snapshots > secondary sm 1`] = `
+<div>
+  <button
+    class="btn btn-secondary btn-sm"
+  >
+    Edit
+  </button>
+</div>
+`;
+
+exports[`Card snapshots > body only 1`] = `
+<div>
+  <div
+    class="card"
+  >
+    <div
+      class="card__body"
+    >
+      Card body content
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > with custom className 1`] = `
+<div>
+  <div
+    class="card card--highlighted"
+  >
+    <div
+      class="card__body"
+    >
+      Highlighted card
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > with title 1`] = `
+<div>
+  <div
+    class="card"
+  >
+    <div
+      class="card__header"
+    >
+      My Card Title
+    </div>
+    <div
+      class="card__body"
+    >
+      Card body content
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Card snapshots > with title and footer 1`] = `
+<div>
+  <div
+    class="card"
+  >
+    <div
+      class="card__header"
+    >
+      My Card Title
+    </div>
+    <div
+      class="card__body"
+    >
+      Card body content
+    </div>
+    <div
+      class="card__footer"
+    >
+      <button>
+        Action
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Gauge snapshots > ~50% realistic (value=7, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications"
+    class="gauge"
+  >
+    <svg
+      aria-label="Global Applications: 7 of 15"
+      height="120"
+      role="img"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 0 1 52.86658839416546 14.961411668861722"
+        fill="none"
+        stroke="var(--color-success-500)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="56"
+      >
+        47
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="74"
+      >
+        7
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshots > 0% (value=0, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications"
+    class="gauge"
+  >
+    <svg
+      aria-label="Global Applications: 0 of 15"
+      height="120"
+      role="img"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="56"
+      >
+        0
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="74"
+      >
+        0
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshots > 50% (value=7, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications"
+    class="gauge"
+  >
+    <svg
+      aria-label="Global Applications: 1 of 2"
+      height="120"
+      role="img"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 0 1 59.99999999999999 14.399999999999999"
+        fill="none"
+        stroke="var(--color-success-500)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="56"
+      >
+        50
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="74"
+      >
+        1
+        /
+        2
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshots > 100% (value=15, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications"
+    class="gauge"
+  >
+    <svg
+      aria-label="Global Applications: 15 of 15"
+      height="120"
+      role="img"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-error-500)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="56"
+      >
+        100
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="74"
+      >
+        15
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshots > custom size 1`] = `
+<div>
+  <figure
+    aria-label="Org Assignments"
+    class="gauge"
+  >
+    <svg
+      aria-label="Org Assignments: 2 of 4"
+      height="80"
+      role="img"
+      viewBox="0 0 80 80"
+      width="80"
+    >
+      <path
+        d="M 18.50395385192896 61.496046148071045 A 30.4 30.4 0 1 1 61.49604614807107 61.49604614807102"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="8"
+      />
+      <path
+        d="M 18.50395385192896 61.496046148071045 A 30.4 30.4 0 0 1 39.99999999999999 9.600000000000001"
+        fill="none"
+        stroke="var(--color-success-500)"
+        stroke-linecap="round"
+        stroke-width="8"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="40"
+        y="36"
+      >
+        50
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="40"
+        y="54"
+      >
+        2
+        /
+        4
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Org Assignments
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshots > no label 1`] = `
+<div>
+  <figure
+    class="gauge"
+  >
+    <svg
+      aria-label="Gauge: 4 of 4"
+      height="120"
+      role="img"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-error-500)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="56"
+      >
+        100
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="74"
+      >
+        4
+        /
+        4
+      </text>
+    </svg>
+  </figure>
+</div>
+`;
+
+exports[`Gauge snapshots > warning range (value=10, max=15) 1`] = `
+<div>
+  <figure
+    aria-label="Global Applications"
+    class="gauge"
+  >
+    <svg
+      aria-label="Global Applications: 10 of 15"
+      height="120"
+      role="img"
+      viewBox="0 0 120 120"
+      width="120"
+    >
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
+        fill="none"
+        stroke="var(--color-border)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <path
+        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 0 1 92.24406922210656 27.755930777893425"
+        fill="none"
+        stroke="var(--color-success-500)"
+        stroke-linecap="round"
+        stroke-width="12"
+      />
+      <text
+        class="gauge__pct"
+        fill="var(--color-text)"
+        text-anchor="middle"
+        x="60"
+        y="56"
+      >
+        67
+        %
+      </text>
+      <text
+        class="gauge__value"
+        fill="var(--color-muted)"
+        text-anchor="middle"
+        x="60"
+        y="74"
+      >
+        10
+        /
+        15
+      </text>
+    </svg>
+    <figcaption
+      class="gauge__label"
+    >
+      Global Applications
+    </figcaption>
+  </figure>
+</div>
+`;
+
+exports[`Modal snapshots > closed 1`] = `
+<div>
+  <dialog
+    aria-labelledby="modal-title"
+    class="modal"
+  >
+    <div
+      class="modal__content"
+    >
+      <div
+        class="modal__header"
+      >
+        <h2
+          class="modal__title"
+          id="modal-title"
+        >
+          Confirm Action
+        </h2>
+        <button
+          aria-label="Close"
+          class="modal__close"
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        class="modal__body"
+      >
+        <p>
+          Are you sure you want to proceed?
+        </p>
+      </div>
+    </div>
+  </dialog>
+</div>
+`;
+
+exports[`Modal snapshots > open 1`] = `
+<div>
+  <dialog
+    aria-labelledby="modal-title"
+    class="modal"
+    open=""
+  >
+    <div
+      class="modal__content"
+    >
+      <div
+        class="modal__header"
+      >
+        <h2
+          class="modal__title"
+          id="modal-title"
+        >
+          Confirm Action
+        </h2>
+        <button
+          aria-label="Close"
+          class="modal__close"
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        class="modal__body"
+      >
+        <p>
+          Are you sure you want to proceed?
+        </p>
+      </div>
+    </div>
+  </dialog>
+</div>
+`;
+
+exports[`Modal snapshots > open with footer 1`] = `
+<div>
+  <dialog
+    aria-labelledby="modal-title"
+    class="modal"
+    open=""
+  >
+    <div
+      class="modal__content"
+    >
+      <div
+        class="modal__header"
+      >
+        <h2
+          class="modal__title"
+          id="modal-title"
+        >
+          Delete Item
+        </h2>
+        <button
+          aria-label="Close"
+          class="modal__close"
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        class="modal__body"
+      >
+        <p>
+          This action cannot be undone.
+        </p>
+      </div>
+      <div
+        class="modal__footer"
+      >
+        <button>
+          Cancel
+        </button>
+        <button>
+          Delete
+        </button>
+      </div>
+    </div>
+  </dialog>
+</div>
+`;
+
+exports[`Table snapshots > empty (no rows) 1`] = `
+<div>
+  <div
+    aria-label="Contributors"
+    class="table-wrap"
+    role="region"
+    tabindex="0"
+  >
+    <table
+      class="table"
+    >
+      <caption
+        class="table__caption"
+      >
+        Contributors
+      </caption>
+      <thead>
+        <tr>
+          <th
+            scope="col"
+          >
+            ID
+          </th>
+          <th
+            scope="col"
+          >
+            Name
+          </th>
+          <th
+            scope="col"
+          >
+            Status
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td
+            class="table__empty"
+            colspan="3"
+          >
+            No data
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+`;
+
+exports[`Table snapshots > no caption 1`] = `
+<div>
+  <div
+    class="table-wrap"
+    role="region"
+    tabindex="0"
+  >
+    <table
+      class="table"
+    >
+      <thead>
+        <tr>
+          <th
+            scope="col"
+          >
+            ID
+          </th>
+          <th
+            scope="col"
+          >
+            Name
+          </th>
+          <th
+            scope="col"
+          >
+            Status
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            1
+          </td>
+          <td>
+            Alice
+          </td>
+          <td>
+            active
+          </td>
+        </tr>
+        <tr>
+          <td>
+            2
+          </td>
+          <td>
+            Bob
+          </td>
+          <td>
+            pending
+          </td>
+        </tr>
+        <tr>
+          <td>
+            3
+          </td>
+          <td>
+            Carol
+          </td>
+          <td>
+            inactive
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+`;
+
+exports[`Table snapshots > populated 1`] = `
+<div>
+  <div
+    aria-label="Contributors"
+    class="table-wrap"
+    role="region"
+    tabindex="0"
+  >
+    <table
+      class="table"
+    >
+      <caption
+        class="table__caption"
+      >
+        Contributors
+      </caption>
+      <thead>
+        <tr>
+          <th
+            scope="col"
+          >
+            ID
+          </th>
+          <th
+            scope="col"
+          >
+            Name
+          </th>
+          <th
+            scope="col"
+          >
+            Status
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            1
+          </td>
+          <td>
+            Alice
+          </td>
+          <td>
+            active
+          </td>
+        </tr>
+        <tr>
+          <td>
+            2
+          </td>
+          <td>
+            Bob
+          </td>
+          <td>
+            pending
+          </td>
+        </tr>
+        <tr>
+          <td>
+            3
+          </td>
+          <td>
+            Carol
+          </td>
+          <td>
+            inactive
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+`;
+
+exports[`Table snapshots > populated with custom render 1`] = `
+<div>
+  <div
+    aria-label="Contributors with badges"
+    class="table-wrap"
+    role="region"
+    tabindex="0"
+  >
+    <table
+      class="table"
+    >
+      <caption
+        class="table__caption"
+      >
+        Contributors with badges
+      </caption>
+      <thead>
+        <tr>
+          <th
+            scope="col"
+          >
+            ID
+          </th>
+          <th
+            scope="col"
+          >
+            Name
+          </th>
+          <th
+            scope="col"
+          >
+            Status
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            1
+          </td>
+          <td>
+            Alice
+          </td>
+          <td>
+            <span
+              class="badge badge--success"
+            >
+              active
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            2
+          </td>
+          <td>
+            Bob
+          </td>
+          <td>
+            <span
+              class="badge badge--neutral"
+            >
+              pending
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            3
+          </td>
+          <td>
+            Carol
+          </td>
+          <td>
+            <span
+              class="badge badge--neutral"
+            >
+              inactive
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+`;
