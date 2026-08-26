@@ -7,19 +7,25 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "cd .. && npx vitest run tests/unit/WorkloadGauge.test.tsx --reporter=verbose",
+    "test:coverage": "cd .. && npx vitest run tests/unit/WorkloadGauge.test.tsx --reporter=verbose --coverage --coverage.include='frontend/src/components/WorkloadGauge.tsx'"
   },
   "dependencies": {
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@testing-library/react": "16.0.0",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "1.6.0",
+    "jsdom": "^24.1.1",
     "oxlint": "^1.69.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.0"
+    "vite": "^8.1.0",
+    "vitest": "1.6.0"
   }
 }
