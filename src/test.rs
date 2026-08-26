@@ -1162,3 +1162,196 @@ mod error_cases {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// BENCHMARK TESTS
+//
+// These tests measure CPU instruction cost for the four core contract
+// operations. Each prints a single parseable line:
+//
+//   bench_<name>: <n> cpu_insns
+//
+// Run with:
+//   cargo test --features testutils bench_ -- --nocapture
+//
+// The CI workflow captures this output and feeds it to
+// scripts/check-benchmarks.js for regression detection.
+//
+// Why cpu_instruction_cost()?
+//   soroban_sdk::testutils::budget::Budget::cpu_instruction_cost() returns
+//   the cumulative CPU instruction cost since the last reset_default().
+//   In native test mode the numbers are lower than real WASM execution, but
+//   they are *deterministic* and *proportional*, making them ideal for
+//   regression tracking.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod bench {
+    use std::boxed::Box;
+    use std::println;
+
+    use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
+
+    use crate::{WorkloadGovernor, WorkloadGovernorClient};
+
+    /// Shared setup: fresh env with unlimited budget, registered maintainer and
+    /// contributor. Returns everything the benchmark operations need.
+    struct BenchEnv {
+        env: Env,
+        client: WorkloadGovernorClient<'static>,
+        admin: Address,
+        maintainer: Address,
+        contributor: Address,
+        org: Symbol,
+    }
+
+    impl BenchEnv {
+        fn new() -> Self {
+            let env = Env::default();
+            env.mock_all_auths();
+            // Use unlimited budget so we measure cost without hitting limits.
+            env.budget().reset_unlimited();
+
+            let contract_id = env.register_contract(None, WorkloadGovernor);
+            let env: &'static Env = Box::leak(Box::new(env));
+            let client = WorkloadGovernorClient::new(env, &contract_id);
+
+            let admin = Address::generate(env);
+            let maintainer = Address::generate(env);
+            let contributor = Address::generate(env);
+            let org = Symbol::new(env, "benchorg");
+
+            client.initialize(&admin);
+            client.register_maintainer(&admin, &maintainer, &org);
+
+            BenchEnv {
+                env: env.clone(),
+                client,
+                admin,
+                maintainer,
+                contributor,
+                org,
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // bench_apply_for_issue
+    //
+    // Measures the instruction cost of a single `apply_for_issue` call:
+    //   - guard (not initialised check)
+    //   - contributor auth
+    //   - global-app-count read + limit check
+    //   - duplicate-application check
+    //   - write app entry + update count
+    //   - extend TTLs
+    //   - bump instance TTL
+    //   - emit event
+    // -----------------------------------------------------------------------
+    #[test]
+    fn bench_apply_for_issue() {
+        let b = BenchEnv::new();
+
+        // Reset the tracker immediately before the operation under measurement.
+        b.env.budget().reset_default();
+        b.client.apply_for_issue(&b.contributor, &b.org, &1u32);
+        let cost = b.env.budget().cpu_instruction_cost();
+
+        println!("bench_apply_for_issue: {} cpu_insns", cost);
+        // Sanity: must consume *some* instructions.
+        assert!(cost > 0, "bench_apply_for_issue cost must be > 0");
+    }
+
+    // -----------------------------------------------------------------------
+    // bench_assign_issue
+    //
+    // Measures the instruction cost of `assign_issue` given a pre-existing
+    // pending application. Covers:
+    //   - initialization guard
+    //   - maintainer auth + registration check
+    //   - application-not-found check
+    //   - already-assigned check
+    //   - org-assignment-count read + limit check
+    //   - remove app entry, update global-app count
+    //   - write assignment entry + update org-count
+    //   - bump instance TTL
+    //   - emit event
+    // -----------------------------------------------------------------------
+    #[test]
+    fn bench_assign_issue() {
+        let b = BenchEnv::new();
+        // Place the application before we start measuring.
+        b.client.apply_for_issue(&b.contributor, &b.org, &1u32);
+
+        b.env.budget().reset_default();
+        b.client
+            .assign_issue(&b.maintainer, &b.contributor, &b.org, &1u32);
+        let cost = b.env.budget().cpu_instruction_cost();
+
+        println!("bench_assign_issue: {} cpu_insns", cost);
+        assert!(cost > 0, "bench_assign_issue cost must be > 0");
+    }
+
+    // -----------------------------------------------------------------------
+    // bench_complete_assignment
+    //
+    // Measures the instruction cost of `complete_assignment` given a
+    // pre-existing active assignment. Covers:
+    //   - initialization guard
+    //   - maintainer auth + registration check
+    //   - assignment-not-found check
+    //   - remove assignment entry
+    //   - org-assignment-count read + decrement
+    //   - bump instance TTL
+    //   - emit event
+    // -----------------------------------------------------------------------
+    #[test]
+    fn bench_complete_assignment() {
+        let b = BenchEnv::new();
+        b.client.apply_for_issue(&b.contributor, &b.org, &1u32);
+        b.client
+            .assign_issue(&b.maintainer, &b.contributor, &b.org, &1u32);
+
+        b.env.budget().reset_default();
+        b.client
+            .complete_assignment(&b.maintainer, &b.contributor, &b.org, &1u32);
+        let cost = b.env.budget().cpu_instruction_cost();
+
+        println!("bench_complete_assignment: {} cpu_insns", cost);
+        assert!(cost > 0, "bench_complete_assignment cost must be > 0");
+    }
+
+    // -----------------------------------------------------------------------
+    // bench_check_consistency
+    //
+    // Measures the combined instruction cost of the four read-only query
+    // functions that a client would call to display current contributor state:
+    //   - get_global_application_count
+    //   - get_org_assignment_count
+    //   - has_applied
+    //   - is_assigned
+    //
+    // This represents the "read path" cost: storage lookups with no writes,
+    // no events, and no TTL bumps.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn bench_check_consistency() {
+        let b = BenchEnv::new();
+        // Populate state so storage reads actually find data.
+        b.client.apply_for_issue(&b.contributor, &b.org, &1u32);
+        b.client
+            .assign_issue(&b.maintainer, &b.contributor, &b.org, &1u32);
+        // Issue 2 stays pending.
+        b.client.apply_for_issue(&b.contributor, &b.org, &2u32);
+
+        b.env.budget().reset_default();
+        let _ = b.client.get_global_application_count(&b.contributor);
+        let _ = b.client.get_org_assignment_count(&b.contributor, &b.org);
+        let _ = b.client.has_applied(&b.contributor, &b.org, &2u32);
+        let _ = b.client.is_assigned(&b.contributor, &b.org, &1u32);
+        let cost = b.env.budget().cpu_instruction_cost();
+
+        println!("bench_check_consistency: {} cpu_insns", cost);
+        assert!(cost > 0, "bench_check_consistency cost must be > 0");
+    }
+}
