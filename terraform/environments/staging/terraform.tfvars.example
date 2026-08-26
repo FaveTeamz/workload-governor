@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and fill in real values before running terraform apply.
+# Do NOT commit terraform.tfvars — it is git-ignored.
+
+aws_region             = "us-east-1"
+image_repository       = "ghcr.io/FaveTeamz/workload-governor"
+image_tag              = "abc1234"   # replace with Git SHA or version tag
+acm_certificate_domain = "staging.example.com"   # must be issued in ACM first

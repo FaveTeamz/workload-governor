@@ -1,0 +1,290 @@
+/* =============================================================
+   TxConfirmModal — closes #322
+   ============================================================= */
+
+/* ── Backdrop ──────────────────────────────────────────────── */
+.txmodal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1100;
+  animation: txBackdropIn 200ms ease-out both;
+}
+
+@keyframes txBackdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Dialog shell ──────────────────────────────────────────── */
+.txmodal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1101;
+  background: var(--color-surface, #1c1f2b);
+  color: var(--color-text, #e2e8f0);
+  border: 1px solid var(--color-border, #2e3347);
+  border-radius: var(--radius-lg, 12px);
+  width: min(440px, 92vw);
+  box-shadow: var(--elevation-4, 0 20px 25px -5px rgba(0,0,0,.5));
+  overflow: hidden;
+  animation: txSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes txSlideIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 16px)); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* Destructive variant */
+.txmodal--destructive {
+  border-color: var(--color-error-700, #b91c1c);
+}
+
+/* ── Hero section ──────────────────────────────────────────── */
+.txmodal__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 16px);
+  padding: var(--space-6, 24px) var(--space-6, 24px) var(--space-5, 20px);
+}
+
+.txmodal__icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full, 9999px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  background: var(--color-primary-100, #e0e7ff);
+  color: var(--color-primary-600, #4a6de0);
+}
+
+.txmodal--destructive .txmodal__icon {
+  background: var(--color-error-100, #fee2e2);
+  color: var(--color-error-700, #b91c1c);
+}
+
+.txmodal__hero-text {
+  min-width: 0;
+}
+
+.txmodal__action-summary {
+  margin: 0 0 2px;
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: var(--font-semibold, 600);
+  line-height: var(--leading-tight, 1.25);
+  color: var(--color-text, #e2e8f0);
+}
+
+.txmodal__subtitle {
+  margin: 0;
+  font-size: var(--text-sm, 0.8125rem);
+  color: var(--color-muted, #94a3b8);
+}
+
+/* ── Secondary info grid ──────────────────────────────────── */
+.txmodal__info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3, 12px) var(--space-4, 16px);
+  padding: 0 var(--space-6, 24px) var(--space-5, 20px);
+  border-bottom: 1px solid var(--color-border, #2e3347);
+}
+
+.txmodal__info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.txmodal__info-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: var(--font-medium, 500);
+}
+
+.txmodal__info-value {
+  font-size: var(--text-base, 0.875rem);
+  font-weight: var(--font-medium, 500);
+  color: var(--color-text, #e2e8f0);
+}
+
+/* Network badge */
+.txmodal__network-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-bold, 700);
+}
+
+.txmodal__network-badge--testnet {
+  background: #78350f;
+  color: #fde68a;
+}
+
+.txmodal__network-badge--mainnet {
+  background: var(--color-success-900, #14532d);
+  color: #bbf7d0;
+}
+
+/* ── Collapsible details ─────────────────────────────────── */
+.txmodal__details {
+  border-bottom: 1px solid var(--color-border, #2e3347);
+}
+
+.txmodal__details-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-3, 12px) var(--space-6, 24px);
+  background: none;
+  border: none;
+  color: var(--color-muted, #94a3b8);
+  font-size: var(--text-sm, 0.8125rem);
+  font-weight: var(--font-medium, 500);
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--transition-fast, 0.1s ease);
+}
+
+.txmodal__details-toggle:hover,
+.txmodal__details-toggle:focus-visible {
+  color: var(--color-text, #e2e8f0);
+}
+
+.txmodal__details-toggle:focus-visible {
+  outline: 2px solid var(--color-focus, #facc15);
+  outline-offset: -2px;
+}
+
+.txmodal__details-chevron {
+  transition: transform var(--transition-normal, 0.15s ease);
+  font-size: 0.625rem;
+  opacity: 0.7;
+}
+
+.txmodal__details-chevron--open {
+  transform: rotate(180deg);
+}
+
+.txmodal__details-body {
+  padding: 0 var(--space-6, 24px) var(--space-4, 16px);
+}
+
+.txmodal__xdr {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-muted, #94a3b8);
+  word-break: break-all;
+  white-space: pre-wrap;
+  background: var(--color-bg, #0f1117);
+  border: 1px solid var(--color-border, #2e3347);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3, 12px);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* ── Error banner ──────────────────────────────────────────── */
+.txmodal__error {
+  margin: 0 var(--space-6, 24px) 0;
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  background: var(--color-error-900, #7f1d1d);
+  border: 1px solid var(--color-error-700, #b91c1c);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm, 0.8125rem);
+  color: #fca5a5;
+}
+
+/* ── Footer actions ────────────────────────────────────────── */
+.txmodal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3, 12px);
+  padding: var(--space-5, 20px) var(--space-6, 24px);
+}
+
+/* Cancel / Dismiss button */
+.txmodal__btn-secondary {
+  padding: 8px 20px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border, #2e3347);
+  background: transparent;
+  color: var(--color-muted, #94a3b8);
+  font-weight: var(--font-semibold, 600);
+  font-size: var(--text-base, 0.875rem);
+  cursor: pointer;
+  transition: border-color var(--transition-fast, 0.1s ease),
+              color var(--transition-fast, 0.1s ease);
+}
+
+.txmodal__btn-secondary:hover:not(:disabled) {
+  border-color: var(--color-secondary-400, #94a3b8);
+  color: var(--color-text, #e2e8f0);
+}
+
+.txmodal__btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Confirm button — normal */
+.txmodal__btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: 8px 20px;
+  border-radius: var(--radius-md, 8px);
+  border: none;
+  background: var(--color-primary-500, #6c8eff);
+  color: #fff;
+  font-weight: var(--font-semibold, 600);
+  font-size: var(--text-base, 0.875rem);
+  cursor: pointer;
+  transition: background var(--transition-fast, 0.1s ease),
+              opacity var(--transition-fast, 0.1s ease);
+}
+
+.txmodal__btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-600, #4a6de0);
+}
+
+.txmodal__btn-primary:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* Confirm button — destructive variant */
+.txmodal__btn-primary--destructive {
+  background: var(--color-error-700, #b91c1c);
+}
+
+.txmodal__btn-primary--destructive:hover:not(:disabled) {
+  background: var(--color-error-500, #ef4444);
+}
+
+/* Spinner */
+.txmodal__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: txSpin 0.65s linear infinite;
+}
+
+@keyframes txSpin {
+  to { transform: rotate(360deg); }
+}
