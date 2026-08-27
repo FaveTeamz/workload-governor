@@ -158,6 +158,57 @@ a, button, input, select, textarea {
 }
 
 /* ============================================================
+   Wallet status dot  (issue #531)
+   ============================================================ */
+
+/**
+ * Three states driven by a BEM modifier:
+ *   .wallet-status-dot--connected    → green
+ *   .wallet-status-dot--connecting   → yellow, pulsing
+ *   .wallet-status-dot--disconnected → red
+ */
+.wallet-status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wallet-status-dot--connected {
+  background-color: var(--color-success-500, #22c55e);
+}
+
+.wallet-status-dot--connecting {
+  background-color: var(--color-warning-500, #eab308);
+  animation: wallet-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.wallet-status-dot--disconnected {
+  background-color: var(--color-error-600, #dc2626);
+}
+
+@keyframes wallet-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* Screen-reader-only text inside the dot */
+.wallet-status-dot .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ============================================================
    Buttons
    ============================================================ */
 .btn {
