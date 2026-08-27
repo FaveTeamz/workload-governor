@@ -16,6 +16,18 @@ export interface IssueLabel {
   color?: string;
 }
 
+/** Detail info shown in the expanded section */
+export interface IssueCardDetails {
+  /** Total number of current applicants */
+  applicantCount?: number;
+  /** Contributor's remaining global cap slots (max 15) */
+  globalSlotsRemaining?: number;
+  /** Contributor's remaining org-level slots (max 4) */
+  orgSlotsRemaining?: number;
+  /** ISO-8601 timestamp when the existing application TTL expires */
+  ttlExpiresAt?: string | null;
+}
+
 export interface IssueCardProps {
   /** Issue ID string, e.g. '#42' */
   id: string;
