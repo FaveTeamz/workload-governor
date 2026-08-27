@@ -39,6 +39,9 @@ export function NavBar({ walletAddress, walletError, networkMismatch, onConnect,
         <a className="navbar__link" href="#/activity" onClick={() => setOpen(false)}>
           Activity
         </a>
+        <a className="navbar__link" href="#/dashboard" onClick={() => setOpen(false)}>
+          Dashboard
+        </a>
 
         <div className="navbar__wallet">
           {networkMismatch && walletAddress && (

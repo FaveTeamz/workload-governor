@@ -157,3 +157,27 @@ has already been uploaded to the network. The contract WASM is replaced in-place
 Only the admin can upgrade. Ensure the new WASM is thoroughly tested before upgrading
 on mainnet — there is no rollback mechanism beyond uploading the old WASM again and
 calling `upgrade` a second time.
+
+---
+
+### 15. Freighter said success, but the UI hasn't updated — what do I do?
+
+This is the most common contributor support question. It happens because a
+successful Freighter signature covers only **Stage 2** of a 7-stage pipeline.
+The UI updates only after all 7 stages complete, which can take up to 72 seconds
+in the worst case.
+
+The usual causes:
+
+1. **Event indexer lag (up to 10 s):** The `EventIndexer` polls the Soroban RPC
+   for contract events every 5 seconds. An event emitted right after a poll cycle
+   started will wait until the next cycle.
+2. **Frontend polling stopped too early:** The frontend should keep polling
+   `GET /api/events` for at least 30 seconds after Freighter confirms, not just
+   once at transaction confirmation.
+3. **Wrong filter parameters:** Make sure the `org_id` and `event_type` query
+   parameters sent to `/api/events` match what was submitted.
+
+For full debugging steps — including SQL queries to check the event database
+and RPC commands to inspect the raw transaction result — see
+[docs/transaction-lifecycle.md](./transaction-lifecycle.md#stuck-transaction-debugging-checklist).

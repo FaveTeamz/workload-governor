@@ -6,11 +6,12 @@
 
 ## Executive Summary
 
-This accessibility audit covers the WorkloadGovernor smart contract, focusing on:
+This accessibility audit covers the WorkloadGovernor smart contract and the contributor-facing frontend experience, focusing on:
 1. **Contract Interface Accessibility**: Clarity and usability of public functions
 2. **Documentation Accessibility**: Completeness and clarity of usage documentation
 3. **Error Message Accessibility**: Clarity of error codes and descriptions
 4. **Integration Accessibility**: Ease of integration for developers with different skill levels
+5. **Frontend Accessibility**: Keyboard focus visibility, clear action labels, and meaningful status messaging for contributors
 
 ## Audit Findings
 
@@ -48,6 +49,12 @@ This accessibility audit covers the WorkloadGovernor smart contract, focusing on
 - [x] Error codes are predictable and parseable
 - [x] Event structure consistent and documented
 - [x] No external dependencies required for basic integration
+
+#### Frontend Accessibility Improvements
+- [x] Visible focus styling added for interactive elements and keyboard navigation
+- [x] Issue action buttons now expose clear labels for apply/withdraw states
+- [x] Error and status messages are surfaced via alert regions for screen-reader users
+- [x] Design-system preview and issue-list components were reviewed for readable contrast and consistent structure
 
 #### Developer Experience
 - [x] Build instructions provided and tested
@@ -106,8 +113,9 @@ This accessibility audit covers the WorkloadGovernor smart contract, focusing on
 
 ✅ **Zero automatic accessibility violations detected**  
 ✅ **Zero manual accessibility violations found**  
+✅ **Frontend regression tests added for keyboard-relevant interactions and removal-state behavior**
 
-The contract follows accessibility best practices throughout:
+The contract and contributor UI follow accessibility best practices throughout:
 - Clear function signatures
 - Comprehensive documentation
 - Specific error codes with clear meanings
@@ -125,6 +133,7 @@ The contract follows accessibility best practices throughout:
 - Monitor for community feedback on error clarity
 - Maintain documentation as contract evolves
 - Keep error codes stable for backward compatibility
+- Continue periodic audits as new UI flows are added
 
 ## Auditor Certification
 
@@ -132,6 +141,8 @@ The contract follows accessibility best practices throughout:
 - **Standards Applied**: WCAG 2.1 AA (adapted for smart contracts)
 - **Date Completed**: 2026-06-23
 - **Result**: ✅ PASS - No violations found
+
+**Verification Evidence**: Frontend regression tests for the slide-out removal experience and the withdraw transaction workflow passed locally with Vitest.
 
 ---
 
