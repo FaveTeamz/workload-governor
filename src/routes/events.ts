@@ -1,59 +1,97 @@
+/**
+ * GET /api/events
+ *
+ * Query params:
+ *   org_id      – filter by organisation
+ *   contributor – filter by contributor address
+ *   page        – 1-based page number (default: 1)
+ *   limit       – results per page (default: 20, max: 100)
+ *   event_type  – filter by topic
+ *   start_date  – ISO timestamp lower bound
+ *   end_date    – ISO timestamp upper bound
+ */
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
+import { subscribeToLiveEvents } from '../services/event-bus';
 
 const router = Router();
 
+router.get('/stream', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15000);
+  const unsubscribe = subscribeToLiveEvents((event) => {
+    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+  });
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+});
+
 // GET /api/events?org_id=&limit=&offset=&event_type=&start_date=&end_date=
 router.get('/', async (req: Request, res: Response) => {
-  const { org_id, event_type, start_date, end_date, limit = 50, offset = 0 } = req.query;
+  const {
+    org_id,
+    contributor,
+    event_type,
+    start_date,
+    end_date,
+  } = req.query as Record<string, string | undefined>;
+
+  const rawPage  = parseInt(String(req.query['page']  ?? '1'),  10);
+  const rawLimit = parseInt(String(req.query['limit'] ?? '20'), 10);
+
+  const page  = Math.max(rawPage,  1);
+  const limit = Math.min(Math.max(rawLimit, 1), 100);
+  const offset = (page - 1) * limit;
 
   const conditions: string[] = [];
   const params: unknown[] = [];
 
-  if (org_id) {
-    params.push(org_id);
-    conditions.push(`org_id = $${params.length}`);
+  function push(val: unknown, clause: string) {
+    params.push(val);
+    conditions.push(clause.replace('?', `$${params.length}`));
   }
 
-  if (event_type) {
-    params.push(event_type);
-    conditions.push(`event_type = $${params.length}`);
-  }
-
-  if (start_date) {
-    params.push(new Date(start_date as string));
-    conditions.push(`timestamp >= $${params.length}`);
-  }
-
-  if (end_date) {
-    params.push(new Date(end_date as string));
-    conditions.push(`timestamp <= $${params.length}`);
-  }
+  if (org_id)      push(org_id,      'org_id = ?');
+  if (contributor) push(contributor, 'contributor = ?');
+  if (event_type)  push(event_type,  'topic = ?');
+  if (start_date)  push(new Date(start_date), 'created_at >= ?');
+  if (end_date)    push(new Date(end_date),   'created_at <= ?');
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limitNum = Math.min(Math.max(parseInt(limit as string) || 50, 1), 1000);
-  const offsetNum = Math.max(parseInt(offset as string) || 0, 0);
 
   try {
-    const countResult = await pool.query(
-      `SELECT COUNT(*) as total FROM contract_events ${where}`,
+    const countRes = await pool.query<{ total: string }>(
+      `SELECT COUNT(*)::text AS total FROM events ${where}`,
       params,
     );
+    const total = parseInt(countRes.rows[0]?.total ?? '0', 10);
 
-    const total = parseInt((countResult.rows[0] as Record<string, unknown>).total as string, 10);
-
-    const result = await pool.query(
-      `SELECT * FROM contract_events ${where} ORDER BY timestamp DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, limitNum, offsetNum],
+    const dataRes = await pool.query(
+      `SELECT id, ledger, tx_hash, topic, org_id, issue_id, contributor, created_at
+         FROM events
+        ${where}
+        ORDER BY ledger DESC, id DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset],
     );
 
     res.json({
-      events: result.rows,
+      events: dataRes.rows,
       pagination: {
         total,
-        limit: limitNum,
-        offset: offsetNum,
-        hasMore: offsetNum + limitNum < total,
+        page,
+        limit,
+        offset,
+        total_pages: Math.ceil(total / limit),
+        has_more: offset + limit < total,
       },
     });
   } catch (err) {
