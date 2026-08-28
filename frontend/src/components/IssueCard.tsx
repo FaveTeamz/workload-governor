@@ -1,8 +1,11 @@
 /**
- * IssueCard — closes #323 (disabled Apply tooltip)
+ * IssueCard — closes #323 (disabled Apply tooltip), #648 (color-blind status)
+ *
+ * Status chips now use icon + text label so color is never the sole indicator.
  */
 import { useState } from "react";
 import { Tooltip } from "./Tooltip";
+import { Icon, type IconName } from "./Icon";
 
 /** Issue status values */
 export type IssueStatus = "open" | "applied" | "assigned" | "completed";
@@ -17,16 +20,22 @@ export interface IssueCardProps {
   /**
    * When provided the Apply button is disabled and the string is shown
    * as a tooltip explaining which cap is blocking the user.
-   * Example: "You've reached the global limit of 15 pending applications."
    */
   applyDisabledReason?: string;
 }
 
-const STATUS_LABEL: Record<IssueStatus, string> = {
-  open:      "Open",
-  applied:   "Applied",
-  assigned:  "Assigned",
-  completed: "Completed",
+// ─── Status metadata: icon + label for color-blind accessibility ─────────────
+
+interface StatusMeta {
+  icon: IconName;
+  label: string;
+}
+
+const STATUS_META: Record<IssueStatus, StatusMeta> = {
+  open:      { icon: "issue-open",   label: "Open"      },
+  applied:   { icon: "info",         label: "Pending"   },
+  assigned:  { icon: "assign",       label: "Assigned"  },
+  completed: { icon: "check-circle", label: "Completed" },
 };
 
 export function IssueCard({
@@ -49,8 +58,7 @@ export function IssueCard({
     const isDisabled = busy || isDisabledByReason;
 
     const btn = (
-      // A <span> wrapper is required because disabled buttons do not fire
-      // mouse/focus events in all browsers — the Tooltip needs those.
+      // <span> wrapper required because disabled buttons don't fire mouse events
       <span style={{ display: "inline-block" }}>
         <button
           className="btn btn-primary btn-sm"
@@ -76,15 +84,20 @@ export function IssueCard({
     return btn;
   }
 
+  const { icon, label } = STATUS_META[status];
+
   return (
     <article className={`issue-card issue-card--${status}`} aria-label={`Issue: ${title}`}>
       <div className="issue-card__meta">
         <span className="issue-card__org" aria-label={`Organisation: ${org}`}>{org}</span>
+
+        {/* Color-blind-friendly chip: icon + text label */}
         <span
           className={`issue-card__chip issue-card__chip--${status}`}
-          aria-label={`Status: ${STATUS_LABEL[status]}`}
+          aria-label={`Status: ${label}`}
         >
-          {STATUS_LABEL[status]}
+          <Icon name={icon} size="xs" aria-hidden={true} />
+          <span>{label}</span>
         </span>
       </div>
 
