@@ -74,6 +74,42 @@ jobs:
           name: workload_governor.optimized.wasm
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
 
+  notify-on-failure:
+    name: Slack — Contract CI failed
+    needs: [contract-ci]
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.contract-ci.result == 'failure'
+    uses: ./.github/workflows/notify-slack.yml
+    secrets: inherit
+    with:
+      workflow_name: "Contract CI"
+      status: "failure"
+      commit_sha: ${{ github.sha }}
+      actor: ${{ github.actor }}
+      commit_message: ${{ github.event.head_commit.message }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  notify-on-restored:
+    name: Slack — Contract CI restored
+    needs: [contract-ci]
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.contract-ci.result == 'success'
+    uses: ./.github/workflows/notify-slack.yml
+    secrets: inherit
+    with:
+      workflow_name: "Contract CI"
+      status: "success"
+      commit_sha: ${{ github.sha }}
+      actor: ${{ github.actor }}
+      commit_message: ${{ github.event.head_commit.message }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
   testnet-deploy:
     name: Testnet deploy + smoke test
     needs: contract-ci
