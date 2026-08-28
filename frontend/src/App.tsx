@@ -6,6 +6,7 @@ import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { ActivityPage } from "./components/ActivityPage";
 import { ToastContainer, useToast } from "./components/Toast";
+import { SettingsPage } from "./pages/SettingsPage";
 import { useWallet } from "./hooks/useWallet";
 import "./app.css";
 
@@ -73,6 +74,8 @@ export default function App() {
       <main id="main-content" className="app-main" tabIndex={-1}>
         {hash === "#/activity" ? (
           <ActivityPage />
+        ) : hash === "#/settings" ? (
+          <SettingsPage />
         ) : (
           <>
             <header className="app-header" role="banner">
@@ -93,7 +96,10 @@ export default function App() {
         )}
       </main>
 
-      <OnboardingWizard />
+      <OnboardingWizard
+        onConnectWallet={wallet.connect}
+        walletConnected={!!wallet.publicKey}
+      />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>
   );
