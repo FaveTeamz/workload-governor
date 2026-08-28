@@ -5,10 +5,11 @@ import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizar
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
-import { ToastContainer, useToast } from "./components/Toast";
+import { ToastProvider, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { RegisterOrgPage } from "./pages/RegisterOrgPage";
+import { ActivityPage } from "./components/ActivityPage";
 import "./app.css";
 import "../app/animations.css";
 
@@ -29,18 +30,9 @@ const DEMO_ASGNS: Assignment[] = [
 
 function HomePage() {
   const wallet = useWallet();
+  const { add: addToast } = useToast();
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
-  const [activeView, setActiveView] = useState<DashboardView>("overview");
-  const { toasts, add: addToast, remove: removeToast } = useToast();
-  const navigate = useViewTransition({ targetSelector: "#main-content" });
-
-  /** Switch tabs with a directional view transition */
-  function switchView(to: DashboardView) {
-    if (to === activeView) return;
-    const dir = resolveDirection(activeView, to);
-    navigate(() => setActiveView(to), dir);
-  }
 
   async function handleAssign(app: Application) {
     await new Promise((r) => setTimeout(r, 400));
@@ -64,28 +56,27 @@ function HomePage() {
     addToast(`Revoked "${asgn.issueTitle}"`, "info");
   }
 
+  // wallet used for future wallet-gated actions; suppress unused-var lint
+  void wallet;
+
   return (
-    <>
-      <main id="main-content" className="app-main" tabIndex={-1}>
-        <header className="app-header" role="banner">
-          <span className="app-logo" aria-hidden="true">⚙</span>
-          <h1>WorkloadGovernor</h1>
-          <GetStartedButton />
-        </header>
+    <main id="main-content" className="app-main" tabIndex={-1}>
+      <header className="app-header" role="banner">
+        <span className="app-logo" aria-hidden="true">⚙</span>
+        <h1>WorkloadGovernor</h1>
+        <GetStartedButton />
+      </header>
 
-        <MaintainerPanel
-          applications={applications}
-          assignments={assignments}
-          onAssign={handleAssign}
-          onComplete={handleComplete}
-          onRevoke={handleRevoke}
-        />
-        <ActivityFeed apiBase="/api" network="testnet" />
-      </main>
-
+      <MaintainerPanel
+        applications={applications}
+        assignments={assignments}
+        onAssign={handleAssign}
+        onComplete={handleComplete}
+        onRevoke={handleRevoke}
+      />
+      <ActivityFeed apiBase="/api" network="testnet" />
       <OnboardingWizard />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </>
+    </main>
   );
 }
 
@@ -93,7 +84,7 @@ function HomePage() {
 // App shell — NavBar is shared; routes render below it
 // ---------------------------------------------------------------------------
 
-export default function App() {
+function AppShell() {
   const wallet = useWallet();
 
   return (
@@ -111,6 +102,9 @@ export default function App() {
       />
 
       <Routes>
+        {/* Contributor activity timeline */}
+        <Route path="/profile/activity" element={<ActivityPage />} />
+
         {/* Issue detail view */}
         <Route
           path="/issues/:org_id/:issue_id"
@@ -127,5 +121,13 @@ export default function App() {
         <Route path="*" element={<HomePage />} />
       </Routes>
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppShell />
+    </ToastProvider>
   );
 }
