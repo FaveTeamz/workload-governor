@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WalletAddress, truncateAddress } from '../../src/WalletAddress';
+import { WalletAddress, truncateAddress } from '../../frontend/src/components/WalletAddress';
 
 // ── truncateAddress ──────────────────────────────────────────────────────────
 

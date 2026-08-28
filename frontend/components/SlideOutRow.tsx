@@ -1,27 +1,41 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export default function SlideOutRow({
   children,
+  isRemoved = false,
   onRemoved,
 }: {
   children: ReactNode;
+  isRemoved?: boolean;
   onRemoved?: () => void;
 }) {
   const [sliding, setSliding] = useState(false);
+  const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  function withdraw() {
+  useEffect(() => {
+    if (!isRemoved) return;
+
+    if (prefersReducedMotion) {
+      onRemoved?.();
+      return;
+    }
+
     setSliding(true);
+  }, [isRemoved, onRemoved, prefersReducedMotion]);
+
+  if (isRemoved && prefersReducedMotion) {
+    return null;
   }
 
   return (
     <div
       className={sliding ? "slide-out" : ""}
-      onAnimationEnd={sliding ? onRemoved : undefined}
+      onAnimationEnd={() => {
+        if (sliding) onRemoved?.();
+      }}
     >
-      {typeof children === "function"
-        ? (children as (withdraw: () => void) => ReactNode)(withdraw)
-        : children}
+      {children}
     </div>
   );
 }

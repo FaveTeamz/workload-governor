@@ -1,0 +1,217 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`WorkloadGauge > empty state (current = 0, max = 15) > matches snapshot 1`] = `
+<div
+  class="workload-gauge workload-gauge--empty"
+  data-state="empty"
+  data-testid="workload-gauge"
+>
+  <span
+    class="workload-gauge__label"
+    data-testid="workload-gauge-label"
+  >
+    global applications
+  </span>
+  <span
+    class="workload-gauge__count"
+    data-testid="workload-gauge-count"
+  >
+    0
+    /
+    15
+  </span>
+  <div
+    aria-label="global applications: 0 of 15"
+    aria-valuemax="15"
+    aria-valuemin="0"
+    aria-valuenow="0"
+    class="workload-gauge__track"
+    role="progressbar"
+  >
+    <div
+      class="workload-gauge__fill"
+      data-testid="workload-gauge-fill"
+      style="width: 0%;"
+    />
+  </div>
+</div>
+`;
+
+exports[`WorkloadGauge > full state (current = max) > matches snapshot 1`] = `
+<div
+  class="workload-gauge workload-gauge--full"
+  data-state="full"
+  data-testid="workload-gauge"
+>
+  <span
+    class="workload-gauge__label"
+    data-testid="workload-gauge-label"
+  >
+    org assignments
+  </span>
+  <span
+    class="workload-gauge__count"
+    data-testid="workload-gauge-count"
+  >
+    4
+    /
+    4
+  </span>
+  <div
+    aria-label="org assignments: 4 of 4"
+    aria-valuemax="4"
+    aria-valuemin="0"
+    aria-valuenow="4"
+    class="workload-gauge__track"
+    role="progressbar"
+  >
+    <div
+      class="workload-gauge__fill"
+      data-testid="workload-gauge-fill"
+      style="width: 100%;"
+    />
+  </div>
+</div>
+`;
+
+exports[`WorkloadGauge > non-integer values (should floor gracefully) > matches snapshot for float values 1`] = `
+<div
+  class="workload-gauge workload-gauge--partial"
+  data-state="partial"
+  data-testid="workload-gauge"
+>
+  <span
+    class="workload-gauge__label"
+    data-testid="workload-gauge-label"
+  >
+    org assignments
+  </span>
+  <span
+    class="workload-gauge__count"
+    data-testid="workload-gauge-count"
+  >
+    2
+    /
+    4
+  </span>
+  <div
+    aria-label="org assignments: 2 of 4"
+    aria-valuemax="4"
+    aria-valuemin="0"
+    aria-valuenow="2"
+    class="workload-gauge__track"
+    role="progressbar"
+  >
+    <div
+      class="workload-gauge__fill"
+      data-testid="workload-gauge-fill"
+      style="width: 50%;"
+    />
+  </div>
+</div>
+`;
+
+exports[`WorkloadGauge > overflow state (current > max) > matches snapshot 1`] = `
+<div
+  class="workload-gauge workload-gauge--full"
+  data-state="full"
+  data-testid="workload-gauge"
+>
+  <span
+    class="workload-gauge__label"
+    data-testid="workload-gauge-label"
+  >
+    global applications
+  </span>
+  <span
+    class="workload-gauge__count"
+    data-testid="workload-gauge-count"
+  >
+    15
+    /
+    15
+  </span>
+  <div
+    aria-label="global applications: 15 of 15"
+    aria-valuemax="15"
+    aria-valuemin="0"
+    aria-valuenow="20"
+    class="workload-gauge__track"
+    role="progressbar"
+  >
+    <div
+      class="workload-gauge__fill"
+      data-testid="workload-gauge-fill"
+      style="width: 100%;"
+    />
+  </div>
+</div>
+`;
+
+exports[`WorkloadGauge > partial state > matches snapshot 1`] = `
+<div
+  class="workload-gauge workload-gauge--partial"
+  data-state="partial"
+  data-testid="workload-gauge"
+>
+  <span
+    class="workload-gauge__label"
+    data-testid="workload-gauge-label"
+  >
+    org assignments
+  </span>
+  <span
+    class="workload-gauge__count"
+    data-testid="workload-gauge-count"
+  >
+    3
+    /
+    4
+  </span>
+  <div
+    aria-label="org assignments: 3 of 4"
+    aria-valuemax="4"
+    aria-valuemin="0"
+    aria-valuenow="3"
+    class="workload-gauge__track"
+    role="progressbar"
+  >
+    <div
+      class="workload-gauge__fill"
+      data-testid="workload-gauge-fill"
+      style="width: 75%;"
+    />
+  </div>
+</div>
+`;
+
+exports[`WorkloadGauge > undefined / null props (should not crash) > matches snapshot for all-undefined props 1`] = `
+<div
+  class="workload-gauge workload-gauge--empty"
+  data-state="empty"
+  data-testid="workload-gauge"
+>
+  <span
+    class="workload-gauge__count"
+    data-testid="workload-gauge-count"
+  >
+    0
+    /
+    1
+  </span>
+  <div
+    aria-label="0 of 1"
+    aria-valuemax="1"
+    aria-valuemin="0"
+    aria-valuenow="0"
+    class="workload-gauge__track"
+    role="progressbar"
+  >
+    <div
+      class="workload-gauge__fill"
+      data-testid="workload-gauge-fill"
+      style="width: 0%;"
+    />
+  </div>
+</div>
+`;
