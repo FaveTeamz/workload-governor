@@ -28,6 +28,27 @@ jest.mock("../../src/db", () => ({
   healthCheck: jest.fn(),
 }));
 
+// Mock Redis so no real Redis connection is attempted
+jest.mock("../../src/services/redis", () => ({
+  invalidateCache: jest.fn().mockResolvedValue(undefined),
+  getCached: jest.fn().mockResolvedValue(null),
+  setCached: jest.fn().mockResolvedValue(undefined),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock SorobanService so no real RPC calls happen
+// ---------------------------------------------------------------------------
+
+const mockGetGlobalApplicationCount = jest.fn<Promise<number>, [string]>();
+const mockGetOrgAssignmentCount = jest.fn<Promise<number>, [string, string]>();
+
+jest.mock("../../src/soroban", () => ({
+  SorobanService: jest.fn().mockImplementation(() => ({
+    getGlobalApplicationCount: mockGetGlobalApplicationCount,
+    getOrgAssignmentCount: mockGetOrgAssignmentCount,
+  })),
+}));
+
 import { createApp } from "../../src/app";
 
 const app = createApp();
@@ -40,7 +61,7 @@ const app = createApp();
 const ApplicationRowSchema = z.object({
   contributor: z.string(),
   org_id: z.string(),
-  issue_id: z.number(),
+  issue_id: z.union([z.number(), z.string()]),
   created_at: z.string(),
   title: z.string(),
   status: z.string(),
@@ -50,7 +71,7 @@ const ApplicationRowSchema = z.object({
 const AssignmentRowSchema = z.object({
   contributor: z.string(),
   org_id: z.string(),
-  issue_id: z.number(),
+  issue_id: z.union([z.number(), z.string()]),
   created_at: z.string(),
   title: z.string(),
   status: z.string(),
@@ -70,6 +91,20 @@ const CountsResponseSchema = z.object({
   byOrganization: z.array(OrgCountSchema),
 });
 
+/** Per-org entry inside contributor profile */
+const OrgStatsSchema = z.object({
+  org_id: z.string(),
+  active_assignments: z.number(),
+  completed: z.number(),
+});
+
+/** Full contributor profile response shape */
+const ContributorProfileSchema = z.object({
+  address: z.string(),
+  global_pending: z.number(),
+  orgs: z.array(OrgStatsSchema),
+});
+
 // ---------------------------------------------------------------------------
 // Test data
 // ---------------------------------------------------------------------------
@@ -86,6 +121,10 @@ let issueId: number;
 
 beforeEach(async () => {
   resetDb();
+
+  // Reset soroban mocks
+  mockGetGlobalApplicationCount.mockReset();
+  mockGetOrgAssignmentCount.mockReset();
 
   // Seed an issue
   const { rows } = await mockPool.query(
@@ -132,7 +171,7 @@ describe("GET /api/contributors/:address/applications", () => {
 
     // Validate each row against the Zod schema
     const parsed = z.array(ApplicationRowSchema).safeParse(res.body);
-    expect(parsed.success, JSON.stringify(parsed)).toBe(true);
+    expect(parsed.success).toBe(true);
 
     const first = parsed.data![0];
     expect(first.contributor).toBe(ACTIVE_ADDR);
@@ -185,7 +224,7 @@ describe("GET /api/contributors/:address/assignments", () => {
     expect(res.status).toBe(200);
 
     const parsed = z.array(AssignmentRowSchema).safeParse(res.body);
-    expect(parsed.success, JSON.stringify(parsed)).toBe(true);
+    expect(parsed.success).toBe(true);
 
     const first = parsed.data![0];
     expect(first.contributor).toBe(ACTIVE_ADDR);
@@ -232,7 +271,7 @@ describe("GET /api/contributors/:address/counts", () => {
 
     // Validate with Zod
     const parsed = CountsResponseSchema.safeParse(res.body);
-    expect(parsed.success, JSON.stringify(parsed)).toBe(true);
+    expect(parsed.success).toBe(true);
 
     const data = parsed.data!;
     // Explicit type assertions

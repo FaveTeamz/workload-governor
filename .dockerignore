@@ -1,8 +1,65 @@
-node_modules
-dist
-.env*
-*.log
+# ── Version control ──────────────────────────────────────────────────────────
 .git
-coverage
+.gitignore
+
+# ── Node dependencies (reinstalled inside the container) ─────────────────────
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# ── Build outputs (generated inside the container) ───────────────────────────
+dist
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Test files & coverage ─────────────────────────────────────────────────────
+coverage/
 *.test.ts
 *.spec.ts
+tests/
+test_snapshots/
+
+# ── Rust / WASM build artifacts ───────────────────────────────────────────────
+target/
+Cargo.lock
+fuzz/
+mutants.out/
+mutants.out.old/
+build.rs
+
+# ── Terraform / infrastructure ────────────────────────────────────────────────
+terraform/
+infra/
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+docs/
+*.md
+!README.md
+
+# ── Frontend (separate build pipeline) ───────────────────────────────────────
+frontend/
+
+# ── CI/CD ─────────────────────────────────────────────────────────────────────
+.github/
+
+# ── Editor / tooling ──────────────────────────────────────────────────────────
+.vscode/
+.claude/
+.cargo/
+.nsprc
+.eslintrc.json
+jest.config.js
+vitest.config.ts
+playwright.config.ts
+tsconfig.json
+openapi.yaml
+docker-compose.yml

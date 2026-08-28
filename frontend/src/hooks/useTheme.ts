@@ -1,48 +1,70 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
-const STORAGE_KEY = "wg_theme";
+export type Theme = "dark" | "light";
 
-export type Theme = "light" | "dark";
+const STORAGE_KEY = "wg-theme";
+const DARK_CLASS = "theme-dark";
+const LIGHT_CLASS = "theme-light";
 
+/**
+ * Reads the initial theme preference in order:
+ * 1. Saved localStorage value (user explicit choice)
+ * 2. OS prefers-color-scheme
+ * 3. Default: "dark"
+ */
 function getInitialTheme(): Theme {
-  const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-  if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "dark" || saved === "light") return saved;
+  } catch {
+    // localStorage may be unavailable in some environments
+  }
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: light)").matches
+      ? "light"
+      : "dark";
+  }
+  return "dark";
 }
 
+/** Apply the theme class to <html> so CSS vars cascade everywhere. */
 function applyTheme(theme: Theme) {
-  document.documentElement.setAttribute("data-theme", theme);
+  const root = document.documentElement;
+  if (theme === "dark") {
+    root.classList.add(DARK_CLASS);
+    root.classList.remove(LIGHT_CLASS);
+  } else {
+    root.classList.add(LIGHT_CLASS);
+    root.classList.remove(DARK_CLASS);
+  }
+  root.setAttribute("data-theme", theme);
 }
 
-export interface UseTheme {
-  theme: Theme;
-  toggle: () => void;
-}
+/**
+ * Custom hook that manages theme state, persists to localStorage, and
+ * applies the theme class to the document root.
+ *
+ * Issue #14: CSS variables + localStorage + prefers-color-scheme.
+ */
+export function useTheme() {
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
 
-export function useTheme(): UseTheme {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
-
+  // Apply on mount and whenever theme changes
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
-  // Also sync when system preference changes and no stored value exists
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    function handleChange(e: MediaQueryListEvent) {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        setTheme(e.matches ? "dark" : "light");
+  const toggle = useCallback(() => {
+    setThemeState((current) => {
+      const next: Theme = current === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        // ignore
       }
-    }
-    mq.addEventListener("change", handleChange);
-    return () => mq.removeEventListener("change", handleChange);
+      return next;
+    });
   }, []);
 
-  function toggle() {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  }
-
-  return { theme, toggle };
+  return { theme, toggle } as const;
 }
