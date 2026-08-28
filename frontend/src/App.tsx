@@ -6,8 +6,18 @@ import type { Application, Assignment } from "./components/MaintainerPanel";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { ActivityPage } from "./components/ActivityPage";
 import { ToastContainer, useToast } from "./components/Toast";
+import { IssueSearch } from "./components/IssueSearch";
+import type { SearchableIssue } from "./components/IssueSearch";
 import { useWallet } from "./hooks/useWallet";
 import "./app.css";
+
+const DEMO_ISSUES: SearchableIssue[] = [
+  { id: 42, org_id: "stellar-org", title: "Fix TTL extension bug", status: "open" },
+  { id: 43, org_id: "stellar-org", title: "Add prop tests for assign_issue", status: "open" },
+  { id: 44, org_id: "meridian-dao", title: "Docs: storage design overview", status: "assigned" },
+  { id: 45, org_id: "meridian-dao", title: "Optimize WASM binary size", status: "open" },
+  { id: 46, org_id: "stellar-org", title: "Integration tests for SDK", status: "completed" },
+];
 
 const DEMO_APPS: Application[] = [
   { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
@@ -78,6 +88,13 @@ export default function App() {
             <header className="app-header" role="banner">
               <span className="app-logo" aria-hidden="true">⚙</span>
               <h1>WorkloadGovernor</h1>
+              <IssueSearch
+                issues={DEMO_ISSUES}
+                apiBase="/api"
+                onSelect={(issue) => {
+                  if (issue) addToast(`Selected: ${issue.title}`, "info");
+                }}
+              />
               <GetStartedButton />
             </header>
 
