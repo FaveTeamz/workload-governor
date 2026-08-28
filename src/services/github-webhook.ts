@@ -1,13 +1,16 @@
 import crypto from 'crypto';
 
 export interface GitHubIssuePayload {
-  action: 'opened' | 'closed' | 'edited';
+  action: 'opened' | 'closed' | 'edited' | 'labeled' | 'unlabeled';
   issue: {
     number: number;
     title: string;
     state: 'open' | 'closed';
   };
   repository: {
+    name: string;
+  };
+  label?: {
     name: string;
   };
 }
