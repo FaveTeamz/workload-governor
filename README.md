@@ -144,9 +144,11 @@ cargo +nightly fuzz build
 cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
 cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
 cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+cargo +nightly fuzz run fuzz_lifecycle  -- -max_total_time=600
 
 # Run with pre-seeded corpus
 cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
+cargo +nightly fuzz run fuzz_lifecycle fuzz/corpus/fuzz_lifecycle -- -max_total_time=600
 ```
 
 | Target | Description |
@@ -154,6 +156,9 @@ cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
 | `fuzz_apply` | Random `contributor`, `org_id`, `issue_id` → `apply_for_issue` |
 | `fuzz_assign` | Random inputs → `assign_issue`, `complete_assignment`, `revoke_assignment` |
 | `fuzz_batch_apply` | Vec of random `issue_id`s applied in batch, enforces ≤15 global cap |
+| `fuzz_withdraw` | apply → withdraw counter invariant; double-withdraw safety |
+| `fuzz_revoke` | apply → assign → revoke org-count invariant |
+| `fuzz_lifecycle` | Full lifecycle: apply → withdraw → assign → complete / revoke; three invariants checked after every step: `global_count ≤ 15`, `org_count ≤ cap`, applied and assigned are mutually exclusive |
 
 Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
 

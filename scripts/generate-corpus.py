@@ -260,6 +260,105 @@ SEEDS_REVOKE = [
 # Main
 # ---------------------------------------------------------------------------
 
+def pack_lifecycle(issue_id: int, org: bytes,
+                   do_apply: int = 0, do_withdraw: int = 0,
+                   do_assign: int = 0, do_complete: int = 0,
+                   do_revoke: int = 0) -> bytes:
+    """Pack a seed for fuzz_lifecycle.
+
+    byte[5] carries operation-sequence control flags:
+      bit 0 — do_apply:    call apply_for_issue
+      bit 1 — do_withdraw: call withdraw_application after apply
+      bit 2 — do_assign:   call assign_issue
+      bit 3 — do_complete: call complete_assignment after assign
+      bit 4 — do_revoke:   call revoke_assignment instead of complete
+    """
+    data = bytearray(pack_apply(issue_id, org))
+    ctrl = (
+        (do_apply    & 1) << 0 |
+        (do_withdraw & 1) << 1 |
+        (do_assign   & 1) << 2 |
+        (do_complete & 1) << 3 |
+        (do_revoke   & 1) << 4
+    )
+    if len(data) > 5:
+        data[5] = ctrl
+    else:
+        data += bytearray([ctrl])
+    return bytes(data)
+
+
+# ---------------------------------------------------------------------------
+# fuzz_lifecycle seed definitions
+# ---------------------------------------------------------------------------
+# Covers every state transition in the apply → assign → complete/revoke lifecycle.
+
+SEEDS_LIFECYCLE = [
+    # ── Full happy paths ──────────────────────────────────────────────────────
+    ("seed_apply_assign_complete",
+     pack_lifecycle(1, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=1 — full apply→assign→complete lifecycle"),
+    ("seed_apply_assign_revoke",
+     pack_lifecycle(2, b"org", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=2 — full apply→assign→revoke lifecycle"),
+    # ── Partial paths ─────────────────────────────────────────────────────────
+    ("seed_apply_only",
+     pack_lifecycle(3, b"org", do_apply=1),
+     "issue_id=3 — apply only, no downstream ops"),
+    ("seed_apply_withdraw",
+     pack_lifecycle(4, b"org", do_apply=1, do_withdraw=1),
+     "issue_id=4 — apply→withdraw (counter must return to 0)"),
+    ("seed_apply_withdraw_assign",
+     pack_lifecycle(5, b"org", do_apply=1, do_withdraw=1, do_assign=1),
+     "issue_id=5 — apply→withdraw→re-apply→assign (fuzzer re-applies before assign)"),
+    # ── Error paths ───────────────────────────────────────────────────────────
+    ("seed_assign_no_apply",
+     pack_lifecycle(6, b"org", do_assign=1),
+     "issue_id=6 — assign without prior apply (ApplicationNotFound)"),
+    ("seed_complete_no_assign",
+     pack_lifecycle(7, b"org", do_complete=1),
+     "issue_id=7 — complete without assign (AssignmentNotFound)"),
+    ("seed_revoke_no_assign",
+     pack_lifecycle(8, b"org", do_revoke=1),
+     "issue_id=8 — revoke without assign (AssignmentNotFound)"),
+    # ── Boundary: issue_id extremes ───────────────────────────────────────────
+    ("seed_max_u32_full_complete",
+     pack_lifecycle(0xFFFFFFFF, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=u32::MAX — full lifecycle at maximum boundary"),
+    ("seed_max_u32_full_revoke",
+     pack_lifecycle(0xFFFFFFFF, b"boundary", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=u32::MAX — full lifecycle (revoke path) at maximum boundary"),
+    ("seed_zero_issue_full_complete",
+     pack_lifecycle(0, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=0 — full lifecycle at zero boundary"),
+    ("seed_issue_255_full_revoke",
+     pack_lifecycle(255, b"boundary", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=255 — byte boundary full lifecycle (revoke)"),
+    # ── Boundary: org lengths ─────────────────────────────────────────────────
+    ("seed_single_char_org_full",
+     pack_lifecycle(42, b"aXXXXX", do_apply=1, do_assign=1, do_complete=1),
+     "single-char org (after mapping) — minimal Symbol"),
+    ("seed_long_org_full_complete",
+     pack_lifecycle(100, b"abcdefghijklmnopqrstuvwxyzabcdef",
+                    do_apply=1, do_assign=1, do_complete=1),
+     "32-char org — maximum Soroban Symbol length, complete path"),
+    ("seed_long_org_full_revoke",
+     pack_lifecycle(101, b"abcdefghijklmnopqrstuvwxyzabcdef",
+                    do_apply=1, do_assign=1, do_revoke=1),
+     "32-char org — maximum Soroban Symbol length, revoke path"),
+    # ── All ops set (complete + revoke both set; complete wins because revoke
+    #    is only attempted when !do_complete) ───────────────────────────────────
+    ("seed_all_flags_set",
+     pack_lifecycle(99, b"allflag", do_apply=1, do_withdraw=1,
+                    do_assign=1, do_complete=1, do_revoke=1),
+     "all flags set — exercices withdraw+re-apply+assign+complete path"),
+    # ── No-op seed (no flags set) ─────────────────────────────────────────────
+    ("seed_no_ops",
+     pack_lifecycle(0, b"noop"),
+     "no operation flags set — minimal input, only setup runs"),
+]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -275,6 +374,7 @@ def main() -> None:
         ("fuzz_batch_apply", SEEDS_BATCH),
         ("fuzz_withdraw",    SEEDS_WITHDRAW),
         ("fuzz_revoke",      SEEDS_REVOKE),
+        ("fuzz_lifecycle",   SEEDS_LIFECYCLE),
     ]
 
     total = 0

@@ -184,3 +184,43 @@ jobs:
           path: fuzz/artifacts/
           if-no-files-found: ignore
           retention-days: 30
+
+  # ── 6. fuzz_lifecycle smoke run (every PR and main push, 30 seconds) ──────
+  fuzz-lifecycle:
+    name: Fuzz lifecycle (30 s smoke)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-fuzz-lifecycle-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-fuzz-lifecycle-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Run fuzz_lifecycle (30 seconds with seed corpus)
+        run: |
+          cargo +nightly fuzz run fuzz_lifecycle \
+            fuzz/corpus/fuzz_lifecycle \
+            -- -max_total_time=30
+        continue-on-error: true
+
+      - name: Upload fuzz_lifecycle artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-lifecycle-artifacts-${{ github.run_id }}
+          path: fuzz/artifacts/fuzz_lifecycle/
+          if-no-files-found: ignore
+          retention-days: 30
