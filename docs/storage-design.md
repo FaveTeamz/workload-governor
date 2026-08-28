@@ -1,303 +1,477 @@
 # Storage Design
 
-This document describes the WorkloadGovernor storage key schema, the two storage tiers used, and a formal proof that no two key types can ever produce the same byte representation.
-
-## Table of Contents
-
-- [Storage Tiers](#storage-tiers)
-- [Key Schema](#key-schema)
-- [Formal Collision-Free Proof](#formal-collision-free-proof)
-  - [Key Structure Definitions](#key-structure-definitions)
-  - [Encoding Basis](#encoding-basis)
-  - [Pairwise Comparison Table](#pairwise-comparison-table)
-  - [Detailed Pairwise Proofs](#detailed-pairwise-proofs)
-  - [Conclusion](#conclusion)
-- [Adding New Keys Safely](#adding-new-keys-safely)
-- [TTL Reference](#ttl-reference)
-- [CI Collision Check](#ci-collision-check)
-- [See Also](#see-also)
-
----
+WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixes to manage contract state.
 
 ## Storage Tiers
 
-WorkloadGovernor uses three Soroban storage tiers:
-
-| Tier | Eviction | Used for |
+| Tier | Purpose | Survival |
 |---|---|---|
-| **Temporary** | Yes — evicted after TTL ledgers without extension | Application entries; global application counts |
-| **Persistent** | No automatic eviction (until explicit `extend_ttl`) | Admin; maintainer registrations; assignment entries; org assignment counts |
-| **Instance** | Tied to contract instance TTL; bumped every mutating call | Contract instance survival |
+| **Temporary** | Application state scoped to the current Wave | Expires when TTL reaches 0; can be bumped |
+| **Persistent** | Admin, maintainer authorisation, assignment state, org caps | Survives until contract is archived |
+| **Instance** | Contract instance entry | Bumped on every state-changing call (~30 days) |
 
-Temporary storage entries represent in-flight Wave data. They expire after `APP_TTL_LEDGERS` = 17,280 ledgers (~24 h at 5 s/ledger) without a TTL extension call. Persistent storage entries survive indefinitely as long as the contract instance is alive.
+## Key Patterns
+
+### 1 — Global Application Count
+
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address)` |
+| Prefix | `"g_apps"` |
+| Value | `u32` |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
+
+**Purpose:** Tracks how many pending applications a contributor holds across all organisations. Capped at `GLOBAL_APP_LIMIT = 15`.
+
+**Example key:**
+```
+("g_apps", GBFZB...XK2Q)
+```
+
+**Example value:** `3`
+
+When the count drops to zero the entry is removed. On every application submission or TTL-extension call the TTL is refreshed to `APP_TTL_LEDGERS`.
 
 ---
 
-## Key Schema
+### 2 — Per-Issue Application Entry
 
-All six key types, their tiers, structures, and value types:
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address, Symbol, u32)` |
+| Prefix | `"app"` |
+| Value | `bool` (always `true`, presence sentinel) |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
 
-| # | Name | Tier | Key Structure | Value |
-|---|---|---|---|---|
-| K1 | Global App Count | Temporary | `("g_apps", contributor: Address)` | `u32` |
-| K2 | App Entry | Temporary | `("app", contributor: Address, org_id: Symbol, issue_id: u32)` | `bool` |
-| K3 | Admin | Persistent | `"admin"` | `Address` |
-| K4 | Maintainer | Persistent | `("maint", maintainer: Address, org_id: Symbol)` | `bool` |
-| K5 | Org Assignment Count | Persistent | `("o_asgn", contributor: Address, org_id: Symbol)` | `u32` |
-| K6 | Assignment Entry | Persistent | `("asgn", org_id: Symbol, issue_id: u32, contributor: Address)` | `bool` |
+**Purpose:** Records that contributor `C` has applied to issue `I` in org `O`. Reading the key and getting `None` / `false` means no pending application exists.
 
-The prefix symbols — `"g_apps"`, `"app"`, `"admin"`, `"maint"`, `"o_asgn"`, `"asgn"` — are all created with `symbol_short!()` and are represented as packed 6-bit encoded Soroban `Symbol` scalars.
+**Example key:**
+```
+("app", GBFZB...XK2Q, "stellar-org", 42)
+```
+
+**Example value:** `true`
 
 ---
 
-## Formal Collision-Free Proof
+### 3 — Admin Address
 
-### Key Structure Definitions
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `Symbol` |
+| Prefix | `"admin"` |
+| Value | `Address` |
 
-Using type-signature notation:
+**Purpose:** Stores the single admin `Address` set during `initialize`. Reading `None` is the initialisation guard — it means the contract has not been set up yet.
 
+**Example key:**
 ```
-K1 = Tuple2(Symbol("g_apps"), Address)
-K2 = Tuple4(Symbol("app"),    Address, Symbol, u32)
-K3 = Symbol("admin")                                      ← scalar, not a tuple
-K4 = Tuple3(Symbol("maint"),  Address, Symbol)
-K5 = Tuple3(Symbol("o_asgn"), Address, Symbol)
-K6 = Tuple4(Symbol("asgn"),   Symbol,  u32,   Address)
-```
-
-### Encoding Basis
-
-Soroban serializes storage keys using XDR. The relevant XDR properties for this proof are:
-
-1. **Tuple arity is encoded.** A `Tuple2` and a `Tuple3` have different XDR-discriminated `ScVec` lengths. Two keys with different tuple arities produce different byte streams regardless of element values.
-
-2. **Scalar vs tuple is encoded.** A bare `Symbol` scalar (K3) is encoded as an `ScVal::Symbol` discriminant, which is distinct from the `ScVal::Vec` discriminant used for all tuple keys. K3 cannot collide with any tuple key.
-
-3. **Symbol values are encoded as their bit-packed representation.** `"admin"`, `"g_apps"`, `"app"`, `"maint"`, `"o_asgn"`, and `"asgn"` are all distinct 6-bit packed values. Two tuples with the same arity but different leading symbols produce different byte streams.
-
-4. **Element type encoding.** `Address`, `Symbol`, and `u32` have different XDR type discriminants. Even if two tuples share arity and leading symbol, differing element type sequences produce different byte streams.
-
-### Pairwise Comparison Table
-
-There are C(6,2) = **15 pairwise combinations**. Each is shown with the structural reason it cannot collide.
-
-| Pair | K_i | K_j | Collision-free reason |
-|---|---|---|---|
-| P1 | K1 | K2 | Different arity (2 vs 4) |
-| P2 | K1 | K3 | K1 is Tuple, K3 is bare Symbol scalar |
-| P3 | K1 | K4 | Different arity (2 vs 3) |
-| P4 | K1 | K5 | Different arity (2 vs 3) |
-| P5 | K1 | K6 | Different arity (2 vs 4) |
-| P6 | K2 | K3 | K2 is Tuple, K3 is bare Symbol scalar |
-| P7 | K2 | K4 | Different arity (4 vs 3) |
-| P8 | K2 | K5 | Different arity (4 vs 3) |
-| P9 | K2 | K6 | Same arity (4) but different leading prefix symbol: `"app"` ≠ `"asgn"` |
-| P10 | K3 | K4 | K3 is bare Symbol scalar, K4 is Tuple |
-| P11 | K3 | K5 | K3 is bare Symbol scalar, K5 is Tuple |
-| P12 | K3 | K6 | K3 is bare Symbol scalar, K6 is Tuple |
-| P13 | K4 | K5 | Same arity (3) but different leading prefix symbol: `"maint"` ≠ `"o_asgn"` |
-| P14 | K4 | K6 | Different arity (3 vs 4) |
-| P15 | K5 | K6 | Different arity (3 vs 4) |
-
-All 15 pairs are structurally distinct. ∎
-
-### Detailed Pairwise Proofs
-
-**P1 — K1 vs K2 (arity 2 vs 4)**
-
-```
-K1 = ("g_apps", A)              → XDR Vec[2]: [Symbol("g_apps"), Address(A)]
-K2 = ("app",    A, org, issue)  → XDR Vec[4]: [Symbol("app"), ...]
+"admin"
 ```
 
-XDR `ScVec` encodes the element count as a 32-bit unsigned integer before the elements. A vec of length 2 (`0x00000002`) and a vec of length 4 (`0x00000004`) differ in bytes 0-3. Collision is impossible.
-
-**P2 — K1 vs K3 (tuple vs scalar)**
-
-```
-K1 = ("g_apps", A)  → ScVal::Vec discriminant (0x00000006 in XDR enum)
-K3 = "admin"        → ScVal::Symbol discriminant (0x0000000e in XDR enum)
-```
-
-The outermost XDR discriminant differs. No value substitution for `A` can change the leading discriminant bytes. Collision is impossible.
-
-**P3 — K1 vs K4 (arity 2 vs 3)**
-
-```
-K1 = ("g_apps", A)         → XDR Vec[2]
-K4 = ("maint",  M, org)    → XDR Vec[3]
-```
-
-Arity mismatch in the first 4 bytes of the XDR vec. Collision is impossible.
-
-**P4 — K1 vs K5 (arity 2 vs 3)**
-
-```
-K1 = ("g_apps", A)          → XDR Vec[2]
-K5 = ("o_asgn", A, org)     → XDR Vec[3]
-```
-
-Arity mismatch. Collision is impossible.
-
-**P5 — K1 vs K6 (arity 2 vs 4)**
-
-```
-K1 = ("g_apps", A)                → XDR Vec[2]
-K6 = ("asgn",  org, issue, A)     → XDR Vec[4]
-```
-
-Arity mismatch. Collision is impossible.
-
-**P6 — K2 vs K3 (tuple vs scalar)**
-
-```
-K2 = ("app", A, org, issue)  → ScVal::Vec discriminant
-K3 = "admin"                  → ScVal::Symbol discriminant
-```
-
-Leading XDR discriminant differs. Collision is impossible.
-
-**P7 — K2 vs K4 (arity 4 vs 3)**
-
-```
-K2 = ("app",   A, org, issue)  → XDR Vec[4]
-K4 = ("maint", M, org)         → XDR Vec[3]
-```
-
-Arity mismatch. Collision is impossible.
-
-**P8 — K2 vs K5 (arity 4 vs 3)**
-
-```
-K2 = ("app",    A, org, issue)  → XDR Vec[4]
-K5 = ("o_asgn", A, org)         → XDR Vec[3]
-```
-
-Arity mismatch. Collision is impossible.
-
-**P9 — K2 vs K6 (same arity, different prefix)**
-
-This is the most subtle pair: both are 4-tuples.
-
-```
-K2 = ("app",  A,   org, issue)   → Vec[4]: [Symbol("app"),  Address, Symbol, u32]
-K6 = ("asgn", org, issue, A)     → Vec[4]: [Symbol("asgn"), Symbol, u32, Address]
-```
-
-After the arity bytes, the XDR stream continues with the first element. For K2 that is `Symbol("app")` (6-bit encoding of `[a,p,p]`). For K6 that is `Symbol("asgn")` (6-bit encoding of `[a,s,g,n]`). These produce different byte values at position 4+.
-
-Additionally, the element type sequence differs: K2 is `[Symbol, Address, Symbol, u32]` and K6 is `[Symbol, Symbol, u32, Address]`. Even if the leading symbols were somehow equal, the second element type discriminant would differ. Collision is impossible by both the prefix symbol value and the element type sequence.
-
-**P10 — K3 vs K4 (scalar vs tuple)**
-
-```
-K3 = "admin"             → ScVal::Symbol discriminant
-K4 = ("maint", M, org)   → ScVal::Vec discriminant
-```
-
-Leading XDR discriminant differs. Collision is impossible.
-
-**P11 — K3 vs K5 (scalar vs tuple)**
-
-```
-K3 = "admin"              → ScVal::Symbol discriminant
-K5 = ("o_asgn", A, org)  → ScVal::Vec discriminant
-```
-
-Leading XDR discriminant differs. Collision is impossible.
-
-**P12 — K3 vs K6 (scalar vs tuple)**
-
-```
-K3 = "admin"                     → ScVal::Symbol discriminant
-K6 = ("asgn", org, issue, A)     → ScVal::Vec discriminant
-```
-
-Leading XDR discriminant differs. Collision is impossible.
-
-**P13 — K4 vs K5 (same arity, different prefix)**
-
-Both are 3-tuples — the most likely accidental collision vector when adding new keys.
-
-```
-K4 = ("maint",  M, org)   → Vec[3]: [Symbol("maint"),  Address, Symbol]
-K5 = ("o_asgn", A, org)   → Vec[3]: [Symbol("o_asgn"), Address, Symbol]
-```
-
-After the arity bytes, the XDR stream encodes the first element. `Symbol("maint")` uses the 6-bit packing of `[m,a,i,n,t]` and `Symbol("o_asgn")` uses the 6-bit packing of `[o,_,a,s,g,n]`. These are different bit patterns. Collision is impossible by the prefix symbol value.
-
-**P14 — K4 vs K6 (arity 3 vs 4)**
-
-```
-K4 = ("maint", M, org)           → XDR Vec[3]
-K6 = ("asgn",  org, issue, A)    → XDR Vec[4]
-```
-
-Arity mismatch. Collision is impossible.
-
-**P15 — K5 vs K6 (arity 3 vs 4)**
-
-```
-K5 = ("o_asgn", A, org)          → XDR Vec[3]
-K6 = ("asgn",   org, issue, A)   → XDR Vec[4]
-```
-
-Arity mismatch. Collision is impossible.
-
-### Conclusion
-
-All 15 pairwise combinations are structurally incompatible. The collision-free guarantee holds for:
-
-- All values of `Address` (contributor, maintainer)
-- All values of `Symbol` (org_id, 1-9 character Soroban Symbol)
-- All values of `u32` (issue_id: 0..2^32-1)
-
-The proof is robust to adversarial input: no choice of address, org, or issue ID can cause any two key types to produce identical XDR byte sequences. ∎
+**Example value:** `GCEZW...SJ3P` (Stellar address)
 
 ---
 
-## Adding New Keys Safely
+### 4 — Maintainer Registration
 
-When adding a new storage key to the contract, follow this checklist to maintain the collision-free guarantee:
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Address, Symbol)` |
+| Prefix | `"maint"` |
+| Value | `bool` (always `true`, presence sentinel) |
 
-1. **Choose a unique prefix symbol.** The new `symbol_short!()` prefix must not match any of the six existing prefixes: `"g_apps"`, `"app"`, `"admin"`, `"maint"`, `"o_asgn"`, `"asgn"`.
+**Purpose:** Records that address `M` is an authorised maintainer for org `O`. The write is idempotent.
 
-2. **Check tuple arity.** If the new key has the same arity as an existing key, ensure the leading prefix symbol is distinct (as in P9 and P13 above).
+**Example key:**
+```
+("maint", GABC1...9KLM, "stellar-org")
+```
 
-3. **Run the CI collision check** (see below) with the new key's test vectors added.
-
-4. **Update this document.** Add the new key to the schema table, add the new pairwise rows to the table (n_new × n_existing new pairs), and provide a proof for each new pair.
-
----
-
-## TTL Reference
-
-| Constant | Value | Duration |
-|---|---|---|
-| `APP_TTL_LEDGERS` | 17,280 | ~24 h at 5 s/ledger |
-| `APP_TTL_MIN` | 1 | Minimum valid TTL |
-| `APP_TTL_MAX` | 535,000 | Soroban platform cap |
-| `INSTANCE_TTL_LEDGERS` | 518,400 | ~30 days |
-
-The contract instance TTL is bumped on every state-changing call with a threshold of `INSTANCE_TTL_LEDGERS / 2` and extended to `INSTANCE_TTL_LEDGERS`. This prevents the contract from being archived between operator-level TTL extensions.
+**Example value:** `true`
 
 ---
 
-## CI Collision Check
+### 5 — Org Assignment Count
 
-The script `scripts/check-key-collisions.sh` validates the collision-free guarantee by computing a representative encoded key string for each of the six key types and asserting that all six are unique. Run it in CI or locally:
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Address, Symbol)` |
+| Prefix | `"o_asgn"` |
+| Value | `u32` |
+
+**Purpose:** Tracks how many active assignments contributor `C` holds within org `O`. Capped at the effective org cap (default `ORG_ASSIGNMENT_LIMIT = 4`, overridable via `set_org_cap`). Entry is removed when count reaches zero.
+
+**Example key:**
+```
+("o_asgn", GBFZB...XK2Q, "stellar-org")
+```
+
+**Example value:** `2`
+
+---
+
+### 6 — Active Assignment Entry
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Symbol, u32, Address)` |
+| Prefix | `"asgn"` |
+| Value | `bool` (always `true`, presence sentinel) |
+
+**Purpose:** Records that contributor `C` is actively assigned to issue `I` in org `O`. Key order is `(org_id, issue_id, contributor)` so lookups by issue are efficient.
+
+**Example key:**
+```
+("asgn", "stellar-org", 42, GBFZB...XK2Q)
+```
+
+**Example value:** `true`
+
+---
+
+### 7 — Per-Org Assignment Cap
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Symbol)` |
+| Prefix | `"o_cap"` |
+| Value | `u32` |
+
+**Purpose:** Stores a per-org override for the assignment cap set by a registered maintainer via `set_org_cap`. When absent callers fall back to `ORG_ASSIGNMENT_LIMIT = 4`. Valid range: `[1, 20]`.
+
+**Example key:**
+```
+("o_cap", "stellar-org")
+```
+
+**Example value:** `8`
+
+---
+
+## TTL Semantics
+
+### Why temporary storage for applications?
+
+Applications are scoped to an AlignmentDrips **Wave** — a time-bounded funding round. When a Wave ends, all pending applications should cease to exist automatically without requiring an explicit cleanup transaction. Temporary storage on Soroban expires when its TTL reaches ledger 0, giving exactly this behaviour for free.
+
+- TTL is set to `APP_TTL_LEDGERS = 17_280` ledgers (≈ 24 hours at 5 s/ledger).
+- This constant is designed to match the Wave duration and must satisfy `APP_TTL_MIN ≤ value ≤ APP_TTL_MAX` (platform cap: 535 000 ledgers).
+- Anyone can call `extend_application_ttl` to bump an application within a live Wave.
+- Both the Global Application Count (key #1) and the per-issue Application Entry (key #2) are temporary — they expire together, keeping the global counter consistent.
+
+### Why persistent storage for assignments and admin?
+
+Assignments represent contractual obligations between a contributor and a maintainer. They must survive beyond a single Wave and must not disappear due to ledger-level TTL expiry. The same reasoning applies to the admin address and maintainer registrations: these are governance records that must be durable. Persistent entries in Soroban remain indefinitely as long as the contract instance itself is alive (bumped every `INSTANCE_TTL_LEDGERS / 2` ledgers).
+
+---
+
+## TTL Expiry Scenarios
+
+This section documents edge-case behaviour when temporary storage entries expire before normal workflow completion.
+
+### Scenario A — Application entry expires before assignment
+
+**Setup:** Contributor `C` applies to issue `I` in org `O`. No one calls `extend_application_ttl`. 17 280 ledgers elapse and the Wave ends.
+
+**What happens at expiry:**
+
+1. The per-issue application entry `("app", C, O, I)` is deleted by the Soroban host when its TTL reaches 0.
+2. The global count entry `("g_apps", C)` shares the same TTL — it also expires, resetting the counter to 0 from the host's perspective.
+3. `has_applied(C, O, I)` returns `false`.
+4. `get_global_application_count(C)` returns `0` (key absent → default).
+
+**Consequences:**
+
+- The contributor is automatically unblocked for the next Wave — no explicit cleanup needed.
+- No assignment was created, so no persistent storage is affected.
+- There is no `CounterInconsistency` risk because the `"o_asgn"` key (persistent) was never written in this path.
+
+**Code path in `src/storage.rs`:**
+```rust
+// get_global_app_count returns 0 when key is absent
+env.storage().temporary().get(&key).unwrap_or(0)
+
+// has_app_entry returns false when key is absent
+env.storage().temporary().get::<_, bool>(&key).unwrap_or(false)
+```
+
+**Prevention:** Call `extend_application_ttl(C, O, I)` periodically during an active Wave to keep the application alive.
+
+---
+
+### Scenario B — Global count key absent while per-issue entry is still live
+
+**Setup:** A prior `withdraw_application` decremented the global count to zero and deleted `("g_apps", C)`. The contributor then re-applied, creating a new `("app", C, O, I)` entry but the global count key was not re-created before expiry of the old one. (In practice this cannot happen via normal contract calls, but a migration script could leave this state.)
+
+**What happens at `assign_issue`:**
+
+```rust
+// get_global_app_count returns 0 — key absent
+let app_count = storage::get_global_app_count(&env, &contributor); // → 0
+let new_app_count = app_count.saturating_sub(1); // → 0  (safe, no underflow)
+if new_app_count == 0 {
+    storage::remove_global_app_count(&env, &contributor); // no-op remove — safe
+}
+```
+
+**Conclusion:** Safe. `saturating_sub` and no-op removal on a missing key prevent a panic.
+
+---
+
+### Scenario C — Application expires between `apply_for_issue` and `assign_issue`
+
+**Setup:** Contributor applies at ledger L. The maintainer does not assign until ledger L + 18 000 (after TTL = 17 280 has elapsed).
+
+**What happens:**
+
+- `has_app_entry` returns `false` (entry expired).
+- `assign_issue` panics with `ApplicationNotFound` (error 9).
+
+**Recovery:** The contributor must re-apply in the new Wave. The maintainer retries `assign_issue` after re-application.
+
+---
+
+### How `CounterInconsistency` (error 13) Can Arise
+
+Error 13 is raised by `revoke_assignment` when an assignment sentinel exists (`has_assignment` returns `true`) but the org assignment counter is `0`. This indicates the counter and sentinel are out of sync.
+
+**Root causes:**
+
+1. **Manual counter zeroing in a migration script** — a script sets `("o_asgn", C, O)` to `0` without also removing the `("asgn", O, I, C)` sentinels.
+2. **Incomplete rollback** — a partial rollback resets counters but leaves assignment sentinels in place.
+3. **Off-by-one in a custom migration** — a script iterates assignment entries and writes a counter that is lower than the true count of live sentinels.
+
+**Detection:**
 
 ```bash
-bash scripts/check-key-collisions.sh
+# For each known (contributor, org_id) pair:
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- get_org_assignment_count \
+  --contributor "$CONTRIBUTOR" --org_id "$ORG_ID"
+# If output is 0 but you know an assignment exists, CounterInconsistency is present.
+
+# Programmatic detection via check_consistency() (admin-only read function):
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- check_consistency
+# Returns a list of (contributor, org_id) pairs with mismatched state.
 ```
 
-A zero exit code means no collisions were detected. See [scripts/check-key-collisions.sh](../scripts/check-key-collisions.sh) for full details and instructions for adding test vectors when new keys are introduced.
+Refer to `docs/runbooks/incident-response.md` for the full remediation playbook.
 
 ---
 
-## See Also
+## Key Collision Proof
 
-- [maintainer-guide.md](maintainer-guide.md) — Maintainer operations
-- [error-reference.md](error-reference.md) — Error codes and resolution playbooks
-- [transaction-lifecycle.md](transaction-lifecycle.md) — Transaction sequence diagrams
-- [scripts/check-key-collisions.sh](../scripts/check-key-collisions.sh) — CI collision check script
+All seven prefixes are distinct `symbol_short!` values:
+
+| # | Prefix | Rust literal |
+|---|---|---|
+| 1 | `g_apps` | `symbol_short!("g_apps")` |
+| 2 | `app` | `symbol_short!("app")` |
+| 3 | `admin` | `symbol_short!("admin")` |
+| 4 | `maint` | `symbol_short!("maint")` |
+| 5 | `o_asgn` | `symbol_short!("o_asgn")` |
+| 6 | `asgn` | `symbol_short!("asgn")` |
+| 7 | `o_cap` | `symbol_short!("o_cap")` |
+
+### Formal Argument
+
+**Claim:** No two distinct logical storage records can produce the same Soroban storage key.
+
+**Proof:**
+
+Soroban serialises every storage key as a `ScVal`. Tuple keys become `ScVal::Vec([elem₀, …])`. The scalar admin key is `ScVal::Symbol("admin")`. Two keys `K₁` and `K₂` collide iff their full `ScVal` byte representations are identical.
+
+*Cross-pattern collision is impossible* because every key begins with a unique prefix byte sequence. A `ScVal::Vec` whose first element is `symbol_short!("x")` cannot equal one whose first element is `symbol_short!("y")` when `"x" ≠ "y"`. A `ScVal::Vec` cannot equal `ScVal::Symbol` because the XDR discriminant byte differs.
+
+Exhaustive check of all C(7, 2) = **21 pairs**:
+
+| Pair | Why no collision |
+|------|-----------------|
+| 1 vs 2 | `"g_apps"` ≠ `"app"` |
+| 1 vs 3 | Vec ≠ Symbol (different `ScVal` variant) |
+| 1 vs 4 | `"g_apps"` ≠ `"maint"` |
+| 1 vs 5 | `"g_apps"` ≠ `"o_asgn"` |
+| 1 vs 6 | `"g_apps"` ≠ `"asgn"` |
+| 1 vs 7 | `"g_apps"` ≠ `"o_cap"` |
+| 2 vs 3 | Vec ≠ Symbol |
+| 2 vs 4 | `"app"` ≠ `"maint"` |
+| 2 vs 5 | `"app"` ≠ `"o_asgn"` |
+| 2 vs 6 | `"app"` ≠ `"asgn"` |
+| 2 vs 7 | `"app"` ≠ `"o_cap"` |
+| 3 vs 4 | Symbol ≠ Vec |
+| 3 vs 5 | Symbol ≠ Vec |
+| 3 vs 6 | Symbol ≠ Vec |
+| 3 vs 7 | Symbol ≠ Vec |
+| 4 vs 5 | `"maint"` ≠ `"o_asgn"` |
+| 4 vs 6 | `"maint"` ≠ `"asgn"` |
+| 4 vs 7 | `"maint"` ≠ `"o_cap"` |
+| 5 vs 6 | `"o_asgn"` ≠ `"asgn"` |
+| 5 vs 7 | `"o_asgn"` ≠ `"o_cap"` |
+| 6 vs 7 | `"asgn"` ≠ `"o_cap"` |
+
+*Within-pattern collision is impossible* because the remaining tuple fields uniquely identify the logical record. `Address` values are validated by the host via `require_auth`, preventing impersonation. Distinct logical records within the same category differ in at least one of `(contributor, org_id, issue_id)`. ∎
+
+---
+
+## Storage Migration Playbook
+
+This playbook covers how to safely evolve the storage schema in future contract upgrades.
+
+### Principles
+
+1. **No automatic migration.** Soroban does not run migration hooks on upgrade. Data reshaping must happen via an explicit on-chain migration transaction after the new WASM is deployed.
+2. **Additive changes are safe.** New key prefixes are simply absent from existing state; `unwrap_or` defaults handle them transparently.
+3. **Breaking changes require a migration transaction.** Renaming a prefix, changing a value type, or removing a key that existing logic reads requires an explicit migration call.
+4. **Dry-run first.** Always run the upgrade dry-run CI step (see `docs/runbooks/contract-upgrade.md`) before deploying to testnet or mainnet.
+
+---
+
+### Playbook A — Additive change (new key prefix)
+
+**Example:** Adding `("o_cap", org_id)` (key #7, deployed in v0.2).
+
+**Steps:**
+
+1. Add the new key helper and read/write functions to `src/storage.rs`.
+2. Guard the read path with `unwrap_or(<default>)` so existing state without the new key returns a safe default.
+3. Update `src/lib.rs` to call the new storage helper.
+4. Deploy the new WASM — no migration transaction needed.
+5. The new key is written on the first `set_org_cap` call. Until then callers receive the default.
+
+**Verification:**
+```bash
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- get_org_cap --org_id my_org
+# Expected: "4"  (default, no key written yet)
+```
+
+---
+
+### Playbook B — Key prefix rename (breaking change)
+
+**Example:** Renaming `("o_asgn", contributor, org_id)` to `("oa2", contributor, org_id)`.
+
+**Steps:**
+
+1. In the new WASM keep **both** the old read helper (reads `"o_asgn"`) and the new read helper (reads `"oa2"`) during the migration window.
+2. Write a `migrate_asgn_counts(admin, pairs: Vec<(Address, Symbol)>)` contract function that:
+   - Reads each count from the old key.
+   - Writes it to the new key.
+   - Removes the old key.
+3. Deploy the new WASM.
+4. Call `migrate_asgn_counts` with the full list of affected `(contributor, org_id)` pairs.
+5. After confirming all pairs migrated, deploy a follow-up WASM that removes the old read helper.
+
+**Verification:**
+```bash
+# New key should match the old value
+stellar contract invoke --id "$CONTRACT_ID" --network testnet \
+  -- get_org_assignment_count \
+  --contributor "$CONTRIBUTOR" --org_id "$ORG_ID"
+
+# Old key helper (if still exposed) should return 0 — key removed
+stellar contract invoke --id "$CONTRACT_ID" --network testnet \
+  -- get_org_assignment_count_v1 \
+  --contributor "$CONTRIBUTOR" --org_id "$ORG_ID"
+# Expected: "0"
+```
+
+---
+
+### Playbook C — Value type change (breaking change)
+
+**Example:** Changing assignment counts from `u32` to `u64`.
+
+**Steps:**
+
+1. Introduce a new prefix `"o_asgn2"` for the `u64` values.
+2. Write a `migrate_counts_u64(admin, pairs: Vec<(Address, Symbol)>)` function that reads each `u32` count, writes it as `u64` under the new prefix, and removes the old key.
+3. Deploy, run migration, verify.
+4. In a subsequent WASM rename `"o_asgn2"` back to `"o_asgn"` (another Playbook B migration).
+
+> **Warning:** Never change the value type in-place without a key rename. Soroban will attempt to deserialise old bytes with the new type, which silently produces garbage or panics.
+
+---
+
+### Playbook D — Key removal
+
+**Example:** Removing legacy `("maint", …)` entries superseded by a new role system.
+
+**Steps:**
+
+1. In the transition WASM, read from both old and new keys during a grace period.
+2. Write a `cleanup_legacy_maint(admin, entries: Vec<(Address, Symbol)>)` function that removes old keys.
+3. After confirming cleanup is complete, ship a final WASM that reads only the new keys.
+
+---
+
+## Storage Budget Analysis
+
+This section estimates the ledger entry storage cost for WorkloadGovernor state in **stroops** (1 XLM = 10 000 000 stroops).
+
+### Soroban Storage Fee Model (Protocol 21+)
+
+Soroban charges **rent** for persistent and temporary storage based on:
+
+- **Entry size in bytes** (XDR-encoded key + value).
+- **TTL** — longer TTL = higher upfront rent reservation at write time.
+- **Fee rates** — network parameters; approximate current values:
+  - Persistent: ~0.01 XLM per 1 KB per 1 M ledgers.
+  - Temporary: ~0.001 XLM per 1 KB per 1 M ledgers.
+
+### Estimated Entry Sizes
+
+| Key pattern | Key XDR (bytes) | Value XDR (bytes) | Total |
+|-------------|-----------------|-------------------|-------|
+| `("g_apps", Address)` | ~50 | 5 | ~55 |
+| `("app", Address, Symbol, u32)` | ~60 | 5 | ~65 |
+| `"admin"` | 12 | ~48 | ~60 |
+| `("maint", Address, Symbol)` | ~55 | 5 | ~60 |
+| `("o_asgn", Address, Symbol)` | ~55 | 5 | ~60 |
+| `("asgn", Symbol, u32, Address)` | ~58 | 5 | ~63 |
+| `("o_cap", Symbol)` | ~30 | 5 | ~35 |
+
+> Address XDR ≈ 36 bytes (32-byte public key + discriminant). Symbol up to 10 bytes. u32 = 4 bytes. Vec wrapper adds ~4 bytes per element.
+
+### Scenario: 1 org, 100 contributors per Wave
+
+Assume 100 contributors each submit 3 applications, 30 are assigned, 30 complete.
+
+| Entry type | Count | Approx size | Temp rent (1 Wave ≈ 17 280 ledgers) |
+|------------|-------|-------------|--------------------------------------|
+| Global app count | 100 | 5 500 B total | ~0.01 XLM |
+| App entry | 300 | 19 500 B total | ~0.03 XLM |
+| Org assignment count | 30 | 1 800 B total | ~0.03 XLM/year (persistent) |
+| Assignment entry | 30 | 1 890 B total | ~0.03 XLM/year (persistent) |
+
+**Estimated total per Wave:** ~0.04–0.10 XLM for temporary entries. Persistent entries accumulate slowly and are cleaned up when counts hit zero.
+
+### Worst-case: 1 org, 10 000 contributors at global cap
+
+| Entry type | Count | Estimated cost |
+|------------|-------|----------------|
+| Global app count | 10 000 | ~1 XLM/Wave |
+| App entry (15 each) | 150 000 | ~15 XLM/Wave |
+| Org assignment count | 10 000 | ~1 XLM/year |
+| Assignment entry | 40 000 | ~4 XLM/year |
+
+**Total worst-case:** ~16 XLM/Wave for temporary entries, ~5 XLM/year persistent rent at normal completion rates.
+
+### Recommendations
+
+- Call `complete_assignment` or `revoke_assignment` promptly to free persistent entries and recover rent.
+- Do not let the contract instance TTL lapse — bump it regularly or rely on the `bump_instance` call made on every state-changing transaction.
+- For orgs with > 5 000 contributors, raise `APP_TTL_LEDGERS` only if the Wave duration requires it — a longer TTL multiplies the temporary rent cost proportionally.
+- Monitor the `("o_cap", org_id)` key: each distinct org adds one persistent entry of ~35 bytes (negligible unless there are thousands of orgs).

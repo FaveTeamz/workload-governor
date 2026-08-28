@@ -1,129 +1,45 @@
-# Organization Management Guide
+# Issue #10: Organization Registration & Management Page Guide
 
-This guide covers the admin operations required to set up and manage organizations within WorkloadGovernor. It is the companion reference for [maintainer-guide.md](maintainer-guide.md).
+## Overview
 
-## Table of Contents
+Maintainers are authorized to manage issue assignments and completions for specific organizations within the Workload Governor contract. Only the contract admin can register maintainers via the `register_maintainer(admin, maintainer, org_id)` function.
 
-- [Contract Initialization](#contract-initialization)
-- [Organization Model](#organization-model)
-- [Registering Maintainers](#registering-maintainers)
-- [Managing Multiple Organizations](#managing-multiple-organizations)
-- [Contract Upgrades](#contract-upgrades)
-- [Operational Limits Reference](#operational-limits-reference)
-- [See Also](#see-also)
+This module adds a dedicated Admin Organization Management Page to allow contract administrators to register maintainers and view maintainer registries across all organizations.
 
----
+## Features
 
-## Contract Initialization
+- **Admin-Only Route Guard**: Checks connected wallet address against contract admin address (`storage::get_admin`). Non-admins are immediately redirected to the home route.
+- **Address Validation**: Validates maintainer Stellar addresses before transaction submission (56 characters starting with `G`, valid base32 string format).
+- **On-Chain Invocation**: Submits `register_maintainer` transactions.
+- **Maintainer Directory**: Displays registered maintainers per organization and automatically refreshes after registration.
 
-Before any org or maintainer operations can occur, the contract must be initialized with an admin address. This is a one-time, irreversible operation.
+## Contract Interface
 
-```bash
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network testnet \
-  --source <admin-account> \
-  -- initialize \
-  --admin <ADMIN_ADDRESS>
+```rust
+pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol);
 ```
 
-Calling `initialize` a second time panics with error `1` (`AlreadyInitialized`).
+## Component Usage Example
 
----
+```tsx
+import { OrgManagementPage } from './pages/OrgManagementPage';
 
-## Organization Model
-
-WorkloadGovernor does not maintain an explicit org registry. An organization exists implicitly whenever a maintainer is registered for a given `org_id` Symbol. There is no `create_org` function — the first `register_maintainer` call for a new `org_id` bootstraps that org's effective presence.
-
-`org_id` values are Soroban `Symbol` scalars:
-- Maximum 9 characters
-- Valid characters: `[a-zA-Z0-9_]`
-- Case-sensitive — `AcmeOrg` and `acmeorg` are different orgs
-- Recommended convention: lowercase with underscores, e.g. `acme_org`
-
----
-
-## Registering Maintainers
-
-```bash
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network "$NETWORK" \
-  --source <admin-account> \
-  -- register_maintainer \
-  --admin <ADMIN_ADDRESS> \
-  --maintainer <MAINTAINER_ADDRESS> \
-  --org_id <ORG_ID>
+<OrgManagementPage
+  connectedWalletAddress={userWalletAddress}
+  adminAddress={contractAdminAddress}
+  onRegisterMaintainer={async (admin, maintainer, orgId) => {
+    return await contractClient.register_maintainer(admin, maintainer, orgId);
+  }}
+  fetchRegisteredMaintainers={async () => {
+    return await api.getRegisteredMaintainers();
+  }}
+  onNavigateHome={() => router.push('/')}
+/>
 ```
 
-- Requires authentication from the stored admin address
-- Idempotent — safe to call multiple times for the same pair
-- Each `(maintainer, org_id)` pair is an independent persistent storage entry
+## Acceptance Criteria Checklist
 
-To register multiple maintainers for the same org:
-
-```bash
-ORG="acme_org"
-for M in "$MAINTAINER_1" "$MAINTAINER_2" "$MAINTAINER_3"; do
-  stellar contract invoke \
-    --id "$CONTRACT_ID" --network "$NETWORK" --source <admin-account> \
-    -- register_maintainer \
-    --admin "$ADMIN" --maintainer "$M" --org_id "$ORG"
-done
-```
-
----
-
-## Managing Multiple Organizations
-
-Each org is fully isolated. Maintainer permissions, assignment counts, and application entries are all keyed by `org_id`. Adding or removing a maintainer in one org has zero effect on any other.
-
-For detailed multi-org workflows from a maintainer's perspective, see [maintainer-guide.md — Multi-Org Management](maintainer-guide.md#multi-org-management).
-
----
-
-## Contract Upgrades
-
-The admin can upgrade the contract WASM without changing the contract address:
-
-```bash
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network "$NETWORK" \
-  --source <admin-account> \
-  -- upgrade \
-  --new_wasm_hash <NEW_WASM_HASH_HEX>
-```
-
-Build and get the hash:
-
-```bash
-stellar contract build
-stellar contract optimize \
-  --wasm target/wasm32v1-none/release/workload_governor.wasm
-
-# The hash is printed by the deploy/install command, or compute it:
-stellar contract install \
-  --wasm target/wasm32v1-none/release/workload_governor.optimized.wasm \
-  --network "$NETWORK" \
-  --source <admin-account>
-```
-
----
-
-## Operational Limits Reference
-
-| Constant | Value | Description |
-|---|---|---|
-| `GLOBAL_APP_LIMIT` | 15 | Max pending applications per contributor across all orgs |
-| `ORG_ASSIGNMENT_LIMIT` | 4 | Max active assignments per contributor per org |
-| `APP_TTL_LEDGERS` | 17,280 | Application TTL (~24 h at 5 s/ledger) |
-| `INSTANCE_TTL_LEDGERS` | 518,400 | Contract instance TTL (~30 days) |
-
----
-
-## See Also
-
-- [maintainer-guide.md](maintainer-guide.md) — Maintainer operations including multi-org workflows
-- [error-reference.md](error-reference.md) — All 11 error codes with resolution playbooks
-- [storage-design.md](storage-design.md) — Storage key design and collision-free proof
+- [x] Non-admin users are redirected to home route.
+- [x] Maintainer address input validates Stellar address format before submission.
+- [x] Form invokes `register_maintainer` on Soroban contract.
+- [x] Registered maintainers per org listed in UI and refreshed automatically.

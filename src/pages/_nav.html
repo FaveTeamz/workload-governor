@@ -1,0 +1,40 @@
+<!-- Shared top nav — no wallet state dependency -->
+<nav class="ag-nav" aria-label="Main navigation">
+  <a class="ag-nav-brand" href="/">AlignmentDrips</a>
+  <ul class="ag-nav-links" role="list">
+    <li><a href="/dashboard">Dashboard</a></li>
+    <li><a href="/issues">Issues</a></li>
+    <li><a href="/history">History</a></li>
+  </ul>
+</nav>
+
+<style>
+.ag-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: .75rem 1.5rem;
+  background: #0f172a;
+  color: #f1f5f9;
+}
+.ag-nav-brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #38bdf8;
+  text-decoration: none;
+  margin-right: auto;
+}
+.ag-nav-links {
+  display: flex;
+  gap: 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ag-nav-links a {
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: .9rem;
+}
+.ag-nav-links a:hover { color: #f1f5f9; }
+</style>
