@@ -62,6 +62,15 @@ export function errorHandler(
   const correlationId = req.correlationId ?? 'unknown';
   const isProd = process.env.NODE_ENV === 'production';
 
+  // body-parser SyntaxError: malformed JSON request body
+  if (err instanceof SyntaxError && 'status' in err && (err as { status: number }).status === 400) {
+    res.status(400).json({
+      error: { code: 'INVALID_JSON', message: 'Request body is not valid JSON' },
+      correlationId,
+    } satisfies ApiErrorResponse);
+    return;
+  }
+
   if (err instanceof ValidationError) {
     res.status(400).json({
       error: { code: 'VALIDATION_ERROR', message: err.message, details: err.details },

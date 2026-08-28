@@ -1,0 +1,350 @@
+/* ============================================================
+   RegisterOrgPage — styles
+   ============================================================ */
+
+/* Page layout */
+.register-org {
+  max-width: 680px;
+  margin: 32px auto;
+  padding: 0 16px 64px;
+}
+
+.register-org__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--color-text);
+}
+
+.register-org__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.register-org__logout {
+  flex-shrink: 0;
+  color: var(--color-muted);
+}
+
+/* Step indicator */
+.step-bar__list {
+  display: flex;
+  gap: 0;
+  list-style: none;
+  counter-reset: step;
+  align-items: center;
+}
+
+.step-bar__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.step-bar__item + .step-bar__item::before {
+  content: "›";
+  margin: 0 8px;
+  color: var(--color-border);
+}
+
+.step-bar__item--active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.step-bar__item--done {
+  color: var(--color-complete);
+}
+
+.step-bar__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.step-bar__item--active .step-bar__num {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.step-bar__item--done .step-bar__num {
+  background: var(--color-complete);
+  border-color: var(--color-complete);
+  color: #fff;
+}
+
+/* Step headings */
+.register-org__step-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--color-text);
+}
+
+.register-org__step-desc {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+/* Generic form field */
+.form-field {
+  margin-bottom: 18px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--color-text);
+}
+
+.form-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 0.95rem;
+  transition: border-color 0.15s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.form-input--error {
+  border-color: var(--color-revoke);
+}
+
+.form-input--narrow {
+  width: 90px;
+}
+
+/* Status / hint messages */
+.field-hint {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.field-hint--ok {
+  color: var(--color-complete);
+}
+
+.field-hint--error {
+  color: var(--color-revoke);
+}
+
+.field-hint--checking {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* Actions row */
+.register-org__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+/* Input + button row */
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.input-row .form-input {
+  flex: 1;
+}
+
+/* Maintainer list */
+.maintainer-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.maintainer-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.maintainer-list__addr {
+  font-size: 0.8rem;
+  word-break: break-all;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.maintainer-list__remove {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+}
+
+.maintainer-list__remove:hover {
+  color: var(--color-revoke);
+  background: color-mix(in srgb, var(--color-revoke) 12%, transparent);
+}
+
+.register-org__empty {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+/* Cap slider row */
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cap-slider {
+  flex: 1;
+  accent-color: var(--color-primary);
+}
+
+/* Cap impact description */
+.cap-impact {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  line-height: 1.5;
+  margin-top: 12px;
+}
+
+/* Review list (dl) */
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.review-list__row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  align-items: start;
+}
+
+.review-list__row dt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+
+.review-list__row dd {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.review-list__maintainers {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.review-list__maintainers code {
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+
+.review-list__muted {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+/* Access denied inner card */
+.access-denied {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 20px;
+  text-align: center;
+}
+
+.access-denied__icon {
+  font-size: 2.5rem;
+}
+
+.access-denied h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.access-denied p {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  max-width: 400px;
+}
+
+/* API key form */
+.api-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+/* Responsive */
+@media (max-width: 540px) {
+  .step-bar__label {
+    display: none;
+  }
+
+  .review-list__row {
+    grid-template-columns: 1fr;
+  }
+}
