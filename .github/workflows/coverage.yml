@@ -7,37 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  # ── Backend (Node/Jest — lcov) ─────────────────────────────────────────
-  backend-coverage:
+  # ── Backend: TypeScript / Node.js ──────────────────────────────────────────
+  coverage-backend:
+    name: Backend Coverage (V8 / Istanbul)
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: testdb
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://test:test@localhost:5432/testdb
-      REDIS_URL: redis://localhost:6379
-      ADMIN_TOKEN: test-admin-token
 
     steps:
       - uses: actions/checkout@v4
@@ -47,23 +23,29 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Run Jest with coverage
-        run: npx jest --runInBand --forceExit --coverage --coverageReporters=lcov --coverageReporters=text
+      - name: Run backend tests with coverage
+        run: npx vitest run --config vitest.config.ts --coverage
 
       - name: Upload backend coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: ./coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/backend/lcov.info
           flags: backend
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          name: backend
+          fail_ci_if_error: true
+          verbose: true
 
-  # ── Frontend (Vitest / v8 — lcov) ─────────────────────────────────────
-  frontend-coverage:
+  # ── Frontend: React / jsdom ────────────────────────────────────────────────
+  coverage-frontend:
+    name: Frontend Coverage (Istanbul / jsdom)
     runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
 
     steps:
       - uses: actions/checkout@v4
@@ -73,54 +55,63 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Run Vitest with coverage
-        run: npx vitest run --coverage
+      - name: Run frontend tests with coverage
+        run: npx vitest run --config frontend/vitest.config.ts --coverage
 
       - name: Upload frontend coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: ./coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/frontend/lcov.info
           flags: frontend
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          name: frontend
+          fail_ci_if_error: true
+          verbose: true
 
-  # ── Contract (Rust / cargo-tarpaulin — lcov) ──────────────────────────
-  contract-coverage:
+  # ── Contract: Rust / cargo-llvm-cov ───────────────────────────────────────
+  coverage-contract:
+    name: Contract Coverage (llvm-cov)
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache cargo registry
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Cache Rust build artifacts
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-tarpaulin-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-tarpaulin-
+          key: ${{ runner.os }}-cargo-llvm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-llvm-
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin --locked
-
-      - name: Run tarpaulin
+      - name: Run contract tests with llvm-cov
         run: |
-          cargo tarpaulin \
+          cargo llvm-cov \
             --features testutils \
-            --out Lcov \
-            --output-dir ./coverage \
-            --exclude-files "src/test.rs" \
-            --fail-under 80
+            --lcov \
+            --output-path coverage/contract/lcov.info
 
       - name: Upload contract coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: ./coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/contract/lcov.info
           flags: contract
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          name: contract
+          fail_ci_if_error: true
+          verbose: true

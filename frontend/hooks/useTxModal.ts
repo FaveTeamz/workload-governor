@@ -2,10 +2,32 @@
 import { useState, useCallback } from "react";
 
 export interface TxDetails {
+  /** Short plain-English action label, e.g. "Apply for issue #42 in stellar-org" */
   action: string;
+  /** Canonical target string shown in the secondary section */
   target: string;   // e.g. "org: stellar-org / issue: #42"
-  fee: string;      // e.g. "0.00001 XLM"
-  network: string;  // "testnet" | "mainnet"
+  /** Estimated fee, e.g. "0.00001 XLM" */
+  fee: string;
+  /** "testnet" | "mainnet" */
+  network: string;
+  /**
+   * When true the modal uses a red/destructive colour scheme.
+   * Set for revoke and withdraw actions.
+   */
+  destructive?: boolean;
+  /**
+   * Raw XDR for advanced users — shown in the collapsible details section.
+   */
+  xdr?: string;
+  /**
+   * Estimated confirmation time, e.g. "~5 seconds"
+   */
+  estimatedTime?: string;
+  /**
+   * Action-specific label for the confirm button, e.g. "Confirm Application".
+   * Falls back to "Confirm & Sign" if omitted.
+   */
+  confirmLabel?: string;
 }
 
 type ModalState =
@@ -16,7 +38,7 @@ type ModalState =
 
 export interface UseTxModal {
   state: ModalState;
-  /** Open the confirmation dialog. Returns true if user confirmed, throws if they cancelled. */
+  /** Open the confirmation dialog. Resolves when the user confirms, throws if they cancel. */
   confirm: (details: TxDetails) => Promise<void>;
   /** Call inside your tx handler to move to loading state. */
   setLoading: () => void;

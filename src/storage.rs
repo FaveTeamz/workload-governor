@@ -8,7 +8,7 @@
 //!
 //! # Storage key collision-free proof
 //!
-//! Six key patterns are used. Each is a tuple whose **first element is a unique
+//! Seven key patterns are used. Each is a tuple whose **first element is a unique
 //! `symbol_short!` prefix**. Because the Soroban host serialises the entire tuple
 //! (prefix + remaining fields) as a single `ScVal`, two keys can only collide if
 //! **every** element in both tuples is identical. The prefix alone therefore
@@ -23,6 +23,7 @@
 //! | 4 | `("maint", maintainer, org_id)` | `"maint"` | `Address`, `Symbol` |
 //! | 5 | `("o_asgn", contributor, org_id)` | `"o_asgn"` | `Address`, `Symbol` |
 //! | 6 | `("asgn", org_id, issue_id, contributor)` | `"asgn"` | `Symbol`, `u32`, `Address` |
+//! | 7 | `("o_cap", org_id)` | `"o_cap"` | `Symbol` |
 //!
 //! Pairwise uniqueness argument:
 //! - **1 vs 2**: `"g_apps"` ≠ `"app"` — different prefix bytes.
@@ -30,14 +31,19 @@
 //! - **1 vs 4**: `"g_apps"` ≠ `"maint"`.
 //! - **1 vs 5**: `"g_apps"` ≠ `"o_asgn"`.
 //! - **1 vs 6**: `"g_apps"` ≠ `"asgn"`.
+//! - **1 vs 7**: `"g_apps"` ≠ `"o_cap"`.
 //! - **2 vs 3**: tuple ≠ scalar.
 //! - **2 vs 4**: `"app"` ≠ `"maint"`.
 //! - **2 vs 5**: `"app"` ≠ `"o_asgn"`.
 //! - **2 vs 6**: `"app"` ≠ `"asgn"`.
-//! - **3 vs 4–6**: scalar `"admin"` ≠ any tuple.
+//! - **2 vs 7**: `"app"` ≠ `"o_cap"`.
+//! - **3 vs 4–7**: scalar `"admin"` ≠ any tuple.
 //! - **4 vs 5**: `"maint"` ≠ `"o_asgn"`.
 //! - **4 vs 6**: `"maint"` ≠ `"asgn"`.
+//! - **4 vs 7**: `"maint"` ≠ `"o_cap"`.
 //! - **5 vs 6**: `"o_asgn"` ≠ `"asgn"`.
+//! - **5 vs 7**: `"o_asgn"` ≠ `"o_cap"`.
+//! - **6 vs 7**: `"asgn"` ≠ `"o_cap"`.
 //!
 //! Within each pattern, uniqueness is guaranteed by the combination of caller-controlled
 //! `Address` values (validated by the host via `require_auth`) and the caller-supplied
@@ -62,10 +68,37 @@ pub const APP_TTL_MIN: u32 = 1;
 pub const APP_TTL_MAX: u32 = 535_000;
 
 /// Maximum number of pending applications a contributor may hold globally.
+/// This constant serves as the default when no persistent override has been set.
 pub const GLOBAL_APP_LIMIT: u32 = 15;
 
-/// Maximum number of active assignments a contributor may hold per org.
+/// Default maximum number of active assignments a contributor may hold per org
+/// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Global cap override
+// ---------------------------------------------------------------------------
+// Key: `symbol_short!("g_cap")`
+// Value: `u32` (allowed range 0..=100)
+
+fn global_cap_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the currently configured global application cap. If no persistent value
+/// exists, returns the compile-time `GLOBAL_APP_LIMIT` default.
+pub(crate) fn get_global_cap(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&global_cap_key())
+        .unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Writes the persistent global application cap value.
+pub(crate) fn set_global_cap(env: &Env, cap: u32) {
+    env.storage().persistent().set(&global_cap_key(), &cap);
+}
+
 
 /// TTL threshold/extend-to for the contract instance (persistent) entry.
 /// ~30 days at 5 s/ledger — keeps the contract alive between operator bumps.
@@ -201,6 +234,27 @@ pub(crate) fn extend_app_entry_ttl(
 }
 
 // ---------------------------------------------------------------------------
+// Persistent storage — Global application cap
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("g_cap")`
+// Value: `u32`
+
+fn global_cap_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
+pub(crate) fn get_global_cap(env: &Env) -> u32 {
+    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Stores a new global application cap.
+pub(crate) fn set_global_cap(env: &Env, cap: u32) {
+    env.storage().persistent().set(&global_cap_key(), &cap);
+}
+
+// ---------------------------------------------------------------------------
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //
@@ -245,6 +299,12 @@ pub(crate) fn is_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) ->
 pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
     let key = maintainer_key(maintainer, org_id);
     env.storage().persistent().set(&key, &true);
+}
+
+/// Removes the maintainer registration for `(maintainer, org_id)`.
+pub(crate) fn remove_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
+    let key = maintainer_key(maintainer, org_id);
+    env.storage().persistent().remove(&key);
 }
 
 // ---------------------------------------------------------------------------
@@ -343,4 +403,38 @@ pub(crate) fn remove_assignment(
 ) {
     let key = assignment_entry_key(org_id, issue_id, contributor);
     env.storage().persistent().remove(&key);
+}
+
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Persistent storage — Per-Org Assignment Cap  (Issue #1)
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!(\"o_cap\"), org_id: Symbol)`
+// Value: `u32`
+//
+// Stores an org-specific override for the assignment cap. When absent, callers
+// should fall back to `ORG_ASSIGNMENT_LIMIT`. Added as a new distinct prefix
+// "o_cap" — zero collision with existing "o_asgn" prefix.
+
+fn org_cap_key(org_id: &Symbol) -> (Symbol, Symbol) {
+    (symbol_short!("o_cap"), org_id.clone())
+}
+
+/// Returns the effective assignment cap for `org_id`.
+///
+/// Returns the stored per-org cap if one has been set, otherwise falls back to
+/// `ORG_ASSIGNMENT_LIMIT` (4).
+pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> u32 {
+    let key = org_cap_key(org_id);
+    env.storage()
+        .persistent()
+        .get::<_, u32>(&key)
+        .unwrap_or(ORG_ASSIGNMENT_LIMIT)
+}
+
+/// Writes a per-org assignment cap override.
+pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
+    let key = org_cap_key(org_id);
+    env.storage().persistent().set(&key, &cap);
 }
