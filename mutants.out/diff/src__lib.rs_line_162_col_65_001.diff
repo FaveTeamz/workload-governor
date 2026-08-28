@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace + with * in WorkloadGovernor::apply_for_issue
+@@ -154,17 +154,17 @@
+         contributor.require_auth();
+         let count = storage::get_global_app_count(&env, &contributor);
+         if count >= storage::GLOBAL_APP_LIMIT {
+             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
+         }
+         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+             panic_with_error!(env, ContractError::DuplicateApplication);
+         }
+-        storage::set_global_app_count(&env, &contributor, count + 1);
++        storage::set_global_app_count(&env, &contributor, count * /* ~ changed by cargo-mutants ~ */ 1);
+         storage::set_app_entry(&env, &contributor, &org_id, issue_id);
+         storage::extend_global_app_count_ttl(&env, &contributor);
+         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+         storage::bump_instance(&env);
+         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);
+     }
+ 
+     /// Cancels a contributor's pending application for a specific issue.
