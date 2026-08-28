@@ -40,75 +40,7 @@ Contract call failed?
 | 9 | `ApplicationNotFound` | No pending application found for the given triple | The application may have expired (Wave TTL elapsed) or was never submitted. Re-apply with `apply_for_issue`. |
 | 10 | `AssignmentNotFound` | No active assignment found for the given `(org_id, issue_id, contributor)` triple | The assignment does not exist or was already removed. Verify the triple with `is_assigned` before calling. |
 | 11 | `AlreadyAssigned` | An active assignment already exists for this issue and contributor | Call `complete_assignment` or `revoke_assignment` to close the existing assignment before re-assigning. |
-| 13 | `CounterInconsistency` | The org assignment counter is `0` while the assignment entry still exists — storage was corrupted or manually zeroed by a migration script | Restore the counter to the correct value via a migration script, then retry. |
-
----
-
-## Errors by Contract Function
-
-| Function | Possible error codes |
-|---|---|
-| `initialize` | 1, 3 |
-| `register_maintainer` | 2, 3 |
-| `upgrade` | 2, 3 |
-| `apply_for_issue` | 2, 5, 6, 8 |
-| `withdraw_application` | 2, 5, 9 |
-| `assign_issue` | 2, 4, 9, 7, 11 |
-| `complete_assignment` | 2, 4, 10 |
-| `revoke_assignment` | 2, 4, 10, 13 |
-| `extend_application_ttl` | 9 |
-| `get_global_application_count` | — |
-| `get_org_assignment_count` | — |
-| `has_applied` | — |
-| `is_assigned` | — |
-
----
-
-## Detailed Error Descriptions
-
----
-
-### Error 1 — `AlreadyInitialized`
-
-**Description**
-
-The contract has already been successfully initialised. `initialize` stores the admin address as a persistent key; if that key is present when `initialize` is called again the contract panics immediately with this error. The second call is a no-op and leaves state unchanged.
-
-**Who Encounters This**
-
-- **Admin / deployment scripts** — only the deployer calls `initialize`. This error surfaces when a deployment script is run a second time against the same contract ID, or when a developer mistakenly redeploys to an existing contract address.
-
-**Root Cause**
-
-`initialize` checks whether the `"admin"` persistent storage key exists before writing. If it does, `AlreadyInitialized` is raised before any auth check, so even the wrong signer receives this error rather than `UnauthorizedAdmin`.
-
-**Example Scenario**
-
-A CI pipeline deploys the contract and immediately calls `initialize`. The pipeline is re-triggered without a fresh deployment, targeting the same contract ID:
-
-```
-# First run — succeeds
-stellar contract invoke --id CCHKV...3BPQ \
-  --network testnet --source admin-account \
-  -- initialize --admin GDXYZ...7MNP
-
-# Second run — fails
-stellar contract invoke --id CCHKV...3BPQ \
-  --network testnet --source admin-account \
-  -- initialize --admin GDXYZ...7MNP
-→ ContractError::AlreadyInitialized (1)
-```
-
-**Resolution Steps**
-
-1. Confirm the contract is already initialised by querying a read-only function:
-   ```
-   stellar contract invoke --id CCHKV...3BPQ --network testnet \
-     -- get_global_application_count --contributor GDXYZ...7MNP
-   ```
-   If this returns `0` (rather than panicking with `NotInitialized`), the contract is live and ready.
-2. Do **not** call `initialize` again on this contract ID.
-3. If you genuinely need a fresh deployment, deploy a new contract instance and call `initialize` on its new ID.
+| 17 | `MaintainerNotFound` | `deregister_maintainer` was called for a `(maintainer, org_id)` pair that is not currently registered | Verify the maintainer is registered before deregistering. Check that the correct address and `org_id` are supplied. |
 
 ---
 
@@ -590,37 +522,19 @@ stellar contract invoke --id CCHKV...3BPQ \
 
 ### Error 13 — `CounterInconsistency`
 
-**Description**
-
-The org assignment counter for a contributor is `0`, but a persistent assignment entry still exists for that contributor in the org. This state is physically impossible under normal contract operation and indicates storage was modified externally — typically by a migration script that zeroed counters without removing assignment entries, or by direct storage manipulation.
-
-**Who Encounters This**
-
-- **Maintainers** — calling `revoke_assignment` after a bad migration.
-- **Operators** — during post-upgrade state reconciliation when a migration script had a bug.
-
-**Root Cause**
-
-`revoke_assignment` reads the org assignment counter after confirming the assignment entry exists. If the counter is `0` while the entry is present, the invariant `(entry exists) → (counter > 0)` is violated. Rather than performing unsigned integer underflow (which would saturate to a very large number), the contract panics with this error.
-
-**Example Scenario**
-
-A migration script zeroed all org counters for a batch of contributors but did not remove their assignment entries. A maintainer then tries to revoke Grace's assignment:
-
-```
-stellar contract invoke --id CCHKV...3BPQ \
-  --network testnet --source maintainer-account \
-  -- revoke_assignment \
-  --maintainer GMAIN...5678 \
-  --contributor GGRACE...0123 \
-  --org_id rust_foundation --issue_id 5
-→ ContractError::CounterInconsistency (13)
-```
-
-**Resolution Steps**
-
-1. Count the actual number of active assignment entries for the contributor in the affected org by querying `is_assigned` for each known issue, or by inspecting contract storage directly.
-2. Run a corrective migration that sets the `("o_asgn", contributor, org_id)` counter to the correct value (the number of existing assignment entries).
-3. After the counter is restored, retry `revoke_assignment`.
-4. See the [cap-emergency-increase runbook](runbooks/cap-emergency-increase.md) for guidance on safe storage mutations, and the [admin guide](admin-guide.md) for migration patterns.
-5. Audit the migration script that caused the inconsistency to prevent recurrence.
+| Function | Possible error codes |
+|---|---|
+| `initialize` | 1, 3 |
+| `register_maintainer` | 2, 3 |
+| `deregister_maintainer` | 2, 3, 17 |
+| `upgrade` | 2, 3 |
+| `apply_for_issue` | 2, 5, 6, 8 |
+| `withdraw_application` | 2, 5, 9 |
+| `assign_issue` | 2, 4, 9, 7, 11 |
+| `complete_assignment` | 2, 4, 10 |
+| `revoke_assignment` | 2, 4, 10 |
+| `extend_application_ttl` | 9 |
+| `get_global_application_count` | — |
+| `get_org_assignment_count` | — |
+| `has_applied` | — |
+| `is_assigned` | — |
