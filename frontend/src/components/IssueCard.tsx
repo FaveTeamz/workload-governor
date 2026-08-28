@@ -8,6 +8,8 @@ export interface IssueCardProps {
   org: string;
   title: string;
   status: IssueStatus;
+  /** When true the Apply button is disabled and a tooltip explains the cap. */
+  globalCapReached?: boolean;
   onApply?: (id: string) => Promise<void> | void;
   onWithdraw?: (id: string) => Promise<void> | void;
 }
@@ -19,7 +21,9 @@ const STATUS_LABEL: Record<IssueStatus, string> = {
   completed: "Completed",
 };
 
-export function IssueCard({ id, org, title, status, onApply, onWithdraw }: IssueCardProps) {
+const CAP_MSG = "You have reached the maximum 15 pending applications";
+
+export function IssueCard({ id, org, title, status, globalCapReached = false, onApply, onWithdraw }: IssueCardProps) {
   const [busy, setBusy] = useState(false);
 
   async function handle(action: "apply" | "withdraw") {
@@ -31,6 +35,9 @@ export function IssueCard({ id, org, title, status, onApply, onWithdraw }: Issue
       setBusy(false);
     }
   }
+
+  const capMsgId = `global-cap-msg-${id}`;
+  const applyDisabled = busy || globalCapReached;
 
   return (
     <article className={`issue-card issue-card--${status}`} aria-label={`Issue: ${title}`}>
@@ -45,15 +52,23 @@ export function IssueCard({ id, org, title, status, onApply, onWithdraw }: Issue
 
       <div className="issue-card__actions">
         {status === "open" && (
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => handle("apply")}
-            disabled={busy}
-            aria-busy={busy}
-            aria-label={`Apply for issue: ${title}`}
-          >
-            {busy ? "Applying…" : "Apply"}
-          </button>
+          <>
+            {globalCapReached && (
+              <span id={capMsgId} className="visually-hidden">{CAP_MSG}</span>
+            )}
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => !applyDisabled && handle("apply")}
+              disabled={applyDisabled}
+              aria-busy={busy}
+              aria-disabled={globalCapReached || undefined}
+              aria-describedby={globalCapReached ? capMsgId : undefined}
+              aria-label={`Apply for issue: ${title}`}
+              title={globalCapReached ? CAP_MSG : undefined}
+            >
+              {busy ? "Applying…" : "Apply"}
+            </button>
+          </>
         )}
         {status === "applied" && (
           <button
