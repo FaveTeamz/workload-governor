@@ -63,7 +63,7 @@ const STEPS: Step[] = [
     illustration: "📊",
     title: "Understanding the Cap System",
     content:
-      "You may hold at most 15 pending applications across all orgs and 4 active assignments per org at once. This ensures everyone gets a fair shot. Caps reset as applications resolve.",
+      "You may hold at most 15 pending applications across all orgs and 4 active assignments per org at once. This ensures everyone gets a fair shot. Caps reset as applications resolve. Read the Contributor FAQ for answers to common cap-related questions.",
   },
   {
     illustration: "🚀",

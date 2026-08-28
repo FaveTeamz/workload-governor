@@ -73,11 +73,14 @@ All six key prefixes are distinct — zero key collision guarantee.
 | Document | Description |
 |---|---|
 | [docs/contributor-guide.md](docs/contributor-guide.md) | CLI workflow guide — apply for issues without the frontend |
+| [docs/faq-contributors.md](docs/faq-contributors.md) | Contributor FAQ — cap limits, application errors, and common questions in plain language |
 | [docs/fairness-model.md](docs/fairness-model.md) | Formal invariants, proof of cap enforcement, gaming vector analysis |
 | [docs/benchmarks.md](docs/benchmarks.md) | CPU/memory resource benchmarks with CI thresholds |
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
+| [docs/adr/README.md](docs/adr/README.md) | Architecture Decision Records index |
 | [docs/error-reference.md](docs/error-reference.md) | All 13 error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+| [docs/testing.md](docs/testing.md) | Testing guide — all test layers, how to run them, and CI pipeline map |
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Emergency admin key rotation procedure |
 
 ## Operations
