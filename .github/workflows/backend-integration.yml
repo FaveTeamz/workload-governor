@@ -60,6 +60,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Run migrations
+        run: npm run migrate:up
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/testdb
+
       - name: Run integration tests
         run: npm test -- --testPathPattern="tests/api" --forceExit --runInBand
 
