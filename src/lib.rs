@@ -90,6 +90,19 @@ impl WorkloadGovernor {
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         storage::set_maintainer(&env, &maintainer, &org_id);
+        // Update maintainer orgs index (Issue #589)
+        let mut orgs = storage::get_maintainer_orgs_index(&env, &maintainer);
+        let mut already_indexed = false;
+        for existing in orgs.iter() {
+            if existing == org_id {
+                already_indexed = true;
+                break;
+            }
+        }
+        if !already_indexed {
+            orgs.push_back(org_id.clone());
+            storage::set_maintainer_orgs_index(&env, &maintainer, &orgs);
+        }
         storage::bump_instance(&env);
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
@@ -134,6 +147,15 @@ impl WorkloadGovernor {
             panic_with_error!(env, ContractError::MaintainerNotFound);
         }
         storage::remove_maintainer(&env, &maintainer, &org_id);
+        // Update maintainer orgs index (Issue #589)
+        let orgs = storage::get_maintainer_orgs_index(&env, &maintainer);
+        let mut new_orgs = soroban_sdk::Vec::new(&env);
+        for existing in orgs.iter() {
+            if existing != org_id {
+                new_orgs.push_back(existing);
+            }
+        }
+        storage::set_maintainer_orgs_index(&env, &maintainer, &new_orgs);
         storage::bump_instance(&env);
         events::emit_maintainer_deregistered(&env, &admin, &maintainer, &org_id);
     }
@@ -797,6 +819,32 @@ impl WorkloadGovernor {
     /// ```
     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
         storage::has_assignment(&env, &org_id, issue_id, &contributor)
+    }
+
+    /// Returns the list of organisation IDs that `maintainer` is currently registered for.
+    ///
+    /// Reads from the persistent maintainer-orgs index written by `register_maintainer`
+    /// and `deregister_maintainer`. Does not require a full storage scan.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Arguments
+    /// * `maintainer` – Address to query.
+    ///
+    /// # Returns
+    /// A `Vec<Symbol>` of org IDs. Returns an empty vec if the maintainer is not
+    /// registered for any organisation.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- get_maintainer_orgs \
+    ///   --maintainer <MAINTAINER_ADDRESS>
+    /// ```
+    pub fn get_maintainer_orgs(env: Env, maintainer: Address) -> Vec<Symbol> {
+        storage::get_maintainer_orgs_index(&env, &maintainer)
     }
 
     // -----------------------------------------------------------------------

@@ -438,3 +438,39 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
 }
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Maintainer Orgs Index  (Issue #589)
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("m_idx"), maintainer: Address)`
+// Value: `Vec<Symbol>` — list of org_ids the maintainer is registered for
+//
+// This index avoids a full storage scan when querying a maintainer's orgs.
+// It is updated atomically alongside the main maint key in register_maintainer
+// and deregister_maintainer.
+
+fn maintainer_orgs_key(maintainer: &Address) -> (Symbol, Address) {
+    (symbol_short!("m_idx"), maintainer.clone())
+}
+
+/// Returns the list of org_ids the maintainer is currently registered for.
+/// Returns an empty Vec if the maintainer has never been registered.
+pub(crate) fn get_maintainer_orgs_index(env: &Env, maintainer: &Address) -> soroban_sdk::Vec<Symbol> {
+    let key = maintainer_orgs_key(maintainer);
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+}
+
+/// Writes the maintainer orgs index.
+/// If `orgs` is empty the key is removed from storage to reclaim space.
+pub(crate) fn set_maintainer_orgs_index(env: &Env, maintainer: &Address, orgs: &soroban_sdk::Vec<Symbol>) {
+    let key = maintainer_orgs_key(maintainer);
+    if orgs.is_empty() {
+        env.storage().persistent().remove(&key);
+    } else {
+        env.storage().persistent().set(&key, orgs);
+    }
+}

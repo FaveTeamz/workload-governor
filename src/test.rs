@@ -3166,3 +3166,93 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #589: get_maintainer_orgs unit tests
+// ---------------------------------------------------------------------------
+
+/// AC1: register maintainer for one org — get_maintainer_orgs returns that org.
+#[test]
+fn unit_get_maintainer_orgs_single() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("singleorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let orgs = t.client.get_maintainer_orgs(&maintainer);
+    assert_eq!(orgs.len(), 1, "expected exactly one org");
+    assert_eq!(orgs.get(0).unwrap(), org, "expected the registered org");
+}
+
+/// AC2: register maintainer for 3 orgs — get_maintainer_orgs returns all 3.
+#[test]
+fn unit_get_maintainer_orgs_multiple() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org_a = t.org("multia");
+    let org_b = t.org("multib");
+    let org_c = t.org("multic");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org_a);
+    t.client.register_maintainer(&admin, &maintainer, &org_b);
+    t.client.register_maintainer(&admin, &maintainer, &org_c);
+
+    let orgs = t.client.get_maintainer_orgs(&maintainer);
+    assert_eq!(orgs.len(), 3, "expected three orgs");
+
+    // All three orgs must be present (order may vary)
+    let mut found_a = false;
+    let mut found_b = false;
+    let mut found_c = false;
+    for o in orgs.iter() {
+        if o == org_a { found_a = true; }
+        if o == org_b { found_b = true; }
+        if o == org_c { found_c = true; }
+    }
+    assert!(found_a, "org_a not in result");
+    assert!(found_b, "org_b not in result");
+    assert!(found_c, "org_c not in result");
+}
+
+/// AC3: call get_maintainer_orgs for an address never registered — returns empty vec.
+#[test]
+fn unit_get_maintainer_orgs_unknown() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let unknown = Address::generate(&t.env);
+
+    t.client.initialize(&admin);
+
+    let orgs = t.client.get_maintainer_orgs(&unknown);
+    assert_eq!(orgs.len(), 0, "expected empty vec for unregistered maintainer");
+}
+
+/// AC4: register for 2 orgs, deregister from 1 — get_maintainer_orgs returns only the other.
+#[test]
+fn unit_get_maintainer_orgs_after_deregister() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org_keep = t.org("keep");
+    let org_drop = t.org("drop");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org_keep);
+    t.client.register_maintainer(&admin, &maintainer, &org_drop);
+
+    // Both orgs present before deregister
+    let orgs_before = t.client.get_maintainer_orgs(&maintainer);
+    assert_eq!(orgs_before.len(), 2, "expected two orgs before deregister");
+
+    // Deregister from org_drop
+    t.client.deregister_maintainer(&admin, &maintainer, &org_drop);
+
+    let orgs_after = t.client.get_maintainer_orgs(&maintainer);
+    assert_eq!(orgs_after.len(), 1, "expected one org after deregister");
+    assert_eq!(orgs_after.get(0).unwrap(), org_keep, "remaining org must be org_keep");
+}
