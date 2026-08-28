@@ -2,6 +2,8 @@
 
 WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixes to manage contract state.
 
+> **Why this design?** The rationale for the six-prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
+
 ## Storage Tiers
 
 | Tier | Purpose | Survival |
