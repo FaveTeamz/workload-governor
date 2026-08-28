@@ -36,6 +36,26 @@ export const globalLimiter = rateLimit({
   },
 });
 
+/** 60 requests / minute per IP — for the leaderboard endpoint */
+export const leaderboardLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Too many leaderboard requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => getClientIp(req),
+  handler: (req: Request, res: Response) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rateLimitInfo = (req as any).rateLimit;
+    const retryAfter =
+      rateLimitInfo?.resetTime && typeof rateLimitInfo.resetTime === 'number'
+        ? Math.ceil((rateLimitInfo.resetTime - Date.now()) / 1000)
+        : 60;
+    res.set('Retry-After', String(retryAfter));
+    res.status(429).json({ error: 'too many requests', retryAfter });
+  },
+});
+
 const walletLimitStore: Map<
   string,
   { count: number; resetTime: number }

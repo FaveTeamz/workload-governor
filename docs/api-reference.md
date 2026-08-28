@@ -309,6 +309,84 @@ Build a transaction to call `revoke_assignment`.
 
 ---
 
+### Leaderboard
+
+#### `GET /api/leaderboard`
+
+Return contributors ranked by fairness score (completions ÷ (applications + 1)) over a requested time window.
+
+**Auth:** None
+
+**Rate limit:** 60 requests / minute per IP
+
+**Query parameters**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `org_id` | string | No | — | Filter to a single organisation |
+| `period` | string | No | `30d` | Time window: `7d`, `30d`, `90d`, `all` |
+| `sort_by` | string | No | `fairness_score` | Sort column: `fairness_score`, `completions`, `applications` |
+| `page` | number | No | `1` | Page number |
+| `limit` | number | No | `20` | Results per page (max 100) |
+
+**Example request**
+```
+GET /api/leaderboard?org_id=stellar-org&period=30d&sort_by=fairness_score&page=1&limit=20
+```
+
+**Response `200`**
+```json
+{
+  "data": [
+    {
+      "rank": 1,
+      "contributor": "GBFZB...XK2Q",
+      "contributor_short": "GBFZB…XK2Q",
+      "applications": 8,
+      "completions": 6,
+      "active_assignments": 2,
+      "fairness_score": 0.6667
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "limit": 20,
+  "total_pages": 3,
+  "period": "30d",
+  "org_id": "stellar-org",
+  "sort_by": "fairness_score"
+}
+```
+
+**Response `400`** — invalid query parameter
+```json
+{ "error": "invalid period, accepted values: 7d, 30d, 90d, all" }
+```
+
+**Response `429`** — rate limit exceeded
+```json
+{ "error": "too many requests", "retryAfter": 42 }
+```
+
+**Response `500`**
+```json
+{ "error": "internal server error" }
+```
+
+**Fairness score formula**
+
+```
+fairness_score = completions / (applications + 1)
+```
+
+The `+ 1` denominator avoids division by zero for contributors with no applications yet. A score of `1.0` means every application led to a completion; a score close to `0` means many applications and few completions.
+
+**Caching**
+
+Results are cached in Redis for **5 minutes** per unique combination of `org_id`, `period`, `sort_by`, `page`, and `limit`.
+
+---
+
 ## Error Codes
 
 HTTP `400` is returned for malformed requests (missing fields, simulation errors). HTTP `401` is returned for admin endpoints with a missing or wrong token. HTTP `500` indicates a database or internal error. Contract-level errors are surfaced in the `400` response body as the `error` string from the Soroban simulation. See [error-reference.md](./error-reference.md) for the full list of contract error codes.

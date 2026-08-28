@@ -9,7 +9,8 @@ import apiKeysRouter from './routes/api-keys';
 import transactionsRouter from './routes/transactions';
 import webhooksRouter from './routes/webhooks';
 import eventsRouter from './routes/events';
-import { globalLimiter, walletLimiter } from './middleware/rate-limit';
+import leaderboardRouter from './routes/leaderboard';
+import { globalLimiter, walletLimiter, leaderboardLimiter } from './middleware/rate-limit';
 import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
@@ -51,6 +52,7 @@ export function createApp(): express.Application {
   app.use('/api/api-keys', apiKeysRouter);
   app.use('/api/transactions', walletLimiter, transactionsRouter);
   app.use('/api/events', eventsRouter);
+  app.use('/api/leaderboard', leaderboardLimiter, leaderboardRouter);
   app.use('/webhooks', webhooksRouter);
 
   app.use(errorHandler);
