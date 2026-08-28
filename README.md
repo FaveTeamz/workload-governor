@@ -71,6 +71,10 @@ All six key prefixes are distinct — zero key collision guarantee.
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
 | [docs/error-reference.md](docs/error-reference.md) | All 11 error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+| [docs/org-onboarding-guide.md](docs/org-onboarding-guide.md) | Step-by-step guide for onboarding a new GitHub organisation |
+| [docs/local-dev-guide.md](docs/local-dev-guide.md) | Local development setup (devcontainer + manual) |
+| [docs/glossary.md](docs/glossary.md) | Definitions for project and Soroban-specific terms |
+| [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) | Contract integration guide for TypeScript / JS applications |
 
 ## Building
 

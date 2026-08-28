@@ -2,6 +2,8 @@
 
 This guide provides step-by-step instructions for integrating the WorkloadGovernor smart contract into your application.
 
+> **New to the AlignmentDrips Wave platform?** If you are onboarding a GitHub organisation for the first time, start with the [Organisation Onboarding Guide](docs/org-onboarding-guide.md). It covers prerequisites, webhook setup, and a smoke test before you integrate at the code level.
+
 ## Prerequisites
 
 - Node.js 16+ or TypeScript environment
@@ -390,4 +392,13 @@ For issues or questions:
 2. Review contract documentation in README.md
 3. Check the test suite for examples
 4. Open an issue on GitHub
+
+## Related Documentation
+
+| Document | Description |
+|---|---|
+| [docs/org-onboarding-guide.md](docs/org-onboarding-guide.md) | End-to-end onboarding guide for new GitHub orgs |
+| [docs/api-reference.md](docs/api-reference.md) | Full REST API reference |
+| [docs/error-reference.md](docs/error-reference.md) | All error codes with causes and resolutions |
+| [docs/admin-guide.md](docs/admin-guide.md) | Platform admin operations |
 
