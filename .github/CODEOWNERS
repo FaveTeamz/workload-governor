@@ -1,0 +1,31 @@
+# CODEOWNERS — GitHub automatically requests review from listed owners
+# when a PR modifies matching paths.
+# Syntax: <pattern> <owner> [<owner> ...]
+# More info: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ── Default reviewer ─────────────────────────────────────────────────────────
+*  @FaveTeamz/maintainers
+
+# ── Dependency manifests — Dependabot PRs auto-reviewed ──────────────────────
+Cargo.toml              @FaveTeamz/maintainers @dependabot
+Cargo.lock              @FaveTeamz/maintainers @dependabot
+frontend/package.json   @FaveTeamz/maintainers @dependabot
+frontend/package-lock.json  @FaveTeamz/maintainers @dependabot
+.github/dependabot.yml  @FaveTeamz/maintainers @dependabot
+
+# ── CI / Workflows ────────────────────────────────────────────────────────────
+.github/workflows/      @FaveTeamz/maintainers @dependabot
+
+# ── Infrastructure / Terraform ────────────────────────────────────────────────
+terraform/              @FaveTeamz/maintainers
+infra/                  @FaveTeamz/maintainers
+
+# ── Smart contract (Rust) ─────────────────────────────────────────────────────
+src/lib.rs              @FaveTeamz/maintainers
+src/storage.rs          @FaveTeamz/maintainers
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+frontend/src/           @FaveTeamz/maintainers
+
+# ── Documentation ────────────────────────────────────────────────────────────
+docs/                   @FaveTeamz/maintainers
