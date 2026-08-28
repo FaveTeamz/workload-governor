@@ -7,6 +7,7 @@ import { ActivityFeed } from "./components/ActivityFeed";
 import { ActivityPage } from "./components/ActivityPage";
 import { ToastContainer, useToast } from "./components/Toast";
 import { useWallet } from "./hooks/useWallet";
+import { useTheme } from "./hooks/useTheme";
 import "./app.css";
 
 const DEMO_APPS: Application[] = [
@@ -33,6 +34,7 @@ function useHash() {
 export default function App() {
   const hash = useHash();
   const wallet = useWallet();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [applications, setApplications] = useState(DEMO_APPS);
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
   const { toasts, add: addToast, remove: removeToast } = useToast();
@@ -68,6 +70,8 @@ export default function App() {
         networkMismatch={wallet.networkMismatch}
         onConnect={wallet.connect}
         onDisconnect={wallet.disconnect}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <main id="main-content" className="app-main" tabIndex={-1}>

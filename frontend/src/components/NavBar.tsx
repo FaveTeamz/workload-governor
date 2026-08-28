@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Theme } from "../hooks/useTheme";
 
 export interface NavBarProps {
   walletAddress?: string | null;
@@ -6,19 +7,35 @@ export interface NavBarProps {
   networkMismatch?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  theme?: Theme;
+  onToggleTheme?: () => void;
 }
 
-export function NavBar({ walletAddress, walletError, networkMismatch, onConnect, onDisconnect }: NavBarProps) {
+export function NavBar({ walletAddress, walletError, networkMismatch, onConnect, onDisconnect, theme = "dark", onToggleTheme }: NavBarProps) {
   const [open, setOpen] = useState(false);
 
   const showInstallPrompt = !walletAddress && walletError && /install/i.test(walletError);
   const expectedNet = (import.meta.env.VITE_STELLAR_NETWORK ?? "TESTNET").toUpperCase();
+
+  const isDark = theme === "dark";
+  const themeLabel = isDark ? "Switch to light mode" : "Switch to dark mode";
+  const themeIcon = isDark ? "☀️" : "🌙";
 
   return (
     <nav className="navbar" role="navigation" aria-label="Main navigation">
       <a className="navbar__brand" href="#/" aria-label="WorkloadGovernor home">
         <span aria-hidden="true">⚙</span> WorkloadGovernor
       </a>
+
+      <button
+        className="navbar__theme-toggle"
+        aria-label={themeLabel}
+        title={themeLabel}
+        onClick={onToggleTheme}
+        type="button"
+      >
+        <span className="navbar__theme-icon" aria-hidden="true">{themeIcon}</span>
+      </button>
 
       <button
         className="navbar__hamburger"

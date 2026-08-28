@@ -118,3 +118,20 @@
     --color-muted:   #64748b;
   }
 }
+
+/* Manual override: data-theme attribute wins over media query */
+[data-theme="light"] {
+  --color-bg:      #f8fafc;
+  --color-surface: #ffffff;
+  --color-border:  #e2e8f0;
+  --color-text:    #0f172a;
+  --color-muted:   #64748b;
+}
+
+[data-theme="dark"] {
+  --color-bg:      #0f1117;
+  --color-surface: #1c1f2b;
+  --color-border:  #2e3347;
+  --color-text:    #e2e8f0;
+  --color-muted:   #94a3b8;
+}
