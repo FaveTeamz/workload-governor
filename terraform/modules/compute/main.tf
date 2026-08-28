@@ -66,6 +66,9 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_ecs_cluster" "this" {
   name = local.name
+
+  # Container Insights enabled — collects CPU, memory, network, and storage
+  # metrics at the task and service level. Required for issue #640 dashboard.
   setting { name = "containerInsights"; value = "enabled" }
 }
 
