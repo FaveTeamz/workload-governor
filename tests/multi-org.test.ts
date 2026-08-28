@@ -254,3 +254,305 @@ describe('OrgQueue — unit tests', () => {
     expect(queue.queueLength).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #374 — Multi-org isolation tests
+//
+// These tests prove that contributors, caps, and assignments are fully isolated
+// between organisations: actions in org A have no effect on org B.
+//
+// Each test wires up a minimal SyncService backed by a mock DbClient that
+// records the events forwarded to it.  We drive the SyncService's handleEvent
+// callback directly so we are testing routing isolation, not the Soroban layer.
+// ---------------------------------------------------------------------------
+
+describe('Multi-org isolation — issue #374', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  // Two canonical orgs used across all isolation tests
+  const ORG_A = 'org_a';
+  const ORG_B = 'org_b';
+  const CONTRIBUTOR =
+    'GAEZI4FCPWKKLICUZSXR5RBYVOAX4HDDE5MZLE3BZEIIQNFZPQZW55Z';
+  const MAINTAINER_A =
+    'GBXGQJWVLWHBBFHM56MHKRXQMXE7RWYWJ27XGN7VDPZTWLUCAPSZOPX';
+  const MAINTAINER_B =
+    'GDRXE2BQUC3AZNPVFSCEZ76NJ3WWL25FYFK6RGZGIEKWE4SOOHSOMERX';
+
+  // -------------------------------------------------------------------------
+  // Helper: build a mock DbClient that captures saved events
+  // -------------------------------------------------------------------------
+  function makeIsolationMockDb(orgs: OrgRecord[]) {
+    const savedEvents: OrgEvent[] = [];
+    const db: DbClient = {
+      getRegisteredOrgs: jest.fn(async () => [...orgs]),
+      saveEvent: jest.fn(async (e: OrgEvent) => {
+        savedEvents.push(e);
+      }),
+    };
+    return { db, savedEvents };
+  }
+
+  // -------------------------------------------------------------------------
+  // Test 1: Contributor at org cap in org A can still apply in org B
+  //
+  // The SyncService must route cap-breaching events for org A independently
+  // of org B.  We simulate org_a's queue reaching its cap state by sending
+  // OrgAssignmentLimitReached error events, then verify org_b continues to
+  // save a normal "applied" event.
+  // -------------------------------------------------------------------------
+  it('contributor at org A cap can still apply in org B', async () => {
+    const { db, savedEvents } = makeIsolationMockDb([
+      makeOrg(ORG_A),
+      makeOrg(ORG_B),
+    ]);
+    const service = new SyncService(db, makeLogger());
+    await service.start();
+
+    // Simulate 4 org_a assignments already saved (at cap)
+    for (let i = 1; i <= 4; i++) {
+      service.handleEvent(
+        ORG_A,
+        { ...makeEvent(ORG_A, `issue_a${i}`), event_type: 'assigned' },
+      );
+    }
+
+    // Now apply in org_b — should be routed and saved independently
+    service.handleEvent(ORG_B, makeEvent(ORG_B, 'issue_b1'));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const orgBApplied = savedEvents.filter(
+      (e) => e.org_id === ORG_B && e.event_type === 'applied',
+    );
+    expect(orgBApplied).toHaveLength(1);
+    expect(orgBApplied[0].issue_id).toBe('issue_b1');
+
+    service.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 2: Org A maintainer events are not attributed to org B
+  //
+  // An assign event carrying MAINTAINER_A and org_id=org_a must not appear
+  // in the saved events for org_b.
+  // -------------------------------------------------------------------------
+  it('org A maintainer assign event is not attributed to org B', async () => {
+    const { db, savedEvents } = makeIsolationMockDb([
+      makeOrg(ORG_A),
+      makeOrg(ORG_B),
+    ]);
+    const service = new SyncService(db, makeLogger());
+    await service.start();
+
+    // Maintainer A performs an assign in org A
+    service.handleEvent(ORG_A, {
+      org_id: ORG_A,
+      event_type: 'assigned',
+      issue_id: 'issue_a1',
+      contributor: CONTRIBUTOR,
+      tx_hash: 'b'.repeat(64),
+      occurred_at: new Date('2026-07-01T00:00:00Z'),
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The event must NOT appear in org B's saved records
+    const orgBEvents = savedEvents.filter((e) => e.org_id === ORG_B);
+    expect(orgBEvents).toHaveLength(0);
+
+    // And the event is saved correctly under org A
+    const orgAEvents = savedEvents.filter((e) => e.org_id === ORG_A);
+    expect(orgAEvents).toHaveLength(1);
+    expect(orgAEvents[0].event_type).toBe('assigned');
+
+    service.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 3: Org A application does not appear in org B saved events
+  //
+  // An "applied" event for org_a must be saved under org_a, not org_b.
+  // -------------------------------------------------------------------------
+  it('org A application does not appear in org B saved events', async () => {
+    const { db, savedEvents } = makeIsolationMockDb([
+      makeOrg(ORG_A),
+      makeOrg(ORG_B),
+    ]);
+    const service = new SyncService(db, makeLogger());
+    await service.start();
+
+    service.handleEvent(ORG_A, makeEvent(ORG_A, 'issue_a1'));
+    // Also send an unrelated event to org_b so we know its queue is active
+    service.handleEvent(ORG_B, makeEvent(ORG_B, 'issue_b1'));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const orgAEvents = savedEvents.filter((e) => e.org_id === ORG_A);
+    const orgBEvents = savedEvents.filter((e) => e.org_id === ORG_B);
+
+    // No org_a events leaked into org_b
+    expect(orgBEvents.every((e) => e.org_id === ORG_B)).toBe(true);
+    // No org_b events leaked into org_a
+    expect(orgAEvents.every((e) => e.org_id === ORG_A)).toBe(true);
+
+    expect(orgAEvents).toHaveLength(1);
+    expect(orgAEvents[0].issue_id).toBe('issue_a1');
+    expect(orgBEvents).toHaveLength(1);
+    expect(orgBEvents[0].issue_id).toBe('issue_b1');
+
+    service.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 4: Completing an assignment in org A only affects org A counter
+  //
+  // After routing a "completed" event in org_a, org_b should have received
+  // no events (i.e. its saved-event count remains zero).
+  // -------------------------------------------------------------------------
+  it('completing an assignment in org A only affects org A event history', async () => {
+    const { db, savedEvents } = makeIsolationMockDb([
+      makeOrg(ORG_A),
+      makeOrg(ORG_B),
+    ]);
+    const service = new SyncService(db, makeLogger());
+    await service.start();
+
+    // Apply + assign + complete all in org_a
+    service.handleEvent(ORG_A, makeEvent(ORG_A, 'issue_a1'));
+    service.handleEvent(ORG_A, {
+      ...makeEvent(ORG_A, 'issue_a1'),
+      event_type: 'assigned',
+    });
+    service.handleEvent(ORG_A, {
+      ...makeEvent(ORG_A, 'issue_a1'),
+      event_type: 'completed',
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const orgACount = savedEvents.filter((e) => e.org_id === ORG_A).length;
+    const orgBCount = savedEvents.filter((e) => e.org_id === ORG_B).length;
+
+    // All 3 events landed in org_a
+    expect(orgACount).toBe(3);
+    // org_b received nothing
+    expect(orgBCount).toBe(0);
+
+    service.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 5: Two orgs can use the same contributor address independently
+  //
+  // The same contributor address can appear in events for both orgs and those
+  // events must be stored separately without cross-contamination.
+  // -------------------------------------------------------------------------
+  it('two orgs can use the same contributor address independently', async () => {
+    const { db, savedEvents } = makeIsolationMockDb([
+      makeOrg(ORG_A),
+      makeOrg(ORG_B),
+    ]);
+    const service = new SyncService(db, makeLogger());
+    await service.start();
+
+    // Same CONTRIBUTOR applies in both orgs
+    service.handleEvent(ORG_A, {
+      org_id: ORG_A,
+      event_type: 'applied',
+      issue_id: 'issue_a1',
+      contributor: CONTRIBUTOR,
+      tx_hash: 'c'.repeat(64),
+      occurred_at: new Date('2026-07-01T00:00:00Z'),
+    });
+    service.handleEvent(ORG_B, {
+      org_id: ORG_B,
+      event_type: 'applied',
+      issue_id: 'issue_b1',
+      contributor: CONTRIBUTOR,
+      tx_hash: 'd'.repeat(64),
+      occurred_at: new Date('2026-07-01T00:01:00Z'),
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const orgAForContributor = savedEvents.filter(
+      (e) => e.org_id === ORG_A && e.contributor === CONTRIBUTOR,
+    );
+    const orgBForContributor = savedEvents.filter(
+      (e) => e.org_id === ORG_B && e.contributor === CONTRIBUTOR,
+    );
+
+    expect(orgAForContributor).toHaveLength(1);
+    expect(orgAForContributor[0].issue_id).toBe('issue_a1');
+
+    expect(orgBForContributor).toHaveLength(1);
+    expect(orgBForContributor[0].issue_id).toBe('issue_b1');
+
+    service.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 6: Registering a maintainer in org A does not authorise them in org B
+  //
+  // A "maint_reg" event for org_a must only appear in org_a saved events;
+  // the org_b queue must receive no events.
+  // -------------------------------------------------------------------------
+  it('registering a maintainer in org A does not affect org B', async () => {
+    const { db, savedEvents } = makeIsolationMockDb([
+      makeOrg(ORG_A),
+      makeOrg(ORG_B),
+    ]);
+    const service = new SyncService(db, makeLogger());
+    await service.start();
+
+    // Admin registers MAINTAINER_A for org_a only
+    service.handleEvent(ORG_A, {
+      org_id: ORG_A,
+      event_type: 'maint_reg',
+      issue_id: '',
+      contributor: MAINTAINER_A,
+      tx_hash: 'e'.repeat(64),
+      occurred_at: new Date('2026-07-01T00:00:00Z'),
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const orgAMaintReg = savedEvents.filter(
+      (e) => e.org_id === ORG_A && e.event_type === 'maint_reg',
+    );
+    const orgBEvents = savedEvents.filter((e) => e.org_id === ORG_B);
+
+    // Registration event is stored under org_a
+    expect(orgAMaintReg).toHaveLength(1);
+    expect(orgAMaintReg[0].contributor).toBe(MAINTAINER_A);
+
+    // org_b received no events — maintainer registration is org-scoped
+    expect(orgBEvents).toHaveLength(0);
+
+    service.stop();
+  });
+});

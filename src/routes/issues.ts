@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { getCached, setCached } from '../cache';
-import { validateRequest } from '../middleware/validation';
+import { validateQuery } from '../middleware/validation';
 import { issueQuerySchema } from '../schemas/issues';
 
 const router = Router();
@@ -32,7 +32,7 @@ interface IssuesResponse {
 
 router.get(
   '/',
-  validateRequest({ query: issueQuerySchema }),
+  validateQuery(issueQuerySchema),
   async (req: Request, res: Response) => {
     try {
       const { org_id, status, search, page = '1', limit = '10' } = req.query as IssuesListParams;

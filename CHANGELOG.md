@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - This `CHANGELOG.md` and the release process documentation (#71).
 - `docs/faq.md` with answers to 10+ contributor and maintainer questions (#69).
 - `get_org_assignment_capacity` and `get_global_application_capacity` helper functions.
-- `is_org_assignment_limit_reached` and `is_global_application_limit_reached` helper functions.
+- `is_org_assignment_limit_reached` and `is_global_app_limit_reached` helper functions.
 - Express REST API server with helmet, CORS, and morgan middleware (#19).
 - Graceful shutdown handling with configurable timeout (#19).
 - Stellar Horizon API client service with exponential backoff retry logic (#20).
@@ -66,6 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.github/workflows/coverage.yml` rewritten: backend uses Vitest + Istanbul, frontend uses Vitest + jsdom + Istanbul, contract uses `cargo-llvm-cov` (#378).
 - `npm run coverage` (all suites) and `npm run coverage:backend` scripts to root `package.json`; `npm run coverage` script to `frontend/package.json` (#378).
 - `@vitest/coverage-istanbul` devDependency added to both root and frontend packages (#378).
+- Rust proptest sequential invariant tests `prop_global_count_invariant_sequence` and
+  `prop_org_count_invariant_sequence` (1 000 cases each) covering all apply/withdraw and
+  assign/complete/revoke state transitions (#354).
+- TypeScript fast-check property test suites `prop_global_app_limit.test.ts` and
+  `prop_org_assign_limit.test.ts` expanded to cover withdraw, revoke, and complete
+  sequences (5–6 properties × 1 000 cases each) (#354).
+
+### Changed
+- Renamed `is_global_application_limit_reached` → `is_global_app_limit_reached` to stay
+  within the Soroban 32-character contract function name limit.
 
 ## [0.1.0] - 2026-06-24
 

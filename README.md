@@ -23,6 +23,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 |---|---|---|
 | `initialize(admin)` | Admin | One-time contract setup |
 | `register_maintainer(admin, maintainer, org_id)` | Admin | Authorize a maintainer for an org |
+| `deregister_maintainer(admin, maintainer, org_id)` | Admin | Revoke a maintainer's authorization for an org |
 | `upgrade(new_wasm_hash)` | Admin | Upgrade the contract WASM |
 | `apply_for_issue(contributor, org_id, issue_id)` | Contributor | Submit a pending application |
 | `withdraw_application(contributor, org_id, issue_id)` | Contributor | Cancel a pending application |
@@ -41,18 +42,18 @@ This prevents a small group of faster developers from monopolizing open-source t
 
 | Code | Variant | Trigger |
 |---|---|---|
-| 1 | [`AlreadyInitialized`](docs/error-reference.md#error-1--alreadyinitialized) | `initialize` called twice |
-| 2 | [`NotInitialized`](docs/error-reference.md#error-2--notinitialized) | State-changing call before `initialize` |
-| 3 | [`UnauthorizedAdmin`](docs/error-reference.md#error-3--unauthorizedadmin) | Wrong admin credentials |
-| 4 | [`UnauthorizedMaintainer`](docs/error-reference.md#error-4--unauthorizedmaintainer) | Maintainer not registered for org |
-| 5 | [`UnauthorizedContributor`](docs/error-reference.md#error-5--unauthorizedcontributor) | Auth failure on contributor call |
-| 6 | [`GlobalApplicationLimitReached`](docs/error-reference.md#error-6--globalapplicationlimitreached) | Contributor has 15 pending applications |
-| 7 | [`OrgAssignmentLimitReached`](docs/error-reference.md#error-7--orgassignmentlimitreached) | Contributor has 4 active assignments in org |
-| 8 | [`DuplicateApplication`](docs/error-reference.md#error-8--duplicateapplication) | Same (contributor, org, issue) applied twice |
-| 9 | [`ApplicationNotFound`](docs/error-reference.md#error-9--applicationnotfound) | Application does not exist |
-| 10 | [`AssignmentNotFound`](docs/error-reference.md#error-10--assignmentnotfound) | Assignment does not exist |
-| 11 | [`AlreadyAssigned`](docs/error-reference.md#error-11--alreadyassigned) | Issue already has an active assignment |
-| 13 | [`CounterInconsistency`](docs/error-reference.md#error-13--counterinconsistency) | Assignment entry exists but org counter is 0 (post-migration corruption) |
+| 1 | `AlreadyInitialized` | `initialize` called twice |
+| 2 | `NotInitialized` | State-changing call before `initialize` |
+| 3 | `UnauthorizedAdmin` | Wrong admin credentials |
+| 4 | `UnauthorizedMaintainer` | Maintainer not registered for org |
+| 5 | `UnauthorizedContributor` | Auth failure on contributor call |
+| 6 | `GlobalApplicationLimitReached` | Contributor has 15 pending applications |
+| 7 | `OrgAssignmentLimitReached` | Contributor has 4 active assignments in org |
+| 8 | `DuplicateApplication` | Same (contributor, org, issue) applied twice |
+| 9 | `ApplicationNotFound` | Application does not exist |
+| 10 | `AssignmentNotFound` | Assignment does not exist |
+| 11 | `AlreadyAssigned` | Issue already has an active assignment |
+| 17 | `MaintainerNotFound` | Maintainer not registered for the org (returned by `deregister_maintainer`) |
 
 ## Storage Design
 
@@ -72,11 +73,9 @@ All six key prefixes are distinct — zero key collision guarantee.
 
 | Document | Description |
 |---|---|
-| [docs/contributor-guide.md](docs/contributor-guide.md) | CLI workflow guide — apply for issues without the frontend |
-| [docs/fairness-model.md](docs/fairness-model.md) | Formal invariants, proof of cap enforcement, gaming vector analysis |
-| [docs/benchmarks.md](docs/benchmarks.md) | CPU/memory resource benchmarks with CI thresholds |
+| [docs/admin-guide.md](docs/admin-guide.md) | Admin operational procedures: initialisation, maintainer onboarding/offboarding, upgrades |
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
-| [docs/error-reference.md](docs/error-reference.md) | All 13 error codes with causes, resolutions, and example scenarios |
+| [docs/error-reference.md](docs/error-reference.md) | All error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Emergency admin key rotation procedure |
 
@@ -257,3 +256,4 @@ SLA target: **99.5% monthly uptime**. Alerts are sent to the `devops-alerts` SNS
 ## License
 
 Apache-2.0
+

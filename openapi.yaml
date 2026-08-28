@@ -106,6 +106,51 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /orgs/{orgId}/applications:
+    get:
+      operationId: listOrgApplications
+      tags: [orgs]
+      summary: List pending applications for an org
+      description: >
+        Returns all pending applications for a given org aggregated from on-chain
+        state via Soroban RPC. Results are cached in Redis with a 30-second TTL.
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+        - name: page
+          in: query
+          description: 1-based page number
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Results per page (max 50)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of pending applications
+          headers:
+            X-Cache:
+              description: HIT when served from Redis cache, MISS otherwise
+              schema:
+                type: string
+                enum: [HIT, MISS]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /orgs/{orgId}/assignments:
     get:
       operationId: listOrgAssignments
@@ -426,6 +471,45 @@ components:
         contributor:
           type: string
           description: Stellar address of the contributor applying
+
+    ApplicationEntry:
+      type: object
+      required: [contributor, issue_id, applied_at_ledger]
+      properties:
+        contributor:
+          type: string
+          description: Stellar address of the contributor
+          example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+        issue_id:
+          type: integer
+          description: Numeric issue identifier on-chain
+          example: 42
+        applied_at_ledger:
+          type: integer
+          description: Ledger sequence number when the application was submitted
+          example: 1234567
+
+    ApplicationsResponse:
+      type: object
+      required: [org_id, total, page, limit, applications]
+      properties:
+        org_id:
+          type: string
+          example: stellar-oss
+        total:
+          type: integer
+          description: Total number of pending applications for the org
+          example: 12
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        applications:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplicationEntry'
 
     ApplyResponse:
       type: object
