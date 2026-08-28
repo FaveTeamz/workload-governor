@@ -117,6 +117,29 @@ services:
     profiles:
       - tools
 
+  # ── Event Indexer (issue #194) ────────────────────────────────────────────
+  event-indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: workload-governor-indexer
+    command: npx ts-node src/eventIndexer.ts
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-workload_governor}
+      HORIZON_URL: ${HORIZON_URL:-https://horizon-testnet.stellar.org}
+      CONTRACT_ID: ${CONTRACT_ID:-}
+    volumes:
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - workload-governor-network
+    restart: unless-stopped
+
   # Test runner service — used by:
   #   docker compose up --abort-on-container-exit test
   # Runs the full Jest integration test suite against real Postgres + Redis.

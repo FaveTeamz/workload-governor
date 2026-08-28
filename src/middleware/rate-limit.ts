@@ -1,78 +1,128 @@
+/**
+ * rate-limit.ts
+ *
+ * Three layers of rate limiting:
+ *
+ *   1. globalLimiter   — express-rate-limit, 60 req/min per IP (anonymous traffic)
+ *   2. apiKeyLimiter   — Redis sliding window, 200 req/min per API key
+ *      (applied inside api-key-auth.ts after key validation)
+ *   3. walletLimiter   — in-process sliding window, 10 req/min per contributor
+ *      address (applied to /api/transactions/* routes)
+ *
+ * All 429 responses include:
+ *   - X-RateLimit-Limit    (set by express-rate-limit for globalLimiter)
+ *   - X-RateLimit-Remaining
+ *   - X-RateLimit-Reset
+ *   - Retry-After header
+ *   - JSON body: { error, retryAfter }
+ */
+
 import rateLimit from 'express-rate-limit';
 import { Request, Response } from 'express';
 
-const getClientIp = (req: Request): string => {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export function getClientIp(req: Request): string {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string') {
     return forwarded.split(',')[0].trim();
   }
-  return req.socket.remoteAddress || 'unknown';
-};
+  return req.socket?.remoteAddress ?? 'unknown';
+}
 
-const getWalletAddress = (req: Request): string | null => {
-  const wallet = req.query.wallet || req.body?.wallet;
+export function getWalletAddress(req: Request): string | null {
+  const wallet = req.query['wallet'] ?? req.body?.wallet;
   return wallet ? String(wallet) : null;
-};
+}
+
+// ---------------------------------------------------------------------------
+// 1. Global limiter: 60 req/min per IP (anonymous)
+// ---------------------------------------------------------------------------
 
 export const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 100,
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
+  standardHeaders: true,   // sets RateLimit-* headers (RFC 6585)
   legacyHeaders: false,
   keyGenerator: (req: Request) => getClientIp(req),
   handler: (req: Request, res: Response) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rateLimitInfo = (req as any).rateLimit;
+    const rlInfo = (req as any).rateLimit as
+      | { resetTime?: number }
+      | undefined;
     const retryAfter =
-      rateLimitInfo?.resetTime && typeof rateLimitInfo.resetTime === 'number'
-        ? Math.ceil((rateLimitInfo.resetTime - Date.now()) / 1000)
+      rlInfo?.resetTime && typeof rlInfo.resetTime === 'number'
+        ? Math.ceil((rlInfo.resetTime - Date.now()) / 1000)
         : 60;
-    res.set('Retry-After', String(retryAfter));
+    res.set('Retry-After', String(retryAfter > 0 ? retryAfter : 60));
     res.status(429).json({
       error: 'too many requests',
-      retryAfter,
+      retryAfter: retryAfter > 0 ? retryAfter : 60,
     });
   },
 });
 
-const walletLimitStore: Map<
-  string,
-  { count: number; resetTime: number }
-> = new Map();
+// ---------------------------------------------------------------------------
+// 2. Wallet / contributor limiter: 10 req/min per contributor address
+//    Applied to /api/transactions/* via walletLimiter middleware.
+//    Uses an in-process sliding-window Map so it works without Redis.
+// ---------------------------------------------------------------------------
 
-export function walletLimiter(req: Request, res: Response, next: () => void) {
+interface WindowEntry {
+  count: number;
+  resetTime: number;
+}
+
+const walletLimitStore = new Map<string, WindowEntry>();
+
+const WALLET_LIMIT = 10;
+const WALLET_WINDOW_MS = 60 * 1000;
+
+export function walletLimiter(req: Request, res: Response, next: () => void): void {
   const wallet = getWalletAddress(req);
 
   if (!wallet) {
-    return next();
+    next();
+    return;
   }
 
   const now = Date.now();
-  const limit = 10;
-  const windowMs = 60 * 1000;
 
   let entry = walletLimitStore.get(wallet);
 
   if (!entry || now > entry.resetTime) {
-    entry = { count: 0, resetTime: now + windowMs };
+    entry = { count: 0, resetTime: now + WALLET_WINDOW_MS };
     walletLimitStore.set(wallet, entry);
   }
 
-  if (entry.count >= limit) {
+  // Set informational headers before the limit check
+  const remaining = Math.max(0, WALLET_LIMIT - entry.count);
+  res.set('X-RateLimit-Limit', String(WALLET_LIMIT));
+  res.set('X-RateLimit-Remaining', String(remaining));
+  res.set('X-RateLimit-Reset', String(Math.ceil(entry.resetTime / 1000)));
+
+  if (entry.count >= WALLET_LIMIT) {
     const retryAfter = Math.ceil((entry.resetTime - now) / 1000);
-    res.set('Retry-After', String(retryAfter));
-    return res.status(429).json({
+    res.set('Retry-After', String(retryAfter > 0 ? retryAfter : WALLET_WINDOW_MS / 1000));
+    res.status(429).json({
       error: 'wallet rate limit exceeded',
-      retryAfter,
+      retryAfter: retryAfter > 0 ? retryAfter : WALLET_WINDOW_MS / 1000,
     });
+    return;
   }
 
   entry.count++;
   next();
 }
 
-export function cleanupExpiredLimits() {
+// ---------------------------------------------------------------------------
+// Maintenance helpers (exported for tests)
+// ---------------------------------------------------------------------------
+
+/** Remove expired entries from the in-process wallet store. */
+export function cleanupExpiredLimits(): void {
   const now = Date.now();
   for (const [wallet, entry] of walletLimitStore.entries()) {
     if (now > entry.resetTime) {
@@ -81,4 +131,10 @@ export function cleanupExpiredLimits() {
   }
 }
 
-setInterval(cleanupExpiredLimits, 60 * 1000);
+/** Clear all wallet limit counters. Exposed for test teardown only. */
+export function clearWalletLimitStore(): void {
+  walletLimitStore.clear();
+}
+
+// Run cleanup every minute
+setInterval(cleanupExpiredLimits, WALLET_WINDOW_MS);

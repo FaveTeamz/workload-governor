@@ -1,0 +1,117 @@
+name: Benchmark Regression
+
+# Runs on every PR and every push to main so that:
+#   - PRs: regressions are caught before merge
+#   - main pushes: the baseline is kept up-to-date for the default branch
+#
+# The job does NOT fail on main-branch pushes when a benchmark exceeds the
+# threshold — instead it prints a warning and opens a follow-up artifact so the
+# team can decide whether to update the baseline. On PRs the check is strict
+# (exit 1 blocks merge).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  benchmark-regression:
+    name: Benchmark regression check
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Rust toolchain — reuse the same cache key as contract-ci.yml
+      # -----------------------------------------------------------------------
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # -----------------------------------------------------------------------
+      # 3. Run bench_ tests and capture output
+      #
+      # We pipe both stdout and stderr into bench-output.txt because cargo test
+      # writes test names to stderr and test output (println!) to stdout. The
+      # --nocapture flag ensures our bench output lines are not buffered.
+      # -----------------------------------------------------------------------
+      - name: Run benchmark tests
+        run: |
+          cargo test --features testutils bench_ -- --nocapture 2>&1 \
+            | tee bench-output.txt
+
+      # -----------------------------------------------------------------------
+      # 4. Set up Node.js for the check script
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # -----------------------------------------------------------------------
+      # 5. Compare results against baseline
+      #
+      # On pull requests: a regression (exit 1) fails the job and blocks merge.
+      # On main-branch pushes: we tolerate a regression (continue-on-error) and
+      # let the artifact step below preserve the raw output for investigation.
+      # -----------------------------------------------------------------------
+      - name: Check for regressions
+        id: regression_check
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          node scripts/check-benchmarks.js < bench-output.txt
+
+      # -----------------------------------------------------------------------
+      # 6. Upload raw benchmark output as a CI artifact
+      #
+      # Always uploaded (even on failure) so developers can inspect the raw
+      # numbers. Retained for 14 days.
+      # -----------------------------------------------------------------------
+      - name: Upload benchmark output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-output-${{ github.run_id }}
+          path: bench-output.txt
+          retention-days: 14
+
+      # -----------------------------------------------------------------------
+      # 7. Warn on main when baseline is stale
+      #
+      # If the regression check step failed on a main-branch push (continue-on-
+      # error absorbed it), emit a visible warning so the team knows to update
+      # the baseline.
+      # -----------------------------------------------------------------------
+      - name: Warn if baseline may be stale (main only)
+        if: >
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.regression_check.outcome == 'failure'
+        run: |
+          echo "::warning title=Benchmark baseline stale::One or more benchmarks exceeded the 10% regression threshold on main. Review bench-output.txt artifact and update benchmarks-baseline.json if the increase is intentional. See docs/benchmarking.md."
+
+      # -----------------------------------------------------------------------
+      # 8. Fail the PR job explicitly when a regression was detected
+      #
+      # continue-on-error is false for PRs, so step 5 already fails the job.
+      # This step is a belt-and-suspenders guard to produce a clear failure
+      # message in the GitHub Actions summary.
+      # -----------------------------------------------------------------------
+      - name: Fail on regression (PR only)
+        if: >
+          github.event_name == 'pull_request' &&
+          steps.regression_check.outcome == 'failure'
+        run: |
+          echo "::error title=Benchmark regression::This PR increases CPU instruction cost by more than 10% on at least one benchmark. See job output for details."
+          exit 1
