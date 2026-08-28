@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import i18n from "../i18n";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,9 @@ function applyTheme(theme: Theme): void {
 
 function applyLanguage(lang: Language): void {
   document.documentElement.lang = lang;
+  if (i18n.language !== lang) {
+    i18n.changeLanguage(lang);
+  }
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────

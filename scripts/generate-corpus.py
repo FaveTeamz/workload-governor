@@ -163,6 +163,99 @@ SEEDS_BATCH = [
 ]
 
 
+def pack_withdraw(issue_id: int, org: bytes, apply_flag: int = 0,
+                  double_flag: int = 0) -> bytes:
+    """Pack a seed for fuzz_withdraw.
+
+    byte[5] carries control bits:
+      bit 0 — apply_flag:    if 1, call apply_for_issue before withdraw
+      bit 1 — double_flag:   if 1, attempt a second (double) withdraw
+    """
+    data = bytearray(pack_apply(issue_id, org))
+    ctrl = (apply_flag & 1) | ((double_flag & 1) << 1)
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFC) | ctrl
+    else:
+        data += bytearray([ctrl])
+    return bytes(data)
+
+
+def pack_revoke(issue_id: int, org: bytes, cycle_flag: int = 0,
+                revoke_before_assign: int = 0) -> bytes:
+    """Pack a seed for fuzz_revoke.
+
+    byte[5] carries control bits:
+      bit 0 — cycle_flag:            if 1, perform full apply→assign→revoke cycle
+      bit 1 — revoke_before_assign:  if 1, apply only then attempt revoke
+    """
+    data = bytearray(pack_apply(issue_id, org))
+    ctrl = (cycle_flag & 1) | ((revoke_before_assign & 1) << 1)
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFC) | ctrl
+    else:
+        data += bytearray([ctrl])
+    return bytes(data)
+
+
+# ---------------------------------------------------------------------------
+# fuzz_withdraw seed definitions
+# ---------------------------------------------------------------------------
+# byte[5] bit 0 = apply_flag, bit 1 = double_withdraw_flag
+
+SEEDS_WITHDRAW = [
+    ("seed_apply_then_withdraw",
+     pack_withdraw(1, b"org", apply_flag=1),
+     "issue_id=1, org='org' — apply then withdraw (counter must return to 0)"),
+    ("seed_withdraw_no_apply",
+     pack_withdraw(1, b"org", apply_flag=0),
+     "issue_id=1, no prior apply — ApplicationNotFound path"),
+    ("seed_double_withdraw",
+     pack_withdraw(1, b"org", apply_flag=1, double_flag=1),
+     "issue_id=1 — apply → withdraw → withdraw (second must fail gracefully)"),
+    ("seed_max_u32_withdraw",
+     pack_withdraw(0xFFFFFFFF, b"org", apply_flag=1),
+     "issue_id=u32::MAX — counter arithmetic at maximum boundary"),
+    ("seed_zero_issue_withdraw",
+     pack_withdraw(0, b"org", apply_flag=1),
+     "issue_id=0 — zero boundary"),
+    ("seed_empty_org_withdraw",
+     pack_withdraw(1, b"", apply_flag=1),
+     "empty org bytes — target falls back to 'org' default"),
+    ("seed_long_org_withdraw",
+     pack_withdraw(42, b"abcdefghijklmnopqrstuvwxyzabcdef", apply_flag=1),
+     "32-char org — maximum Soroban Symbol length"),
+]
+
+# ---------------------------------------------------------------------------
+# fuzz_revoke seed definitions
+# ---------------------------------------------------------------------------
+# byte[5] bit 0 = cycle_flag, bit 1 = revoke_before_assign_flag
+
+SEEDS_REVOKE = [
+    ("seed_full_cycle_revoke",
+     pack_revoke(1, b"org", cycle_flag=1, revoke_before_assign=0),
+     "issue_id=1 — full apply→assign→revoke cycle (org count must return to 0)"),
+    ("seed_revoke_before_assign",
+     pack_revoke(1, b"org", cycle_flag=0, revoke_before_assign=1),
+     "issue_id=1 — apply only, then revoke without assign (AssignmentNotFound)"),
+    ("seed_revoke_no_state",
+     pack_revoke(1, b"org", cycle_flag=0, revoke_before_assign=0),
+     "issue_id=1 — bare revoke with no prior state — must not trap"),
+    ("seed_revoke_max_u32",
+     pack_revoke(0xFFFFFFFF, b"org", cycle_flag=1),
+     "issue_id=u32::MAX — counter arithmetic at maximum boundary"),
+    ("seed_revoke_zero_issue",
+     pack_revoke(0, b"org", cycle_flag=1),
+     "issue_id=0 — zero boundary full cycle"),
+    ("seed_revoke_long_org",
+     pack_revoke(99, b"abcdefghijklmnopqrstuvwxyzabcdef", cycle_flag=1),
+     "32-char org — maximum Soroban Symbol length"),
+    ("seed_revoke_before_assign_max_u32",
+     pack_revoke(0xFFFFFFFF, b"org", cycle_flag=0, revoke_before_assign=1),
+     "issue_id=u32::MAX — revoke-before-assign at boundary"),
+]
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -180,6 +273,8 @@ def main() -> None:
         ("fuzz_apply",       SEEDS_APPLY),
         ("fuzz_assign",      SEEDS_ASSIGN),
         ("fuzz_batch_apply", SEEDS_BATCH),
+        ("fuzz_withdraw",    SEEDS_WITHDRAW),
+        ("fuzz_revoke",      SEEDS_REVOKE),
     ]
 
     total = 0
