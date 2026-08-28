@@ -146,6 +146,18 @@ export function makeHandlers(overrides: { applications?: number } = {}) {
       });
     }),
 
+    // Withdraw application
+    http.post('/api/transactions/withdraw', () => {
+      state.applications = Math.max(0, state.applications - 1);
+      return HttpResponse.json({
+        xdr: 'AAAA==',
+        fee: '100',
+        instructions: 0,
+        readBytes: 0,
+        writeBytes: 0,
+      });
+    }),
+
     // ------------------------------------------------------------------
     // Maintainer transactions
     // ------------------------------------------------------------------

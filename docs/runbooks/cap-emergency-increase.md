@@ -1,109 +1,184 @@
-# Runbook: Contributor Cap Emergency Increase
+# Runbook: Emergency Global Cap Increase
 
-Increases the global application cap (default 15) or the per-org assignment cap (default 4) in response to an operational emergency. This change requires a governance vote and a contract upgrade because both limits are compile-time constants.
-
-## Prerequisites
-
-- Governance vote passed and recorded (link the vote in your incident report)
-- Admin keypair (`ADMIN_SECRET`)
-- Contract ID (`CONTRACT_ID`)
-- Stellar CLI installed
+**Function:** `emergency_set_global_cap(admin, new_cap)`  
+**Event emitted:** `emrg_cap`  
+**Error codes:** `2` (NotInitialized), `3` (UnauthorizedAdmin), `12` (CapOutOfRange)  
+**Severity:** High — modifies fairness enforcement for all active contributors  
+**Last reviewed:** 2026-07-27
 
 ---
 
-## Steps
+## 1. When to Use This Runbook
 
-### 1. Hold the governance vote
+Use `emergency_set_global_cap` **only** when all of the following conditions are true:
 
-Cap changes must be approved before any code change. Document:
+1. An active Wave is in progress.
+2. A statistically unusual number of contributors are hitting the global application cap (default: 15).
+3. The cap is causing legitimate contributors to be blocked — not just individual edge cases.
+4. There is insufficient time to deploy a contract upgrade before the Wave closes.
 
-- Proposed new global cap (`NEW_GLOBAL_CAP`)
-- Proposed new org cap (`NEW_ORG_CAP`)
-- Vote outcome and link (e.g. GitHub Discussion or on-chain proposal)
+**Do not use this function** for:
+- Routine cap changes between Waves (use a contract upgrade instead).
+- Responding to a single contributor's complaint without broader signal.
+- Raising the cap above 100 (the contract enforces this hard limit).
 
-Do **not** proceed until the vote passes.
+---
 
-### 2. Update the constants in source
+## 2. Decision Process
 
-Edit `src/storage.rs`:
+### 2.1 Triage checklist (complete before calling the function)
 
-```rust
-// Before
-pub const GLOBAL_APP_LIMIT: u32 = 15;
-pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
+- [ ] Query on-chain: what fraction of active contributors have hit the cap in the last 24 h?
+  ```bash
+  # Example: count emrg_cap and app_sub events over the past 24 h using your event indexer
+  stellar events --id <CONTRACT_ID> --network mainnet --start-ledger <LEDGER_24H_AGO> \
+    | jq 'select(.topics[0] == "app_sub")'
+  ```
+- [ ] Confirm the cap is the limiting factor, not the org assignment limit (code 7) or other errors.
+- [ ] Identify the proposed new cap: must satisfy `current_cap < new_cap ≤ 100`.
+- [ ] Document the justification (number of blocked contributors, Wave size, date/time).
 
-// After (example: raise global cap to 20)
-pub const GLOBAL_APP_LIMIT: u32 = 20;
-pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
+### 2.2 Approval required
+
+| Environment | Approver |
+|-------------|----------|
+| Testnet     | On-call engineer (self-approval acceptable for testing) |
+| Mainnet     | Two approvals: on-call engineer + Wave Programme Lead |
+
+Record approval in the incident channel with the format:
+```
+APPROVED: emergency_set_global_cap new_cap=<N>
+Approver 1: @<handle> at <ISO-8601 timestamp>
+Approver 2: @<handle> at <ISO-8601 timestamp>
+Justification: <brief description>
 ```
 
-Update the README `## Error Codes` table with the new limits.
+---
 
-### 3. Run all tests
+## 3. Execution
 
-```bash
-cargo test --features testutils
-# Expected output: test result: ok. N passed; 0 failed
-```
-
-Fix any failing tests (property tests reference the old cap values and must be updated to match).
-
-### 4. Build, optimise, and upload
+### 3.1 Pre-flight
 
 ```bash
-stellar contract build
-stellar contract optimize \
-  --wasm target/wasm32v1-none/release/workload_governor.wasm
-
-stellar contract upload \
-  --wasm target/wasm32v1-none/release/workload_governor.optimized.wasm \
-  --network testnet \
-  --source "$ADMIN_SECRET"
-# Expected output: <NEW_WASM_HASH>
-export NEW_WASM_HASH=<output>
-```
-
-### 5. Upgrade the contract
-
-```bash
+# 1. Confirm the current effective cap
 stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network testnet \
-  --source "$ADMIN_SECRET" \
-  -- upgrade \
-  --new_wasm_hash "$NEW_WASM_HASH"
-# Expected output: null
-```
-
-### 6. Verify the new caps
-
-```bash
-# Confirm a contributor can now apply for more than the old limit
-# (requires a test account with existing applications)
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --network testnet \
+  --id <CONTRACT_ID> \
+  --network mainnet \
   -- get_global_application_capacity \
-  --contributor "$TEST_CONTRIBUTOR"
-# Expected output: capacity reflecting the new limit
+  --contributor <ANY_CONTRIBUTOR_ADDRESS>
+# Returns remaining capacity for that contributor; current cap = capacity + their current count
+
+# 2. Confirm admin key is available
+stellar keys ls
 ```
 
-### 7. Update monitoring alerts
+### 3.2 Invoke
 
-If you have CloudWatch or Datadog alerts based on the old cap values, update the thresholds to match the new constants.
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network mainnet \
+  --source <admin-account> \
+  -- emergency_set_global_cap \
+  --admin <ADMIN_ADDRESS> \
+  --new_cap <NEW_CAP>
+```
+
+### 3.3 Verify
+
+Confirm the `emrg_cap` event was emitted with the expected `(old_cap, new_cap)` data:
+
+```bash
+stellar events \
+  --id <CONTRACT_ID> \
+  --network mainnet \
+  --start-ledger <LEDGER_BEFORE_TX> \
+  | jq 'select(.topics[0] == "emrg_cap")'
+```
+
+Expected output shape:
+```json
+{
+  "topics": ["emrg_cap", "<ADMIN_ADDRESS>"],
+  "data": [<OLD_CAP>, <NEW_CAP>]
+}
+```
+
+Confirm contributors previously blocked can now submit applications:
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network mainnet \
+  -- get_global_application_capacity \
+  --contributor <PREVIOUSLY_BLOCKED_ADDRESS>
+# Should now return > 0
+```
 
 ---
 
-## Rollback
+## 4. Rollback Procedure
 
-To revert the cap increase, restore the original constants in `src/storage.rs`, re-run tests, build/upload, and call `upgrade` with the reverted WASM hash.
+The cap can be lowered back to any value in `[0, 100]` by calling `emergency_set_global_cap` again with the original (or lower) value.
+
+**Important:** Lowering the cap does **not** retroactively revoke existing applications. Contributors who already submitted applications above the new lower cap will keep those applications. The lower cap only prevents new submissions.
+
+### 4.1 Rollback to default (15)
+
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network mainnet \
+  --source <admin-account> \
+  -- emergency_set_global_cap \
+  --admin <ADMIN_ADDRESS> \
+  --new_cap 15
+```
+
+### 4.2 Rollback verification
+
+```bash
+stellar events \
+  --id <CONTRACT_ID> \
+  --network mainnet \
+  --start-ledger <ROLLBACK_LEDGER> \
+  | jq 'select(.topics[0] == "emrg_cap")'
+# data[1] should equal 15 (or your target rollback value)
+```
 
 ---
 
-## Troubleshooting
+## 5. Monitoring Alert
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| Test failures after constant change | Property tests reference hardcoded limit | Update `15` / `4` literals in `src/test.rs` |
-| `UnauthorizedAdmin` on upgrade | Wrong signing key | Use the original admin keypair |
-| `OrgAssignmentLimitReached` still fires | Old WASM still in use | Confirm `upgrade` transaction was finalised |
+### 5.1 Alert definition
+
+**Alert name:** `EmergencyCapChangedFrequently`  
+**Condition:** The `emrg_cap` event is emitted more than **twice within any rolling 24-hour window** on the same contract.  
+**Severity:** `P1 — Critical`  
+**Notification channels:** PagerDuty on-call rotation + `#wave-incidents` Slack channel
+
+### 5.2 CloudWatch / event indexer rule (pseudocode)
+
+```
+METRIC: count of events where topics[0] == "emrg_cap"
+        grouped by CONTRACT_ID
+        over rolling window of 17,280 ledgers (~24 h at 5 s/ledger)
+
+ALARM:  metric > 2
+ACTION: PagerDuty alert + Slack webhook to #wave-incidents
+```
+
+### 5.3 What to investigate when the alert fires
+
+1. Open the on-chain event log and list all `emrg_cap` events in the window — confirm each was intentional.
+2. If any change was not authorised, treat it as a **security incident**: the admin key may be compromised. Escalate immediately to the security channel and consider a contract upgrade to rotate the admin.
+3. If all changes were authorised, assess whether a contract upgrade to raise the compile-time default is warranted so that future waves do not require repeated emergency overrides.
+
+---
+
+## 6. Post-Incident Actions
+
+After any emergency cap change on mainnet:
+
+1. File a post-mortem issue within 48 hours covering: what triggered the change, what the actual contributor impact was, and whether the default cap should be revised.
+2. Update the `GLOBAL_APP_LIMIT` constant in `src/storage.rs` if the emergency cap better reflects the intended fairness model for future Waves, and schedule a contract upgrade.
+3. Archive the approval record from the incident channel for audit purposes.

@@ -69,7 +69,11 @@ describe('POST /orgs/:orgId/issues/:issueId/apply', () => {
       .set(AUTH_HEADER)
       .send({});
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty('code', 'INVALID_REQUEST');
+    // Centralized Zod validation returns field-level errors
+    expect(res.body).toHaveProperty('error', 'validation failed');
+    expect(res.body.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'contributor' })]),
+    );
   });
 
   it('returns 400 for an invalid Stellar address', async () => {

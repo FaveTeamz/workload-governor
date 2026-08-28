@@ -1,266 +1,415 @@
 # Testing Guide
 
-This document describes every test layer in WorkloadGovernor, how to run each suite locally, and what the CI pipelines check.
+Complete reference for running every test layer in the WorkloadGovernor project.
 
 ---
 
 ## Table of Contents
 
-1. [Test Layers Overview](#1-test-layers-overview)
-2. [Unit Tests — Rust Contract](#2-unit-tests--rust-contract)
-3. [Unit Tests — TypeScript Backend](#3-unit-tests--typescript-backend)
-4. [Unit Tests — Frontend](#4-unit-tests--frontend)
-5. [Integration Tests — API Routes](#5-integration-tests--api-routes)
-6. [E2E Tests](#6-e2e-tests)
-7. [Smoke Tests](#7-smoke-tests)
-8. [Load Tests](#8-load-tests)
-9. [Fuzz Tests](#9-fuzz-tests)
-10. [Mutation Testing](#10-mutation-testing)
-11. [CI Pipeline Map](#11-ci-pipeline-map)
+1. [Prerequisites](#prerequisites)
+2. [Localnet Setup (Stellar Quickstart)](#localnet-setup-stellar-quickstart)
+3. [Environment Variables](#environment-variables)
+4. [Contract Tests (Rust)](#contract-tests-rust)
+5. [Property-Based Tests](#property-based-tests)
+6. [Backend API Tests](#backend-api-tests)
+7. [E2E Tests (Playwright)](#e2e-tests-playwright)
+8. [Fuzz Tests](#fuzz-tests)
+9. [Mutation Testing](#mutation-testing)
+10. [Benchmarks](#benchmarks)
+11. [CI Notes](#ci-notes)
 
 ---
 
-## 1. Test Layers Overview
+## Prerequisites
 
-| Layer | Tool | Location | What it covers |
-|---|---|---|---|
-| Rust unit | `cargo test` | `src/test.rs` | Contract function invariants, error codes |
-| Rust property | `cargo test` | `src/test.rs` (prop_ prefix) | Cap enforcement under random inputs |
-| TS backend unit | Vitest | `tests/unit/` | Pure functions, XDR utilities, hooks |
-| TS API routes | Vitest + Supertest | `tests/routes/`, `tests/api/` | HTTP request/response contract |
-| Frontend unit | Vitest | `frontend/tests/unit/` | React component rendering and hooks |
-| E2E frontend | Playwright | `tests/e2e/*.spec.ts` | SPA user flows against a live dev server |
-| E2E contract | Playwright | `tests/e2e/contributor-lifecycle.spec.ts` | Full contributor lifecycle via REST API |
-| Smoke | Bash | `tests/smoke/` | Testnet sanity checks after deploy |
-| Load | k6 | `tests/load/` | Throughput and latency under sustained load |
-| Fuzz | cargo-fuzz | `fuzz/fuzz_targets/` | LibFuzzer against contract entry points |
-| Mutation | cargo-mutants | `src/lib.rs` | Logic-error detection in contract tests |
+| Tool | Version | Install |
+|---|---|---|
+| Rust + Cargo | stable ≥ 1.78 | `curl https://sh.rustup.rs -sSf \| sh` |
+| `wasm32v1-none` target | — | `rustup target add wasm32v1-none` |
+| Nightly Rust (fuzz only) | latest nightly | `rustup install nightly` |
+| Stellar CLI | ≥ 21.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
+| Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
+| Docker + Compose | ≥ 24 | [docker.com](https://www.docker.com/get-started) |
+| `cargo-fuzz` (fuzz only) | latest | `cargo install cargo-fuzz --locked` |
+| `cargo-mutants` (mutation) | latest | `cargo install cargo-mutants --locked` |
 
----
-
-## 2. Unit Tests — Rust Contract
+Verify tools:
 
 ```bash
-# All contract tests
+rustc --version
+stellar --version
+node --version
+docker compose version
+```
+
+Install Node dependencies from the project root:
+
+```bash
+npm install
+```
+
+---
+
+## Localnet Setup (Stellar Quickstart)
+
+The Stellar Quickstart Docker image runs a full local Stellar network — Horizon, Friendbot, and a Soroban RPC node — in a single container.  Use it when you want to run E2E tests or smoke tests against a real (but local) contract deployment.
+
+### 1. Pull and start the Quickstart image
+
+```bash
+docker run --rm -it \
+  --name stellar-localnet \
+  -p 8000:8000 \
+  stellar/quickstart:latest \
+  --standalone \
+  --enable-soroban-rpc
+```
+
+`--standalone` runs a private network (no Testnet/Mainnet connection).  
+`--enable-soroban-rpc` exposes the Soroban JSON-RPC endpoint at `http://localhost:8000/soroban/rpc`.
+
+Wait until the container logs show:
+
+```
+horizon: INFO started horizon server on 0.0.0.0:8000
+soroban-rpc: INFO listening on :8080
+```
+
+### 2. Fund the admin account
+
+```bash
+# Friendbot funds any address on standalone / testnet
+curl "http://localhost:8000/friendbot?addr=<ADMIN_PUBLIC_KEY>"
+```
+
+Replace `<ADMIN_PUBLIC_KEY>` with the value from your `.env` file.
+
+### 3. Deploy the contract
+
+```bash
+# Build and optimise
+stellar contract build
+stellar contract optimize \
+  --wasm target/wasm32v1-none/release/workload_governor.wasm
+
+# Upload and deploy
+stellar contract deploy \
+  --wasm target/wasm32v1-none/release/workload_governor.wasm \
+  --network local \
+  --source <ADMIN_SECRET_KEY>
+
+# Initialise (replace CONTRACT_ID with output of the deploy step)
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network local \
+  --source <ADMIN_SECRET_KEY> \
+  -- initialize \
+  --admin <ADMIN_PUBLIC_KEY>
+```
+
+### 4. Configure the backend
+
+Copy and edit the environment file:
+
+```bash
+cp .env.example .env
+```
+
+Update these keys to point at the local node and your deployed contract:
+
+```dotenv
+SOROBAN_RPC_URL=http://localhost:8000/soroban/rpc
+STELLAR_NETWORK_PASSPHRASE=Standalone Network ; February 2017
+CONTRACT_ID=<your deployed contract ID>
+ADMIN_PUBLIC_KEY=<your admin public key>
+ADMIN_SECRET_KEY=<your admin secret key>
+```
+
+Start the backend and database services:
+
+```bash
+docker compose up -d          # PostgreSQL + Redis
+npm run dev                   # backend on http://localhost:3000
+```
+
+---
+
+## Environment Variables
+
+The following variables are read by the backend, the Playwright E2E suite, and
+the smoke tests.  Copy `.env.example` to `.env` and fill in the values.
+
+| Variable | Description | Default (localnet) |
+|---|---|---|
+| `SOROBAN_RPC_URL` | Soroban JSON-RPC endpoint | `http://localhost:8000/soroban/rpc` |
+| `STELLAR_NETWORK_PASSPHRASE` | Network passphrase | `Standalone Network ; February 2017` |
+| `CONTRACT_ID` | Deployed contract ID | *(empty — set after deploy)* |
+| `ADMIN_PUBLIC_KEY` | Admin G-address | *(generate with `stellar keys generate`)* |
+| `ADMIN_SECRET_KEY` | Admin secret key (S-address) | *(generate with `stellar keys generate`)* |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/workload_governor` |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
+
+In CI, inject `ADMIN_PUBLIC_KEY` and `ADMIN_SECRET_KEY` as GitHub Actions secrets.
+The E2E test file `tests/e2e/admin-maintainer-flow.spec.ts` reads them via
+`process.env` and falls back to safe test-only defaults when absent.
+
+---
+
+## Contract Tests (Rust)
+
+The contract's unit and integration tests live in `src/test.rs` and `tests/`.
+They use the Soroban test utilities crate (enabled by the `testutils` feature flag).
+
+```bash
+# Run all contract tests
 cargo test --features testutils
 
-# Property-based tests only
-cargo test --features testutils prop_
+# Run a specific test by name (supports partial match)
+cargo test --features testutils unit_register_maintainer
 
-# Unit tests only
-cargo test --features testutils unit_
-
-# Benchmark tests (prints resource usage)
-cargo test --features testutils bench_
+# Show stdout output from tests (useful for debugging)
+cargo test --features testutils -- --nocapture
 ```
 
-Tests live in `src/test.rs`. Property-based tests use randomised inputs to verify that the global-application cap (15) and org-assignment cap (4) are never exceeded.
+All Rust tests run against an in-process Soroban ledger — no running node is needed.
 
 ---
 
-## 3. Unit Tests — TypeScript Backend
+## Property-Based Tests
+
+Property-based tests use `fast-check` and live alongside the unit tests in
+`tests/unit/`.  They cover the global application cap and org assignment cap
+invariants.
 
 ```bash
+# Run all property-based tests (prefix: prop_)
+npm test -- --testPathPattern="prop_"
+
+# Or use the Vitest runner (preferred for frontend property tests):
+npm run test:unit -- prop_
+```
+
+Key property test files:
+
+| File | Invariant |
+|---|---|
+| `tests/unit/prop_global_app_limit.test.ts` | Global application count never exceeds 15 |
+| `tests/unit/prop_org_assign_limit.test.ts` | Org assignment count never exceeds the org cap |
+
+---
+
+## Backend API Tests
+
+The backend API tests use Jest + Supertest with an in-memory mock database
+(`tests/api/setup.ts` — `MockPool`).  No running PostgreSQL or Soroban node is
+required.
+
+```bash
+# Run all backend tests (API + unit + integration)
 npm test
-# or
-npx vitest run
+
+# Run API tests only
+npm test -- --testPathPattern="tests/api"
+
+# Run with coverage
+npm run coverage:backend
 ```
 
-Configuration: `vitest.config.ts` and `vitest.unit.config.ts`.
+Key test files:
 
-Backend-specific tests with their own setup are under `backend/`:
-
-```bash
-cd backend
-npm test
-```
+| File | Coverage |
+|---|---|
+| `tests/api/transactions.test.ts` | Apply, withdraw, assign, complete, revoke transactions |
+| `tests/api/admin.test.ts` | Maintainer registration, org registration, auth guard |
+| `tests/api/contributors.test.ts` | Contributor counts and cap enforcement |
+| `tests/api/webhooks.test.ts` | GitHub webhook processing |
+| `tests/api/rate-limit.test.ts` | Rate limiting per wallet / IP |
 
 ---
 
-## 4. Unit Tests — Frontend
+## E2E Tests (Playwright)
+
+End-to-end tests intercept HTTP calls with `page.route()` — no real backend or
+Stellar node is required unless you explicitly want to run against localnet.
+
+### Install Playwright browsers (first time only)
 
 ```bash
-cd frontend
-npm test
-# or
-npx vitest run
+npx playwright install --with-deps
 ```
 
-Component rendering, hook behaviour, and snapshot tests live under `frontend/tests/unit/` and `frontend/src/components/*.test.tsx`.
-
----
-
-## 5. Integration Tests — API Routes
-
-Supertest-based route tests exercise the full HTTP stack with an in-memory database mock:
+### Run the full E2E suite
 
 ```bash
-npx vitest run tests/routes
-npx vitest run tests/api
-```
-
-The mock database (`tests/api/setup.ts`) uses an in-memory SQL engine — no real Postgres or Redis is needed.
-
----
-
-## 6. E2E Tests
-
-### Frontend SPA flows
-
-Playwright tests that exercise the running SPA through a real browser:
-
-```bash
-# Start the dev server first
-npm run dev &
-
-# Run all Playwright specs
 npx playwright test
+```
 
-# Run a specific spec
-npx playwright test tests/e2e/maintainer-flow.spec.ts
+### Run a single spec file
 
-# Show the HTML report
+```bash
+npx playwright test tests/e2e/admin-maintainer-flow.spec.ts
+```
+
+### Run with trace and screenshot on all tests
+
+```bash
+npx playwright test --trace on --screenshot on
+```
+
+### View the HTML report after a run
+
+```bash
 npx playwright show-report
 ```
 
-Configuration: `playwright.config.ts`
+### E2E spec inventory
 
-#### Specs
-
-| File | What it tests |
+| File | Feature |
 |---|---|
-| `tests/e2e/maintainer-flow.spec.ts` | MaintainerPanel assign / complete / revoke / access control |
-| `tests/e2e/apply-flow.spec.ts` | Contributor apply button and withdraw flow |
-| `tests/e2e/global-cap.spec.ts` | UI response when the global application cap is reached |
-| `tests/e2e/gauge-increment.spec.ts` | Gauge animation on counter change |
+| `tests/e2e/admin-maintainer-flow.spec.ts` | Admin registers / deregisters maintainers; error codes 4 and 17 |
+| `tests/e2e/apply-withdraw-flow.spec.ts` | Contributor apply and withdraw lifecycle |
+| `tests/e2e/global-cap.spec.ts` | Global application cap (15) enforcement |
+| `tests/e2e/maintainer-flow.spec.ts` | Maintainer panel — assign, complete, revoke, access control |
+| `tests/e2e/gauge-increment.spec.ts` | Gauge counter increment after events |
+| `tests/e2e/apply-flow.spec.ts` | Basic contributor apply flow |
+
+### Admin maintainer flow — environment variables in CI
+
+The `admin-maintainer-flow.spec.ts` suite reads admin credentials from
+environment variables so CI can inject ephemeral keys:
+
+```yaml
+# .github/workflows/e2e.yml (excerpt)
+- name: Run E2E tests
+  env:
+    ADMIN_PUBLIC_KEY: ${{ secrets.ADMIN_PUBLIC_KEY }}
+    ADMIN_SECRET_KEY: ${{ secrets.ADMIN_SECRET_KEY }}
+  run: npx playwright test
+```
+
+When the variables are absent (local dev), the file falls back to safe
+mock-only keys that never reach a real network.
+
+### Running E2E tests against localnet
+
+Set `baseURL` in `playwright.config.ts` or override at run time:
+
+```bash
+BASE_URL=http://localhost:3000 npx playwright test
+```
+
+Ensure the backend is running and the contract is deployed and initialised
+before starting the test run (see [Localnet Setup](#localnet-setup-stellar-quickstart)).
 
 ---
 
-### Contract E2E — contributor lifecycle
+## Fuzz Tests
 
-The `contributor-lifecycle.spec.ts` test covers the complete happy path of a contributor interacting with the contract through the REST API:
-
-```
-setup → contributor applies → maintainer assigns → maintainer completes
-```
-
-It asserts intermediate contract states at every step:
-
-| Step | Assertion |
-|---|---|
-| After apply | `global_app_count ≥ 1` |
-| After assign | `org_assignment_count ≥ 1`, `global_app_count = 0` |
-| After complete | `org_assignment_count = 0`, `global_app_count = 0` |
-| Final | Completed assignment absent from active assignments list |
-
-It also covers the withdraw sub-flow:
-
-```
-contributor applies → contributor withdraws → global_app_count = 0
-```
-
-#### Running locally
+Fuzz targets live in `fuzz/fuzz_targets/` and require the nightly Rust
+toolchain plus `cargo-fuzz`.
 
 ```bash
-# 1. Start the backend server
-npm run dev &
-
-# 2. Wait for the health endpoint
-curl http://localhost:3001/health
-
-# 3. Run the lifecycle spec
-npx playwright test tests/e2e/contributor-lifecycle.spec.ts
-```
-
-Environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `BACKEND_URL` | `http://localhost:3001` | Base URL of the backend API |
-| `E2E_API_KEY` | `test-token` | Bearer token for authenticated endpoints |
-
-#### CI workflow
-
-The lifecycle spec runs in the `contract-e2e` GitHub Actions workflow (`.github/workflows/contract-e2e.yml`):
-
-1. Spins up Redis as a service container.
-2. Starts the backend.
-3. Waits up to 30 s for the health endpoint.
-4. Runs `contributor-lifecycle.spec.ts`.
-5. Uploads the Playwright HTML report as an artifact.
-
-The workflow triggers on every push to `main`, every PR targeting `main`, and on `workflow_dispatch`.
-
-#### Teardown and isolation
-
-Each test run generates a unique `issue_id` derived from `Date.now()` to prevent collisions between parallel runs. The `afterAll` hook performs best-effort cleanup by withdrawing any residual application and deleting any residual assignment.
-
----
-
-## 7. Smoke Tests
-
-Smoke tests validate a live testnet deployment:
-
-```bash
-# Full testnet smoke (requires STELLAR_NETWORK=testnet and valid keys)
-bash tests/smoke/testnet-smoke.sh
-
-# CI-only smoke (lighter, no testnet keys needed)
-bash tests/smoke/ci-smoke.sh
-```
-
----
-
-## 8. Load Tests
-
-k6 load tests target the staging environment:
-
-```bash
-# Requires k6 installed: https://k6.io/docs/getting-started/installation/
-k6 run tests/load/k6-staging.js
-```
-
----
-
-## 9. Fuzz Tests
-
-```bash
-# Requires nightly Rust + cargo-fuzz
+# Install cargo-fuzz (nightly required)
 rustup install nightly
 cargo install cargo-fuzz --locked
 
-# Build fuzz targets
+# Build all fuzz targets
 cargo +nightly fuzz build
 
 # Run a target for 10 minutes
-cargo +nightly fuzz run fuzz_apply -- -max_total_time=600
+cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
+cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
+cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+
+# Run with pre-seeded corpus
+cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
 ```
 
-Fuzz targets live in `fuzz/fuzz_targets/`. Pre-seeded corpus inputs are in `fuzz/corpus/`.
+| Target | What it tests |
+|---|---|
+| `fuzz_apply` | Random contributor / org / issue inputs to `apply_for_issue` |
+| `fuzz_assign` | Random inputs to `assign_issue`, `complete_assignment`, `revoke_assignment` |
+| `fuzz_batch_apply` | Batch apply with random issue IDs; enforces ≤ 15 global cap |
 
----
+Any corpus inputs that exposed a bug are committed to `fuzz/corpus/`.
 
-## 10. Mutation Testing
+### Regenerate seed corpus
 
 ```bash
-cargo install cargo-mutants --locked
-cargo mutants --features testutils -- src/lib.rs
+python3 scripts/generate-corpus.py          # writes to fuzz/corpus/
+python3 scripts/generate-corpus.py --corpus-dir /tmp/fresh-corpus
 ```
 
-See `mutants.out/` for the last recorded run. The current score and target are documented in the README.
+The script is idempotent — re-running overwrites canonical seeds and leaves
+fuzzer-discovered inputs untouched.
 
 ---
 
-## 11. CI Pipeline Map
+## Mutation Testing
 
-| Workflow file | Trigger | What it runs |
-|---|---|---|
-| `.github/workflows/ci.yml` | Push / PR to main | Backend unit + route tests |
-| `.github/workflows/contract-ci.yml` | Push / PR to main | Rust lint, tests, benchmarks |
-| `.github/workflows/contract-pipeline.yml` | Push / PR / nightly | Rust full pipeline + fuzz |
-| `.github/workflows/contract-e2e.yml` | Push / PR to main | Contributor lifecycle E2E |
-| `.github/workflows/e2e.yml` | Push / PR to main | Frontend Playwright E2E |
-| `.github/workflows/frontend-ci.yml` | Push / PR to main | Frontend unit tests |
-| `.github/workflows/backend-integration.yml` | Push / PR to main | Backend integration tests |
-| `.github/workflows/coverage.yml` | Push / PR to main | Coverage reporting to Codecov |
-| `.github/workflows/smoke-tests.yml` | After staging deploy | Smoke tests |
+[cargo-mutants](https://mutants.rs) verifies that the test suite catches logic
+errors by introducing small mutations to the contract source and confirming
+that at least one test fails per mutant.
+
+```bash
+# Run mutation testing against the contract source
+cargo mutants --features testutils -- src/lib.rs
+
+# Generate the HTML + text report
+node scripts/mutation-report.js mutants.out/
+
+# Text summary only
+node scripts/mutation-report.js --text-only
+
+# Enforce a score threshold (exits non-zero if below)
+node scripts/mutation-report.js --threshold=90 --text-only
+```
+
+The badge in `README.md` reflects the last recorded run.  After adding or
+changing tests, re-run `cargo mutants` and update `mutants.out/` to refresh
+the badge.
+
+Current recorded score: **75% (21/28 caught)** — target is ≥ 90%.
+
+---
+
+## Benchmarks
+
+Benchmark tests measure CPU instructions and simulated memory for common
+contract operations.
+
+```bash
+# Run benchmarks (prints to stdout)
+cargo test --features testutils bench_
+
+# Capture output for documentation
+cargo test --features testutils bench_ 2>&1 | tee benchmarks.txt
+```
+
+Benchmark results are documented in [docs/benchmarks.md](benchmarks.md).
+
+---
+
+## CI Notes
+
+The GitHub Actions workflow at `.github/workflows/ci.yml` runs the following
+checks on every pull request:
+
+- `cargo test --features testutils` — all Rust contract tests
+- `npm test` — all backend API + unit tests
+- `npx playwright test` — all E2E tests (workers = 1 in CI, 1 retry)
+- `npm run typecheck` — TypeScript type checking
+- `npm run lint` — ESLint
+
+The contract pipeline at `.github/workflows/contract-pipeline.yml` additionally
+runs `cargo mutants` and publishes the mutation score badge.
+
+Secrets required in the repository settings for E2E tests to use real credentials:
+
+| Secret | Description |
+|---|---|
+| `ADMIN_PUBLIC_KEY` | Admin G-address for contract interactions |
+| `ADMIN_SECRET_KEY` | Admin secret key (S-address) |
+
+When these secrets are absent, the E2E tests fall back to mock-only keys and
+all network calls are intercepted by `page.route()`.
