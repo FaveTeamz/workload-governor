@@ -162,6 +162,33 @@ impl WorkloadGovernor {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
+    /// Transfers admin authority to a new address (admin-only).
+    ///
+    /// Replaces the stored admin address with `new_admin`. The old admin can no
+    /// longer call admin-gated functions after this call returns.
+    ///
+    /// # Who can call
+    /// The current stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin`     – Current admin address (auth enforced).
+    /// * `new_admin` – Address to grant admin authority to.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        storage::set_admin(&env, &new_admin);
+        storage::bump_instance(&env);
+        events::emit_admin_transferred(&env, &admin, &new_admin);
+    }
+
     /// Sets the global application cap via the normal (non-emergency) operator path.
     ///
     /// Emits `GlobalCapUpdated` event. Admin auth is required.

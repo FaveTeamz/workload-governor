@@ -196,3 +196,18 @@ pub(crate) fn emit_emergency_cap_updated(
     let data = (old_cap, new_cap);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_org_cap` when a maintainer updates the per-org assignment cap.
+///
+/// topics: `(symbol_short!("ocap_upd"), org_id)`
+/// data:   `(old_cap, new_cap)`
+pub(crate) fn emit_org_cap_updated(
+    env: &Env,
+    org_id: &Symbol,
+    old_cap: u32,
+    new_cap: u32,
+) {
+    let topics = (symbol_short!("ocap_upd"), org_id.clone());
+    let data = (old_cap, new_cap);
+    env.events().publish(topics, data);
+}

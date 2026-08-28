@@ -3166,3 +3166,86 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #591 regression: global limit must be enforced across multiple orgs
+// ---------------------------------------------------------------------------
+
+/// Regression test for #591: apply across 4 distinct orgs up to the cap,
+/// then verify a 16th application is rejected regardless of which org is used.
+#[test]
+fn unit_regression_591_global_limit_multi_org() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let orgs: [Symbol; 4] = [
+        t.org("r591a"),
+        t.org("r591b"),
+        t.org("r591c"),
+        t.org("r591d"),
+    ];
+
+    t.client.initialize(&admin);
+
+    // Apply 3-4 issues in each org to reach the global cap of 15
+    // org0: issues 0-3 (4 apps), org1: 4-7 (4), org2: 8-11 (4), org3: 12-14 (3)
+    let mut issue_counter: u32 = 0;
+    for (org_idx, org) in orgs.iter().enumerate() {
+        let count = if org_idx < 3 { 4u32 } else { 3u32 };
+        for _ in 0..count {
+            t.client.apply_for_issue(&contributor, org, &issue_counter);
+            issue_counter += 1;
+        }
+    }
+
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        15,
+        "should have 15 pending applications across 4 orgs"
+    );
+
+    // 16th application across any org must be rejected
+    for org in &orgs {
+        let result = t.client.try_apply_for_issue(&contributor, org, &(issue_counter + 100));
+        assert_eq!(
+            result,
+            Err(Ok(Error::from_contract_error(
+                ContractError::GlobalApplicationLimitReached as u32
+            ))),
+            "16th application in org {} must be rejected",
+            issue_counter
+        );
+    }
+
+    // Count must not have changed
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        15,
+        "count must stay at 15 after rejected applications"
+    );
+}
+
+/// Regression test for #591: multiple contributors each hit their own independent cap.
+#[test]
+fn unit_regression_591_per_contributor_independent_cap() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contrib_a = Address::generate(&t.env);
+    let contrib_b = Address::generate(&t.env);
+    let org = t.org("r591e");
+
+    t.client.initialize(&admin);
+
+    // Fill contrib_a to the cap
+    for i in 0u32..15 {
+        t.client.apply_for_issue(&contrib_a, &org, &i);
+    }
+    assert_eq!(t.client.get_global_application_count(&contrib_a), 15);
+
+    // contrib_b must be unaffected
+    t.client.apply_for_issue(&contrib_b, &org, &0u32);
+    assert_eq!(t.client.get_global_application_count(&contrib_b), 1);
+}
