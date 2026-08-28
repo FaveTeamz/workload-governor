@@ -3166,3 +3166,155 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// UNIT TESTS — get_pending_applications / application index (#598)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unit_pending_applications_empty_for_new_contributor() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+
+    t.client.initialize(&admin);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 0, "new contributor should have no pending applications");
+}
+
+#[test]
+fn unit_pending_applications_single_entry() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 1);
+    let (ref o, i) = pending.get(0).unwrap();
+    assert_eq!(o, &org);
+    assert_eq!(i, 1u32);
+}
+
+#[test]
+fn unit_pending_applications_multiple_entries() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org1 = t.org("org_alpha");
+    let org2 = t.org("org_beta");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org1, &10u32);
+    t.client.apply_for_issue(&contributor, &org2, &20u32);
+    t.client.apply_for_issue(&contributor, &org1, &30u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 3);
+}
+
+#[test]
+fn unit_pending_applications_removed_on_withdraw() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+
+    // Withdraw one
+    t.client.withdraw_application(&contributor, &org, &1u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 1, "should have exactly 1 application after withdrawing one");
+    let (ref o, i) = pending.get(0).unwrap();
+    assert_eq!(o, &org);
+    assert_eq!(i, 2u32);
+}
+
+#[test]
+fn unit_pending_applications_empty_after_all_withdrawn() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.withdraw_application(&contributor, &org, &1u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 0, "index should be empty after withdrawing last application");
+}
+
+#[test]
+fn unit_pending_applications_removed_on_assign() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &42u32);
+
+    // Index contains one entry before assign
+    let before = t.client.get_pending_applications(&contributor);
+    assert_eq!(before.len(), 1);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &42u32);
+
+    // Index should be empty after assignment (application consumed)
+    let after = t.client.get_pending_applications(&contributor);
+    assert_eq!(after.len(), 0, "index should be empty after issue is assigned");
+}
+
+#[test]
+fn unit_pending_applications_count_matches_global_count() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+
+    for i in 0..5u32 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+    }
+
+    let pending = t.client.get_pending_applications(&contributor);
+    let global_count = t.client.get_global_application_count(&contributor);
+
+    assert_eq!(
+        pending.len() as u32,
+        global_count,
+        "app index length must equal global application count"
+    );
+}
+
+#[test]
+fn unit_pending_applications_independent_per_contributor() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let alice = Address::generate(&t.env);
+    let bob = Address::generate(&t.env);
+    let org = t.org("shared_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&alice, &org, &1u32);
+    t.client.apply_for_issue(&alice, &org, &2u32);
+    t.client.apply_for_issue(&bob, &org, &3u32);
+
+    let alice_pending = t.client.get_pending_applications(&alice);
+    let bob_pending = t.client.get_pending_applications(&bob);
+
+    assert_eq!(alice_pending.len(), 2, "Alice should have 2 pending applications");
+    assert_eq!(bob_pending.len(), 1, "Bob should have 1 pending application");
+}

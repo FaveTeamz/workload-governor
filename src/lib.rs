@@ -278,6 +278,7 @@ impl WorkloadGovernor {
         storage::set_app_entry(&env, &contributor, &org_id, issue_id);
         storage::extend_global_app_count_ttl(&env, &contributor);
         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+        storage::index_add_application(&env, &contributor, &org_id, issue_id);
         storage::bump_instance(&env);
         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);
     }
@@ -326,6 +327,7 @@ impl WorkloadGovernor {
         } else {
             storage::set_global_app_count(&env, &contributor, new_count);
         }
+        storage::index_remove_application(&env, &contributor, &org_id, issue_id);
         storage::bump_instance(&env);
         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
     }
@@ -400,6 +402,7 @@ impl WorkloadGovernor {
         } else {
             storage::set_global_app_count(&env, &contributor, new_app_count);
         }
+        storage::index_remove_application(&env, &contributor, &org_id, issue_id);
         storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
         storage::set_assignment(&env, &org_id, issue_id, &contributor);
         // Debug assertion: counter and sentinel must agree immediately after write.
@@ -696,6 +699,7 @@ impl WorkloadGovernor {
         if storage::get_global_app_count(&env, &contributor) > 0 {
             storage::extend_global_app_count_ttl(&env, &contributor);
         }
+        storage::extend_app_index_ttl(&env, &contributor);
     }
 
     // -----------------------------------------------------------------------
@@ -797,6 +801,36 @@ impl WorkloadGovernor {
     /// ```
     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
         storage::has_assignment(&env, &org_id, issue_id, &contributor)
+    }
+
+    /// Returns all pending applications for a contributor as a list of `(org_id, issue_id)` pairs.
+    ///
+    /// The list is maintained in an application index (`"app_idx"`) updated atomically
+    /// on every `apply_for_issue` and `withdraw_application` call. The index uses the
+    /// same temporary-storage TTL as application entries, so it expires together with
+    /// the application data at Wave end.
+    ///
+    /// Returns an empty `Vec` when the contributor has no pending applications or when
+    /// all application entries have expired.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Arguments
+    /// * `contributor` – Address to query.
+    ///
+    /// # Returns
+    /// A `Vec<(Symbol, u32)>` of `(org_id, issue_id)` pairs in insertion order.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- get_pending_applications \
+    ///   --contributor <CONTRIBUTOR_ADDRESS>
+    /// ```
+    pub fn get_pending_applications(env: Env, contributor: Address) -> Vec<(Symbol, u32)> {
+        storage::get_app_index(&env, &contributor)
     }
 
     // -----------------------------------------------------------------------
