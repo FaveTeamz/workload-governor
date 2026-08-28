@@ -37,3 +37,15 @@ name = "fuzz_batch_apply"
 path = "fuzz_targets/fuzz_batch_apply.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_withdraw"
+path = "fuzz_targets/fuzz_withdraw.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_revoke"
+path = "fuzz_targets/fuzz_revoke.rs"
+test = false
+doc = false
