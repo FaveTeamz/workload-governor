@@ -108,3 +108,75 @@ pub(crate) fn emit_assignment_revoked(
     let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
+
+// ---------------------------------------------------------------------------
+// #602 — Migration event
+// ---------------------------------------------------------------------------
+
+/// Emitted by `migrate_v1_to_v2` upon successful completion.
+///
+/// topics: `(symbol_short!("mig_done"), admin)`
+/// data:   `(entries_migrated: u32,)`
+pub(crate) fn emit_migration_completed(env: &Env, admin: &Address, entries_migrated: u32) {
+    let topics = (symbol_short!("mig_done"), admin.clone());
+    let data = (entries_migrated,);
+    env.events().publish(topics, data);
+}
+
+// ---------------------------------------------------------------------------
+// #603 — Multi-sig admin event
+// ---------------------------------------------------------------------------
+
+/// Emitted by `set_admin_threshold`.
+///
+/// topics: `(symbol_short!("ms_set"), admin)`
+/// data:   `(threshold: u32, signer_count: u32)`
+pub(crate) fn emit_admin_threshold_set(env: &Env, admin: &Address, threshold: u32, signer_count: u32) {
+    let topics = (symbol_short!("ms_set"), admin.clone());
+    let data = (threshold, signer_count);
+    env.events().publish(topics, data);
+}
+
+// ---------------------------------------------------------------------------
+// #600 — Governance proposal events
+// ---------------------------------------------------------------------------
+
+/// Emitted by `propose_cap_change`.
+///
+/// topics: `(symbol_short!("cap_prop"), proposer)`
+/// data:   `(proposal_id: u32, new_global_cap: u32)`
+pub(crate) fn emit_cap_proposed(
+    env: &Env,
+    proposer: &Address,
+    proposal_id: u32,
+    new_global_cap: u32,
+) {
+    let topics = (symbol_short!("cap_prop"), proposer.clone());
+    let data = (proposal_id, new_global_cap);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `vote_cap_change`.
+///
+/// topics: `(symbol_short!("cap_vote"), voter)`
+/// data:   `(proposal_id: u32, approve: bool)`
+pub(crate) fn emit_cap_voted(env: &Env, voter: &Address, proposal_id: u32, approve: bool) {
+    let topics = (symbol_short!("cap_vote"), voter.clone());
+    let data = (proposal_id, approve);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `execute_cap_change` upon successful execution.
+///
+/// topics: `(symbol_short!("cap_exec"), executor)`
+/// data:   `(proposal_id: u32, new_global_cap: u32)`
+pub(crate) fn emit_cap_changed(
+    env: &Env,
+    executor: &Address,
+    proposal_id: u32,
+    new_global_cap: u32,
+) {
+    let topics = (symbol_short!("cap_exec"), executor.clone());
+    let data = (proposal_id, new_global_cap);
+    env.events().publish(topics, data);
+}

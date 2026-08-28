@@ -8,8 +8,14 @@
 //!
 //! All key prefixes are distinct `symbol_short!` values — zero collision guarantee:
 //!   "g_apps", "app", "admin", "maint", "o_asgn", "asgn"
+//!   "mig_v2"  (migration flag, #602)
+//!   "ms_thr"  (multi-sig threshold, #603)
+//!   "ms_sig"  (multi-sig signers, #603)
+//!   "prop"    (governance proposal entry, #600)
+//!   "vote"    (governance vote entry, #600)
+//!   "g_cap"   (dynamic global cap override, #600)
 
-use soroban_sdk::{panic_with_error, Address, Env, Symbol, symbol_short};
+use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec, symbol_short};
 
 use crate::errors::ContractError;
 
@@ -36,6 +42,12 @@ pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 /// TTL threshold/extend-to for the contract instance (persistent) entry.
 /// ~30 days at 5 s/ledger — keeps the contract alive between operator bumps.
 pub const INSTANCE_TTL_LEDGERS: u32 = 518_400;
+
+/// TTL for governance proposals — ~7 days at 5 s/ledger.
+pub const PROPOSAL_TTL_LEDGERS: u32 = 120_960;
+
+/// Minimum number of orgs that must have voted for quorum to be met.
+pub const PROPOSAL_QUORUM_ORGS: u32 = 3;
 
 // ---------------------------------------------------------------------------
 // Instance TTL management
@@ -309,4 +321,213 @@ pub(crate) fn remove_assignment(
 ) {
     let key = assignment_entry_key(org_id, issue_id, contributor);
     env.storage().persistent().remove(&key);
+}
+
+// ---------------------------------------------------------------------------
+// #602 — Persistent storage: Migration flag
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("mig_v2")`
+// Value: `bool` (true once migration has run)
+
+fn migration_v2_flag_key() -> Symbol {
+    symbol_short!("mig_v2")
+}
+
+/// Returns `true` if the v1→v2 migration has already been executed.
+pub(crate) fn is_migration_done(env: &Env) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&migration_v2_flag_key())
+        .unwrap_or(false)
+}
+
+/// Marks the v1→v2 migration as completed.
+pub(crate) fn set_migration_done(env: &Env) {
+    env.storage()
+        .persistent()
+        .set(&migration_v2_flag_key(), &true);
+}
+
+// ---------------------------------------------------------------------------
+// #602 — v1 org assignment count key (old format for migration)
+// ---------------------------------------------------------------------------
+//
+// v1 key format: `(symbol_short!("o_asgn"), org_id: Symbol, contributor: Address)`
+// v2 key format: `(symbol_short!("o_asgn"), contributor: Address, org_id: Symbol)`
+//
+// The field order was swapped in v2. Migration reads v1 keys and writes v2 keys.
+
+fn org_assignment_count_key_v1(
+    contributor: &Address,
+    org_id: &Symbol,
+) -> (Symbol, Symbol, Address) {
+    (symbol_short!("o_asgn"), org_id.clone(), contributor.clone())
+}
+
+/// Reads the v1 org assignment count (old key ordering: org_id first, contributor second).
+pub(crate) fn get_org_assignment_count_v1(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+) -> Option<u32> {
+    let key = org_assignment_count_key_v1(contributor, org_id);
+    env.storage().persistent().get(&key)
+}
+
+/// Removes the v1 org assignment count key.
+pub(crate) fn remove_org_assignment_count_v1(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+) {
+    let key = org_assignment_count_key_v1(contributor, org_id);
+    env.storage().persistent().remove(&key);
+}
+
+// ---------------------------------------------------------------------------
+// #603 — Persistent storage: Multi-sig threshold and signers
+// ---------------------------------------------------------------------------
+//
+// Threshold key: `symbol_short!("ms_thr")` → `u32`
+// Signers key:   `symbol_short!("ms_sig")` → `Vec<Address>`
+
+fn multisig_threshold_key() -> Symbol {
+    symbol_short!("ms_thr")
+}
+
+fn multisig_signers_key() -> Symbol {
+    symbol_short!("ms_sig")
+}
+
+/// Returns the current multi-sig threshold (0 if not configured — single-admin mode).
+pub(crate) fn get_multisig_threshold(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get::<_, u32>(&multisig_threshold_key())
+        .unwrap_or(0)
+}
+
+/// Returns the current multi-sig signer list (empty if not configured).
+pub(crate) fn get_multisig_signers(env: &Env) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get::<_, Vec<Address>>(&multisig_signers_key())
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Stores the multi-sig threshold.
+pub(crate) fn set_multisig_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .persistent()
+        .set(&multisig_threshold_key(), &threshold);
+}
+
+/// Stores the multi-sig signer list.
+pub(crate) fn set_multisig_signers(env: &Env, signers: &Vec<Address>) {
+    env.storage()
+        .persistent()
+        .set(&multisig_signers_key(), signers);
+}
+
+// ---------------------------------------------------------------------------
+// #600 — Persistent storage: Governance proposals
+// ---------------------------------------------------------------------------
+//
+// Proposal entry key: `(symbol_short!("prop"), proposal_id: u32)` → `GovernanceProposal`
+// Vote entry key:     `(symbol_short!("vote"), proposal_id: u32, voter: Address)` → `bool`
+// Global cap override:`symbol_short!("g_cap")` → `u32`
+// Proposal counter:   `symbol_short!("p_ctr")` → `u32`
+
+use soroban_sdk::contracttype;
+
+/// A governance proposal to change the global application cap.
+#[contracttype]
+#[derive(Clone)]
+pub struct GovernanceProposal {
+    /// Address of the maintainer who created the proposal.
+    pub proposer: Address,
+    /// Proposed new value for the global application cap.
+    pub new_global_cap: u32,
+    /// Ledger number at which the proposal expires.
+    pub expires_at: u32,
+    /// Number of approvals received.
+    pub yes_votes: u32,
+    /// Number of rejections received.
+    pub no_votes: u32,
+    /// Whether this proposal has been executed.
+    pub executed: bool,
+}
+
+fn proposal_key(proposal_id: u32) -> (Symbol, u32) {
+    (symbol_short!("prop"), proposal_id)
+}
+
+fn vote_key(proposal_id: u32, voter: &Address) -> (Symbol, u32, Address) {
+    (symbol_short!("vote"), proposal_id, voter.clone())
+}
+
+fn proposal_counter_key() -> Symbol {
+    symbol_short!("p_ctr")
+}
+
+fn global_cap_override_key() -> Symbol {
+    symbol_short!("g_cap")
+}
+
+/// Returns the next proposal ID and increments the counter.
+pub(crate) fn next_proposal_id(env: &Env) -> u32 {
+    let key = proposal_counter_key();
+    let current: u32 = env.storage().persistent().get(&key).unwrap_or(0);
+    let next = current + 1;
+    env.storage().persistent().set(&key, &next);
+    next
+}
+
+/// Returns the proposal with the given ID, or `None` if absent.
+pub(crate) fn get_proposal(env: &Env, proposal_id: u32) -> Option<GovernanceProposal> {
+    let key = proposal_key(proposal_id);
+    env.storage().temporary().get(&key)
+}
+
+/// Writes a governance proposal to temporary storage (TTL-limited).
+pub(crate) fn set_proposal(env: &Env, proposal_id: u32, proposal: &GovernanceProposal) {
+    let key = proposal_key(proposal_id);
+    env.storage().temporary().set(&key, proposal);
+    env.storage()
+        .temporary()
+        .extend_ttl(&key, PROPOSAL_TTL_LEDGERS, PROPOSAL_TTL_LEDGERS);
+}
+
+/// Returns `true` if the voter has already voted on this proposal.
+pub(crate) fn has_voted(env: &Env, proposal_id: u32, voter: &Address) -> bool {
+    let key = vote_key(proposal_id, voter);
+    env.storage()
+        .temporary()
+        .get::<_, bool>(&key)
+        .unwrap_or(false)
+}
+
+/// Records that `voter` has voted on `proposal_id`.
+pub(crate) fn set_voted(env: &Env, proposal_id: u32, voter: &Address) {
+    let key = vote_key(proposal_id, voter);
+    env.storage().temporary().set(&key, &true);
+    env.storage()
+        .temporary()
+        .extend_ttl(&key, PROPOSAL_TTL_LEDGERS, PROPOSAL_TTL_LEDGERS);
+}
+
+/// Returns the current effective global application cap (override if set, else GLOBAL_APP_LIMIT).
+pub(crate) fn get_effective_global_cap(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get::<_, u32>(&global_cap_override_key())
+        .unwrap_or(GLOBAL_APP_LIMIT)
+}
+
+/// Writes the new global application cap (set upon governance proposal execution).
+pub(crate) fn set_global_cap_override(env: &Env, new_cap: u32) {
+    env.storage()
+        .persistent()
+        .set(&global_cap_override_key(), &new_cap);
 }
