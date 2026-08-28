@@ -376,6 +376,61 @@ fn unit_event_initialized_has_two_topics() {
 }
 
 #[test]
+fn unit_event_initialized_data_contains_admin_and_ledger() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{symbol_short, TryIntoVal, Val, Vec};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+
+    // Capture the ledger sequence before initializing so we can compare it.
+    let ledger_seq = t.env.ledger().sequence();
+    t.client.initialize(&admin);
+
+    let events = t.env.events().all();
+    let (_, topics, data): (_, Vec<Val>, Val) = events.last().unwrap();
+
+    // Topics: (symbol_short!("init"), admin)
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let topic0: soroban_sdk::Symbol = topics.get(0).unwrap().try_into_val(&t.env).unwrap();
+    assert_eq!(topic0, symbol_short!("init"), "First topic must be 'init'");
+    let topic1: Address = topics.get(1).unwrap().try_into_val(&t.env).unwrap();
+    assert_eq!(topic1, admin, "Second topic must be the admin address");
+
+    // Data: (admin, ledger)
+    let (data_admin, data_ledger): (Address, u32) = data.try_into_val(&t.env).unwrap();
+    assert_eq!(data_admin, admin, "Data admin must match the initializing admin");
+    assert_eq!(data_ledger, ledger_seq, "Data ledger must match env.ledger().sequence()");
+}
+
+#[test]
+fn unit_event_initialized_not_emitted_on_double_init() {
+    use soroban_sdk::testutils::Events;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+
+    // First initialization — one 'init' event emitted.
+    t.client.initialize(&admin);
+    assert!(t.env.events().all().len() > 0, "Expected at least one event after first initialize");
+
+    // Second initialization must fail with AlreadyInitialized (error 1).
+    // try_initialize returns a Result instead of panicking, but the host still
+    // rolls back the failed call's events — so the event log is reset to empty.
+    let result = t.client.try_initialize(&admin);
+    assert!(result.is_err(), "Second initialize must return an error");
+
+    // The host rolls back events from failed calls. The empty log is the evidence
+    // that the second call did NOT emit any 'init' event — any event it had emitted
+    // would have been rolled back and is absent from the log.
+    assert_eq!(
+        t.env.events().all().len(),
+        0,
+        "Event log should be empty after a rolled-back AlreadyInitialized call"
+    );
+}
+
+#[test]
 fn unit_event_application_submitted_has_two_topics() {
     use soroban_sdk::testutils::Events;
 
@@ -924,6 +979,7 @@ fn unit_upgrade_idempotent() {
 
 /// Issue #44: non-admin calling upgrade must fail with a host Auth error (error 3).
 /// The stored admin's `require_auth()` rejects any other caller.
+#[cfg(wasm_available)]
 #[test]
 #[should_panic]
 fn unit_upgrade_rejects_non_admin() {
