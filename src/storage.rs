@@ -75,6 +75,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
+/// Minimum per-org assignment cap value accepted by `set_org_cap`.
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum per-org assignment cap value accepted by `set_org_cap`.
+pub const ORG_CAP_MAX: u32 = 20;
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
 // ---------------------------------------------------------------------------
@@ -231,27 +237,6 @@ pub(crate) fn extend_app_entry_ttl(
     env.storage()
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
-}
-
-// ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,4 +422,62 @@ pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> u32 {
 pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Assignment Deadline  (Issue #604)
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("dead"), org_id: Symbol, issue_id: u32, contributor: Address)`
+// Value: `u32` (deadline ledger sequence number)
+//
+// Stores the optional deadline for an assignment. When absent, no deadline is
+// set and `expire_assignment` cannot be called for that assignment.
+// Prefix `"dead"` is distinct from all other prefixes — zero collision risk.
+
+fn assignment_deadline_key(
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) -> (Symbol, Symbol, u32, Address) {
+    (
+        symbol_short!("dead"),
+        org_id.clone(),
+        issue_id,
+        contributor.clone(),
+    )
+}
+
+/// Returns the deadline ledger for an assignment, or `None` if no deadline was set.
+pub(crate) fn get_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) -> Option<u32> {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().get::<_, u32>(&key)
+}
+
+/// Writes the deadline ledger for an assignment.
+pub(crate) fn set_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+    deadline: u32,
+) {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().set(&key, &deadline);
+}
+
+/// Removes the deadline entry for an assignment (called on complete/revoke/expire).
+pub(crate) fn remove_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().remove(&key);
 }

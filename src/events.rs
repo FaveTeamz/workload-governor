@@ -196,3 +196,50 @@ pub(crate) fn emit_emergency_cap_updated(
     let data = (old_cap, new_cap);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_org_cap` when a maintainer changes the per-org assignment cap.
+///
+/// topics: `(symbol_short!("o_cap_upd"), org_id)`
+/// data:   `(old_cap, new_cap)`
+pub(crate) fn emit_org_cap_updated(
+    env: &Env,
+    org_id: &Symbol,
+    old_cap: u32,
+    new_cap: u32,
+) {
+    let topics = (symbol_short!("o_cap_upd"), org_id.clone());
+    let data = (old_cap, new_cap);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `assign_issue` when an assignment is created with a deadline.
+///
+/// topics: `(symbol_short!("deadline"), contributor)`
+/// data:   `(org_id, issue_id, deadline_ledger)`
+pub(crate) fn emit_deadline_set(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+    issue_id: u32,
+    deadline_ledger: u32,
+) {
+    let topics = (symbol_short!("deadline"), contributor.clone());
+    let data = (org_id.clone(), issue_id, deadline_ledger);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `expire_assignment` when a maintainer expires a past-deadline assignment.
+///
+/// topics: `(symbol_short!("expired"), contributor)`
+/// data:   `(maintainer, org_id, issue_id)`
+pub(crate) fn emit_assignment_expired(
+    env: &Env,
+    maintainer: &Address,
+    contributor: &Address,
+    org_id: &Symbol,
+    issue_id: u32,
+) {
+    let topics = (symbol_short!("expired"), contributor.clone());
+    let data = (maintainer.clone(), org_id.clone(), issue_id);
+    env.events().publish(topics, data);
+}

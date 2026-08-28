@@ -60,7 +60,7 @@ fn unit_full_lifecycle() {
     assert!(t.client.has_applied(&contributor, &org, &1u32));
     assert_eq!(t.client.get_global_application_count(&contributor), 1);
 
-    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
 
     assert!(!t.client.has_applied(&contributor, &org, &1u32));
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
@@ -88,7 +88,7 @@ fn unit_complete_assignment_lifecycle_counts() {
     assert_eq!(t.client.get_global_application_count(&contributor), 1);
     assert!(t.client.has_applied(&contributor, &org, &10u32));
 
-    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32, &None::<u32>);
 
     assert_eq!(t.client.get_global_application_count(&contributor), 0);
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
@@ -112,7 +112,7 @@ fn unit_revoke_lifecycle() {
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.apply_for_issue(&contributor, &org, &42u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &42u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &42u32, &None::<u32>);
     t.client.revoke_assignment(&maintainer, &contributor, &org, &42u32);
 
     assert!(!t.client.is_assigned(&contributor, &org, &42u32));
@@ -135,7 +135,7 @@ fn unit_reapplication_after_revoke() {
 
     // Apply → Assign → Revoke (full cycle)
     t.client.apply_for_issue(&contributor, &org, &7u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &7u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &7u32, &None::<u32>);
     t.client.revoke_assignment(&maintainer, &contributor, &org, &7u32);
 
     // Verify revoked state
@@ -316,7 +316,7 @@ fn unit_saturating_sub_zero_floor_org() {
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.apply_for_issue(&contributor, &org, &1u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
     t.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
 }
@@ -339,13 +339,13 @@ fn unit_multi_org_independent_limits() {
     // Fill org_a to the cap
     for i in 0u32..4 {
         t.client.apply_for_issue(&contributor, &org_a, &i);
-        t.client.assign_issue(&m1, &contributor, &org_a, &i);
+        t.client.assign_issue(&m1, &contributor, &org_a, &i, &None::<u32>);
     }
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org_a), 4);
 
     // org_b must still accept an assignment
     t.client.apply_for_issue(&contributor, &org_b, &100u32);
-    t.client.assign_issue(&m2, &contributor, &org_b, &100u32);
+    t.client.assign_issue(&m2, &contributor, &org_b, &100u32, &None::<u32>);
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org_b), 1);
 }
 
@@ -392,7 +392,7 @@ fn unit_error_unauthorized_maintainer() {
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
-    t.client.assign_issue(&stranger, &contributor, &org, &1u32); // UnauthorizedMaintainer
+    t.client.assign_issue(&stranger, &contributor, &org, &1u32, &None::<u32>); // UnauthorizedMaintainer
 }
 
 #[test]
@@ -423,10 +423,10 @@ fn unit_error_org_assignment_limit_reached() {
     t.client.register_maintainer(&admin, &maintainer, &org);
     for i in 0u32..4 {
         t.client.apply_for_issue(&contributor, &org, &i);
-        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i, &None::<u32>);
     }
     t.client.apply_for_issue(&contributor, &org, &99u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &99u32); // OrgAssignmentLimitReached
+    t.client.assign_issue(&maintainer, &contributor, &org, &99u32, &None::<u32>); // OrgAssignmentLimitReached
 }
 
 #[test]
@@ -465,7 +465,7 @@ fn unit_error_application_not_found_assign() {
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
-    t.client.assign_issue(&maintainer, &contributor, &org, &99u32); // ApplicationNotFound
+    t.client.assign_issue(&maintainer, &contributor, &org, &99u32, &None::<u32>); // ApplicationNotFound
 }
 
 #[test]
@@ -824,7 +824,7 @@ mod benchmarks {
         b.client.register_maintainer(&admin, &maintainer, &org);
         b.client.apply_for_issue(&contributor, &org, &1u32);
         b.env.cost_estimate().budget().reset_default();
-        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+        b.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
         let (cpu, mem) = b.measure("assign_issue");
 
         assert!(
@@ -858,7 +858,7 @@ mod benchmarks {
         b.client.initialize(&admin);
         b.client.register_maintainer(&admin, &maintainer, &org);
         b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+        b.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
         b.env.cost_estimate().budget().reset_default();
         b.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
         let (cpu, mem) = b.measure("complete_assignment");
@@ -891,7 +891,7 @@ mod benchmarks {
         b.client.initialize(&admin);
         b.client.register_maintainer(&admin, &maintainer, &org);
         b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+        b.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
         b.env.cost_estimate().budget().reset_default();
         b.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
         let (cpu, mem) = b.measure("revoke_assignment");
@@ -1122,7 +1122,7 @@ proptest! {
         client.initialize(&admin);
         client.apply_for_issue(&contributor, &org, &issue_id);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.assign_issue(&stranger, &contributor, &org, &issue_id);
+            client.assign_issue(&stranger, &contributor, &org, &issue_id, &None::<u32>);
         }));
         prop_assert!(result.is_err());
     }
@@ -1137,12 +1137,12 @@ proptest! {
         client.register_maintainer(&admin, &maintainer, &org);
         for i in 0u32..4 {
             client.apply_for_issue(&contributor, &org, &i);
-            client.assign_issue(&maintainer, &contributor, &org, &i);
+            client.assign_issue(&maintainer, &contributor, &org, &i, &None::<u32>);
         }
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), 4);
         client.apply_for_issue(&contributor, &org, &99u32);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.assign_issue(&maintainer, &contributor, &org, &99u32);
+            client.assign_issue(&maintainer, &contributor, &org, &99u32, &None::<u32>);
         }));
         prop_assert!(result.is_err());
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), 4);
@@ -1158,7 +1158,7 @@ proptest! {
         client.register_maintainer(&admin, &maintainer, &org);
         client.apply_for_issue(&contributor, &org, &issue_id);
         let app_count_before = client.get_global_application_count(&contributor);
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
         prop_assert!(!client.has_applied(&contributor, &org, &issue_id));
         prop_assert!(client.is_assigned(&contributor, &org, &issue_id));
         prop_assert_eq!(client.get_global_application_count(&contributor), app_count_before - 1);
@@ -1174,7 +1174,7 @@ proptest! {
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
         client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
         prop_assert!(!client.is_assigned(&contributor, &org, &issue_id));
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), 0);
@@ -1189,7 +1189,7 @@ proptest! {
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
         client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
         prop_assert!(!client.is_assigned(&contributor, &org, &issue_id));
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), 0);
@@ -1411,7 +1411,7 @@ proptest! {
                             applied.insert(issue_id);
                         }
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
                         }));
                         prop_assert!(result.is_err(), "expected rejection when org count == 4");
                         prop_assert_eq!(
@@ -1426,7 +1426,7 @@ proptest! {
                         client.apply_for_issue(&contributor, &org, &issue_id);
                         applied.insert(issue_id);
                     }
-                    client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                    client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
                     applied.remove(&issue_id); // assign consumes the application
                     assigned.insert(issue_id);
                 }
@@ -1523,7 +1523,7 @@ impl UpgradeFixture {
 
         // Assign and keep active — populates persistent assignment + org counter
         client.apply_for_issue(&contributor, &org, &20u32);
-        client.assign_issue(&maintainer, &contributor, &org, &20u32);
+        client.assign_issue(&maintainer, &contributor, &org, &20u32, &None::<u32>);
 
         UpgradeFixture {
             env: env.clone(),
@@ -1625,7 +1625,7 @@ fn unit_upgrade_functions_behave_identically() {
 
     // assign_issue: issue 30 is now pending
     t.client
-        .assign_issue(&t.maintainer, &t.contributor, &t.org, &30u32);
+        .assign_issue(&t.maintainer, &t.contributor, &t.org, &30u32, &None::<u32>);
     assert!(t.client.is_assigned(&t.contributor, &t.org, &30u32));
     assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 2);
 
@@ -1650,7 +1650,7 @@ fn unit_upgrade_functions_behave_identically() {
     t.client
         .apply_for_issue(&t.contributor, &new_org, &1u32);
     t.client
-        .assign_issue(&new_maintainer, &t.contributor, &new_org, &1u32);
+        .assign_issue(&new_maintainer, &t.contributor, &new_org, &1u32, &None::<u32>);
     assert!(t.client.is_assigned(&t.contributor, &new_org, &1u32));
 
     // limit helpers still return correct values
@@ -1687,12 +1687,12 @@ fn unit_upgrade_limits_still_enforced() {
     // Org assignment cap: issue 20 is already assigned (count=1).
     // Free up global slots, then assign 3 more to reach cap of 4.
     for i in 31u32..34 {
-        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &i);
+        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &i, &None::<u32>);
     }
     assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 4);
     // issue 34 is still a pending application (applied in the loop above)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &34u32);
+        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &34u32, &None::<u32>);
     }));
     assert!(
         result.is_err(),
@@ -1748,7 +1748,7 @@ fn prop_storage_key_collision_freedom() {
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.apply_for_issue(&contributor, &org, &1u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
 
     // All six storage categories return correct, independent values
     assert_eq!(t.client.get_global_application_count(&contributor), 0); // consumed by assign
@@ -1814,10 +1814,10 @@ fn unit_storage_key_no_collision_boundary_values() {
     assert!(t.client.has_applied(&contributor_a, &org_a, &issue_max));
 
     // assign boundary issues → exercises Patterns 4 ("maint"), 5 ("o_asgn"), 6 ("asgn")
-    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_min);
-    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_max);
-    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_min);
-    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_max);
+    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_min, &None::<u32>);
+    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_max, &None::<u32>);
+    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_min, &None::<u32>);
+    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_max, &None::<u32>);
 
     // ── Pattern 5 ("o_asgn") vs Pattern 6 ("asgn") ────────────────────────
     // org assignment count (pattern 5) must not collide with assignment sentinel (pattern 6)
@@ -1920,7 +1920,7 @@ mod error_cases {
 
         client.initialize(&admin);
         client.apply_for_issue(&contributor, &o, &1u32);
-        let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32);
+        let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32, &None::<u32>);
         assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
 
@@ -1937,7 +1937,7 @@ mod error_cases {
         client.register_maintainer(&admin, &maintainer, &org_a);
         client.apply_for_issue(&contributor, &org_b, &1u32);
 
-        let result = client.try_assign_issue(&maintainer, &contributor, &org_b, &1u32);
+        let result = client.try_assign_issue(&maintainer, &contributor, &org_b, &1u32, &None::<u32>);
         assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
 
@@ -1953,7 +1953,7 @@ mod error_cases {
         client.register_maintainer(&admin, &maintainer, &org_id);
         client.apply_for_issue(&contributor, &org_id, &1u32);
 
-        let result = client.try_assign_issue(&maintainer, &contributor, &org_id, &1u32);
+        let result = client.try_assign_issue(&maintainer, &contributor, &org_id, &1u32, &None::<u32>);
         assert!(result.is_ok());
         assert!(client.is_assigned(&contributor, &org_id, &1u32));
     }
@@ -2004,10 +2004,10 @@ mod error_cases {
         client.register_maintainer(&admin, &maintainer, &o);
         for i in 0u32..4 {
             client.apply_for_issue(&contributor, &o, &i);
-            client.assign_issue(&maintainer, &contributor, &o, &i);
+            client.assign_issue(&maintainer, &contributor, &o, &i, &None::<u32>);
         }
         client.apply_for_issue(&contributor, &o, &99u32);
-        let result = client.try_assign_issue(&maintainer, &contributor, &o, &99u32);
+        let result = client.try_assign_issue(&maintainer, &contributor, &o, &99u32, &None::<u32>);
         assert_eq!(result, Err(Ok(ce(ContractError::OrgAssignmentLimitReached))));
     }
 
@@ -2072,7 +2072,7 @@ mod error_cases {
         // Apply so ApplicationNotFound guard is passed
         client.apply_for_issue(&contributor, &o, &1u32);
 
-        let result = client.try_assign_issue(&maintainer, &contributor, &o, &1u32);
+        let result = client.try_assign_issue(&maintainer, &contributor, &o, &1u32, &None::<u32>);
         assert_eq!(result, Err(Ok(ce(ContractError::AlreadyAssigned))));
     }
 }
@@ -2112,7 +2112,7 @@ proptest! {
                     if applied.contains(&issue_id) {
                         let count = client.get_org_assignment_count(&contributor, &org);
                         if count < 4 {
-                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
                             applied.remove(&issue_id);
                             assigned.insert(issue_id);
                         }
@@ -2283,7 +2283,7 @@ proptest! {
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
 
         prop_assert!(!client.has_applied(&contributor, &org, &issue_id));
         prop_assert!(client.is_assigned(&contributor, &org, &issue_id));
@@ -2306,7 +2306,7 @@ proptest! {
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
         let before = client.get_org_assignment_count(&contributor, &org);
         client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), before - 1);
@@ -2322,7 +2322,7 @@ proptest! {
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
         let before = client.get_org_assignment_count(&contributor, &org);
         client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), before - 1);
@@ -2370,7 +2370,7 @@ proptest! {
             client.register_maintainer(&admin, &maintainer, org);
             for i in 0u32..4 {
                 client.apply_for_issue(&contributor, org, &i);
-                client.assign_issue(&maintainer, &contributor, org, &i);
+                client.assign_issue(&maintainer, &contributor, org, &i, &None::<u32>);
             }
             prop_assert_eq!(client.get_org_assignment_count(&contributor, org), 4);
         }
@@ -2446,7 +2446,7 @@ fn unit_assign_issue_clears_global_count_when_last_app() {
     assert_eq!(t.client.get_global_application_count(&contributor), 1);
 
     // Assign — global count must drop to exactly 0
-    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
     assert_eq!(
         t.client.get_global_application_count(&contributor),
         0,
@@ -2473,7 +2473,7 @@ fn unit_assign_issue_decrements_global_count_not_zero() {
     assert_eq!(t.client.get_global_application_count(&contributor), 2);
 
     // Assign one — global count must be 1, not 2 or 0
-    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32, &None::<u32>);
     assert_eq!(
         t.client.get_global_application_count(&contributor),
         1,
@@ -2500,7 +2500,7 @@ fn unit_complete_assignment_clears_org_count_when_last() {
 
     // Apply and assign exactly one issue
     t.client.apply_for_issue(&contributor, &org, &5u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &5u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &5u32, &None::<u32>);
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
 
     // Complete — org count must drop to exactly 0
@@ -2527,7 +2527,7 @@ fn unit_complete_assignment_decrements_org_count_not_zero() {
     // Apply and assign two issues
     for i in 1u32..=2 {
         t.client.apply_for_issue(&contributor, &org, &i);
-        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i, &None::<u32>);
     }
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 2);
 
@@ -2557,7 +2557,7 @@ fn unit_revoke_assignment_clears_org_count_when_last() {
     t.client.register_maintainer(&admin, &maintainer, &org);
 
     t.client.apply_for_issue(&contributor, &org, &7u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &7u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &7u32, &None::<u32>);
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
 
     // Revoke — org count must drop to exactly 0
@@ -2583,7 +2583,7 @@ fn unit_revoke_assignment_decrements_org_count_not_zero() {
 
     for i in 1u32..=2 {
         t.client.apply_for_issue(&contributor, &org, &i);
-        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i, &None::<u32>);
     }
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 2);
 
@@ -2697,7 +2697,7 @@ fn unit_assign_converts_application_increments_counter() {
     assert!(!t.client.is_assigned(&contributor, &org, &1u32));
     assert_eq!(t.client.get_global_application_count(&contributor), 1);
 
-    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
 
     // After assign: application removed, assignment created, counters updated
     assert!(!t.client.has_applied(&contributor, &org, &1u32));
@@ -2723,13 +2723,13 @@ fn unit_assign_at_org_cap_4_fails() {
     // Fill to the default ORG_ASSIGNMENT_LIMIT of 4
     for i in 0u32..4 {
         t.client.apply_for_issue(&contributor, &org, &i);
-        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i, &None::<u32>);
     }
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 4);
 
     // 5th assignment must be rejected with OrgAssignmentLimitReached (code 7)
     t.client.apply_for_issue(&contributor, &org, &99u32);
-    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &99u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &99u32, &None::<u32>);
     assert_eq!(
         result,
         Err(Ok(ContractError::OrgAssignmentLimitReached.into_val(&t.env)))
@@ -2757,7 +2757,7 @@ fn unit_assign_already_assigned_returns_error() {
     crate::storage::set_assignment(&t.env, &org, 1u32, &contributor);
     t.client.apply_for_issue(&contributor, &org, &1u32);
 
-    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &1u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
     assert_eq!(
         result,
         Err(Ok(ContractError::AlreadyAssigned.into_val(&t.env)))
@@ -2779,7 +2779,7 @@ fn unit_assign_no_application_returns_error() {
     t.client.register_maintainer(&admin, &maintainer, &org);
 
     // No application submitted — assign must fail with ApplicationNotFound (code 9)
-    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &42u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &42u32, &None::<u32>);
     assert_eq!(
         result,
         Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env)))
@@ -2797,7 +2797,7 @@ fn unit_complete_removes_assignment_decrements_counter() {
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.apply_for_issue(&contributor, &org, &5u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &5u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &5u32, &None::<u32>);
 
     assert!(t.client.is_assigned(&contributor, &org, &5u32));
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
@@ -2843,7 +2843,7 @@ fn unit_assign_non_maintainer_panics() {
     // Register no maintainer; stranger is not authorised for this org
     t.client.apply_for_issue(&contributor, &org, &1u32);
     // Must panic with UnauthorizedMaintainer (code 4)
-    t.client.assign_issue(&stranger, &contributor, &org, &1u32);
+    t.client.assign_issue(&stranger, &contributor, &org, &1u32, &None::<u32>);
 }
 
 // ---------------------------------------------------------------------------
@@ -3074,7 +3074,7 @@ proptest! {
                     {
                         // One of: ApplicationNotFound, OrgAssignmentLimitReached, AlreadyAssigned.
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
                         }));
                         // May or may not panic depending on which guard fires first;
                         // if it panics the count must be unchanged.
@@ -3092,7 +3092,7 @@ proptest! {
                             assigned.insert(issue_id);
                         }
                     } else {
-                        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
                         applied.remove(&issue_id);
                         global_count = global_count.saturating_sub(1);
                         assigned.insert(issue_id);
@@ -3165,4 +3165,179 @@ proptest! {
             );
         }
     }
+}
+
+// ============================================================
+// Issue #604 — Deadline field for issue assignments
+// ============================================================
+
+/// Helper: set the ledger sequence in the test environment.
+fn set_ledger(env: &Env, seq: u32) {
+    env.ledger().with_mut(|li| li.sequence_number = seq);
+}
+
+/// Test: assign_issue with no deadline — get_assignment_deadline returns None.
+#[test]
+fn unit_deadline_none_by_default() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604a");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32, &None::<u32>);
+
+    let dl = t.client.get_assignment_deadline(&org, &1u32, &contributor);
+    assert!(dl.is_none(), "deadline should be None when not set");
+}
+
+/// Test: assign_issue with a deadline stores it and get_assignment_deadline returns it.
+#[test]
+fn unit_deadline_stored_when_set() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604b");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &2u32, &Some(200u32));
+
+    let dl = t.client.get_assignment_deadline(&org, &2u32, &contributor);
+    assert_eq!(dl, Some(200u32), "deadline should be 200");
+}
+
+/// Test: assign_issue with a past deadline returns DeadlineInPast (error 14).
+#[test]
+fn unit_deadline_in_past_rejected() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604c");
+
+    set_ledger(&t.env, 500);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &3u32);
+
+    // deadline=400 is < current ledger 500 → should fail
+    let result = t.client.try_assign_issue(
+        &maintainer, &contributor, &org, &3u32, &Some(400u32),
+    );
+    assert!(result.is_err(), "Expected DeadlineInPast error");
+}
+
+/// Test: expire_assignment before deadline passes returns DeadlineNotPassed (error 15).
+#[test]
+fn unit_expire_before_deadline_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604d");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &4u32);
+    // deadline = 200, current = 100
+    t.client.assign_issue(&maintainer, &contributor, &org, &4u32, &Some(200u32));
+
+    // Still at ledger 100 — deadline hasn't passed
+    let result = t.client.try_expire_assignment(&maintainer, &contributor, &org, &4u32);
+    assert!(result.is_err(), "Expected DeadlineNotPassed error");
+}
+
+/// Test: expire_assignment after deadline passes succeeds and decrements counter.
+#[test]
+fn unit_expire_after_deadline_succeeds() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604e");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+    // deadline = 200
+    t.client.assign_issue(&maintainer, &contributor, &org, &5u32, &Some(200u32));
+
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    // Advance ledger past deadline
+    set_ledger(&t.env, 201);
+    t.client.expire_assignment(&maintainer, &contributor, &org, &5u32);
+
+    // Assignment removed, counter decremented
+    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    // Deadline entry cleaned up
+    assert!(t.client.get_assignment_deadline(&org, &5u32, &contributor).is_none());
+}
+
+/// Test: expire_assignment on assignment with no deadline returns NoDeadlineSet (error 18).
+#[test]
+fn unit_expire_no_deadline_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604f");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &6u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &6u32, &None::<u32>);
+
+    let result = t.client.try_expire_assignment(&maintainer, &contributor, &org, &6u32);
+    assert!(result.is_err(), "Expected NoDeadlineSet error");
+}
+
+/// Test: complete_assignment cleans up deadline entry.
+#[test]
+fn unit_complete_clears_deadline() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604g");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &7u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &7u32, &Some(300u32));
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &7u32);
+    assert!(t.client.get_assignment_deadline(&org, &7u32, &contributor).is_none());
+}
+
+/// Test: revoke_assignment cleans up deadline entry.
+#[test]
+fn unit_revoke_clears_deadline() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org604h");
+
+    set_ledger(&t.env, 100);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &8u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &8u32, &Some(300u32));
+
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &8u32);
+    assert!(t.client.get_assignment_deadline(&org, &8u32, &contributor).is_none());
 }

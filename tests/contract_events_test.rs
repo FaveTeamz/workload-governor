@@ -214,7 +214,7 @@ fn test_assign_event_fields() {
     client.apply_for_issue(&contributor, &org_id, &issue_id);
     let before = env.events().all().len();
 
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
 
     let all = env.events().all();
     let new_count = all.len() - before;
@@ -262,7 +262,7 @@ fn test_complete_event_fields() {
 
     client.register_maintainer(&admin, &maintainer, &org_id);
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     let before = env.events().all().len();
 
     client.complete_assignment(&maintainer, &contributor, &org_id, &issue_id);
@@ -313,7 +313,7 @@ fn test_revoke_event_fields() {
 
     client.register_maintainer(&admin, &maintainer, &org_id);
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     let before = env.events().all().len();
 
     client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
@@ -401,7 +401,7 @@ fn test_no_event_on_assign_missing_application() {
 
     // Assign without prior application — must panic with ApplicationNotFound (error 9)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     }));
     assert!(
         result.is_err(),
@@ -469,7 +469,7 @@ fn test_assign_event_emitted() {
     client.register_maintainer(&admin, &maintainer, &org_id);
     client.apply_for_issue(&contributor, &org_id, &issue_id);
     let before = env.events().all().len();
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     assert_eq!(env.events().all().len() - before, 1);
 }
 
@@ -487,7 +487,7 @@ fn test_complete_event_emitted() {
     client.initialize(&admin);
     client.register_maintainer(&admin, &maintainer, &org_id);
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     let before = env.events().all().len();
     client.complete_assignment(&maintainer, &contributor, &org_id, &issue_id);
     assert_eq!(env.events().all().len() - before, 1);
@@ -507,7 +507,7 @@ fn test_revoke_event_emitted() {
     client.initialize(&admin);
     client.register_maintainer(&admin, &maintainer, &org_id);
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     let before = env.events().all().len();
     client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
     assert_eq!(env.events().all().len() - before, 1);
@@ -550,7 +550,7 @@ fn test_only_one_event_per_function() {
     assert_eq!(env.events().all().len() - b1, 1);
 
     let b2 = env.events().all().len();
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     assert_eq!(env.events().all().len() - b2, 1);
 
     let b3 = env.events().all().len();

@@ -340,6 +340,7 @@ impl WorkloadGovernor {
     /// 1. Removes the contributor's application entry and decrements the global app counter.
     /// 2. Increments the contributor's org-level assignment counter.
     /// 3. Creates the persistent assignment sentinel.
+    /// 4. Optionally stores a deadline ledger number and emits `DeadlineSet`.
     ///
     /// # Who can call
     /// A maintainer that has been registered for `org_id` via [`WorkloadGovernor::register_maintainer`].
@@ -349,6 +350,9 @@ impl WorkloadGovernor {
     /// * `contributor` – Contributor being assigned.
     /// * `org_id`      – Organisation the issue belongs to.
     /// * `issue_id`    – Numeric issue identifier.
+    /// * `deadline`    – Optional ledger sequence number by which the work must be
+    ///                   completed. Must be strictly greater than the current ledger.
+    ///                   Pass `None` for no deadline.
     ///
     /// # Returns
     /// `()` on success.
@@ -359,6 +363,7 @@ impl WorkloadGovernor {
     /// * [`ContractError::ApplicationNotFound`]     — contributor has no pending application for the issue.
     /// * [`ContractError::OrgAssignmentLimitReached`] — contributor already has 4 active assignments in `org_id`.
     /// * [`ContractError::AlreadyAssigned`]         — this issue already has an active assignment for the contributor.
+    /// * [`ContractError::DeadlineInPast`]          — `deadline` is ≤ the current ledger sequence.
     ///
     /// # Examples
     /// ```text
@@ -367,7 +372,7 @@ impl WorkloadGovernor {
     ///   -- assign_issue \
     ///   --maintainer <MAINTAINER_ADDRESS> \
     ///   --contributor <CONTRIBUTOR_ADDRESS> \
-    ///   --org_id my_org --issue_id 42
+    ///   --org_id my_org --issue_id 42 --deadline null
     /// ```
     pub fn assign_issue(
         env: Env,
@@ -375,6 +380,7 @@ impl WorkloadGovernor {
         contributor: Address,
         org_id: Symbol,
         issue_id: u32,
+        deadline: Option<u32>,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
@@ -391,6 +397,12 @@ impl WorkloadGovernor {
         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
             panic_with_error!(env, ContractError::AlreadyAssigned);
         }
+        // Validate deadline: if provided, it must be strictly in the future.
+        if let Some(dl) = deadline {
+            if dl <= env.ledger().sequence() {
+                panic_with_error!(env, ContractError::DeadlineInPast);
+            }
+        }
         // Transition: consume the application, create the assignment
         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
         let app_count = storage::get_global_app_count(&env, &contributor);
@@ -402,6 +414,11 @@ impl WorkloadGovernor {
         }
         storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
         storage::set_assignment(&env, &org_id, issue_id, &contributor);
+        // Persist deadline if provided.
+        if let Some(dl) = deadline {
+            storage::set_assignment_deadline(&env, &org_id, issue_id, &contributor, dl);
+            events::emit_deadline_set(&env, &contributor, &org_id, issue_id, dl);
+        }
         // Debug assertion: counter and sentinel must agree immediately after write.
         #[cfg(debug_assertions)]
         {
@@ -461,6 +478,8 @@ impl WorkloadGovernor {
             }
         }
         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
+        // Clean up any associated deadline entry.
+        storage::remove_assignment_deadline(&env, &org_id, issue_id, &contributor);
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
         let new_count = asgn_count.saturating_sub(1);
         if new_count == 0 {
@@ -471,8 +490,6 @@ impl WorkloadGovernor {
         storage::bump_instance(&env);
         events::emit_assignment_completed(&env, &maintainer, &contributor, &org_id, issue_id);
     }
-
-    /// Cancels an active assignment and frees the assignment slot (maintainer-only).
     ///
     /// Semantically identical to [`WorkloadGovernor::complete_assignment`] except the emitted
     /// event is `assignment_revoked` rather than `assignment_completed`. Use this when a
@@ -509,12 +526,20 @@ impl WorkloadGovernor {
         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {
             panic_with_error!(env, ContractError::AssignmentNotFound);
         }
-        storage::remove_assignment(&env, &org_id, issue_id, &contributor);
-        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        if asgn_count == 0 {
-            panic_with_error!(env, ContractError::CounterInconsistency);
+        // Debug assertion: assignment exists so counter must be ≥ 1.
+        // A counter of 0 here indicates storage corruption (CounterInconsistency).
+        #[cfg(debug_assertions)]
+        {
+            let counter = storage::get_org_assignment_count(&env, &contributor, &org_id);
+            if counter == 0 {
+                panic_with_error!(env, ContractError::CounterInconsistency);
+            }
         }
-        let new_count = asgn_count - 1;
+        storage::remove_assignment(&env, &org_id, issue_id, &contributor);
+        // Clean up any associated deadline entry.
+        storage::remove_assignment_deadline(&env, &org_id, issue_id, &contributor);
+        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        let new_count = asgn_count.saturating_sub(1);
         if new_count == 0 {
             storage::remove_org_assignment_count(&env, &contributor, &org_id);
         } else {
@@ -882,6 +907,112 @@ impl WorkloadGovernor {
     pub fn is_global_app_limit_reached(env: Env, contributor: Address) -> bool {
         let count = storage::get_global_app_count(&env, &contributor);
         count >= storage::get_global_cap(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Deadline management  (Issue #604)
+    // -----------------------------------------------------------------------
+
+    /// Returns the deadline ledger number for an active assignment, or `None` if no
+    /// deadline was set when the assignment was created.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Arguments
+    /// * `org_id`      – Organisation the issue belongs to.
+    /// * `issue_id`    – Numeric issue identifier.
+    /// * `contributor` – Contributor address.
+    ///
+    /// # Returns
+    /// `Some(ledger)` if a deadline exists, `None` otherwise.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- get_assignment_deadline \
+    ///   --org_id my_org --issue_id 42 \
+    ///   --contributor <CONTRIBUTOR_ADDRESS>
+    /// ```
+    pub fn get_assignment_deadline(
+        env: Env,
+        org_id: Symbol,
+        issue_id: u32,
+        contributor: Address,
+    ) -> Option<u32> {
+        storage::get_assignment_deadline(&env, &org_id, issue_id, &contributor)
+    }
+
+    /// Expires an assignment whose deadline has passed (maintainer-only).
+    ///
+    /// The assignment must have a deadline set and the current ledger sequence must
+    /// be strictly greater than the stored deadline. Semantically equivalent to
+    /// `revoke_assignment` in terms of storage mutations but emits an `expired` event
+    /// so that monitors can distinguish deadline-driven expiries from manual revocations.
+    ///
+    /// # Who can call
+    /// A maintainer registered for `org_id`.
+    ///
+    /// # Arguments
+    /// * `maintainer`  – Registered maintainer address (auth enforced).
+    /// * `contributor` – Contributor whose assignment is being expired.
+    /// * `org_id`      – Organisation the issue belongs to.
+    /// * `issue_id`    – Numeric issue identifier.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
+    /// * [`ContractError::UnauthorizedMaintainer`] — caller is not registered for `org_id`.
+    /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists.
+    /// * [`ContractError::NoDeadlineSet`]          — the assignment has no deadline.
+    /// * [`ContractError::DeadlineNotPassed`]      — the deadline has not yet been reached.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <maintainer-account> \
+    ///   -- expire_assignment \
+    ///   --maintainer <MAINTAINER_ADDRESS> \
+    ///   --contributor <CONTRIBUTOR_ADDRESS> \
+    ///   --org_id my_org --issue_id 42
+    /// ```
+    pub fn expire_assignment(
+        env: Env,
+        maintainer: Address,
+        contributor: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        maintainer.require_auth();
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+        }
+        if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {
+            panic_with_error!(env, ContractError::AssignmentNotFound);
+        }
+        let deadline = match storage::get_assignment_deadline(&env, &org_id, issue_id, &contributor) {
+            Some(dl) => dl,
+            None => panic_with_error!(env, ContractError::NoDeadlineSet),
+        };
+        if env.ledger().sequence() <= deadline {
+            panic_with_error!(env, ContractError::DeadlineNotPassed);
+        }
+        // Remove the assignment, deadline entry, and decrement counter.
+        storage::remove_assignment(&env, &org_id, issue_id, &contributor);
+        storage::remove_assignment_deadline(&env, &org_id, issue_id, &contributor);
+        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        let new_count = asgn_count.saturating_sub(1);
+        if new_count == 0 {
+            storage::remove_org_assignment_count(&env, &contributor, &org_id);
+        } else {
+            storage::set_org_assignment_count(&env, &contributor, &org_id, new_count);
+        }
+        storage::bump_instance(&env);
+        events::emit_assignment_expired(&env, &maintainer, &contributor, &org_id, issue_id);
     }
 
     /// TEST-ONLY: directly seeds an assignment entry to make `AlreadyAssigned` reachable.

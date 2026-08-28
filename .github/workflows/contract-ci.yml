@@ -184,3 +184,71 @@ jobs:
           path: fuzz/artifacts/
           if-no-files-found: ignore
           retention-days: 30
+
+  # ── 6. Dependency Audit (cargo audit + cargo deny) ───────────────────────
+  #
+  # Closes issue #605: supply-chain audit before mainnet deployment.
+  # Runs on every PR and push to main (not on the nightly fuzz schedule).
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo audit
+        run: |
+          echo "## 🔒 Dependency Vulnerability Audit" >> "$GITHUB_STEP_SUMMARY"
+          if cargo audit --json 2>&1 | tee audit-output.json; then
+            echo "✅ No vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ Vulnerabilities detected — see audit-output.json" >> "$GITHUB_STEP_SUMMARY"
+            cat audit-output.json
+            exit 1
+          fi
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-report-${{ github.run_id }}
+          path: audit-output.json
+          retention-days: 30
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Run cargo deny check
+        run: |
+          echo "## 🔍 License & Duplicate Dependency Check" >> "$GITHUB_STEP_SUMMARY"
+          if cargo deny check 2>&1 | tee deny-output.txt; then
+            echo "✅ All license and duplicate checks passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ cargo deny found issues — see deny-output.txt" >> "$GITHUB_STEP_SUMMARY"
+            cat deny-output.txt
+            exit 1
+          fi
+
+      - name: Upload deny report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-deny-report-${{ github.run_id }}
+          path: deny-output.txt
+          retention-days: 30
