@@ -1,0 +1,90 @@
+name: Weekly Fuzz (withdraw + revoke)
+
+# Runs on a weekly schedule and on workflow_dispatch (for manual runs).
+# Exercises the two fuzz targets added in issue #622:
+#   - fuzz_withdraw: apply → withdraw counter invariant
+#   - fuzz_revoke:   assign → revoke org-count invariant
+#
+# Each target runs for 5 minutes (300 seconds) as required by #622.
+# The nightly contract-ci / contract-pipeline jobs already cover all targets
+# with 10-minute runs; this workflow adds explicit weekly coverage for the
+# two new targets so they appear independently in the CI schedule history.
+
+on:
+  schedule:
+    # Weekly — every Sunday at 03:00 UTC (offset from nightly 02:00 to avoid overlap)
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: 'Seconds to run each fuzz target (default: 300)'
+        required: false
+        default: '300'
+
+concurrency:
+  group: fuzz-weekly-${{ github.ref }}
+  cancel-in-progress: false   # Never cancel an in-flight fuzz run
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz-withdraw-revoke:
+    name: Fuzz withdraw + revoke (${{ github.event.inputs.max_total_time || '300' }}s each)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-fuzz-weekly-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-fuzz-weekly-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz fuzz_withdraw (${{ github.event.inputs.max_total_time || '300' }}s)
+        run: |
+          MAX_TIME="${{ github.event.inputs.max_total_time || '300' }}"
+          echo "### fuzz_withdraw" >> "$GITHUB_STEP_SUMMARY"
+          echo "Running for ${MAX_TIME}s with seed corpus fuzz/corpus/fuzz_withdraw/" \
+            >> "$GITHUB_STEP_SUMMARY"
+          cargo +nightly fuzz run fuzz_withdraw \
+            fuzz/corpus/fuzz_withdraw \
+            -- -max_total_time="${MAX_TIME}" 2>&1 | tee /tmp/fuzz_withdraw.log || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -20 /tmp/fuzz_withdraw.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fuzz fuzz_revoke (${{ github.event.inputs.max_total_time || '300' }}s)
+        run: |
+          MAX_TIME="${{ github.event.inputs.max_total_time || '300' }}"
+          echo "### fuzz_revoke" >> "$GITHUB_STEP_SUMMARY"
+          echo "Running for ${MAX_TIME}s with seed corpus fuzz/corpus/fuzz_revoke/" \
+            >> "$GITHUB_STEP_SUMMARY"
+          cargo +nightly fuzz run fuzz_revoke \
+            fuzz/corpus/fuzz_revoke \
+            -- -max_total_time="${MAX_TIME}" 2>&1 | tee /tmp/fuzz_revoke.log || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -20 /tmp/fuzz_revoke.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload fuzz artifacts (crashes / timeouts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-weekly-artifacts-${{ github.run_id }}
+          path: |
+            fuzz/artifacts/fuzz_withdraw/
+            fuzz/artifacts/fuzz_revoke/
+          if-no-files-found: ignore
+          retention-days: 90

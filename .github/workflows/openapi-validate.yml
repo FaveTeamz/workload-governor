@@ -1,0 +1,109 @@
+name: OpenAPI Contract Validation
+
+on:
+  pull_request:
+    paths:
+      - 'src/routes/**'
+      - 'openapi.yaml'
+      - 'dredd-hooks.js'
+
+jobs:
+  validate-api:
+    name: Validate OpenAPI spec against live server
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@localhost:5432/testdb
+      REDIS_URL: redis://localhost:6379
+      PORT: 3001
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Create orgs table for test server
+        run: |
+          PGPASSWORD=test psql -h localhost -U test -d testdb -c "
+            CREATE TABLE IF NOT EXISTS orgs (
+              org_id TEXT PRIMARY KEY,
+              contract_address TEXT NOT NULL,
+              created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            INSERT INTO orgs (org_id, contract_address)
+            VALUES ('org_stellar_001', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM')
+            ON CONFLICT DO NOTHING;
+
+            CREATE TABLE IF NOT EXISTS events (
+              event_id SERIAL PRIMARY KEY,
+              org_id TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              issue_id TEXT NOT NULL,
+              contributor TEXT NOT NULL,
+              tx_hash TEXT NOT NULL,
+              occurred_at TIMESTAMPTZ NOT NULL
+            );
+          "
+
+      - name: Start API server in background
+        run: |
+          node dist/index.js &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for API server to be ready
+        run: |
+          echo "Waiting for server on port 3001..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+              echo "Server is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server did not become ready in 30s"
+          exit 1
+
+      - name: Run Dredd OpenAPI contract validation
+        run: npm run validate:api
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill "$SERVER_PID" || true
+          fi

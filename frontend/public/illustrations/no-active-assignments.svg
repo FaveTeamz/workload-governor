@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 160" fill="none">
+  <!-- Task board outer -->
+  <rect x="44" y="32" width="112" height="96" rx="8" stroke="currentColor" stroke-width="2.5" fill="none"/>
+  <!-- Header bar -->
+  <rect x="44" y="32" width="112" height="22" rx="8" stroke="currentColor" stroke-width="2.5" fill="currentColor" fill-opacity="0.08"/>
+  <!-- Three dots in header -->
+  <circle cx="60" cy="43" r="2.5" fill="currentColor" opacity="0.5"/>
+  <circle cx="68" cy="43" r="2.5" fill="currentColor" opacity="0.5"/>
+  <circle cx="76" cy="43" r="2.5" fill="currentColor" opacity="0.5"/>
+  <!-- Empty task rows with dashed borders -->
+  <rect x="58" y="68" width="84" height="12" rx="3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="0.45"/>
+  <rect x="58" y="86" width="84" height="12" rx="3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="0.35"/>
+  <rect x="58" y="104" width="84" height="12" rx="3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="0.25"/>
+  <!-- Pencil icon (bottom-right) -->
+  <rect x="140" y="110" width="20" height="8" rx="2" transform="rotate(-45 140 110)" stroke="currentColor" stroke-width="2" fill="none"/>
+  <line x1="152" y1="98" x2="156" y2="102" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M138 120 l-3 5 5-3z" fill="currentColor" opacity="0.7"/>
+</svg>
