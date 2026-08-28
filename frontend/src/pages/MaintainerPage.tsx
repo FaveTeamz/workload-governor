@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import { useWallet } from "../hooks/useWallet";
 import { useContract, type ContractRow } from "../hooks/useContract";
 import { useMaintainerCheck } from "../hooks/useMaintainerCheck";
+import { useBreadcrumbs } from "../hooks/useBreadcrumbs";
+import { Breadcrumb } from "../components/Breadcrumb";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
 
@@ -128,6 +130,8 @@ export function MaintainerPage() {
     }
   }
 
+  const breadcrumbs = useBreadcrumbs({ orgName: org_id });
+
   if (!authorized) return null; // useMaintainerCheck handles redirect
 
   const appSlice = applications.slice((appPage - 1) * PAGE_SIZE, appPage * PAGE_SIZE);
@@ -135,6 +139,7 @@ export function MaintainerPage() {
 
   return (
     <main className="maintainer-page" id="main-content" tabIndex={-1}>
+      <Breadcrumb items={breadcrumbs} />
       <h1 className="maintainer-page__title">Maintainer — <code>{org_id}</code></h1>
 
       {error && (

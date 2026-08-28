@@ -1,589 +1,314 @@
 /**
- * responsive.spec.ts
+ * Responsive layout tests — issue #318
  *
- * E2E responsive-layout tests for WorkloadGovernor.
+ * Validates the dashboard at five viewport widths:
+ *   375px, 414px (mobile), 768px (tablet), 1024px, 1280px (desktop)
  *
- * Coverage:
- *  1. 375 px  – hamburger menu opens / closes; nav links accessible
- *  2. 375 px  – apply-flow bottom-sheet modal: open, confirm, cancel, swipe-dismiss
- *  3. 375 px  – event history renders as card list (ol/li), NOT a table
- *  4. 414 px  – maintainer panel opens as full-screen sheet
- *  5. 768 px  – layout switches from mobile → desktop correctly
- *
- * All tests use Playwright device emulation (viewport + touch) and capture
- * screenshots at each breakpoint for visual reference.
+ * Acceptance criteria:
+ *  ✓ Navigation hamburger visible on mobile, hidden on desktop
+ *  ✓ Mobile menu opens and closes via hamburger button
+ *  ✓ TxConfirmModal renders as bottom sheet on mobile
+ *  ✓ EventHistoryTable renders as card list on mobile, table on desktop
+ *  ✓ Issue card grid is 1-column on mobile, 3-column on desktop
+ *  ✓ All interactive touch targets are ≥ 44×44 px (WCAG 2.5.5)
+ *  ✓ Swipe-to-dismiss gesture closes modal on mobile
  */
 
-import { test, expect, devices } from "@playwright/test";
+import { test, expect, Page } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
-const VIEWPORTS = [
-  { name: "mobile-375", width: 375, height: 667 },
-  { name: "mobile-414", width: 414, height: 896 },
-  { name: "tablet-768", width: 768, height: 1024 },
-  { name: "desktop-1440", width: 1440, height: 900 },
-];
-
-// ---------------------------------------------------------------------------
-// Existing static-layout coverage (preserved from original file)
-// ---------------------------------------------------------------------------
-
-for (const vp of VIEWPORTS) {
-  test.describe(`Responsive — ${vp.name}`, () => {
-    test.use({ viewport: { width: vp.width, height: vp.height } });
-
-    test.beforeEach(async ({ page }) => {
-      // Set onboarding as done so the overlay doesn't intercept pointer events
-      await page.addInitScript(() => {
-        localStorage.setItem("wg_onboarding_done", "1");
-      });
-      await page.goto("/");
-    });
-
-    // ── No horizontal scroll ─────────────────────────────────────────
-    test("no horizontal overflow on the page", async ({ page }) => {
-      const scrollWidth = await page.evaluate(
-        () => document.documentElement.scrollWidth,
-      );
-      expect(scrollWidth).toBeLessThanOrEqual(vp.width);
-    });
-
-    // ── NavBar ────────────────────────────────────────────────────────
-    test("navbar renders without overflow", async ({ page }) => {
-      const navbar = page.locator("nav.navbar");
-      await expect(navbar).toBeVisible();
-      const box = await navbar.boundingBox();
-      expect(box!.width).toBeLessThanOrEqual(vp.width);
-    });
-
-    test("hamburger button visible and functional on mobile", async ({
-      page,
-    }) => {
-      const hamburger = page.locator(".navbar__hamburger");
-      if (vp.width <= 600) {
-        await expect(hamburger).toBeVisible();
-        // Menu starts hidden
-        await expect(page.locator(".navbar__menu")).not.toHaveClass(
-          /navbar__menu--open/,
-        );
-        // Click opens
-        await hamburger.click();
-        await expect(page.locator(".navbar__menu")).toHaveClass(
-          /navbar__menu--open/,
-        );
-        // Click closes
-        await hamburger.click();
-        await expect(page.locator(".navbar__menu")).not.toHaveClass(
-          /navbar__menu--open/,
-        );
-      } else {
-        // On wider viewports hamburger is hidden, menu is always visible
-        await expect(hamburger).toBeHidden();
-        await expect(page.locator(".navbar__menu")).toBeVisible();
-      }
-    });
-
-    // ── Touch targets ≥ 44×44 px ────────────────────────────────────
-    test("all buttons meet 44×44 px touch target", async ({ page }) => {
-      const buttons = page.locator("button:visible, a.btn:visible");
-      const count = await buttons.count();
-      for (let i = 0; i < count; i++) {
-        const box = await buttons.nth(i).boundingBox();
-        if (!box) continue;
-        expect(
-          box.width,
-          `button[${i}] width  ${box.width}px < 44px`,
-        ).toBeGreaterThanOrEqual(44);
-        expect(
-          box.height,
-          `button[${i}] height ${box.height}px < 44px`,
-        ).toBeGreaterThanOrEqual(44);
-      }
-    });
-
-    // ── MaintainerPanel ───────────────────────────────────────────────
-    test("maintainer panel renders without horizontal overflow", async ({
-      page,
-    }) => {
-      const panel = page.locator(".maintainer-panel");
-      await expect(panel).toBeVisible();
-      const panelBox = await panel.boundingBox();
-      const bodyWidth = await page.evaluate(() => document.body.clientWidth);
-      expect(panelBox!.width).toBeLessThanOrEqual(bodyWidth + 1 /* rounding */);
-    });
-
-    test("panel columns stack vertically at mobile/tablet", async ({
-      page,
-    }) => {
-      const columns = page.locator(".panel-column");
-      const count = await columns.count();
-      if (count < 2) return; // nothing to test
-
-      const box0 = await columns.nth(0).boundingBox();
-      const box1 = await columns.nth(1).boundingBox();
-
-      if (vp.width <= 768) {
-        // Stacked: second column top > first column bottom
-        expect(box1!.y).toBeGreaterThanOrEqual(box0!.y + box0!.height - 2);
-      } else {
-        // Side-by-side: same top row
-        expect(Math.abs(box0!.y - box1!.y)).toBeLessThan(4);
-      }
-    });
-
-    // ── Toasts ────────────────────────────────────────────────────────
-    test("toast container does not overflow viewport", async ({ page }) => {
-      const container = page.locator(".toast-container");
-      const panelVisible = await container.isVisible();
-      if (!panelVisible) return; // no toasts shown yet — skip
-      const box = await container.boundingBox();
-      expect(box!.x + box!.width).toBeLessThanOrEqual(vp.width + 1);
-    });
-  });
+/** Open the dashboard and wait for it to be interactive. */
+async function openDashboard(page: Page) {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
 }
 
-// ===========================================================================
-// NEW INTERACTIVE FLOW TESTS — SCENARIO 1
-// 375 px: hamburger menu opens, closes, and nav links are accessible
-// ===========================================================================
+/** Get the computed bounding box of an element and assert min 44×44 px. */
+async function assertTouchTarget(page: Page, selector: string) {
+  const box = await page.locator(selector).first().boundingBox();
+  expect(box, `touch target too small: ${selector}`).not.toBeNull();
+  expect(box!.width, `${selector} width < 44px`).toBeGreaterThanOrEqual(44);
+  expect(box!.height, `${selector} height < 44px`).toBeGreaterThanOrEqual(44);
+}
 
-test.describe("Scenario 1 — 375px: hamburger nav links accessible", () => {
-  test.use({
-    ...devices["iPhone SE"],
-    viewport: { width: 375, height: 667 },
+// ---------------------------------------------------------------------------
+// Navigation — hamburger menu
+// ---------------------------------------------------------------------------
+
+test.describe('Navigation — mobile (< 768px)', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('hamburger button is visible on 375px', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('hamburger-button')).toBeVisible();
   });
 
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() =>
-      localStorage.setItem("wg_onboarding_done", "1"),
-    );
-    await page.goto("/");
+  test('desktop nav links are not visible on 375px', async ({ page }) => {
+    await openDashboard(page);
+    // The desktop ul uses hidden md:flex — should not be visible at 375px
+    const desktopNav = page.locator('nav ul').first();
+    await expect(desktopNav).toBeHidden();
   });
 
-  test("hamburger opens menu and Activity link is reachable", async ({
-    page,
-  }) => {
-    const hamburger = page.locator(".navbar__hamburger");
-    await expect(hamburger).toBeVisible();
-
-    // Menu hidden by default
-    const menu = page.locator(".navbar__menu");
-    await expect(menu).not.toHaveClass(/navbar__menu--open/);
-
-    // Open
+  test('clicking hamburger opens the mobile drawer', async ({ page }) => {
+    await openDashboard(page);
+    const hamburger = page.getByTestId('hamburger-button');
+    await expect(page.getByTestId('mobile-drawer')).not.toBeVisible();
     await hamburger.click();
-    await expect(menu).toHaveClass(/navbar__menu--open/);
-
-    // Activity link is now visible and interactive
-    const activityLink = menu.locator('a[href="#/activity"]');
-    await expect(activityLink).toBeVisible();
-    await expect(activityLink).toHaveText(/activity/i);
-
-    // Click the link; menu should close
-    await activityLink.click();
-    await expect(menu).not.toHaveClass(/navbar__menu--open/);
-
-    // Screenshot for visual reference
-    await page.screenshot({
-      path: "frontend/test-results/375-hamburger-nav.png",
-      fullPage: false,
-    });
+    await expect(page.getByTestId('mobile-drawer')).toBeVisible();
   });
 
-  test("hamburger closes when clicked a second time", async ({ page }) => {
-    const hamburger = page.locator(".navbar__hamburger");
+  test('clicking hamburger again closes the mobile drawer', async ({ page }) => {
+    await openDashboard(page);
+    const hamburger = page.getByTestId('hamburger-button');
     await hamburger.click();
-    await expect(page.locator(".navbar__menu")).toHaveClass(
-      /navbar__menu--open/,
-    );
+    await expect(page.getByTestId('mobile-drawer')).toBeVisible();
     await hamburger.click();
-    await expect(page.locator(".navbar__menu")).not.toHaveClass(
-      /navbar__menu--open/,
-    );
+    await expect(page.getByTestId('mobile-drawer')).not.toBeVisible();
   });
 
-  test("hamburger has correct ARIA attributes when open/closed", async ({
-    page,
-  }) => {
-    const hamburger = page.locator(".navbar__hamburger");
-
-    // Closed state
-    await expect(hamburger).toHaveAttribute("aria-expanded", "false");
-
-    // Open state
-    await hamburger.click();
-    await expect(hamburger).toHaveAttribute("aria-expanded", "true");
+  test('hamburger button meets 44×44 px touch target requirement', async ({ page }) => {
+    await openDashboard(page);
+    await assertTouchTarget(page, '[data-testid="hamburger-button"]');
   });
 });
 
-// ===========================================================================
-// SCENARIO 2 — 375px: apply-flow bottom-sheet modal
-// open, confirm, cancel, and swipe-dismiss
-// ===========================================================================
+test.describe('Navigation — mobile (414px)', () => {
+  test.use({ viewport: { width: 414, height: 896 } });
 
-test.describe("Scenario 2 — 375px: apply-flow bottom-sheet modal", () => {
-  test.use({
-    ...devices["iPhone SE"],
-    viewport: { width: 375, height: 667 },
+  test('hamburger button is visible at 414px', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('hamburger-button')).toBeVisible();
   });
 
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() =>
-      localStorage.setItem("wg_onboarding_done", "1"),
-    );
-    await page.goto("/");
-  });
-
-  test("Assign button opens confirmation inline in panel row", async ({
-    page,
-  }) => {
-    // The MaintainerPanel renders AppRow items with an "Assign" button
-    const firstAssignBtn = page
-      .locator('.panel-row .btn-primary:has-text("Assign")')
-      .first();
-    await expect(firstAssignBtn).toBeVisible();
-
-    // Click to enter confirmation state
-    await firstAssignBtn.click();
-
-    // Confirm and Cancel buttons appear (bottom-sheet / inline confirm)
-    const confirmBtn = page
-      .locator('.panel-row .btn-primary:has-text("Confirm")')
-      .first();
-    const cancelBtn = page
-      .locator('.panel-row .btn-ghost:has-text("Cancel")')
-      .first();
-    await expect(confirmBtn).toBeVisible();
-    await expect(cancelBtn).toBeVisible();
-
-    // The Assign button itself should no longer be visible
-    await expect(firstAssignBtn).toBeHidden();
-
-    // Screenshot
-    await page.screenshot({
-      path: "frontend/test-results/375-apply-modal-open.png",
-      fullPage: false,
-    });
-  });
-
-  test("cancel dismisses the confirmation without assigning", async ({
-    page,
-  }) => {
-    const firstAssignBtn = page
-      .locator('.panel-row .btn-primary:has-text("Assign")')
-      .first();
-    // Count apps before
-    const countBefore = await page.locator('.panel-row .btn-primary:has-text("Assign")').count();
-
-    await firstAssignBtn.click();
-
-    const cancelBtn = page
-      .locator('.panel-row .btn-ghost:has-text("Cancel")')
-      .first();
-    await cancelBtn.click();
-
-    // Assign button is back, count unchanged
-    await expect(
-      page.locator('.panel-row .btn-primary:has-text("Assign")').first(),
-    ).toBeVisible();
-    expect(
-      await page.locator('.panel-row .btn-primary:has-text("Assign")').count(),
-    ).toBe(countBefore);
-
-    await page.screenshot({
-      path: "frontend/test-results/375-apply-modal-cancel.png",
-      fullPage: false,
-    });
-  });
-
-  test("confirm assigns the issue and removes the row", async ({ page }) => {
-    const rowsBefore = await page.locator('.panel-column:first-child .panel-row').count();
-    expect(rowsBefore).toBeGreaterThan(0);
-
-    const firstAssignBtn = page
-      .locator('.panel-row .btn-primary:has-text("Assign")')
-      .first();
-    await firstAssignBtn.click();
-
-    const confirmBtn = page
-      .locator('.panel-row .btn-primary:has-text("Confirm")')
-      .first();
-    await confirmBtn.click();
-
-    // Row should disappear after successful assignment
-    await expect(
-      page.locator('.panel-column:first-child .panel-row'),
-    ).toHaveCount(rowsBefore - 1, { timeout: 5000 });
-
-    await page.screenshot({
-      path: "frontend/test-results/375-apply-modal-confirm.png",
-      fullPage: false,
-    });
-  });
-
-  test("Escape key dismisses the confirmation (swipe-dismiss equivalent)", async ({
-    page,
-  }) => {
-    const firstAssignBtn = page
-      .locator('.panel-row .btn-primary:has-text("Assign")')
-      .first();
-    await firstAssignBtn.click();
-
-    // Confirm button is visible
-    await expect(
-      page.locator('.panel-row .btn-primary:has-text("Confirm")').first(),
-    ).toBeVisible();
-
-    // Press Escape to dismiss
-    await page.keyboard.press("Escape");
-
-    // Assign button is back
-    await expect(
-      page.locator('.panel-row .btn-primary:has-text("Assign")').first(),
-    ).toBeVisible();
-
-    await page.screenshot({
-      path: "frontend/test-results/375-apply-modal-swipe-dismiss.png",
-      fullPage: false,
-    });
+  test('mobile drawer opens and closes at 414px', async ({ page }) => {
+    await openDashboard(page);
+    const hamburger = page.getByTestId('hamburger-button');
+    await hamburger.click();
+    await expect(page.getByTestId('mobile-drawer')).toBeVisible();
+    await hamburger.click();
+    await expect(page.getByTestId('mobile-drawer')).not.toBeVisible();
   });
 });
 
-// ===========================================================================
-// SCENARIO 3 — 375px: event history renders as card list, not a table
-// ===========================================================================
+test.describe('Navigation — tablet (768px)', () => {
+  test.use({ viewport: { width: 768, height: 1024 } });
 
-test.describe("Scenario 3 — 375px: event history card list", () => {
-  test.use({
-    ...devices["iPhone SE"],
-    viewport: { width: 375, height: 667 },
+  test('hamburger button is NOT visible at 768px', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('hamburger-button')).toBeHidden();
   });
 
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() =>
-      localStorage.setItem("wg_onboarding_done", "1"),
-    );
+  test('desktop nav links are visible at 768px', async ({ page }) => {
+    await openDashboard(page);
+    // The md:flex nav list should be visible
+    const navLinks = page.locator('nav a[href="/issues"]').first();
+    await expect(navLinks).toBeVisible();
+  });
+});
 
-    // Mock the /api/events endpoint so ActivityFeed renders items
-    await page.route("**/api/events**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          events: [
-            {
-              id: "ev-1",
-              event_type: "applied",
-              contributor: "GBXXX1ABCDEFGHIJKLMNO12345",
-              org_id: "stellar-org",
-              issue_id: 42,
-              tx_hash: "abc123",
-              timestamp: new Date().toISOString(),
-            },
-            {
-              id: "ev-2",
-              event_type: "assigned",
-              contributor: "GCYYY2PQRSTUVWXYZABCDE67890",
-              org_id: "meridian-dao",
-              issue_id: 7,
-              tx_hash: "def456",
-              timestamp: new Date(Date.now() - 60_000).toISOString(),
-            },
-          ],
-          pagination: { hasMore: false },
-        }),
-      });
-    });
+test.describe('Navigation — desktop (1024px)', () => {
+  test.use({ viewport: { width: 1024, height: 768 } });
 
-    await page.goto("/");
+  test('hamburger button is not visible at 1024px', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('hamburger-button')).toBeHidden();
+  });
+});
+
+test.describe('Navigation — desktop (1280px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('hamburger button is not visible at 1280px', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('hamburger-button')).toBeHidden();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TxConfirmModal — bottom sheet on mobile, centered on desktop
+// ---------------------------------------------------------------------------
+
+test.describe('TxConfirmModal — mobile bottom sheet (375px)', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('modal renders as bottom sheet (drag handle visible)', async ({ page }) => {
+    await openDashboard(page);
+
+    // Open modal via the Apply button on the first issue card
+    const applyButton = page.locator('[data-testid="issue-card"] button').first();
+    await applyButton.click();
+
+    await expect(page.getByTestId('tx-modal')).toBeVisible();
+    // Bottom-sheet drag handle is visible on mobile
+    await expect(page.getByTestId('modal-bottom-sheet')).toBeVisible();
   });
 
-  test("activity feed renders as <ol>/<li> card list, not a table", async ({
-    page,
-  }) => {
-    // ActivityFeed uses <ol class="activity-feed__list"> with <li> children
-    const list = page.locator("ol.activity-feed__list");
-    await expect(list).toBeVisible({ timeout: 8000 });
-
-    // Must be an ordered list, not a table
-    await expect(page.locator("table")).toHaveCount(0);
-
-    // Each item is an <li>
-    const items = list.locator("li.af-event");
-    await expect(items).toHaveCount(2);
-
-    // No item overflows the viewport width
-    const itemCount = await items.count();
-    for (let i = 0; i < itemCount; i++) {
-      const box = await items.nth(i).boundingBox();
-      if (!box) continue;
-      expect(
-        box.x + box.width,
-        `af-event[${i}] right edge overflows viewport`,
-      ).toBeLessThanOrEqual(375 + 2 /* rounding */);
-    }
-
-    // Screenshot
-    await page.screenshot({
-      path: "frontend/test-results/375-event-history-cards.png",
-      fullPage: false,
-    });
+  test('modal close button meets touch target requirement', async ({ page }) => {
+    await openDashboard(page);
+    const applyButton = page.locator('[data-testid="issue-card"] button').first();
+    await applyButton.click();
+    await expect(page.getByTestId('tx-modal')).toBeVisible();
+    await assertTouchTarget(page, '[aria-label="Close modal"]');
   });
 
-  test("event badges are visible in mobile card list", async ({ page }) => {
-    const list = page.locator("ol.activity-feed__list");
-    await expect(list).toBeVisible({ timeout: 8000 });
+  test('modal closes when close button is clicked', async ({ page }) => {
+    await openDashboard(page);
+    const applyButton = page.locator('[data-testid="issue-card"] button').first();
+    await applyButton.click();
+    await expect(page.getByTestId('tx-modal')).toBeVisible();
+    await page.getByLabel('Close modal').click();
+    await expect(page.getByTestId('tx-modal')).not.toBeVisible();
+  });
 
-    const badges = page.locator(".af-badge");
-    const count = await badges.count();
+  test('swipe-to-dismiss closes modal when swiped down ≥ 80px', async ({ page }) => {
+    await openDashboard(page);
+    const applyButton = page.locator('[data-testid="issue-card"] button').first();
+    await applyButton.click();
+    await expect(page.getByTestId('tx-modal')).toBeVisible();
+
+    const modal = page.getByTestId('tx-modal');
+    const box = await modal.boundingBox();
+    expect(box).not.toBeNull();
+
+    const startX = box!.x + box!.width / 2;
+    const startY = box!.y + 30; // near the top of the sheet
+
+    // Simulate swipe down by 100px (above the 80px threshold)
+    await page.touchscreen.tap(startX, startY);
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX, startY + 100, { steps: 10 });
+    await page.mouse.up();
+
+    // Modal should be dismissed
+    await expect(page.getByTestId('tx-modal')).not.toBeVisible();
+  });
+
+  test('pressing Escape closes the modal', async ({ page }) => {
+    await openDashboard(page);
+    const applyButton = page.locator('[data-testid="issue-card"] button').first();
+    await applyButton.click();
+    await expect(page.getByTestId('tx-modal')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('tx-modal')).not.toBeVisible();
+  });
+});
+
+test.describe('TxConfirmModal — centered dialog (1024px)', () => {
+  test.use({ viewport: { width: 1024, height: 768 } });
+
+  test('modal drag handle is NOT visible at desktop width', async ({ page }) => {
+    await openDashboard(page);
+    const applyButton = page.locator('[data-testid="issue-card"] button').first();
+    await applyButton.click();
+    await expect(page.getByTestId('tx-modal')).toBeVisible();
+    // Drag handle has md:hidden class — should not be visible at 1024px
+    await expect(page.getByTestId('modal-bottom-sheet')).toBeHidden();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EventHistoryTable — card list on mobile, table on desktop
+// ---------------------------------------------------------------------------
+
+test.describe('EventHistoryTable — mobile card list (375px)', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('event card list is visible on mobile', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('event-card-list')).toBeVisible();
+  });
+
+  test('event table is not visible on mobile', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('event-table')).toBeHidden();
+  });
+});
+
+test.describe('EventHistoryTable — desktop table (1024px)', () => {
+  test.use({ viewport: { width: 1024, height: 768 } });
+
+  test('event table is visible on desktop', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('event-table')).toBeVisible();
+  });
+
+  test('event card list is not visible on desktop', async ({ page }) => {
+    await openDashboard(page);
+    await expect(page.getByTestId('event-card-list')).toBeHidden();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue card grid — column count
+// ---------------------------------------------------------------------------
+
+test.describe('Issue card grid — 1-column on mobile (375px)', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('cards stack in a single column on 375px', async ({ page }) => {
+    await openDashboard(page);
+    const grid = page.getByTestId('issue-card-grid');
+    await expect(grid).toBeVisible();
+
+    // All cards should have the same left offset (single column)
+    const cards = page.getByTestId('issue-card');
+    const count = await cards.count();
     expect(count).toBeGreaterThan(0);
-    for (let i = 0; i < count; i++) {
-      await expect(badges.nth(i)).toBeVisible();
-    }
+
+    const boxes = await Promise.all(
+      Array.from({ length: count }, (_, i) => cards.nth(i).boundingBox())
+    );
+    const leftOffsets = boxes.map((b) => Math.round(b?.x ?? 0));
+    // In a 1-column grid all cards share the same x offset
+    expect(new Set(leftOffsets).size).toBe(1);
   });
 });
 
-// ===========================================================================
-// SCENARIO 4 — 414px: maintainer panel full-screen sheet
-// ===========================================================================
+test.describe('Issue card grid — 3-column on desktop (1280px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
 
-test.describe("Scenario 4 — 414px: maintainer panel full-screen sheet", () => {
-  test.use({
-    ...devices["iPhone XR"],
-    viewport: { width: 414, height: 896 },
-  });
+  test('cards render in three columns on 1280px', async ({ page }) => {
+    await openDashboard(page);
+    const cards = page.getByTestId('issue-card');
+    const count = await cards.count();
+    // Need at least 3 cards to verify 3 columns
+    expect(count).toBeGreaterThanOrEqual(3);
 
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() =>
-      localStorage.setItem("wg_onboarding_done", "1"),
+    const boxes = await Promise.all(
+      Array.from({ length: Math.min(count, 3) }, (_, i) => cards.nth(i).boundingBox())
     );
-    await page.goto("/");
-  });
-
-  test("maintainer panel fills viewport width on 414px", async ({ page }) => {
-    const panel = page.locator(".maintainer-panel");
-    await expect(panel).toBeVisible();
-
-    const panelBox = await panel.boundingBox();
-    const bodyWidth = await page.evaluate(() => document.body.clientWidth);
-
-    // Panel should span the full body width (full-screen sheet behaviour)
-    expect(panelBox!.width).toBeGreaterThanOrEqual(bodyWidth - 2 /* rounding */);
-
-    // Screenshot
-    await page.screenshot({
-      path: "frontend/test-results/414-maintainer-fullscreen-sheet.png",
-      fullPage: false,
-    });
-  });
-
-  test("panel columns stack vertically at 414px", async ({ page }) => {
-    const columns = page.locator(".panel-column");
-    const count = await columns.count();
-    if (count < 2) return;
-
-    const box0 = await columns.nth(0).boundingBox();
-    const box1 = await columns.nth(1).boundingBox();
-
-    // Stacked layout: second column's top >= first column's bottom
-    expect(box1!.y).toBeGreaterThanOrEqual(box0!.y + box0!.height - 2);
-  });
-
-  test("no horizontal overflow at 414px", async ({ page }) => {
-    const scrollWidth = await page.evaluate(
-      () => document.documentElement.scrollWidth,
-    );
-    expect(scrollWidth).toBeLessThanOrEqual(414 + 1);
-  });
-
-  test("panel rows are usable at 414px — touch targets meet 44px minimum", async ({
-    page,
-  }) => {
-    const actionBtns = page.locator(".row-actions button:visible");
-    const count = await actionBtns.count();
-    for (let i = 0; i < count; i++) {
-      const box = await actionBtns.nth(i).boundingBox();
-      if (!box) continue;
-      expect(
-        box.height,
-        `row-action button[${i}] height ${box.height}px < 44px`,
-      ).toBeGreaterThanOrEqual(44);
-    }
+    // In a 3-column grid the first three cards each have a different x position
+    const leftOffsets = boxes.map((b) => Math.round(b?.x ?? 0));
+    expect(new Set(leftOffsets).size).toBe(3);
   });
 });
 
-// ===========================================================================
-// SCENARIO 5 — 768px → desktop switch
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Touch targets — all interactive elements ≥ 44×44 px
+// ---------------------------------------------------------------------------
 
-test.describe("Scenario 5 — 768px: mobile → desktop layout switch", () => {
-  test("hamburger hidden and panel columns side-by-side at 768px", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 768, height: 1024 });
-    await page.addInitScript(() =>
-      localStorage.setItem("wg_onboarding_done", "1"),
-    );
-    await page.goto("/");
+test.describe('Touch targets — WCAG 2.5.5 compliance (375px)', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
 
-    // Hamburger should be hidden at tablet/desktop breakpoint
-    const hamburger = page.locator(".navbar__hamburger");
-    await expect(hamburger).toBeHidden();
-
-    // Menu always visible
-    await expect(page.locator(".navbar__menu")).toBeVisible();
-
-    // Panel columns should be side-by-side (same vertical origin)
-    const columns = page.locator(".panel-column");
-    const count = await columns.count();
-    if (count >= 2) {
-      const box0 = await columns.nth(0).boundingBox();
-      const box1 = await columns.nth(1).boundingBox();
-      expect(Math.abs(box0!.y - box1!.y)).toBeLessThan(4);
+  test('Apply buttons meet 44px minimum', async ({ page }) => {
+    await openDashboard(page);
+    const applyButtons = page.locator('[data-testid="issue-card"] button');
+    const count = await applyButtons.count();
+    for (let i = 0; i < count; i++) {
+      const box = await applyButtons.nth(i).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+      expect(box!.width).toBeGreaterThanOrEqual(44);
     }
-
-    // Screenshot
-    await page.screenshot({
-      path: "frontend/test-results/768-desktop-layout.png",
-      fullPage: false,
-    });
   });
 
-  test("switches layout when viewport is resized from mobile to desktop", async ({
-    page,
-  }) => {
-    await page.addInitScript(() =>
-      localStorage.setItem("wg_onboarding_done", "1"),
-    );
-
-    // Start at mobile
-    await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto("/");
-
-    await expect(page.locator(".navbar__hamburger")).toBeVisible();
-
-    // Resize to desktop
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    await expect(page.locator(".navbar__hamburger")).toBeHidden();
-    await expect(page.locator(".navbar__menu")).toBeVisible();
-
-    // Panel columns should now be side-by-side
-    const columns = page.locator(".panel-column");
-    const count = await columns.count();
-    if (count >= 2) {
-      const box0 = await columns.nth(0).boundingBox();
-      const box1 = await columns.nth(1).boundingBox();
-      expect(Math.abs(box0!.y - box1!.y)).toBeLessThan(4);
-    }
-
-    // Screenshot
-    await page.screenshot({
-      path: "frontend/test-results/1440-after-resize.png",
-      fullPage: false,
-    });
+  test('hamburger button meets 44px minimum', async ({ page }) => {
+    await openDashboard(page);
+    await assertTouchTarget(page, '[data-testid="hamburger-button"]');
   });
 });

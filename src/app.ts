@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -9,8 +9,8 @@ import apiKeysRouter from './routes/api-keys';
 import transactionsRouter from './routes/transactions';
 import webhooksRouter from './routes/webhooks';
 import eventsRouter from './routes/events';
-import leaderboardRouter from './routes/leaderboard';
-import { globalLimiter, walletLimiter, leaderboardLimiter } from './middleware/rate-limit';
+import orgsRouter from './routes/orgs';
+import { globalLimiter, walletLimiter } from './middleware/rate-limit';
 import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
@@ -52,8 +52,16 @@ export function createApp(): express.Application {
   app.use('/api/api-keys', apiKeysRouter);
   app.use('/api/transactions', walletLimiter, transactionsRouter);
   app.use('/api/events', eventsRouter);
-  app.use('/api/leaderboard', leaderboardLimiter, leaderboardRouter);
+  app.use('/api', orgsRouter);
   app.use('/webhooks', webhooksRouter);
+
+  // Malformed JSON body — Express JSON parser raises SyntaxError with status 400
+  app.use((err: Error & { status?: number; type?: string }, _req: Request, res: Response, next: NextFunction) => {
+    if ((err instanceof SyntaxError && (err as Error & { status?: number }).status === 400) || err.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'malformed JSON body' });
+    }
+    next(err);
+  });
 
   app.use(errorHandler);
 

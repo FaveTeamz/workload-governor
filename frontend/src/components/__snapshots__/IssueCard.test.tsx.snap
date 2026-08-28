@@ -1,0 +1,96 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`IssueCard snapshot > matches snapshot for open status with labels and slots 1`] = `
+<article
+  aria-label="Issue: Fix memory leak in contract executor"
+  class="issue-card issue-card--open"
+>
+  <div
+    class="issue-card__header"
+  >
+    <span
+      class="issue-card__org"
+    >
+      stellar-org
+    </span>
+    <span
+      class="issue-card__number"
+    >
+      #
+      42
+    </span>
+    <time
+      aria-label="Posted 2 days ago"
+      class="issue-card__time"
+      datetime="2026-08-22T10:00:00.000Z"
+    >
+      2 days ago
+    </time>
+  </div>
+  <h3
+    class="issue-card__title"
+  >
+    Fix memory leak in contract executor
+  </h3>
+  <div
+    aria-label="Labels"
+    class="issue-card__labels"
+  >
+    <span
+      style="--label-color: #d73a4a;"
+    >
+      <span
+        class="badge badge--neutral"
+      >
+        bug
+      </span>
+    </span>
+    <span>
+      <span
+        class="badge badge--neutral"
+      >
+        enhancement
+      </span>
+    </span>
+  </div>
+  <div
+    aria-label="Capacity"
+    class="issue-card__slots"
+  >
+    <span
+      aria-label="Global slots: 3 of 15 used"
+      class="issue-card__slot"
+    >
+      3
+      /
+      15
+       global slots
+    </span>
+    <span
+      aria-label="Org slots: 1 of 4 used"
+      class="issue-card__slot"
+    >
+      1
+      /
+      4
+       org slots
+    </span>
+  </div>
+  <div
+    class="issue-card__actions"
+  >
+    <span
+      style="display: inline-block;"
+    >
+      <button
+        aria-disabled="false"
+        aria-label="Apply for issue: Fix memory leak in contract executor"
+        class="btn btn-primary btn-sm"
+        type="button"
+      >
+        Apply
+      </button>
+    </span>
+  </div>
+</article>
+`;
