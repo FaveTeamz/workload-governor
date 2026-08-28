@@ -1,113 +1,62 @@
-/**
- * EventHistoryTable stories — #647
- */
 import type { Meta, StoryObj } from "@storybook/react";
-import { MemoryRouter } from "react-router-dom";
-import { EventHistoryTable, type EventRow } from "../components/EventHistoryTable";
+import { EventHistoryTable } from "../components/EventHistoryTable";
+import type { ContractEvent } from "../components/EventHistoryTable";
+
+function makeEvent(overrides: Partial<ContractEvent> & { id: string }): ContractEvent {
+  return {
+    event_type: "application",
+    org_id: "stellar-org",
+    issue_id: "42",
+    timestamp: new Date().toISOString(),
+    tx_hash: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    contributor: "GBXXX1ABCDEFGHIJKLMNO12345",
+    ...overrides,
+  };
+}
+
+const SAMPLE_EVENTS: ContractEvent[] = [
+  makeEvent({ id: "1", event_type: "application", timestamp: "2026-06-20T10:00:00Z", issue_id: "42", org_id: "stellar-org", tx_hash: "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344" }),
+  makeEvent({ id: "2", event_type: "assignment",  timestamp: "2026-06-21T14:30:00Z", issue_id: "42", org_id: "stellar-org", tx_hash: "bbccddee22334455bbccddee22334455bbccddee22334455bbccddee22334455" }),
+  makeEvent({ id: "3", event_type: "completion",  timestamp: "2026-06-22T09:15:00Z", issue_id: "42", org_id: "stellar-org", tx_hash: "ccddeeff33445566ccddeeff33445566ccddeeff33445566ccddeeff33445566" }),
+  makeEvent({ id: "4", event_type: "revocation",  timestamp: "2026-06-23T17:45:00Z", issue_id: "99", org_id: "meridian-dao", tx_hash: "ddeeff0044556677ddeeff0044556677ddeeff0044556677ddeeff0044556677" }),
+  makeEvent({ id: "5", event_type: "application", timestamp: "2026-06-24T08:00:00Z", issue_id: "105", org_id: "stellar-org", tx_hash: "eeff001155667788eeff001155667788eeff001155667788eeff001155667788" }),
+];
 
 const meta: Meta<typeof EventHistoryTable> = {
-  title: "Data/EventHistoryTable",
+  title: "Components/EventHistoryTable",
   component: EventHistoryTable,
-  tags: ["autodocs"],
-  decorators: [
-    (Story) => (
-      <MemoryRouter>
-        <div style={{ background: "var(--color-bg)", padding: "24px" }}>
-          <Story />
-        </div>
-      </MemoryRouter>
-    ),
-  ],
   parameters: {
-    layout: "fullscreen",
+    docs: {
+      description: {
+        component:
+          "Paginated, sortable, filterable event history table. Client-side 25 rows/page. Copy-to-clipboard on tx hash.",
+      },
+    },
   },
 };
 export default meta;
 type Story = StoryObj<typeof EventHistoryTable>;
 
-// ─── Fixture helpers ──────────────────────────────────────────────────────────
-
-const ORGS = ["stellar-org", "meridian-dao", "soroban-labs", "horizon-db"];
-const CONTRIBUTORS = [
-  "GBXXX1ABCDEFGHIJKLMNO12345",
-  "GCYYY2PQRSTUVWXYZABCDE67890",
-  "GAZZZ3FGHIJKLMNOPQRST11111",
-  "GDWWW4LMNOPQRSTUVWXYZ22222",
-];
-const TYPES: EventRow["eventType"][] = [
-  "applied",
-  "withdrawn",
-  "assigned",
-  "completed",
-  "revoked",
-];
-
-function makeEvents(count: number): EventRow[] {
-  const now = Date.now();
-  return Array.from({ length: count }, (_, i) => ({
-    id: String(i + 1),
-    eventType: TYPES[i % TYPES.length],
-    org: ORGS[i % ORGS.length],
-    issueId: String(100 + i),
-    contributor: CONTRIBUTORS[i % CONTRIBUTORS.length],
-    timestamp: new Date(now - i * 3_600_000).toISOString(), // 1h apart
-  }));
-}
-
-// ─── Stories ─────────────────────────────────────────────────────────────────
-
-export const Default: Story = {
-  args: {
-    events: makeEvents(10),
-    caption: "Recent Events",
-  },
-};
-
-export const LargeDataset: Story = {
-  name: "Large Dataset (100 events)",
-  args: {
-    events: makeEvents(100),
-    caption: "Event History — 100 entries",
-  },
-};
-
-export const WithFiltersPreApplied: Story = {
-  name: "With Filters (assigned only)",
-  decorators: [
-    (Story) => (
-      <MemoryRouter initialEntries={["/?eventType=assigned"]}>
-        <div style={{ background: "var(--color-bg)", padding: "24px" }}>
-          <Story />
-        </div>
-      </MemoryRouter>
-    ),
-  ],
-  args: {
-    events: makeEvents(20),
-    caption: "Event History",
-  },
+export const WithEvents: Story = {
+  args: { events: SAMPLE_EVENTS },
 };
 
 export const Empty: Story = {
-  args: {
-    events: [],
-    caption: "Event History",
-  },
+  args: { events: [] },
 };
 
-export const AllFilteredOut: Story = {
-  name: "All Filtered Out",
-  decorators: [
-    (Story) => (
-      <MemoryRouter initialEntries={["/?eventType=revoked&org=nonexistent-org"]}>
-        <div style={{ background: "var(--color-bg)", padding: "24px" }}>
-          <Story />
-        </div>
-      </MemoryRouter>
-    ),
-  ],
+/** 30 rows to exercise pagination */
+export const ManyEvents: Story = {
   args: {
-    events: makeEvents(10),
-    caption: "Event History",
+    events: Array.from({ length: 30 }, (_, i) =>
+      makeEvent({
+        id: String(i),
+        event_type: (["application", "assignment", "completion", "revocation"] as const)[i % 4],
+        timestamp: new Date(Date.now() - i * 3_600_000).toISOString(),
+        issue_id: String(100 + i),
+        org_id: i % 2 === 0 ? "stellar-org" : "meridian-dao",
+        tx_hash: `${"0123456789abcdef".repeat(4).slice(i % 16, i % 16 + 64)}`.padEnd(64, "0"),
+      })
+    ),
   },
 };

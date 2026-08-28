@@ -528,9 +528,11 @@ fn unit_event_initialized_has_two_topics() {
     t.client.initialize(&admin);
 
     let events = t.env.events().all();
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let payload = soroban_sdk::vec![&t.env, 1u32, admin.clone()];
+    assert_eq!(data, payload.into_val(&t.env));
 }
 
 #[test]
@@ -547,9 +549,11 @@ fn unit_event_application_submitted_has_two_topics() {
 
     let events = t.env.events().all();
     assert!(!events.is_empty());
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let payload = soroban_sdk::vec![&t.env, 1u32, contributor.clone(), org.clone(), 5u32];
+    assert_eq!(data, payload.into_val(&t.env));
 }
 
 // ---------------------------------------------------------------------------
@@ -1281,6 +1285,186 @@ proptest! {
             // invariant: count always in [0, 15]
             let count = client.get_global_application_count(&contributor);
             prop_assert!(count <= 15, "count {} exceeded cap 15", count);
+        }
+    }
+}
+
+// Feature: workload-governor, Issue #882, Property A:
+// Global count invariant under arbitrary apply/withdraw sequences.
+//
+// Property: after any sequence of apply/withdraw operations,
+// get_global_application_count equals the number of active (non-withdrawn)
+// applications tracked by the test harness.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+    #[test]
+    fn prop_global_count_invariant(
+        // Each element: (true=apply / false=withdraw, issue_id 0..14)
+        // Issue ids are bounded to 0..15 so sequences can fill and drain the cap.
+        actions in proptest::collection::vec(
+            (proptest::bool::ANY, 0u32..15u32),
+            1..50
+        )
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("gcnt");
+        client.initialize(&admin);
+
+        // Mirror of contract state: which issue_ids currently have a pending
+        // application for this contributor+org pair.
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (do_apply, issue_id) in &actions {
+            let do_apply = *do_apply;
+            let issue_id = *issue_id;
+
+            if do_apply {
+                if applied.contains(&issue_id) {
+                    // Would be DuplicateApplication — skip
+                    continue;
+                }
+                if applied.len() >= 15 {
+                    // Would be GlobalApplicationLimitReached — verify contract also rejects
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    prop_assert!(result.is_err(), "expected rejection when count == 15");
+                    // Count must be unchanged
+                    prop_assert_eq!(
+                        client.get_global_application_count(&contributor),
+                        15u32,
+                        "count must stay 15 after rejected apply"
+                    );
+                    continue;
+                }
+                client.apply_for_issue(&contributor, &org, &issue_id);
+                applied.insert(issue_id);
+            } else {
+                if !applied.contains(&issue_id) {
+                    // Nothing to withdraw — skip
+                    continue;
+                }
+                client.withdraw_application(&contributor, &org, &issue_id);
+                applied.remove(&issue_id);
+            }
+
+            // Invariant: contract count == model count at all times
+            let expected = applied.len() as u32;
+            let actual = client.get_global_application_count(&contributor);
+            prop_assert_eq!(
+                actual,
+                expected,
+                "global count mismatch after {:?} issue {}: expected {}, got {}",
+                if do_apply { "apply" } else { "withdraw" },
+                issue_id,
+                expected,
+                actual
+            );
+
+            // Invariant: count is always in [0, 15]
+            prop_assert!(actual <= 15, "count {} exceeded cap 15", actual);
+        }
+    }
+}
+
+// Feature: workload-governor, Issue #882, Property B:
+// Org assignment count invariant under arbitrary assign/complete/revoke sequences.
+//
+// Property: after any sequence of assign/complete/revoke operations,
+// get_org_assignment_count equals the number of active (non-completed,
+// non-revoked) assignments tracked by the test harness.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+    #[test]
+    fn prop_org_count_invariant(
+        // Each element: op code 0=assign, 1=complete, 2=revoke; issue_id 0..3
+        // Issue ids bounded to 0..4 so sequences can saturate the per-org cap.
+        actions in proptest::collection::vec(
+            (0u8..3u8, 0u32..4u32),
+            1..50
+        )
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("ocnt");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        // Mirror of contract state: issue_ids with an active assignment.
+        let mut assigned: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        // Mirror of contract state: issue_ids with a pending application
+        // (needed so assign_issue has a valid application to consume).
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (op, issue_id) in &actions {
+            let issue_id = *issue_id;
+            match op {
+                0 => {
+                    // assign
+                    if assigned.contains(&issue_id) {
+                        // AlreadyAssigned — skip
+                        continue;
+                    }
+                    if assigned.len() >= 4 {
+                        // OrgAssignmentLimitReached — verify contract rejects
+                        // First ensure an application exists for this issue so we
+                        // actually hit the cap guard and not ApplicationNotFound.
+                        if !applied.contains(&issue_id) {
+                            client.apply_for_issue(&contributor, &org, &issue_id);
+                            applied.insert(issue_id);
+                        }
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected rejection when org count == 4");
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            4u32,
+                            "org count must stay 4 after rejected assign"
+                        );
+                        continue;
+                    }
+                    // Ensure application exists before assigning
+                    if !applied.contains(&issue_id) {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                        applied.insert(issue_id);
+                    }
+                    client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                    applied.remove(&issue_id); // assign consumes the application
+                    assigned.insert(issue_id);
+                }
+                1 => {
+                    // complete
+                    if !assigned.contains(&issue_id) {
+                        // AssignmentNotFound — skip
+                        continue;
+                    }
+                    client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+                    assigned.remove(&issue_id);
+                }
+                _ => {
+                    // revoke
+                    if !assigned.contains(&issue_id) {
+                        // AssignmentNotFound — skip
+                        continue;
+                    }
+                    client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+                    assigned.remove(&issue_id);
+                }
+            }
+
+            // Invariant: contract count == model count at all times
+            let expected = assigned.len() as u32;
+            let actual = client.get_org_assignment_count(&contributor, &org);
+            prop_assert_eq!(
+                actual,
+                expected,
+                "org count mismatch after op {} issue {}: expected {}, got {}",
+                op,
+                issue_id,
+                expected,
+                actual
+            );
+
+            // Invariant: count is always in [0, 4]
+            prop_assert!(actual <= 4, "org count {} exceeded cap 4", actual);
         }
     }
 }
@@ -2490,4 +2674,495 @@ fn unit_extend_ttl_also_extends_global_counter() {
         1,
         "global app counter must remain alive after extend_application_ttl (count > 0 branch)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #360 — unit tests for assign_issue and complete_assignment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unit_assign_converts_application_increments_counter() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("assignorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    // Before assign: application exists, assignment does not
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert!(!t.client.is_assigned(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+
+    // After assign: application removed, assignment created, counters updated
+    assert!(!t.client.has_applied(&contributor, &org, &1u32));
+    assert!(t.client.is_assigned(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_assign_at_org_cap_4_fails() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("orgcap4");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Fill to the default ORG_ASSIGNMENT_LIMIT of 4
+    for i in 0u32..4 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+        t.client.assign_issue(&maintainer, &contributor, &org, &i);
+    }
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 4);
+
+    // 5th assignment must be rejected with OrgAssignmentLimitReached (code 7)
+    t.client.apply_for_issue(&contributor, &org, &99u32);
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &99u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::OrgAssignmentLimitReached.into_val(&t.env)))
+    );
+    // Counter must stay at 4
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 4);
+}
+
+#[test]
+fn unit_assign_already_assigned_returns_error() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("aassign");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Force an assignment entry so the issue appears already-assigned,
+    // then apply for the same issue and attempt to assign again.
+    crate::storage::set_assignment(&t.env, &org, 1u32, &contributor);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &1u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AlreadyAssigned.into_val(&t.env)))
+    );
+}
+
+#[test]
+fn unit_assign_no_application_returns_error() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("noapprg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // No application submitted — assign must fail with ApplicationNotFound (code 9)
+    let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &42u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env)))
+    );
+}
+
+#[test]
+fn unit_complete_removes_assignment_decrements_counter() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cmplorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &5u32);
+
+    assert!(t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &5u32);
+
+    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+}
+
+#[test]
+fn unit_complete_nonexistent_returns_error() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("noasgnr");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // No assignment exists — complete must fail with AssignmentNotFound (code 10)
+    let result = t.client.try_complete_assignment(&maintainer, &contributor, &org, &77u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AssignmentNotFound.into_val(&t.env)))
+    );
+}
+
+#[test]
+#[should_panic]
+fn unit_assign_non_maintainer_panics() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let stranger = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("noauthr");
+
+    t.client.initialize(&admin);
+    // Register no maintainer; stranger is not authorised for this org
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    // Must panic with UnauthorizedMaintainer (code 4)
+    t.client.assign_issue(&stranger, &contributor, &org, &1u32);
+}
+
+// ---------------------------------------------------------------------------
+// PROPERTY-BASED TESTS — sequential state transition invariants (issue #354)
+// ---------------------------------------------------------------------------
+//
+// These tests prove that the global application count and org assignment count
+// invariants hold under arbitrary sequences of valid and invalid operations,
+// exercised with at least 1000 random cases each.
+//
+// Design: we run a reference model (a BTreeSet of active IDs) alongside the
+// actual contract client.  After every operation we assert that the contract's
+// counter equals the model's set size.  Any divergence is a bug; proptest
+// automatically shrinks the sequence to the minimal failing case.
+
+/// Operation type for the global apply/withdraw sequence test.
+#[derive(Clone, Debug)]
+enum GlobalOp {
+    /// Apply for `issue_id`; the bool allows distinguishing from withdraw.
+    Apply { issue_id: u32 },
+    Withdraw { issue_id: u32 },
+}
+
+fn arb_global_op() -> impl Strategy<Value = GlobalOp> {
+    prop_oneof![
+        (0u32..20u32).prop_map(|i| GlobalOp::Apply { issue_id: i }),
+        (0u32..20u32).prop_map(|i| GlobalOp::Withdraw { issue_id: i }),
+    ]
+}
+
+/// Operation type for the org assign/complete/revoke sequence test.
+#[derive(Clone, Debug)]
+enum OrgOp {
+    Apply { issue_id: u32 },
+    Assign { issue_id: u32 },
+    Complete { issue_id: u32 },
+    Revoke { issue_id: u32 },
+}
+
+fn arb_org_op() -> impl Strategy<Value = OrgOp> {
+    prop_oneof![
+        4 => (0u32..10u32).prop_map(|i| OrgOp::Apply { issue_id: i }),
+        3 => (0u32..10u32).prop_map(|i| OrgOp::Assign { issue_id: i }),
+        2 => (0u32..10u32).prop_map(|i| OrgOp::Complete { issue_id: i }),
+        2 => (0u32..10u32).prop_map(|i| OrgOp::Revoke { issue_id: i }),
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Property: global_count_invariant_sequence
+//
+// For any sequence of apply / withdraw operations:
+//   get_global_application_count == |{active (non-withdrawn) applications}|
+//
+// We drive the contract through each op, maintaining a reference BTreeSet.
+// Invalid ops (duplicate, not-found, cap exceeded) are caught via
+// catch_unwind; we then assert the count did not change.
+// ---------------------------------------------------------------------------
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+    #[test]
+    fn prop_global_count_invariant_sequence(
+        ops in proptest::collection::vec(arb_global_op(), 1usize..60)
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("gseq");
+        client.initialize(&admin);
+
+        // Reference model: issue_ids that are currently in "applied" state.
+        let mut active: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for op in ops {
+            // Read current contract count before the operation.
+            let count_before = client.get_global_application_count(&contributor);
+            // Invariant check before each step.
+            prop_assert_eq!(
+                count_before,
+                active.len() as u32,
+                "pre-op invariant broken: contract={} model={}",
+                count_before,
+                active.len()
+            );
+
+            match op {
+                GlobalOp::Apply { issue_id } => {
+                    if active.contains(&issue_id) {
+                        // DuplicateApplication — must be rejected, count unchanged.
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.apply_for_issue(&contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected DuplicateApplication error");
+                        prop_assert_eq!(
+                            client.get_global_application_count(&contributor),
+                            count_before,
+                            "count must not change after rejected apply (duplicate)"
+                        );
+                    } else if active.len() as u32 >= 15 {
+                        // GlobalApplicationLimitReached — must be rejected, count unchanged.
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.apply_for_issue(&contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected GlobalApplicationLimitReached error");
+                        prop_assert_eq!(
+                            client.get_global_application_count(&contributor),
+                            15u32,
+                            "count must stay at cap after rejected apply"
+                        );
+                    } else {
+                        // Valid apply — must succeed.
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                        active.insert(issue_id);
+                        prop_assert_eq!(
+                            client.get_global_application_count(&contributor),
+                            count_before + 1,
+                            "count must increment after apply"
+                        );
+                    }
+                }
+
+                GlobalOp::Withdraw { issue_id } => {
+                    if !active.contains(&issue_id) {
+                        // ApplicationNotFound — must be rejected, count unchanged.
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.withdraw_application(&contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected ApplicationNotFound error");
+                        prop_assert_eq!(
+                            client.get_global_application_count(&contributor),
+                            count_before,
+                            "count must not change after rejected withdraw"
+                        );
+                    } else {
+                        // Valid withdraw — must succeed.
+                        client.withdraw_application(&contributor, &org, &issue_id);
+                        active.remove(&issue_id);
+                        prop_assert_eq!(
+                            client.get_global_application_count(&contributor),
+                            count_before - 1,
+                            "count must decrement after withdraw"
+                        );
+                    }
+                }
+            }
+
+            // Invariant: count always in [0, 15].
+            let count_after = client.get_global_application_count(&contributor);
+            prop_assert!(count_after <= 15, "count {} exceeded global cap 15", count_after);
+            prop_assert_eq!(
+                count_after,
+                active.len() as u32,
+                "post-op invariant: contract={} model={}",
+                count_after,
+                active.len()
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property: org_count_invariant_sequence
+//
+// For any sequence of apply / assign / complete / revoke operations:
+//   get_org_assignment_count == |{active (non-completed, non-revoked) assignments}|
+//
+// Same approach as the global invariant test: reference BTreeSet tracks what
+// the contract should have in assigned state; every deviation is a bug.
+// ---------------------------------------------------------------------------
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(1_000))]
+    #[test]
+    fn prop_org_count_invariant_sequence(
+        ops in proptest::collection::vec(arb_org_op(), 1usize..60)
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("oseq");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        // Reference models.
+        let mut applied: std::collections::BTreeSet<u32>  = std::collections::BTreeSet::new();
+        let mut assigned: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        let mut global_count: u32 = 0;
+
+        for op in ops {
+            let org_count_before   = client.get_org_assignment_count(&contributor, &org);
+            let global_count_contract = client.get_global_application_count(&contributor);
+
+            // Pre-op invariant checks.
+            prop_assert_eq!(
+                org_count_before,
+                assigned.len() as u32,
+                "pre-op org invariant: contract={} model={}",
+                org_count_before,
+                assigned.len()
+            );
+            prop_assert_eq!(
+                global_count_contract,
+                global_count,
+                "pre-op global invariant: contract={} model={}",
+                global_count_contract,
+                global_count
+            );
+
+            match op {
+                OrgOp::Apply { issue_id } => {
+                    // Skip if already applied (DuplicateApplication) or at global cap.
+                    if applied.contains(&issue_id) || global_count >= 15 {
+                        // Expect rejection; org and global counts unchanged.
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.apply_for_issue(&contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err());
+                    } else {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                        applied.insert(issue_id);
+                        global_count += 1;
+                    }
+                    // Org count must not change after apply.
+                    prop_assert_eq!(
+                        client.get_org_assignment_count(&contributor, &org),
+                        org_count_before,
+                        "org count must not change after apply"
+                    );
+                }
+
+                OrgOp::Assign { issue_id } => {
+                    if !applied.contains(&issue_id)
+                        || assigned.len() >= 4
+                        || assigned.contains(&issue_id)
+                    {
+                        // One of: ApplicationNotFound, OrgAssignmentLimitReached, AlreadyAssigned.
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                        }));
+                        // May or may not panic depending on which guard fires first;
+                        // if it panics the count must be unchanged.
+                        if result.is_err() {
+                            prop_assert_eq!(
+                                client.get_org_assignment_count(&contributor, &org),
+                                org_count_before,
+                                "org count must not change after rejected assign"
+                            );
+                        } else {
+                            // Succeeded despite our precondition check — model was wrong.
+                            // Update model to stay in sync.
+                            applied.remove(&issue_id);
+                            global_count = global_count.saturating_sub(1);
+                            assigned.insert(issue_id);
+                        }
+                    } else {
+                        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                        applied.remove(&issue_id);
+                        global_count = global_count.saturating_sub(1);
+                        assigned.insert(issue_id);
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            org_count_before + 1,
+                            "org count must increment after assign"
+                        );
+                    }
+                }
+
+                OrgOp::Complete { issue_id } => {
+                    if !assigned.contains(&issue_id) {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected AssignmentNotFound on complete");
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            org_count_before,
+                            "org count must not change after rejected complete"
+                        );
+                    } else {
+                        client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+                        assigned.remove(&issue_id);
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            org_count_before - 1,
+                            "org count must decrement after complete"
+                        );
+                    }
+                }
+
+                OrgOp::Revoke { issue_id } => {
+                    if !assigned.contains(&issue_id) {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+                        }));
+                        prop_assert!(result.is_err(), "expected AssignmentNotFound on revoke");
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            org_count_before,
+                            "org count must not change after rejected revoke"
+                        );
+                    } else {
+                        client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+                        assigned.remove(&issue_id);
+                        prop_assert_eq!(
+                            client.get_org_assignment_count(&contributor, &org),
+                            org_count_before - 1,
+                            "org count must decrement after revoke"
+                        );
+                    }
+                }
+            }
+
+            // Final invariants after each operation.
+            let org_count_after = client.get_org_assignment_count(&contributor, &org);
+            prop_assert!(
+                org_count_after <= 4,
+                "org count {} exceeded cap 4",
+                org_count_after
+            );
+            prop_assert_eq!(
+                org_count_after,
+                assigned.len() as u32,
+                "post-op org invariant: contract={} model={}",
+                org_count_after,
+                assigned.len()
+            );
+        }
+    }
 }

@@ -1,549 +1,374 @@
-/**
- * EventHistoryTable — closes #647 (sorting & filtering) + #648 (a11y badges)
- *
- * Features:
- *  - Sortable columns: Event Type, Org, Issue ID, Timestamp
- *  - Filter bar: event-type multi-select, org text field, date range
- *  - URL query-param sync (sort, dir, eventType, org, from, to)
- *  - Clear-all-filters button
- *  - aria-sort on column headers
- *  - Color-blind-friendly event type badges (icon + text label)
- */
-import { useCallback, useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Icon, type IconName } from "./Icon";
-import "./EventHistoryTable.css";
+import { useState, useEffect, useCallback } from "react";
+import { EmptyState } from "./EmptyState";
+import { Badge } from "./Badge";
+import type { BadgeVariant } from "./Badge";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 export type EventType =
-  | "applied"
-  | "withdrawn"
-  | "assigned"
-  | "completed"
-  | "revoked";
+  | "application"
+  | "assignment"
+  | "completion"
+  | "revocation"
+  | string;
 
-export interface EventRow {
+export interface ContractEvent {
   id: string;
-  eventType: EventType;
-  org: string;
-  issueId: string;
-  contributor: string;
+  event_type: EventType;
+  org_id: string;
+  issue_id: string;
   timestamp: string; // ISO-8601
+  tx_hash: string;
+  contributor?: string;
 }
 
-export type SortColumn = "eventType" | "org" | "issueId" | "timestamp";
-export type SortDir = "asc" | "desc";
+type SortDir = "asc" | "desc";
 
-export interface FilterState {
-  eventTypes: EventType[];
-  org: string;
-  dateFrom: string;
-  dateTo: string;
-}
+type FilterValue = "all" | "application" | "assignment" | "completion" | "revocation";
 
-export interface EventHistoryTableProps {
-  events: EventRow[];
-  caption?: string;
-}
+const PAGE_SIZE = 25;
 
-// ─── Event type metadata (icon + label for color-blind users) ────────────────
-
-interface EventMeta {
-  icon: IconName;
-  label: string;
-}
-
-const EVENT_META: Record<EventType, EventMeta> = {
-  applied:   { icon: "issue-open",   label: "Applied"   },
-  withdrawn: { icon: "withdraw",     label: "Withdrawn" },
-  assigned:  { icon: "assign",       label: "Assigned"  },
-  completed: { icon: "check-circle", label: "Completed" },
-  revoked:   { icon: "x-circle",     label: "Revoked"   },
-};
-
-const ALL_EVENT_TYPES: EventType[] = [
-  "applied",
-  "withdrawn",
-  "assigned",
-  "completed",
-  "revoked",
+const FILTER_OPTIONS: { value: FilterValue; label: string }[] = [
+  { value: "all", label: "All Events" },
+  { value: "application", label: "Applications" },
+  { value: "assignment", label: "Assignments" },
+  { value: "completion", label: "Completions" },
+  { value: "revocation", label: "Revocations" },
 ];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const EVENT_BADGE: Record<string, BadgeVariant> = {
+  application: "info",
+  assignment: "warning",
+  completion: "success",
+  revocation: "error",
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function truncateHash(hash: string, chars = 8): string {
+  if (hash.length <= chars * 2 + 3) return hash;
+  return `${hash.slice(0, chars)}…${hash.slice(-chars)}`;
+}
 
 function formatTimestamp(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
-
-function sortRows(rows: EventRow[], col: SortColumn, dir: SortDir): EventRow[] {
-  return [...rows].sort((a, b) => {
-    let cmp = 0;
-    switch (col) {
-      case "eventType": cmp = a.eventType.localeCompare(b.eventType); break;
-      case "org":       cmp = a.org.localeCompare(b.org);             break;
-      case "issueId":   cmp = a.issueId.localeCompare(b.issueId, undefined, { numeric: true }); break;
-      case "timestamp": cmp = a.timestamp.localeCompare(b.timestamp); break;
-    }
-    return dir === "asc" ? cmp : -cmp;
+  return new Date(iso).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
-function filterRows(rows: EventRow[], filters: FilterState): EventRow[] {
-  return rows.filter((r) => {
-    if (filters.eventTypes.length > 0 && !filters.eventTypes.includes(r.eventType)) return false;
-    if (filters.org && !r.org.toLowerCase().includes(filters.org.toLowerCase())) return false;
-    if (filters.dateFrom && new Date(r.timestamp).getTime() < new Date(filters.dateFrom).getTime()) return false;
-    if (filters.dateTo) {
-      const to = new Date(filters.dateTo);
-      to.setDate(to.getDate() + 1);
-      if (new Date(r.timestamp).getTime() >= to.getTime()) return false;
+// ── Copy-to-clipboard button ──────────────────────────────────────────────────
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard API not available — silent fail
     }
-    return true;
-  });
-}
-
-function hasActiveFilters(filters: FilterState): boolean {
-  return filters.eventTypes.length > 0 || filters.org !== "" || filters.dateFrom !== "" || filters.dateTo !== "";
-}
-
-function paramsToState(params: URLSearchParams): {
-  filters: FilterState;
-  sortCol: SortColumn;
-  sortDir: SortDir;
-} {
-  const etRaw = params.get("eventType") ?? "";
-  const eventTypes = etRaw
-    ? (etRaw.split(",").filter((t) => ALL_EVENT_TYPES.includes(t as EventType)) as EventType[])
-    : [];
-  const sortColRaw = params.get("sort") ?? "timestamp";
-  const sortCol: SortColumn = (["eventType", "org", "issueId", "timestamp"] as SortColumn[]).includes(sortColRaw as SortColumn)
-    ? (sortColRaw as SortColumn)
-    : "timestamp";
-  const sortDir: SortDir = params.get("dir") === "asc" ? "asc" : "desc";
-  return {
-    filters: {
-      eventTypes,
-      org:      params.get("org")  ?? "",
-      dateFrom: params.get("from") ?? "",
-      dateTo:   params.get("to")   ?? "",
-    },
-    sortCol,
-    sortDir,
-  };
-}
-
-// ─── Inner table (always inside a Router) ────────────────────────────────────
-
-function EventHistoryTableInner({ events, caption = "Event History" }: EventHistoryTableProps) {
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const initial = useMemo(() => paramsToState(searchParams), []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [filters, setFilters] = useState<FilterState>(initial.filters);
-  const [sortCol, setSortCol] = useState<SortColumn>(initial.sortCol);
-  const [sortDir, setSortDir] = useState<SortDir>(initial.sortDir);
-
-  // Sync state → URL params
-  useEffect(() => {
-    const p = new URLSearchParams();
-    if (sortCol !== "timestamp") p.set("sort", sortCol);
-    if (sortDir !== "desc")      p.set("dir", sortDir);
-    if (filters.eventTypes.length) p.set("eventType", filters.eventTypes.join(","));
-    if (filters.org)      p.set("org",  filters.org);
-    if (filters.dateFrom) p.set("from", filters.dateFrom);
-    if (filters.dateTo)   p.set("to",   filters.dateTo);
-    setSearchParams(p, { replace: true });
-  }, [filters, sortCol, sortDir, setSearchParams]);
-
-  function toggleSort(col: SortColumn) {
-    if (col === sortCol) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortCol(col); setSortDir("asc"); }
   }
-
-  const toggleEventType = useCallback((type: EventType) => {
-    setFilters((prev) => ({
-      ...prev,
-      eventTypes: prev.eventTypes.includes(type)
-        ? prev.eventTypes.filter((t) => t !== type)
-        : [...prev.eventTypes, type],
-    }));
-  }, []);
-
-  function clearFilters() {
-    setFilters({ eventTypes: [], org: "", dateFrom: "", dateTo: "" });
-  }
-
-  const processed = useMemo(
-    () => sortRows(filterRows(events, filters), sortCol, sortDir),
-    [events, filters, sortCol, sortDir]
-  );
-
-  const active = hasActiveFilters(filters);
-
-  function ariaSortAttr(col: SortColumn): "ascending" | "descending" | "none" {
-    if (col !== sortCol) return "none";
-    return sortDir === "asc" ? "ascending" : "descending";
-  }
-
-  function SortIndicator({ col }: { col: SortColumn }) {
-    if (col !== sortCol) return <span className="sort-indicator sort-indicator--idle" aria-hidden="true">⇅</span>;
-    return <span className="sort-indicator sort-indicator--active" aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>;
-  }
-
-  const COLS: { col: SortColumn | null; header: string }[] = [
-    { col: "eventType", header: "Event Type"  },
-    { col: "org",       header: "Org"         },
-    { col: "issueId",   header: "Issue ID"    },
-    { col: null,        header: "Contributor" },
-    { col: "timestamp", header: "Timestamp"   },
-  ];
 
   return (
-    <div className="eht">
-      {/* ── Filter bar ───────────────────────────────────────────────── */}
-      <div className="eht__filters" role="group" aria-label="Table filters">
-        <fieldset className="eht__filter-group">
-          <legend className="eht__filter-label">Event type</legend>
-          <div className="eht__checkboxes">
-            {ALL_EVENT_TYPES.map((type) => {
-              const meta = EVENT_META[type];
-              return (
-                <label key={type} className="eht__checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={filters.eventTypes.includes(type)}
-                    onChange={() => toggleEventType(type)}
-                  />
-                  <Icon name={meta.icon} size="xs" aria-hidden={true} />
-                  {meta.label}
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-
-        <label className="eht__filter-group">
-          <span className="eht__filter-label">Org</span>
-          <input
-            type="text"
-            className="eht__filter-input"
-            value={filters.org}
-            onChange={(e) => setFilters((prev) => ({ ...prev, org: e.target.value }))}
-            placeholder="Filter by org…"
-            aria-label="Filter by organisation"
-          />
-        </label>
-
-        <div className="eht__filter-group">
-          <span className="eht__filter-label">Date range</span>
-          <div className="eht__date-range">
-            <label className="eht__filter-date">
-              <span className="sr-only">From</span>
-              <input
-                type="date"
-                className="eht__filter-input"
-                value={filters.dateFrom}
-                onChange={(e) => setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
-                aria-label="Filter from date"
-              />
-            </label>
-            <span className="eht__date-sep" aria-hidden="true">–</span>
-            <label className="eht__filter-date">
-              <span className="sr-only">To</span>
-              <input
-                type="date"
-                className="eht__filter-input"
-                value={filters.dateTo}
-                onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
-                aria-label="Filter to date"
-              />
-            </label>
-          </div>
-        </div>
-
-        {active && (
-          <button
-            className="btn btn-secondary btn-sm eht__clear-btn"
-            onClick={clearFilters}
-            type="button"
-          >
-            <Icon name="close" size="xs" aria-hidden={true} />
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      {/* ── Table ────────────────────────────────────────────────────── */}
-      <div className="eht__table-wrap" role="region" aria-label={caption} tabIndex={0}>
-        <table className="eht__table">
-          <caption className="eht__caption">{caption}</caption>
-          <thead>
-            <tr>
-              {COLS.map(({ col, header }) =>
-                col ? (
-                  <th key={header} scope="col" aria-sort={ariaSortAttr(col)} className="eht__th eht__th--sortable">
-                    <button
-                      className="eht__sort-btn"
-                      onClick={() => toggleSort(col)}
-                      type="button"
-                      aria-label={`Sort by ${header}`}
-                    >
-                      {header}
-                      <SortIndicator col={col} />
-                    </button>
-                  </th>
-                ) : (
-                  <th key={header} scope="col" className="eht__th">{header}</th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {processed.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="eht__empty">
-                  {active ? "No events match the current filters." : "No events to display."}
-                </td>
-              </tr>
-            ) : (
-              processed.map((row) => {
-                const meta = EVENT_META[row.eventType];
-                return (
-                  <tr key={row.id} className="eht__row">
-                    <td className="eht__td">
-                      <span className={`eht__badge eht__badge--${row.eventType}`} aria-label={`Event type: ${meta.label}`}>
-                        <Icon name={meta.icon} size="xs" aria-hidden={true} />
-                        {meta.label}
-                      </span>
-                    </td>
-                    <td className="eht__td eht__td--muted">{row.org}</td>
-                    <td className="eht__td eht__td--mono">{row.issueId}</td>
-                    <td className="eht__td eht__td--mono eht__td--truncate" title={row.contributor}>
-                      {row.contributor.length > 12
-                        ? `${row.contributor.slice(0, 6)}…${row.contributor.slice(-4)}`
-                        : row.contributor}
-                    </td>
-                    <td className="eht__td eht__td--muted eht__td--nowrap">
-                      {formatTimestamp(row.timestamp)}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="sr-only" role="status" aria-live="polite">
-        {processed.length} event{processed.length !== 1 ? "s" : ""} shown
-        {active ? " (filters active)" : ""}.
-      </p>
-    </div>
+    <button
+      className="eht-copy-btn"
+      onClick={handleCopy}
+      aria-label={copied ? "Copied!" : `Copy transaction hash ${text}`}
+      title={copied ? "Copied!" : "Copy to clipboard"}
+      type="button"
+    >
+      {copied ? (
+        // Checkmark icon
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <polyline points="2,8 6,12 14,4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        // Copy icon
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M4 11H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      )}
+    </button>
   );
 }
 
-// ─── Public export: wraps the inner component in error boundary for
-//     contexts without a Router (renders table without URL sync) ─────────────
+// ── Sort indicator ────────────────────────────────────────────────────────────
 
-import { Component, type ReactNode } from "react";
-
-class RouterErrorBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode },
-  { hasError: boolean }
-> {
-  constructor(props: { children: ReactNode; fallback: ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  render() {
-    return this.state.hasError ? this.props.fallback : this.props.children;
-  }
+function SortIndicator({ dir }: { dir: SortDir | null }) {
+  if (!dir) return <span className="eht-sort-none" aria-hidden="true">⇅</span>;
+  return <span aria-hidden="true">{dir === "asc" ? "▲" : "▼"}</span>;
 }
 
-function EventHistoryTableNoRouter({ events, caption = "Event History" }: EventHistoryTableProps) {
-  const [filters, setFilters] = useState<FilterState>({ eventTypes: [], org: "", dateFrom: "", dateTo: "" });
-  const [sortCol, setSortCol] = useState<SortColumn>("timestamp");
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+function Pagination({
+  page,
+  total,
+  pageSize,
+  onChange,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onChange: (p: number) => void;
+}) {
+  const last = Math.max(1, Math.ceil(total / pageSize));
+  if (last <= 1) return null;
+
+  return (
+    <nav className="eht-pagination" aria-label="Event history pagination">
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => onChange(1)}
+        disabled={page === 1}
+        aria-label="First page"
+      >
+        «
+      </button>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => onChange(page - 1)}
+        disabled={page === 1}
+        aria-label="Previous page"
+      >
+        ‹ Prev
+      </button>
+      <span className="eht-pagination__info" aria-live="polite" aria-atomic="true">
+        Page {page} of {last}
+      </span>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => onChange(page + 1)}
+        disabled={page === last}
+        aria-label="Next page"
+      >
+        Next ›
+      </button>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => onChange(last)}
+        disabled={page === last}
+        aria-label="Last page"
+      >
+        »
+      </button>
+    </nav>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+interface EventHistoryTableProps {
+  /** API base URL, e.g. "/api". Table fetches GET {apiBase}/events */
+  apiBase?: string;
+  /** Optional: provide events directly (disables fetching) */
+  events?: ContractEvent[];
+  /** Optional: contributor address to filter by */
+  contributor?: string;
+}
+
+export function EventHistoryTable({
+  apiBase = "/api",
+  events: propEvents,
+  contributor,
+}: EventHistoryTableProps) {
+  const [events, setEvents] = useState<ContractEvent[]>(propEvents ?? []);
+  const [loading, setLoading] = useState(!propEvents);
+  const [error, setError] = useState<string | null>(null);
+
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [filter, setFilter] = useState<FilterValue>("all");
+  const [page, setPage] = useState(1);
 
-  function toggleSort(col: SortColumn) {
-    if (col === sortCol) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortCol(col); setSortDir("asc"); }
-  }
+  // Fetch from API unless events were injected as props
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ limit: "500" });
+      if (contributor) params.set("contributor", contributor);
+      const res = await fetch(`${apiBase}/events?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { events: ContractEvent[] };
+      setEvents(data.events ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load events");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, contributor]);
 
-  const toggleEventType = useCallback((type: EventType) => {
-    setFilters((prev) => ({
-      ...prev,
-      eventTypes: prev.eventTypes.includes(type)
-        ? prev.eventTypes.filter((t) => t !== type)
-        : [...prev.eventTypes, type],
-    }));
-  }, []);
+  useEffect(() => {
+    if (!propEvents) void fetchEvents();
+  }, [propEvents, fetchEvents]);
 
-  function clearFilters() {
-    setFilters({ eventTypes: [], org: "", dateFrom: "", dateTo: "" });
-  }
+  // Keep events in sync if prop changes
+  useEffect(() => {
+    if (propEvents) setEvents(propEvents);
+  }, [propEvents]);
 
-  const processed = useMemo(
-    () => sortRows(filterRows(events, filters), sortCol, sortDir),
-    [events, filters, sortCol, sortDir]
+  // ── Derived data ───────────────────────────────────────────────────────────
+
+  const filtered = events.filter(
+    (ev) => filter === "all" || ev.event_type === filter
   );
 
-  const active = hasActiveFilters(filters);
+  const sorted = [...filtered].sort((a, b) => {
+    const ta = new Date(a.timestamp).getTime();
+    const tb = new Date(b.timestamp).getTime();
+    return sortDir === "desc" ? tb - ta : ta - tb;
+  });
 
-  function ariaSortAttr(col: SortColumn): "ascending" | "descending" | "none" {
-    if (col !== sortCol) return "none";
-    return sortDir === "asc" ? "ascending" : "descending";
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function toggleSort() {
+    setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    setPage(1);
   }
 
-  function SortIndicator({ col }: { col: SortColumn }) {
-    if (col !== sortCol) return <span className="sort-indicator sort-indicator--idle" aria-hidden="true">⇅</span>;
-    return <span className="sort-indicator sort-indicator--active" aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>;
+  function handleFilterChange(value: FilterValue) {
+    setFilter(value);
+    setPage(1);
   }
 
-  const COLS: { col: SortColumn | null; header: string }[] = [
-    { col: "eventType", header: "Event Type"  },
-    { col: "org",       header: "Org"         },
-    { col: "issueId",   header: "Issue ID"    },
-    { col: null,        header: "Contributor" },
-    { col: "timestamp", header: "Timestamp"   },
-  ];
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="eht-loading" aria-busy="true" aria-label="Loading event history">
+        <span className="eht-spinner" aria-hidden="true" />
+        <span>Loading event history…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="eht-error" role="alert">
+        <p>Failed to load event history: {error}</p>
+        <button className="btn btn-secondary btn-sm" onClick={() => void fetchEvents()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="eht">
-      <div className="eht__filters" role="group" aria-label="Table filters">
-        <fieldset className="eht__filter-group">
-          <legend className="eht__filter-label">Event type</legend>
-          <div className="eht__checkboxes">
-            {ALL_EVENT_TYPES.map((type) => {
-              const meta = EVENT_META[type];
-              return (
-                <label key={type} className="eht__checkbox-label">
-                  <input type="checkbox" checked={filters.eventTypes.includes(type)} onChange={() => toggleEventType(type)} />
-                  <Icon name={meta.icon} size="xs" aria-hidden={true} />
-                  {meta.label}
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
+    <section className="eht-section" aria-labelledby="eht-heading">
+      <div className="eht-toolbar">
+        <h2 id="eht-heading" className="eht-heading">
+          Event History
+          <span
+            className="count-badge"
+            aria-label={`${filtered.length} events`}
+            aria-live="polite"
+          >
+            {filtered.length}
+          </span>
+        </h2>
 
-        <label className="eht__filter-group">
-          <span className="eht__filter-label">Org</span>
-          <input
-            type="text"
-            className="eht__filter-input"
-            value={filters.org}
-            onChange={(e) => setFilters((prev) => ({ ...prev, org: e.target.value }))}
-            placeholder="Filter by org…"
-            aria-label="Filter by organisation"
-          />
+        <label className="eht-filter-label" htmlFor="eht-filter">
+          <span className="visually-hidden">Filter by event type</span>
+          <select
+            id="eht-filter"
+            className="eht-filter-select"
+            value={filter}
+            onChange={(e) => handleFilterChange(e.target.value as FilterValue)}
+            aria-label="Filter events by type"
+          >
+            {FILTER_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </label>
-
-        <div className="eht__filter-group">
-          <span className="eht__filter-label">Date range</span>
-          <div className="eht__date-range">
-            <label className="eht__filter-date">
-              <span className="sr-only">From</span>
-              <input
-                type="date"
-                className="eht__filter-input"
-                value={filters.dateFrom}
-                onChange={(e) => setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
-                aria-label="Filter from date"
-              />
-            </label>
-            <span className="eht__date-sep" aria-hidden="true">–</span>
-            <label className="eht__filter-date">
-              <span className="sr-only">To</span>
-              <input
-                type="date"
-                className="eht__filter-input"
-                value={filters.dateTo}
-                onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
-                aria-label="Filter to date"
-              />
-            </label>
-          </div>
-        </div>
-
-        {active && (
-          <button className="btn btn-secondary btn-sm eht__clear-btn" onClick={clearFilters} type="button">
-            <Icon name="close" size="xs" aria-hidden={true} />
-            Clear filters
-          </button>
-        )}
       </div>
 
-      <div className="eht__table-wrap" role="region" aria-label={caption} tabIndex={0}>
-        <table className="eht__table">
-          <caption className="eht__caption">{caption}</caption>
-          <thead>
-            <tr>
-              {COLS.map(({ col, header }) =>
-                col ? (
-                  <th key={header} scope="col" aria-sort={ariaSortAttr(col)} className="eht__th eht__th--sortable">
-                    <button className="eht__sort-btn" onClick={() => toggleSort(col)} type="button" aria-label={`Sort by ${header}`}>
-                      {header}
-                      <SortIndicator col={col} />
-                    </button>
+      {sorted.length === 0 ? (
+        <EmptyState variant="no-events" />
+      ) : (
+        <>
+          <div className="table-wrap" role="region" aria-label="Event history table" tabIndex={0}>
+            <table className="table eht-table">
+              <caption className="table__caption">
+                {filtered.length} event{filtered.length !== 1 ? "s" : ""}
+                {filter !== "all" ? ` · ${FILTER_OPTIONS.find((o) => o.value === filter)?.label}` : ""}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Event Type</th>
+                  <th scope="col">Org</th>
+                  <th scope="col">Issue ID</th>
+                  <th
+                    scope="col"
+                    className="eht-sortable"
+                    onClick={toggleSort}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleSort();
+                      }
+                    }}
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortDir === "asc" ? "ascending" : "descending"}
+                    aria-label={`Timestamp, sort ${sortDir === "asc" ? "descending" : "ascending"}`}
+                  >
+                    Timestamp <SortIndicator dir={sortDir} />
                   </th>
-                ) : (
-                  <th key={header} scope="col" className="eht__th">{header}</th>
-                )
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {processed.length === 0 ? (
-              <tr><td colSpan={5} className="eht__empty">{active ? "No events match the current filters." : "No events to display."}</td></tr>
-            ) : (
-              processed.map((row) => {
-                const meta = EVENT_META[row.eventType];
-                return (
-                  <tr key={row.id} className="eht__row">
-                    <td className="eht__td">
-                      <span className={`eht__badge eht__badge--${row.eventType}`} aria-label={`Event type: ${meta.label}`}>
-                        <Icon name={meta.icon} size="xs" aria-hidden={true} />
-                        {meta.label}
-                      </span>
+                  <th scope="col">Transaction Hash</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.map((ev) => (
+                  <tr key={ev.id} className="eht-row">
+                    <td>
+                      <Badge variant={EVENT_BADGE[ev.event_type] ?? "neutral"}>
+                        {ev.event_type}
+                      </Badge>
                     </td>
-                    <td className="eht__td eht__td--muted">{row.org}</td>
-                    <td className="eht__td eht__td--mono">{row.issueId}</td>
-                    <td className="eht__td eht__td--mono eht__td--truncate" title={row.contributor}>
-                      {row.contributor.length > 12 ? `${row.contributor.slice(0, 6)}…${row.contributor.slice(-4)}` : row.contributor}
+                    <td>{ev.org_id}</td>
+                    <td className="eht-issue-id">{ev.issue_id}</td>
+                    <td>
+                      <time dateTime={ev.timestamp}>{formatTimestamp(ev.timestamp)}</time>
                     </td>
-                    <td className="eht__td eht__td--muted eht__td--nowrap">{formatTimestamp(row.timestamp)}</td>
+                    <td className="eht-txhash-cell">
+                      <a
+                        href={`https://stellar.expert/explorer/testnet/tx/${ev.tx_hash}`}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="eht-txhash-link"
+                        aria-label={`View transaction ${ev.tx_hash} on Stellar Expert`}
+                        title={ev.tx_hash}
+                      >
+                        {truncateHash(ev.tx_hash)}
+                      </a>
+                      <CopyButton text={ev.tx_hash} />
+                    </td>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <p className="sr-only" role="status" aria-live="polite">
-        {processed.length} event{processed.length !== 1 ? "s" : ""} shown{active ? " (filters active)" : ""}.
-      </p>
-    </div>
-  );
-}
-
-/** Public component. Uses URL params when inside a Router; falls back gracefully otherwise. */
-export function EventHistoryTable(props: EventHistoryTableProps) {
-  return (
-    <RouterErrorBoundary fallback={<EventHistoryTableNoRouter {...props} />}>
-      <EventHistoryTableInner {...props} />
-    </RouterErrorBoundary>
+          <Pagination
+            page={safePage}
+            total={sorted.length}
+            pageSize={PAGE_SIZE}
+            onChange={setPage}
+          />
+        </>
+      )}
+    </section>
   );
 }

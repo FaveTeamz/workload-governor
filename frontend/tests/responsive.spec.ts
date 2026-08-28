@@ -53,21 +53,21 @@ test.describe('Navigation — mobile (< 768px)', () => {
     await expect(desktopNav).toBeHidden();
   });
 
-  test('clicking hamburger opens the mobile menu', async ({ page }) => {
+  test('clicking hamburger opens the mobile drawer', async ({ page }) => {
     await openDashboard(page);
     const hamburger = page.getByTestId('hamburger-button');
-    await expect(page.getByTestId('mobile-menu')).not.toBeVisible();
+    await expect(page.getByTestId('mobile-drawer')).not.toBeVisible();
     await hamburger.click();
-    await expect(page.getByTestId('mobile-menu')).toBeVisible();
+    await expect(page.getByTestId('mobile-drawer')).toBeVisible();
   });
 
-  test('clicking hamburger again closes the mobile menu', async ({ page }) => {
+  test('clicking hamburger again closes the mobile drawer', async ({ page }) => {
     await openDashboard(page);
     const hamburger = page.getByTestId('hamburger-button');
     await hamburger.click();
-    await expect(page.getByTestId('mobile-menu')).toBeVisible();
+    await expect(page.getByTestId('mobile-drawer')).toBeVisible();
     await hamburger.click();
-    await expect(page.getByTestId('mobile-menu')).not.toBeVisible();
+    await expect(page.getByTestId('mobile-drawer')).not.toBeVisible();
   });
 
   test('hamburger button meets 44×44 px touch target requirement', async ({ page }) => {
@@ -84,13 +84,13 @@ test.describe('Navigation — mobile (414px)', () => {
     await expect(page.getByTestId('hamburger-button')).toBeVisible();
   });
 
-  test('mobile menu opens and closes at 414px', async ({ page }) => {
+  test('mobile drawer opens and closes at 414px', async ({ page }) => {
     await openDashboard(page);
     const hamburger = page.getByTestId('hamburger-button');
     await hamburger.click();
-    await expect(page.getByTestId('mobile-menu')).toBeVisible();
+    await expect(page.getByTestId('mobile-drawer')).toBeVisible();
     await hamburger.click();
-    await expect(page.getByTestId('mobile-menu')).not.toBeVisible();
+    await expect(page.getByTestId('mobile-drawer')).not.toBeVisible();
   });
 });
 

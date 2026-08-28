@@ -5,7 +5,7 @@
 
 import request from 'supertest';
 import { Keypair, Transaction } from '@stellar/stellar-sdk';
-import { MockPool, resetDb } from './setup';
+import { MockPool, resetDb, tbl } from './setup';
 
 const mockPool = new MockPool();
 jest.mock('../../src/db', () => ({
@@ -79,19 +79,59 @@ describe('POST /api/transactions/apply', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when sequence is missing', async () => {
+  it('fetches sequence number automatically when sequence is missing', async () => {
     const res = await request(app)
       .post('/api/transactions/apply')
       .send({ contributor, org_id: 'org-a', issue_id: 1 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
+    expect(res.body).toHaveProperty('fee');
+    expect(res.body).toHaveProperty('network_passphrase');
   });
 
-  it('returns 200 with XDR for valid inputs', async () => {
+  it('returns 200 with XDR, fee, and network_passphrase for valid inputs', async () => {
+    const res = await request(app)
+      .post('/api/transactions/apply')
+      .send({ contributor, org_id: 'org-a', issue_id: '1', sequence: SEQ });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
+    expect(res.body).toHaveProperty('fee');
+    expect(res.body).toHaveProperty('network_passphrase');
+  });
+
+  it('returns 409 when contributor has already applied', async () => {
+    tbl('applications').push({
+      id: 101,
+      contributor,
+      org_id: 'org-a',
+      issue_id: 1,
+      status: 'pending',
+    });
+
     const res = await request(app)
       .post('/api/transactions/apply')
       .send({ contributor, org_id: 'org-a', issue_id: 1, sequence: SEQ });
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('xdr');
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already applied/i);
+  });
+
+  it('returns 429 when application cap is reached', async () => {
+    for (let i = 1; i <= 15; i++) {
+      tbl('applications').push({
+        id: i,
+        contributor,
+        org_id: 'other-org',
+        issue_id: i,
+        status: 'pending',
+      });
+    }
+
+    const res = await request(app)
+      .post('/api/transactions/apply')
+      .send({ contributor, org_id: 'org-a', issue_id: 99, sequence: SEQ });
+    expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/cap reached/i);
+    expect(res.body.details).toHaveProperty('cap_type');
   });
 });
 
