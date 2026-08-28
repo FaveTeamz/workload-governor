@@ -29,6 +29,8 @@ jobs:
         run: npx playwright test
         env:
           CI: 'true'
+          ADMIN_PUBLIC_KEY: ${{ secrets.ADMIN_PUBLIC_KEY }}
+          ADMIN_SECRET_KEY: ${{ secrets.ADMIN_SECRET_KEY }}
 
       - name: Upload Playwright report
         if: always()

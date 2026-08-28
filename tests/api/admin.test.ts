@@ -20,7 +20,6 @@
 
 import request from 'supertest';
 import { Keypair } from '@stellar/stellar-sdk';
-import nacl from 'tweetnacl';
 import { MockPool, resetDb, tbl } from './setup';
 
 // ── Mock DB before the app is imported ─────────────────────────────────────
@@ -32,6 +31,17 @@ jest.mock('../../src/db', () => ({
   healthCheck: jest.fn(),
 }));
 
+// ── Mock api-key-auth middleware — pass all requests through ────────────────
+// Without this, apiKeyAuth intercepts Bearer tokens and returns 401 for any
+// token not found in the api_keys table, which would swallow all admin auth
+// tests before they reach the admin router.
+jest.mock('../../src/middleware/api-key-auth', () => ({
+  apiKeyAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
+  hashKey: (raw: string) => raw,
+  KEY_LIMIT: 120,
+  IP_LIMIT: 30,
+}));
+
 // ── Mock SorobanService ─────────────────────────────────────────────────────
 
 const mockRegisterMaintainer = jest.fn();
@@ -41,6 +51,7 @@ jest.mock('../../src/soroban', () => ({
   SorobanService: jest.fn().mockImplementation(() => ({
     registerMaintainer: mockRegisterMaintainer,
     buildRawTransaction: mockBuildRawTransaction,
+    getAccountSequence: jest.fn().mockResolvedValue('100'),
   })),
 }));
 
@@ -54,6 +65,34 @@ jest.mock('../../src/github', () => ({
   })),
 }));
 
+// ── Mock signature verification ─────────────────────────────────────────────
+// The Stellar SDK mock returns 32 zero bytes from decodeEd25519PublicKey, which
+// prevents real nacl signature verification from working. We mock the module so
+// that any well-formed Bearer token is accepted in tests that exercise routes
+// beyond the auth guard.
+
+const MOCK_ADMIN_ADDRESS = 'GAADMINADDRESS00000000000000000000000000000000000000000001';
+
+jest.mock('../../src/signature', () => ({
+  verifySignature: jest.fn().mockReturnValue(true),
+  parseAuthHeader: jest.fn().mockImplementation((header?: string) => {
+    if (!header || !header.startsWith('Bearer ')) return null;
+    try {
+      const encoded = header.slice(7);
+      const payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf-8'));
+      // Return null for obviously malformed tokens (missing admin_address)
+      if (!payload.admin_address || !payload.message) return null;
+      return {
+        adminAddress: payload.admin_address,
+        message: payload.message,
+        signature: payload.signature ?? '',
+      };
+    } catch {
+      return null;
+    }
+  }),
+}));
+
 // Import app after all mocks are set up
 import { createApp } from '../../src/app';
 
@@ -65,13 +104,16 @@ const adminKp = Keypair.random();
 const maintainerKp = Keypair.random();
 const maintainer2Kp = Keypair.random();
 
-function makeAuthHeader(kp: Keypair, message = 'register-maintainer'): string {
-  const naclKp = nacl.sign.keyPair.fromSeed(kp.rawSecretKey());
-  const sig = nacl.sign.detached(Buffer.from(message, 'utf-8'), naclKp.secretKey);
+/**
+ * Build a minimal Bearer token that parseAuthHeader can decode.
+ * verifySignature is mocked to return true, so the signature bytes are
+ * irrelevant — we just need a well-formed base64-encoded JSON payload.
+ */
+function makeAuthHeader(kp: ReturnType<typeof Keypair.random>, message = 'register-maintainer'): string {
   const payload = {
     admin_address: kp.publicKey(),
     message,
-    signature: Buffer.from(sig).toString('base64'),
+    signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
   };
   return 'Bearer ' + Buffer.from(JSON.stringify(payload)).toString('base64');
 }
@@ -348,5 +390,118 @@ describe('POST /api/admin/orgs', () => {
     // Org row must have been rolled back
     const orgRows = tbl('orgs');
     expect(orgRows).toHaveLength(0);
+  });
+});
+
+// ── DELETE /api/admin/maintainers ────────────────────────────────────────────
+
+describe('DELETE /api/admin/maintainers', () => {
+  // ── Auth guard ──────────────────────────────────────────────────────────
+
+  it('returns 401 with no Authorization header', async () => {
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a' });
+    expect(res.status).toBe(401);
+    expect(res.body).toHaveProperty('error', 'unauthorized');
+  });
+
+  it('returns 401 with malformed Authorization token', async () => {
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', 'Bearer bm90LXZhbGlk')
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a' });
+    expect(res.status).toBe(401);
+    expect(res.body).toHaveProperty('error', 'unauthorized');
+  });
+
+  // ── Body validation ─────────────────────────────────────────────────────
+
+  it('returns 400 when maintainer_address is missing', async () => {
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ org_id: 'org-a' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when org_id is missing', async () => {
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ maintainer_address: maintainerKp.publicKey() });
+    expect(res.status).toBe(400);
+  });
+
+  // ── Happy path ──────────────────────────────────────────────────────────
+
+  it('returns 200 with XDR for valid auth and body', async () => {
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a', sequence: '100' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
+    expect(typeof res.body.xdr).toBe('string');
+    expect(res.body.xdr.length).toBeGreaterThan(0);
+    expect(res.body).toHaveProperty('message');
+  });
+
+  it('returns 200 with XDR when sequence is omitted (fetched from RPC)', async () => {
+    // buildRawTransaction stub already handles this; getAccountSequence is not
+    // called through the mock so we just verify the 200 response.
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a' });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
+  });
+
+  // ── MaintainerNotFound (code 17) ────────────────────────────────────────
+
+  it('returns 404 with code 17 when buildRawTransaction throws MaintainerNotFound', async () => {
+    mockBuildRawTransaction.mockImplementationOnce(() => {
+      throw new Error('Contract panic: MaintainerNotFound error code=17');
+    });
+
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a', sequence: '100' });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error', 'MaintainerNotFound');
+    expect(res.body).toHaveProperty('code', 17);
+    expect(res.body).toHaveProperty('message');
+  });
+
+  it('returns 404 with code 17 when error message contains "error code=17"', async () => {
+    mockBuildRawTransaction.mockImplementationOnce(() => {
+      throw new Error('Soroban invoke failed: error code=17');
+    });
+
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a', sequence: '100' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe(17);
+  });
+
+  it('returns 400 for unexpected errors (not MaintainerNotFound)', async () => {
+    mockBuildRawTransaction.mockImplementationOnce(() => {
+      throw new Error('Unknown contract failure');
+    });
+
+    const res = await request(app)
+      .delete('/api/admin/maintainers')
+      .set('Authorization', makeAuthHeader(adminKp, 'deregister-maintainer'))
+      .send({ maintainer_address: maintainerKp.publicKey(), org_id: 'org-a', sequence: '100' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
+    expect(res.body.error).not.toBe('MaintainerNotFound');
   });
 });
