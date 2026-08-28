@@ -1,41 +1,35 @@
-import { useState } from "react";
-import { ActivityFeed } from "./ActivityFeed";
+/**
+ * ActivityPage — /profile/activity route, closes #651
+ *
+ * Shows a contributor's full chronological activity timeline.
+ * Address is read from the `address` query-param; falls back to DEMO.
+ */
+import { useSearchParams } from "react-router-dom";
+import { ActivityTimeline } from "./ActivityTimeline";
+import "./ActivityPage.css";
 
-const DEMO_ORGS = ["stellar-org", "meridian-dao"];
-const NETWORK = (import.meta.env.VITE_STELLAR_NETWORK ?? "testnet") as "testnet" | "mainnet";
+const DEMO_ADDRESS = "GBXXX1ABCDEFGHIJKLMNO12345";
 
 export function ActivityPage() {
-  const [selectedOrg, setSelectedOrg] = useState<string | undefined>(undefined);
+  const [params] = useSearchParams();
+  const address = params.get("address") ?? DEMO_ADDRESS;
 
   return (
     <div className="activity-page">
-      <nav className="activity-page__nav" aria-label="Activity breadcrumb">
-        <a href="#/" className="activity-page__back">← Home</a>
+      <nav className="activity-page__nav" aria-label="Breadcrumb">
+        <a href="/" className="activity-page__back">
+          ← Home
+        </a>
       </nav>
 
-      <div className="activity-page__tabs" role="tablist" aria-label="Org filter">
-        <button
-          role="tab"
-          aria-selected={selectedOrg === undefined}
-          className={`af-filter-btn${selectedOrg === undefined ? " af-filter-btn--active" : ""}`}
-          onClick={() => setSelectedOrg(undefined)}
-        >
-          All
-        </button>
-        {DEMO_ORGS.map((org) => (
-          <button
-            key={org}
-            role="tab"
-            aria-selected={selectedOrg === org}
-            className={`af-filter-btn${selectedOrg === org ? " af-filter-btn--active" : ""}`}
-            onClick={() => setSelectedOrg(org)}
-          >
-            {org}
-          </button>
-        ))}
-      </div>
+      <header className="activity-page__header">
+        <h1 className="activity-page__title">Activity Timeline</h1>
+        <p className="activity-page__subtitle">
+          Your complete application and assignment history, newest first.
+        </p>
+      </header>
 
-      <ActivityFeed apiBase="/api" orgId={selectedOrg} network={NETWORK} />
+      <ActivityTimeline address={address} apiBase="/api" />
     </div>
   );
 }
