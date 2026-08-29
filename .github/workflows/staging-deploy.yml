@@ -13,7 +13,19 @@ env:
   TASK_DEF_HISTORY_COUNT: 5
 
 jobs:
+  # ── Run DB migrations before deploying new code ──────────────────────────
+  migrate:
+    name: DB migrations (staging)
+    uses: ./.github/workflows/db-migration.yml
+    with:
+      environment: staging
+      image_tag: ${{ github.sha }}
+    secrets:
+      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
   deploy:
+    needs: [migrate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
