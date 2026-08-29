@@ -63,6 +63,16 @@ pub enum ContractError {
     /// Discriminant: `12`.
     CapOutOfRange = 12,
 
+    /// Detected a mismatch between the org assignment counter and the actual
+    /// assignment sentinel entries (storage corruption guard).
+    /// Discriminant: `13`.
+    CounterInconsistency = 13,
+
+    /// The requested per-org assignment cap is outside the permitted range `[1, 20]`.
+    /// Returned by `set_org_cap` when `new_cap` is 0 or > 20.
+    /// Discriminant: `14`.
+    InvalidOrgCap = 14,
+
     /// The specified maintainer is not registered for the given organisation.
     /// Returned by `deregister_maintainer` when attempting to deregister a maintainer
     /// that was never registered (or was already deregistered).

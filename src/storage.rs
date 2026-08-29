@@ -75,6 +75,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
+/// Minimum valid value for a per-org assignment cap (via `set_org_cap`).
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum valid value for a per-org assignment cap (via `set_org_cap`).
+pub const ORG_CAP_MAX: u32 = 20;
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
 // ---------------------------------------------------------------------------
@@ -231,27 +237,6 @@ pub(crate) fn extend_app_entry_ttl(
     env.storage()
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
-}
-
-// ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
 }
 
 // ---------------------------------------------------------------------------
