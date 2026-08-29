@@ -1,0 +1,14 @@
+# .trivyignore — Trivy CVE snooze list
+#
+# Format: CVE-YYYY-NNNNN  # snooze: expires YYYY-MM-DD  reason: <brief explanation>
+#
+# Rules:
+#   1. Every entry MUST include an "expires YYYY-MM-DD" comment.
+#      Entries without an expiry are rejected by the CI snooze-verify step.
+#   2. Expiry date should not exceed 90 days from the snooze date.
+#   3. Renewing a snooze requires a fresh PR with an updated expiry and
+#      a comment explaining why the vulnerability is still acceptable.
+#
+# Example (do not uncomment unless the CVE is confirmed as a false positive):
+#
+# CVE-2024-12345  # snooze: expires 2026-10-31  reason: only affects musl libc, image uses glibc
