@@ -21,7 +21,7 @@ mod test;
 #[cfg(test)]
 extern crate std;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::ContractError;
 
@@ -62,6 +62,7 @@ impl WorkloadGovernor {
         }
         admin.require_auth();
         storage::set_admin(&env, &admin);
+        storage::set_global_cap(&env, storage::GLOBAL_APP_LIMIT);
         storage::bump_instance(&env);
         events::emit_initialized(&env, &admin);
     }
@@ -93,6 +94,50 @@ impl WorkloadGovernor {
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
+    /// Revokes a maintainer's authorisation for a specific organisation (admin-only).
+    ///
+    /// Deletes the `(maint, maintainer, org_id)` persistent storage entry so that
+    /// subsequent calls to maintainer-gated functions (e.g. `assign_issue`) will fail
+    /// with [`ContractError::UnauthorizedMaintainer`].
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin`      – Must match the stored admin address (auth enforced).
+    /// * `maintainer` – Address whose maintainer rights are being revoked.
+    /// * `org_id`     – Organisation symbol the maintainer is being deregistered from.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    /// * [`ContractError::MaintainerNotFound`] — `maintainer` is not currently registered
+    ///   for `org_id` (code 17).
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <admin-account> \
+    ///   -- deregister_maintainer \
+    ///   --admin <ADMIN_ADDRESS> \
+    ///   --maintainer <MAINTAINER_ADDRESS> \
+    ///   --org_id my_org
+    /// ```
+    pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::MaintainerNotFound);
+        }
+        storage::remove_maintainer(&env, &maintainer, &org_id);
+        storage::bump_instance(&env);
+        events::emit_maintainer_deregistered(&env, &admin, &maintainer, &org_id);
+    }
+
     /// Upgrades the contract WASM to a new hash (admin-only).
     ///
     /// This is the standard Soroban upgrade path. The new WASM must already be
@@ -115,6 +160,71 @@ impl WorkloadGovernor {
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// Sets the global application cap via the normal (non-emergency) operator path.
+    ///
+    /// Emits `GlobalCapUpdated` event. Admin auth is required.
+    /// Cap must be in range 0..=100.
+    pub fn set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if new_cap > 100 {
+            panic_with_error!(env, ContractError::CapOutOfRange);
+        }
+        storage::set_global_cap(&env, new_cap);
+        storage::bump_instance(&env);
+        events::emit_global_cap_updated(&env, &admin, new_cap);
+    }
+
+    /// Immediately overrides the global application cap to `new_cap` (admin-only, emergency use).
+    ///
+    /// Use this function when the default cap of [`storage::GLOBAL_APP_LIMIT`] (15) is too
+    /// restrictive during an unusually large Wave and contributors are being blocked.
+    /// The new cap takes effect on the **next** `apply_for_issue` call with no migration of
+    /// existing application counts.
+    ///
+    /// Unlike a hypothetical `set_global_cap`, this function emits [`EmergencyCapUpdated`]
+    /// rather than `GlobalCapUpdated` so that monitoring systems can detect and alert on
+    /// emergency changes independently of routine cap adjustments.
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin`   – Must match the stored admin address (auth enforced).
+    /// * `new_cap` – New maximum number of pending applications per contributor. Must be
+    ///               in the range `[0, 100]`.
+    ///
+    /// # Returns
+    /// `()` on success. The cap is stored persistently; it survives ledger archival and
+    /// does not expire.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    /// * [`ContractError::CapOutOfRange`]    — `new_cap` exceeds 100.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <admin-account> \
+    ///   -- emergency_set_global_cap \
+    ///   --admin <ADMIN_ADDRESS> \
+    ///   --new_cap 25
+    /// ```
+    pub fn emergency_set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if new_cap > 100 {
+            panic_with_error!(env, ContractError::CapOutOfRange);
+        }
+        let old_cap = storage::get_global_cap(&env);
+        storage::set_global_cap(&env, new_cap);
+        storage::bump_instance(&env);
+        events::emit_emergency_cap_updated(&env, &admin, old_cap, new_cap);
     }
 
     // -----------------------------------------------------------------------
@@ -158,7 +268,7 @@ impl WorkloadGovernor {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
-        if count >= storage::GLOBAL_APP_LIMIT {
+        if count >= storage::get_global_cap(&env) {
             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
         }
         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
@@ -275,7 +385,7 @@ impl WorkloadGovernor {
             panic_with_error!(env, ContractError::ApplicationNotFound);
         }
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {
+        if asgn_count >= storage::get_org_cap(&env, &org_id) {
             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);
         }
         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
@@ -292,6 +402,15 @@ impl WorkloadGovernor {
         }
         storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
         storage::set_assignment(&env, &org_id, issue_id, &contributor);
+        // Debug assertion: counter and sentinel must agree immediately after write.
+        #[cfg(debug_assertions)]
+        {
+            let written = storage::get_org_assignment_count(&env, &contributor, &org_id);
+            let sentinel = storage::has_assignment(&env, &org_id, issue_id, &contributor);
+            if written == 0 || !sentinel {
+                panic_with_error!(env, ContractError::CounterInconsistency);
+            }
+        }
         storage::bump_instance(&env);
         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);
     }
@@ -331,6 +450,15 @@ impl WorkloadGovernor {
         }
         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {
             panic_with_error!(env, ContractError::AssignmentNotFound);
+        }
+        // Debug assertion: assignment exists so counter must be ≥ 1.
+        // A counter of 0 here indicates storage corruption (CounterInconsistency).
+        #[cfg(debug_assertions)]
+        {
+            let counter = storage::get_org_assignment_count(&env, &contributor, &org_id);
+            if counter == 0 {
+                panic_with_error!(env, ContractError::CounterInconsistency);
+            }
         }
         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
@@ -383,7 +511,10 @@ impl WorkloadGovernor {
         }
         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        let new_count = asgn_count.saturating_sub(1);
+        if asgn_count == 0 {
+            panic_with_error!(env, ContractError::CounterInconsistency);
+        }
+        let new_count = asgn_count - 1;
         if new_count == 0 {
             storage::remove_org_assignment_count(&env, &contributor, &org_id);
         } else {
@@ -394,10 +525,141 @@ impl WorkloadGovernor {
     }
 
     // -----------------------------------------------------------------------
+    // Admin diagnostics  (Issue #4)
+    // -----------------------------------------------------------------------
+
+    /// Checks a list of `(contributor, org_id)` pairs for `CounterInconsistency`.
+    ///
+    /// For each pair, reads the org assignment counter. If the counter is `0` but
+    /// one or more of the supplied `issue_ids` has a live assignment sentinel for that
+    /// pair, the pair is flagged as inconsistent.
+    ///
+    /// Soroban storage cannot be iterated, so the caller supplies the pairs and issue
+    /// IDs to probe — typically derived from an off-chain event index of all
+    /// `assign_issue` transactions.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required. Intended for admin diagnostics.
+    ///
+    /// # Arguments
+    /// * `pairs`     – `Vec<(Address, Symbol)>` of `(contributor, org_id)` pairs.
+    /// * `issue_ids` – `Vec<u32>` of issue IDs to probe for orphan sentinels per pair.
+    ///
+    /// # Returns
+    /// A `Vec<(Address, Symbol)>` of pairs where a `CounterInconsistency` was detected.
+    /// Returns an empty vec when all pairs are consistent.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- check_consistency \
+    ///   --pairs '[[{"address":"GAB..."},{"symbol":"my_org"}]]' \
+    ///   --issue_ids '[1,2,3]'
+    /// ```
+    pub fn check_consistency(
+        env: Env,
+        pairs: Vec<(Address, Symbol)>,
+        issue_ids: Vec<u32>,
+    ) -> Vec<(Address, Symbol)> {
+        let mut inconsistent: Vec<(Address, Symbol)> = Vec::new(&env);
+        for pair in pairs.iter() {
+            let (ref contributor, ref org_id) = pair;
+            let counter = storage::get_org_assignment_count(&env, contributor, org_id);
+            if counter == 0 {
+                // Counter is 0 — scan issue_ids for an orphan sentinel
+                let mut has_orphan = false;
+                for issue_id in issue_ids.iter() {
+                    if storage::has_assignment(&env, org_id, issue_id, contributor) {
+                        has_orphan = true;
+                        break;
+                    }
+                }
+                if has_orphan {
+                    inconsistent.push_back(pair);
+                }
+            }
+        }
+        inconsistent
+    }
+
+    // -----------------------------------------------------------------------
     // TTL management
     // -----------------------------------------------------------------------
 
-    /// Resets the TTL of a contributor's pending application entries to the full wave
+    /// Sets the per-org assignment cap for an organisation (maintainer-only).
+    ///
+    /// Overrides the default cap of `4` for the given `org_id`. The cap is stored
+    /// persistently under key `("o_cap", org_id)` and takes effect immediately on
+    /// the next `assign_issue` call for that org.
+    ///
+    /// # Who can call
+    /// A maintainer that has been registered for `org_id`.
+    ///
+    /// # Arguments
+    /// * `maintainer` – Registered maintainer address (auth enforced).
+    /// * `org_id`     – Organisation to configure.
+    /// * `new_cap`    – New cap value; must be in range `[1, 20]` inclusive.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
+    /// * [`ContractError::UnauthorizedMaintainer`] — caller not registered for `org_id`.
+    /// * [`ContractError::InvalidOrgCap`]          — `new_cap` is 0 or > 20.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <maintainer-account> \
+    ///   -- set_org_cap \
+    ///   --maintainer <MAINTAINER_ADDRESS> \
+    ///   --org_id my_org --new_cap 8
+    /// ```
+    pub fn set_org_cap(env: Env, maintainer: Address, org_id: Symbol, new_cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        maintainer.require_auth();
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+        }
+        if new_cap < storage::ORG_CAP_MIN || new_cap > storage::ORG_CAP_MAX {
+            panic_with_error!(env, ContractError::InvalidOrgCap);
+        }
+        let old_cap = storage::get_org_cap(&env, &org_id);
+        storage::set_org_cap(&env, &org_id, new_cap);
+        storage::bump_instance(&env);
+        events::emit_org_cap_updated(&env, &org_id, old_cap, new_cap);
+    }
+
+    /// Returns the effective assignment cap for the given organisation.
+    ///
+    /// Returns the per-org cap if one has been set via `set_org_cap`, otherwise
+    /// returns the default of `4`.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Arguments
+    /// * `org_id` – Organisation to query.
+    ///
+    /// # Returns
+    /// The cap as a `u32` in the range `[1, 20]` (or `4` if no cap is configured).
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- get_org_cap \
+    ///   --org_id my_org
+    /// ```
+    pub fn get_org_cap(env: Env, org_id: Symbol) -> u32 {
+        storage::get_org_cap(&env, &org_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // TTL management
+    // -----------------------------------------------------------------------
     /// duration (permissionless — anyone can call this to prevent an application expiring).
     ///
     /// Extends both:
@@ -562,7 +824,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
     ) -> u32 {
         let current = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        storage::ORG_ASSIGNMENT_LIMIT.saturating_sub(current)
+        storage::get_org_cap(&env, &org_id).saturating_sub(current)
     }
 
     /// Returns the number of additional global applications a contributor may submit.
@@ -580,7 +842,7 @@ impl WorkloadGovernor {
     /// Remaining capacity as a `u32` in `[0, GLOBAL_APP_LIMIT]`.
     pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {
         let current = storage::get_global_app_count(&env, &contributor);
-        storage::GLOBAL_APP_LIMIT.saturating_sub(current)
+        storage::get_global_cap(&env).saturating_sub(current)
     }
 
     /// Returns `true` if the contributor has reached their per-org assignment limit.
@@ -602,7 +864,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
     ) -> bool {
         let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        count >= storage::ORG_ASSIGNMENT_LIMIT
+        count >= storage::get_org_cap(&env, &org_id)
     }
 
     /// Returns `true` if the contributor has reached their global application limit.
@@ -617,8 +879,24 @@ impl WorkloadGovernor {
     ///
     /// # Returns
     /// `true` if the contributor has 15 pending applications globally.
-    pub fn global_app_limit_reached(env: Env, contributor: Address) -> bool {
+    pub fn is_global_app_limit_reached(env: Env, contributor: Address) -> bool {
         let count = storage::get_global_app_count(&env, &contributor);
-        count >= storage::GLOBAL_APP_LIMIT
+        count >= storage::get_global_cap(&env)
+    }
+
+    /// TEST-ONLY: directly seeds an assignment entry to make `AlreadyAssigned` reachable.
+    ///
+    /// This bypasses the normal `assign_issue` flow so tests can verify error 11.
+    /// Compiled only when the `testutils` feature is active.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn seed_assignment(
+        env: Env,
+        contributor: Address,
+        org_id: Symbol,
+        issue_id: u32,
+    ) {
+        storage::set_assignment(&env, &org_id, issue_id, &contributor);
+        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        storage::set_org_assignment_count(&env, &contributor, &org_id, count + 1);
     }
 }
