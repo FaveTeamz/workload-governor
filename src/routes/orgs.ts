@@ -185,8 +185,8 @@ router.post(
   validateBody(orgApplyBodySchema),
   (req: Request, res: Response) => {
     const { contributor } = req.body as OrgApplyBody;
-    // Return 200 with success (tests expect 200, not 201 for this endpoint)
-    res.status(200).json({
+    // Return 201 Created as defined in the OpenAPI spec
+    res.status(201).json({
       success: true,
       tx_hash: 'a'.repeat(64),
       message: 'Application submitted successfully',
@@ -260,12 +260,7 @@ router.get('/orgs/:orgId/events', (req: Request, res: Response) => {
     : allEvents;
   const page = filtered.slice(offset, offset + limit);
 
-  res.json({
-    events: page,
-    total: filtered.length,
-    limit,
-    offset,
-  });
+  res.json(page);
 });
 
 export default router;

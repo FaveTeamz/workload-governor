@@ -88,6 +88,20 @@ async function getOrgBreakdown(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/contributors/:address/stats — legacy aggregate stats
+// (Registered BEFORE /:address so Express matches the more-specific path first)
+// ---------------------------------------------------------------------------
+
+router.get('/:address/stats', (req: Request, res: Response) => {
+  const { address } = req.params;
+  res.json({
+    address,
+    global_application_count: 2,
+    org_assignment_counts: { org_stellar_001: 1 },
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/contributors/:address
 //   Full profile: address + global counts + per-org breakdown + recent events
 // ---------------------------------------------------------------------------
@@ -169,19 +183,6 @@ router.get('/:address', async (req: Request, res: Response) => {
     const msg = err instanceof Error ? err.message : 'internal server error';
     res.status(500).json({ error: msg });
   }
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/contributors/:address/stats — legacy aggregate stats
-// ---------------------------------------------------------------------------
-
-router.get('/:address/stats', (req: Request, res: Response) => {
-  const { address } = req.params;
-  res.json({
-    address,
-    global_application_count: 2,
-    org_assignment_counts: { org_stellar_001: 1 },
-  });
 });
 
 // ---------------------------------------------------------------------------
