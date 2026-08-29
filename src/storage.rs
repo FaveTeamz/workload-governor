@@ -75,6 +75,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
+/// Minimum valid value for a per-org assignment cap (set via `set_org_cap`).
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum valid value for a per-org assignment cap (set via `set_org_cap`).
+pub const ORG_CAP_MAX: u32 = 20;
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
 // ---------------------------------------------------------------------------
@@ -234,27 +240,6 @@ pub(crate) fn extend_app_entry_ttl(
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
-}
-
-// ---------------------------------------------------------------------------
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //
@@ -273,6 +258,41 @@ pub(crate) fn get_admin(env: &Env) -> Option<Address> {
 /// Writes the admin address to persistent storage.
 pub(crate) fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&admin_key(), admin);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Organisation Registration Sentinel
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("org"), org_id: Symbol)`
+// Value: `bool` (presence sentinel — always `true`)
+//
+// Written the first time any maintainer is registered for `org_id`.
+// Never deleted — it marks that the org was at minimum once initialised.
+// Callers should use `is_org_registered` to verify an org exists before
+// returning `OrgNotFound`.
+
+fn org_sentinel_key(org_id: &Symbol) -> (Symbol, Symbol) {
+    (symbol_short!("org"), org_id.clone())
+}
+
+/// Returns `true` if `org_id` has ever had a maintainer registered for it.
+///
+/// Used to distinguish `OrgNotFound` (org never initialised) from
+/// `UnauthorizedMaintainer` (org exists, but this caller is not registered).
+pub(crate) fn is_org_registered(env: &Env, org_id: &Symbol) -> bool {
+    let key = org_sentinel_key(org_id);
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&key)
+        .unwrap_or(false)
+}
+
+/// Marks `org_id` as registered. Idempotent — safe to call on every
+/// `register_maintainer` invocation.
+pub(crate) fn mark_org_registered(env: &Env, org_id: &Symbol) {
+    let key = org_sentinel_key(org_id);
+    env.storage().persistent().set(&key, &true);
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +316,11 @@ pub(crate) fn is_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) ->
 }
 
 /// Registers `maintainer` for `org_id` (idempotent).
+///
+/// Also marks the org as registered via [`mark_org_registered`] so that subsequent
+/// calls can distinguish `OrgNotFound` from `UnauthorizedMaintainer`.
 pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
+    mark_org_registered(env, org_id);
     let key = maintainer_key(maintainer, org_id);
     env.storage().persistent().set(&key, &true);
 }

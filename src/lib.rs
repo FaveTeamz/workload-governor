@@ -355,6 +355,7 @@ impl WorkloadGovernor {
     ///
     /// # Errors
     /// * [`ContractError::NotInitialized`]          — contract not yet initialised.
+    /// * [`ContractError::OrgNotFound`]             — `org_id` has never had a maintainer registered.
     /// * [`ContractError::UnauthorizedMaintainer`]  — caller is not a registered maintainer for `org_id`.
     /// * [`ContractError::ApplicationNotFound`]     — contributor has no pending application for the issue.
     /// * [`ContractError::OrgAssignmentLimitReached`] — contributor already has 4 active assignments in `org_id`.
@@ -378,6 +379,9 @@ impl WorkloadGovernor {
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
+        if !storage::is_org_registered(&env, &org_id) {
+            panic_with_error!(env, ContractError::OrgNotFound);
+        }
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
         }
@@ -434,6 +438,7 @@ impl WorkloadGovernor {
     ///
     /// # Errors
     /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
+    /// * [`ContractError::OrgNotFound`]            — `org_id` has never had a maintainer registered.
     /// * [`ContractError::UnauthorizedMaintainer`] — caller is not a registered maintainer for `org_id`.
     /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists for the triple.
     pub fn complete_assignment(
@@ -445,6 +450,9 @@ impl WorkloadGovernor {
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
+        if !storage::is_org_registered(&env, &org_id) {
+            panic_with_error!(env, ContractError::OrgNotFound);
+        }
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
         }
@@ -492,6 +500,7 @@ impl WorkloadGovernor {
     ///
     /// # Errors
     /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
+    /// * [`ContractError::OrgNotFound`]            — `org_id` has never had a maintainer registered.
     /// * [`ContractError::UnauthorizedMaintainer`] — caller is not a registered maintainer for `org_id`.
     /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists for the triple.
     pub fn revoke_assignment(
@@ -503,6 +512,9 @@ impl WorkloadGovernor {
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
+        if !storage::is_org_registered(&env, &org_id) {
+            panic_with_error!(env, ContractError::OrgNotFound);
+        }
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
         }
@@ -606,6 +618,7 @@ impl WorkloadGovernor {
     ///
     /// # Errors
     /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
+    /// * [`ContractError::OrgNotFound`]            — `org_id` has never had a maintainer registered.
     /// * [`ContractError::UnauthorizedMaintainer`] — caller not registered for `org_id`.
     /// * [`ContractError::InvalidOrgCap`]          — `new_cap` is 0 or > 20.
     ///
@@ -620,6 +633,9 @@ impl WorkloadGovernor {
     pub fn set_org_cap(env: Env, maintainer: Address, org_id: Symbol, new_cap: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
+        if !storage::is_org_registered(&env, &org_id) {
+            panic_with_error!(env, ContractError::OrgNotFound);
+        }
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
         }
