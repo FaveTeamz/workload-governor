@@ -1752,3 +1752,315 @@ fn unit_mutation_extend_ttl_with_zero_global_count_skips_global() {
     assert!(t.client.has_applied(&contributor, &org, &5u32));
     assert_eq!(t.client.get_global_application_count(&contributor), 1);
 }
+
+// ---------------------------------------------------------------------------
+// UNIT TESTS — get_contributor_snapshot
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unit_snapshot_unknown_contributor_returns_zeros() {
+    // A contributor who has never interacted with the contract must receive a
+    // snapshot with global_application_count = 0 and all requested orgs at 0.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_a = t.org("snap_a");
+    let org_b = t.org("snap_b");
+    t.client.initialize(&admin);
+
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    org_ids.push_back(org_a.clone());
+    org_ids.push_back(org_b.clone());
+
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    assert_eq!(
+        snapshot.global_application_count, 0,
+        "unknown contributor must have 0 global application count"
+    );
+    assert_eq!(
+        snapshot.org_assignments.get(org_a.clone()).unwrap(),
+        0,
+        "unknown contributor must have 0 assignments in org_a"
+    );
+    assert_eq!(
+        snapshot.org_assignments.get(org_b.clone()).unwrap(),
+        0,
+        "unknown contributor must have 0 assignments in org_b"
+    );
+}
+
+#[test]
+fn unit_snapshot_single_org_with_applications() {
+    // A contributor with pending applications but no assignments.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("snap1");
+    t.client.initialize(&admin);
+
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+    t.client.apply_for_issue(&contributor, &org, &3u32);
+
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    org_ids.push_back(org.clone());
+
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    assert_eq!(
+        snapshot.global_application_count, 3,
+        "global application count must reflect 3 pending apps"
+    );
+    assert_eq!(
+        snapshot.org_assignments.get(org.clone()).unwrap(),
+        0,
+        "no assignments yet — org count must be 0"
+    );
+}
+
+#[test]
+fn unit_snapshot_single_org_with_assignments() {
+    // A contributor with active assignments; verify both fields are correct.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("snap2");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Two pending apps → two assignments; one more still pending.
+    t.client.apply_for_issue(&contributor, &org, &10u32);
+    t.client.apply_for_issue(&contributor, &org, &20u32);
+    t.client.apply_for_issue(&contributor, &org, &30u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &20u32);
+
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    org_ids.push_back(org.clone());
+
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    // 3 applied − 2 assigned = 1 pending application remaining.
+    assert_eq!(
+        snapshot.global_application_count, 1,
+        "one pending application must remain after two assignments"
+    );
+    assert_eq!(
+        snapshot.org_assignments.get(org.clone()).unwrap(),
+        2,
+        "two active assignments must be reflected in org_assignments"
+    );
+}
+
+#[test]
+fn unit_snapshot_multi_org() {
+    // Two orgs with different assignment counts; snapshot must report both correctly.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let m2 = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_a = t.org("ma");
+    let org_b = t.org("mb");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org_a);
+    t.client.register_maintainer(&admin, &m2, &org_b);
+
+    // Assign 3 issues in org_a, 1 in org_b.
+    for i in 0u32..3 {
+        t.client.apply_for_issue(&contributor, &org_a, &i);
+        t.client.assign_issue(&m1, &contributor, &org_a, &i);
+    }
+    t.client.apply_for_issue(&contributor, &org_b, &100u32);
+    t.client.assign_issue(&m2, &contributor, &org_b, &100u32);
+
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    org_ids.push_back(org_a.clone());
+    org_ids.push_back(org_b.clone());
+
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    assert_eq!(snapshot.global_application_count, 0);
+    assert_eq!(snapshot.org_assignments.get(org_a.clone()).unwrap(), 3);
+    assert_eq!(snapshot.org_assignments.get(org_b.clone()).unwrap(), 1);
+}
+
+#[test]
+fn unit_snapshot_requested_org_not_in_org_ids_returns_none() {
+    // An org not included in org_ids should NOT appear in the result map.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_a = t.org("req_a");
+    let org_b = t.org("req_b");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org_a);
+
+    t.client.apply_for_issue(&contributor, &org_a, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org_a, &1u32);
+
+    // Only request org_b, not org_a.
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    org_ids.push_back(org_b.clone());
+
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    // global count correctly reflects the assignment (app was consumed).
+    assert_eq!(snapshot.global_application_count, 0);
+    // org_b was requested and has 0 assignments.
+    assert_eq!(snapshot.org_assignments.get(org_b.clone()).unwrap(), 0);
+    // org_a was NOT requested — must be absent from the map.
+    assert!(
+        snapshot.org_assignments.get(org_a.clone()).is_none(),
+        "org_a was not requested so it must not appear in org_assignments"
+    );
+}
+
+#[test]
+fn unit_snapshot_empty_org_ids() {
+    // An empty org_ids list is valid — the map is empty and only the global count
+    // is returned.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("empty_o");
+    t.client.initialize(&admin);
+
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+
+    let org_ids: soroban_sdk::Vec<Symbol> = soroban_sdk::Vec::new(&t.env);
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    assert_eq!(snapshot.global_application_count, 1);
+    assert_eq!(snapshot.org_assignments.len(), 0, "map must be empty when no orgs requested");
+}
+
+#[test]
+fn unit_snapshot_exactly_10_orgs_allowed() {
+    // The 10-org limit boundary: exactly 10 org IDs must succeed.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let org_names = ["o1", "o2", "o3", "o4", "o5", "o6", "o7", "o8", "o9", "o10"];
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    for name in &org_names {
+        org_ids.push_back(t.org(name));
+    }
+    assert_eq!(org_ids.len(), 10);
+
+    // Must not panic.
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+    assert_eq!(snapshot.global_application_count, 0);
+    assert_eq!(snapshot.org_assignments.len(), 10);
+    // Every org must have count 0.
+    for name in &org_names {
+        assert_eq!(
+            snapshot.org_assignments.get(t.org(name)).unwrap(),
+            0,
+            "org {} must have 0 assignments",
+            name
+        );
+    }
+}
+
+#[test]
+#[should_panic]
+fn unit_snapshot_11_orgs_rejected() {
+    // 11 org IDs must panic with SnapshotOrgLimitExceeded (error 12).
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    for i in 0u32..11 {
+        // Use format! to get org names — this avoids Symbol::new length issues.
+        // Symbol::new in the test environment accepts short ASCII strings.
+        let name_str = match i {
+            0 => "x0", 1 => "x1", 2 => "x2", 3 => "x3", 4 => "x4",
+            5 => "x5", 6 => "x6", 7 => "x7", 8 => "x8", 9 => "x9",
+            _ => "x10",
+        };
+        org_ids.push_back(t.org(name_str));
+    }
+    assert_eq!(org_ids.len(), 11);
+
+    t.client.get_contributor_snapshot(&contributor, &org_ids); // must panic
+}
+
+#[test]
+fn unit_snapshot_error_code_11_orgs() {
+    // Verify the exact error code (12 = SnapshotOrgLimitExceeded) via try_* client.
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    for name in &["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10"] {
+        org_ids.push_back(t.org(name));
+    }
+
+    let result = t.client.try_get_contributor_snapshot(&contributor, &org_ids);
+    let expected_err = Error::from_contract_error(ContractError::SnapshotOrgLimitExceeded as u32);
+    assert!(
+        matches!(result, Err(Ok(e)) if e == expected_err),
+        "11-org snapshot must return SnapshotOrgLimitExceeded (error 12), got: {:?}",
+        result.map(|_| ())
+    );
+}
+
+#[test]
+fn unit_snapshot_consistent_with_individual_queries() {
+    // The snapshot values must exactly match the individual query functions,
+    // proving atomicity equivalence in the test environment.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_a = t.org("cons_a");
+    let org_b = t.org("cons_b");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org_a);
+    t.client.register_maintainer(&admin, &maintainer, &org_b);
+
+    // Build some state.
+    t.client.apply_for_issue(&contributor, &org_a, &1u32);
+    t.client.apply_for_issue(&contributor, &org_a, &2u32);
+    t.client.apply_for_issue(&contributor, &org_b, &3u32);
+    t.client.assign_issue(&maintainer, &contributor, &org_a, &1u32);
+
+    // Capture individual queries.
+    let global = t.client.get_global_application_count(&contributor);
+    let count_a = t.client.get_org_assignment_count(&contributor, &org_a);
+    let count_b = t.client.get_org_assignment_count(&contributor, &org_b);
+
+    // Capture snapshot.
+    let mut org_ids = soroban_sdk::Vec::new(&t.env);
+    org_ids.push_back(org_a.clone());
+    org_ids.push_back(org_b.clone());
+    let snapshot = t.client.get_contributor_snapshot(&contributor, &org_ids);
+
+    assert_eq!(
+        snapshot.global_application_count, global,
+        "snapshot global count must match get_global_application_count"
+    );
+    assert_eq!(
+        snapshot.org_assignments.get(org_a.clone()).unwrap(),
+        count_a,
+        "snapshot org_a count must match get_org_assignment_count"
+    );
+    assert_eq!(
+        snapshot.org_assignments.get(org_b.clone()).unwrap(),
+        count_b,
+        "snapshot org_b count must match get_org_assignment_count"
+    );
+}

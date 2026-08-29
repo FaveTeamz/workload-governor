@@ -57,4 +57,9 @@ pub enum ContractError {
     /// An active assignment already exists for this issue and contributor.
     /// Discriminant: `11`.
     AlreadyAssigned = 11,
+
+    /// More than [`crate::SNAPSHOT_ORG_LIMIT`] (10) org IDs were supplied to
+    /// `get_contributor_snapshot`.
+    /// Discriminant: `12`.
+    SnapshotOrgLimitExceeded = 12,
 }
