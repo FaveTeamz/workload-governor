@@ -321,6 +321,50 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /contributors/{address}/activity:
+    get:
+      operationId: getContributorActivity
+      tags: [contributors]
+      summary: Get contributor activity heatmap data
+      description: >
+        Returns daily counts of applications, assignments, completions, and withdrawals
+        grouped by week for a contributor over a configurable time period (30d, 90d, 365d).
+        Cached in Redis for 1 hour.
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Contributor Stellar address
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [30d, 90d, 365d]
+            default: 90d
+          description: Time period for activity history (30d, 90d, or 365d)
+      responses:
+        '200':
+          description: Contributor activity heatmap data
+          headers:
+            X-Cache:
+              description: HIT when served from Redis cache, MISS otherwise
+              schema:
+                type: string
+                enum: [HIT, MISS]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributorActivityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -536,6 +580,69 @@ components:
           type: object
           additionalProperties:
             type: integer
+
+    DailyActivity:
+      type: object
+      required: [date, applications, assignments, completions, withdrawals, total]
+      properties:
+        date:
+          type: string
+          format: date
+          example: '2026-06-01'
+        applications:
+          type: integer
+          example: 1
+        assignments:
+          type: integer
+          example: 0
+        completions:
+          type: integer
+          example: 0
+        withdrawals:
+          type: integer
+          example: 0
+        total:
+          type: integer
+          example: 1
+
+    WeekActivity:
+      type: object
+      required: [week_start, days, total]
+      properties:
+        week_start:
+          type: string
+          format: date
+          example: '2026-06-01'
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyActivity'
+        total:
+          type: integer
+          example: 3
+
+    ContributorActivityResponse:
+      type: object
+      required: [address, period, total_activities, days, weeks]
+      properties:
+        address:
+          type: string
+          example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+        period:
+          type: string
+          enum: [30d, 90d, 365d]
+          example: 90d
+        total_activities:
+          type: integer
+          example: 12
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyActivity'
+        weeks:
+          type: array
+          items:
+            $ref: '#/components/schemas/WeekActivity'
 
     Error:
       type: object
