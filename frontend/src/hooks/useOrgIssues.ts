@@ -8,6 +8,8 @@ import { useState, useEffect, useCallback } from 'react';
 
 export type IssueStatus = 'open' | 'applied' | 'assigned';
 
+export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
+
 export interface OrgIssue {
   issue_id: string;
   org_id: string;
@@ -15,6 +17,12 @@ export interface OrgIssue {
   status: IssueStatus;
   reward_xlm?: number;
   created_at: string;
+  /** Optional label names for filtering */
+  labels?: string[];
+  /** Optional difficulty tag */
+  difficulty?: Difficulty;
+  /** Number of pending applicants */
+  applicant_count?: number;
 }
 
 interface RawIssue {
@@ -24,6 +32,9 @@ interface RawIssue {
   status: string;
   reward_xlm?: number;
   created_at: string;
+  labels?: string[];
+  difficulty?: string;
+  applicant_count?: number;
 }
 
 interface RawApplication {
@@ -102,7 +113,11 @@ export function useOrgIssues(
         let status: IssueStatus = 'open';
         if (assigned.has(raw.issue_id))     status = 'assigned';
         else if (applied.has(raw.issue_id)) status = 'applied';
-        return { ...raw, status };
+        return {
+          ...raw,
+          status,
+          difficulty: raw.difficulty as OrgIssue['difficulty'],
+        };
       });
 
       setIssues(merged);

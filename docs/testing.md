@@ -1,171 +1,415 @@
 # Testing Guide
 
-This document covers the testing strategy and setup for the WorkloadGovernor backend, with a focus on the OpenAPI contract tests introduced in issue #624.
+Complete reference for running every test layer in the WorkloadGovernor project.
 
 ---
 
-## Test Suite Overview
+## Table of Contents
 
-| Suite | Location | Runner | Purpose |
-|---|---|---|---|
-| Unit | `tests/unit/` | Jest (`unit` project) | Business logic, utilities, XDR verification |
-| API integration | `tests/api/` | Jest (`api` project) | Route handlers with in-memory DB mock |
-| Contract | `tests/contract/` | Jest (`contract` project) | OpenAPI response-shape validation |
-| Route smoke | `tests/routes/` | Jest (`jest.config.ts`) | Basic request/response smoke checks |
-| E2E | `tests/e2e/` | Playwright | Full frontend/backend user flows |
-| Load | `tests/load/` | k6 | Throughput and latency benchmarks |
+1. [Prerequisites](#prerequisites)
+2. [Localnet Setup (Stellar Quickstart)](#localnet-setup-stellar-quickstart)
+3. [Environment Variables](#environment-variables)
+4. [Contract Tests (Rust)](#contract-tests-rust)
+5. [Property-Based Tests](#property-based-tests)
+6. [Backend API Tests](#backend-api-tests)
+7. [E2E Tests (Playwright)](#e2e-tests-playwright)
+8. [Fuzz Tests](#fuzz-tests)
+9. [Mutation Testing](#mutation-testing)
+10. [Benchmarks](#benchmarks)
+11. [CI Notes](#ci-notes)
 
 ---
 
-## Running Tests
+## Prerequisites
+
+| Tool | Version | Install |
+|---|---|---|
+| Rust + Cargo | stable ≥ 1.78 | `curl https://sh.rustup.rs -sSf \| sh` |
+| `wasm32v1-none` target | — | `rustup target add wasm32v1-none` |
+| Nightly Rust (fuzz only) | latest nightly | `rustup install nightly` |
+| Stellar CLI | ≥ 21.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
+| Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
+| Docker + Compose | ≥ 24 | [docker.com](https://www.docker.com/get-started) |
+| `cargo-fuzz` (fuzz only) | latest | `cargo install cargo-fuzz --locked` |
+| `cargo-mutants` (mutation) | latest | `cargo install cargo-mutants --locked` |
+
+Verify tools:
 
 ```bash
-# All jest projects (unit + api + contract)
+rustc --version
+stellar --version
+node --version
+docker compose version
+```
+
+Install Node dependencies from the project root:
+
+```bash
+npm install
+```
+
+---
+
+## Localnet Setup (Stellar Quickstart)
+
+The Stellar Quickstart Docker image runs a full local Stellar network — Horizon, Friendbot, and a Soroban RPC node — in a single container.  Use it when you want to run E2E tests or smoke tests against a real (but local) contract deployment.
+
+### 1. Pull and start the Quickstart image
+
+```bash
+docker run --rm -it \
+  --name stellar-localnet \
+  -p 8000:8000 \
+  stellar/quickstart:latest \
+  --standalone \
+  --enable-soroban-rpc
+```
+
+`--standalone` runs a private network (no Testnet/Mainnet connection).  
+`--enable-soroban-rpc` exposes the Soroban JSON-RPC endpoint at `http://localhost:8000/soroban/rpc`.
+
+Wait until the container logs show:
+
+```
+horizon: INFO started horizon server on 0.0.0.0:8000
+soroban-rpc: INFO listening on :8080
+```
+
+### 2. Fund the admin account
+
+```bash
+# Friendbot funds any address on standalone / testnet
+curl "http://localhost:8000/friendbot?addr=<ADMIN_PUBLIC_KEY>"
+```
+
+Replace `<ADMIN_PUBLIC_KEY>` with the value from your `.env` file.
+
+### 3. Deploy the contract
+
+```bash
+# Build and optimise
+stellar contract build
+stellar contract optimize \
+  --wasm target/wasm32v1-none/release/workload_governor.wasm
+
+# Upload and deploy
+stellar contract deploy \
+  --wasm target/wasm32v1-none/release/workload_governor.wasm \
+  --network local \
+  --source <ADMIN_SECRET_KEY>
+
+# Initialise (replace CONTRACT_ID with output of the deploy step)
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network local \
+  --source <ADMIN_SECRET_KEY> \
+  -- initialize \
+  --admin <ADMIN_PUBLIC_KEY>
+```
+
+### 4. Configure the backend
+
+Copy and edit the environment file:
+
+```bash
+cp .env.example .env
+```
+
+Update these keys to point at the local node and your deployed contract:
+
+```dotenv
+SOROBAN_RPC_URL=http://localhost:8000/soroban/rpc
+STELLAR_NETWORK_PASSPHRASE=Standalone Network ; February 2017
+CONTRACT_ID=<your deployed contract ID>
+ADMIN_PUBLIC_KEY=<your admin public key>
+ADMIN_SECRET_KEY=<your admin secret key>
+```
+
+Start the backend and database services:
+
+```bash
+docker compose up -d          # PostgreSQL + Redis
+npm run dev                   # backend on http://localhost:3000
+```
+
+---
+
+## Environment Variables
+
+The following variables are read by the backend, the Playwright E2E suite, and
+the smoke tests.  Copy `.env.example` to `.env` and fill in the values.
+
+| Variable | Description | Default (localnet) |
+|---|---|---|
+| `SOROBAN_RPC_URL` | Soroban JSON-RPC endpoint | `http://localhost:8000/soroban/rpc` |
+| `STELLAR_NETWORK_PASSPHRASE` | Network passphrase | `Standalone Network ; February 2017` |
+| `CONTRACT_ID` | Deployed contract ID | *(empty — set after deploy)* |
+| `ADMIN_PUBLIC_KEY` | Admin G-address | *(generate with `stellar keys generate`)* |
+| `ADMIN_SECRET_KEY` | Admin secret key (S-address) | *(generate with `stellar keys generate`)* |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/workload_governor` |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
+
+In CI, inject `ADMIN_PUBLIC_KEY` and `ADMIN_SECRET_KEY` as GitHub Actions secrets.
+The E2E test file `tests/e2e/admin-maintainer-flow.spec.ts` reads them via
+`process.env` and falls back to safe test-only defaults when absent.
+
+---
+
+## Contract Tests (Rust)
+
+The contract's unit and integration tests live in `src/test.rs` and `tests/`.
+They use the Soroban test utilities crate (enabled by the `testutils` feature flag).
+
+```bash
+# Run all contract tests
+cargo test --features testutils
+
+# Run a specific test by name (supports partial match)
+cargo test --features testutils unit_register_maintainer
+
+# Show stdout output from tests (useful for debugging)
+cargo test --features testutils -- --nocapture
+```
+
+All Rust tests run against an in-process Soroban ledger — no running node is needed.
+
+---
+
+## Property-Based Tests
+
+Property-based tests use `fast-check` and live alongside the unit tests in
+`tests/unit/`.  They cover the global application cap and org assignment cap
+invariants.
+
+```bash
+# Run all property-based tests (prefix: prop_)
+npm test -- --testPathPattern="prop_"
+
+# Or use the Vitest runner (preferred for frontend property tests):
+npm run test:unit -- prop_
+```
+
+Key property test files:
+
+| File | Invariant |
+|---|---|
+| `tests/unit/prop_global_app_limit.test.ts` | Global application count never exceeds 15 |
+| `tests/unit/prop_org_assign_limit.test.ts` | Org assignment count never exceeds the org cap |
+
+---
+
+## Backend API Tests
+
+The backend API tests use Jest + Supertest with an in-memory mock database
+(`tests/api/setup.ts` — `MockPool`).  No running PostgreSQL or Soroban node is
+required.
+
+```bash
+# Run all backend tests (API + unit + integration)
 npm test
 
-# Unit tests only
-npm run test:unit
+# Run API tests only
+npm test -- --testPathPattern="tests/api"
 
-# Contract tests only
-npm run test:contract
-
-# Coverage (backend)
+# Run with coverage
 npm run coverage:backend
 ```
 
----
+Key test files:
 
-## OpenAPI Contract Tests
-
-### Purpose
-
-Contract tests ensure that every HTTP response produced by the API conforms to the schemas defined in [`openapi.yaml`](../openapi.yaml). When a backend developer changes a response field name, type, or required field, the contract tests fail — preventing silent schema drift from reaching the frontend.
-
-### How It Works
-
-The setup uses [`express-openapi-validator`](https://github.com/cdimascio/express-openapi-validator) as a **response-validation middleware** wrapped around the real Express application. Supertest sends requests through the validated app in-process — no running server or network is required.
-
-```
-Supertest request
-      │
-      ▼
-┌─────────────────────────────────────────┐
-│  express-openapi-validator (wrapper)    │
-│  validateRequests: false                │
-│  validateResponses: true  ◄─ enforces  │
-│           │               openapi.yaml  │
-│           ▼                             │
-│  Real Express app (createApp())         │
-│  (routes/middleware run normally)       │
-└─────────────────────────────────────────┘
-      │
-      ▼
-  If response body doesn't match spec:
-  → validator emits an error
-  → test receives 500 instead of expected 2xx/4xx
-  → test fails with a clear schema-mismatch message
-```
-
-Request validation is intentionally disabled (`validateRequests: false`) because it is already covered by existing integration tests.
-
-### Test File
-
-**`tests/contract/openapi.contract.test.ts`**
-
-Endpoints covered:
-
-| Endpoint | Success status | Error cases |
-|---|---|---|
-| `GET /health` | 200 | — |
-| `GET /orgs` | 200 | — |
-| `GET /orgs/:orgId/issues` | 200 | 404 unknown org |
-| `GET /orgs/:orgId/assignments` | 200 | 404 unknown org |
-| `GET /orgs/:orgId/applications` | 200 | 404 unknown org |
-| `POST /orgs/:orgId/issues/:issueId/apply` | 201 | 400 missing/invalid body, 404 unknown org |
-| `DELETE /orgs/:orgId/issues/:issueId/apply` | 204 | 400 missing param, 404 unknown org |
-| `GET /orgs/:orgId/events` | 200 | 404 unknown org |
-| `GET /contributors/:address/stats` | 200 | — |
-
-### Adding a New Contract Test
-
-1. Identify the endpoint path in `openapi.yaml`.
-2. Add a `describe` block in `tests/contract/openapi.contract.test.ts`.
-3. Use `request(validatedApp)` — if the response body diverges from the spec, the test will fail automatically.
-
-Example:
-
-```typescript
-describe('Contract: GET /orgs/:orgId/assignments', () => {
-  it('200 response matches Assignment schema', async () => {
-    const res = await request(validatedApp)
-      .get('/orgs/stellar-oss/assignments')
-      .set({ Authorization: 'Bearer test-token' });
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    // express-openapi-validator has already checked every field — these
-    // assertions are additional semantic guards, not schema re-checks.
-    for (const asgn of res.body) {
-      expect(typeof asgn.assignment_id).toBe('string');
-    }
-  });
-});
-```
-
-### Mocking Strategy
-
-The contract tests do **not** require a real PostgreSQL or Redis instance. The following modules are mocked at the top of the test file:
-
-| Module | Mock |
+| File | Coverage |
 |---|---|
-| `../../src/db` | In-memory no-op pool (`pool.query` returns `{ rows: [] }`) |
-| `../../src/services/redis` | No-op cache (`getCache` returns `null`, `setCache` is a no-op) |
-| `node-pg-migrate` | Jest virtual module (prevents `require` failure at boot) |
-
-Stub data for known organisations and events is hard-coded directly in the route handlers in `src/routes/orgs.ts`, so the tests run against realistic fixture data without touching any external service.
+| `tests/api/transactions.test.ts` | Apply, withdraw, assign, complete, revoke transactions |
+| `tests/api/admin.test.ts` | Maintainer registration, org registration, auth guard |
+| `tests/api/contributors.test.ts` | Contributor counts and cap enforcement |
+| `tests/api/webhooks.test.ts` | GitHub webhook processing |
+| `tests/api/rate-limit.test.ts` | Rate limiting per wallet / IP |
 
 ---
 
-## CI Integration
+## E2E Tests (Playwright)
 
-### `ci.yml` (runs on every push/PR to `main`)
+End-to-end tests intercept HTTP calls with `page.route()` — no real backend or
+Stellar node is required unless you explicitly want to run against localnet.
+
+### Install Playwright browsers (first time only)
+
+```bash
+npx playwright install --with-deps
+```
+
+### Run the full E2E suite
+
+```bash
+npx playwright test
+```
+
+### Run a single spec file
+
+```bash
+npx playwright test tests/e2e/admin-maintainer-flow.spec.ts
+```
+
+### Run with trace and screenshot on all tests
+
+```bash
+npx playwright test --trace on --screenshot on
+```
+
+### View the HTML report after a run
+
+```bash
+npx playwright show-report
+```
+
+### E2E spec inventory
+
+| File | Feature |
+|---|---|
+| `tests/e2e/admin-maintainer-flow.spec.ts` | Admin registers / deregisters maintainers; error codes 4 and 17 |
+| `tests/e2e/apply-withdraw-flow.spec.ts` | Contributor apply and withdraw lifecycle |
+| `tests/e2e/global-cap.spec.ts` | Global application cap (15) enforcement |
+| `tests/e2e/maintainer-flow.spec.ts` | Maintainer panel — assign, complete, revoke, access control |
+| `tests/e2e/gauge-increment.spec.ts` | Gauge counter increment after events |
+| `tests/e2e/apply-flow.spec.ts` | Basic contributor apply flow |
+
+### Admin maintainer flow — environment variables in CI
+
+The `admin-maintainer-flow.spec.ts` suite reads admin credentials from
+environment variables so CI can inject ephemeral keys:
 
 ```yaml
-- run: npm run test:contract
+# .github/workflows/e2e.yml (excerpt)
+- name: Run E2E tests
+  env:
+    ADMIN_PUBLIC_KEY: ${{ secrets.ADMIN_PUBLIC_KEY }}
+    ADMIN_SECRET_KEY: ${{ secrets.ADMIN_SECRET_KEY }}
+  run: npx playwright test
 ```
 
-This step runs after the main test suite and fails the build if any contract test diverges from the spec.
+When the variables are absent (local dev), the file falls back to safe
+mock-only keys that never reach a real network.
 
-### `openapi-validate.yml` (runs on PRs that touch routes or the spec)
+### Running E2E tests against localnet
 
-Two jobs run in parallel:
+Set `baseURL` in `playwright.config.ts` or override at run time:
 
-| Job | What it does |
+```bash
+BASE_URL=http://localhost:3000 npx playwright test
+```
+
+Ensure the backend is running and the contract is deployed and initialised
+before starting the test run (see [Localnet Setup](#localnet-setup-stellar-quickstart)).
+
+---
+
+## Fuzz Tests
+
+Fuzz targets live in `fuzz/fuzz_targets/` and require the nightly Rust
+toolchain plus `cargo-fuzz`.
+
+```bash
+# Install cargo-fuzz (nightly required)
+rustup install nightly
+cargo install cargo-fuzz --locked
+
+# Build all fuzz targets
+cargo +nightly fuzz build
+
+# Run a target for 10 minutes
+cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
+cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
+cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+
+# Run with pre-seeded corpus
+cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
+```
+
+| Target | What it tests |
 |---|---|
-| `contract-tests` | Runs `npm run test:contract` — fast, in-process, no server needed |
-| `validate-api` | Starts the full compiled server and runs Dredd live-request validation |
+| `fuzz_apply` | Random contributor / org / issue inputs to `apply_for_issue` |
+| `fuzz_assign` | Random inputs to `assign_issue`, `complete_assignment`, `revoke_assignment` |
+| `fuzz_batch_apply` | Batch apply with random issue IDs; enforces ≤ 15 global cap |
+
+Any corpus inputs that exposed a bug are committed to `fuzz/corpus/`.
+
+### Regenerate seed corpus
+
+```bash
+python3 scripts/generate-corpus.py          # writes to fuzz/corpus/
+python3 scripts/generate-corpus.py --corpus-dir /tmp/fresh-corpus
+```
+
+The script is idempotent — re-running overwrites canonical seeds and leaves
+fuzzer-discovered inputs untouched.
 
 ---
 
-## OpenAPI Spec (`openapi.yaml`)
+## Mutation Testing
 
-The spec lives at the root of the repository. Key constraints enforced by the contract tests:
+[cargo-mutants](https://mutants.rs) verifies that the test suite catches logic
+errors by introducing small mutations to the contract source and confirming
+that at least one test fails per mutant.
 
-- `Issue.description` is `nullable: true` — the field may be `null` or omitted.
-- `Error.code` is `type: string` — human-readable error codes like `NOT_FOUND`.
-- `GET /orgs/:orgId/events` returns a **top-level array** of `Event` objects.
-- `POST /orgs/:orgId/issues/:issueId/apply` returns **201 Created**.
+```bash
+# Run mutation testing against the contract source
+cargo mutants --features testutils -- src/lib.rs
 
-If you change a response schema in `openapi.yaml`, update the corresponding route handler and re-run `npm run test:contract` to verify alignment.
+# Generate the HTML + text report
+node scripts/mutation-report.js mutants.out/
+
+# Text summary only
+node scripts/mutation-report.js --text-only
+
+# Enforce a score threshold (exits non-zero if below)
+node scripts/mutation-report.js --threshold=90 --text-only
+```
+
+The badge in `README.md` reflects the last recorded run.  After adding or
+changing tests, re-run `cargo mutants` and update `mutants.out/` to refresh
+the badge.
+
+Current recorded score: **75% (21/28 caught)** — target is ≥ 90%.
 
 ---
 
-## Schema Drift Prevention Checklist
+## Benchmarks
 
-When adding or modifying an endpoint:
+Benchmark tests measure CPU instructions and simulated memory for common
+contract operations.
 
-1. Update `openapi.yaml` first (spec-first approach).
-2. Implement the route handler to match the spec.
-3. Run `npm run test:contract` — all tests must pass.
-4. If a new endpoint is added, add a contract test in `tests/contract/openapi.contract.test.ts`.
-5. Open a PR — the CI `contract-tests` job will re-verify on every change.
+```bash
+# Run benchmarks (prints to stdout)
+cargo test --features testutils bench_
+
+# Capture output for documentation
+cargo test --features testutils bench_ 2>&1 | tee benchmarks.txt
+```
+
+Benchmark results are documented in [docs/benchmarks.md](benchmarks.md).
+
+---
+
+## CI Notes
+
+The GitHub Actions workflow at `.github/workflows/ci.yml` runs the following
+checks on every pull request:
+
+- `cargo test --features testutils` — all Rust contract tests
+- `npm test` — all backend API + unit tests
+- `npx playwright test` — all E2E tests (workers = 1 in CI, 1 retry)
+- `npm run typecheck` — TypeScript type checking
+- `npm run lint` — ESLint
+
+The contract pipeline at `.github/workflows/contract-pipeline.yml` additionally
+runs `cargo mutants` and publishes the mutation score badge.
+
+Secrets required in the repository settings for E2E tests to use real credentials:
+
+| Secret | Description |
+|---|---|
+| `ADMIN_PUBLIC_KEY` | Admin G-address for contract interactions |
+| `ADMIN_SECRET_KEY` | Admin secret key (S-address) |
+
+When these secrets are absent, the E2E tests fall back to mock-only keys and
+all network calls are intercepted by `page.route()`.

@@ -330,3 +330,28 @@
   color: var(--color-muted);
   font-size: var(--text-base);
 }
+
+/* ── Infinite scroll sentinel ───────────────────────────────────── */
+.org-issues-page__scroll-sentinel {
+  height: 1px;
+  width: 100%;
+  visibility: hidden;
+}
+
+/* ── End-of-list message ────────────────────────────────────────── */
+.org-issues-page__end-of-list {
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-4);
+}
+
+/* ── Per-page skeleton wrapper ──────────────────────────────────── */
+.org-issues-page__page-skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}

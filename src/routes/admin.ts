@@ -6,7 +6,12 @@ import { verifySignature, parseAuthHeader } from '../signature';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { logger } from '../logger';
 import { validateBody } from '../middleware/validation';
-import { registerMaintainerBodySchema, RegisterMaintainerBody } from '../schemas/admin';
+import {
+  registerMaintainerBodySchema,
+  RegisterMaintainerBody,
+  deregisterMaintainerBodySchema,
+  DeregisterMaintainerBody,
+} from '../schemas/admin';
 import { registerOrgSchema } from '../schemas/orgs';
 
 const router = Router();
@@ -91,6 +96,72 @@ router.post(
   },
 );
 
+// DELETE /api/admin/maintainers
+// Body: { maintainer_address, org_id, sequence? }
+// Builds an unsigned deregister_maintainer transaction XDR for the admin to sign.
+// Returns 404 with error code 17 if the maintainer is not registered for the org.
+router.delete(
+  '/maintainers',
+  signatureAuthMiddleware,
+  validateBody(deregisterMaintainerBodySchema),
+  async (req: Request, res: Response) => {
+    const adminReq = req as Request & { adminAddress: string };
+    const { maintainer_address, org_id, sequence } = req.body as DeregisterMaintainerBody;
+
+    try {
+      const account = adminReq.adminAddress;
+
+      // Fetch sequence from the RPC when not supplied by the caller
+      const seq = sequence ?? (await soroban.getAccountSequence(account));
+
+      const args = [
+        new Address(maintainer_address).toScVal(),
+        nativeToScVal(org_id, { type: 'symbol' }),
+      ];
+
+      const tx = soroban.buildRawTransaction(
+        account,
+        seq,
+        'deregister_maintainer',
+        args,
+      );
+
+      logger.info({
+        correlationId: adminReq.correlationId,
+        message: 'deregister_maintainer XDR built',
+        maintainer_address,
+        org_id,
+        admin: account,
+      });
+
+      res.status(200).json({
+        xdr: tx.toXDR(),
+        message: 'Sign this transaction with your admin key and submit to /broadcast',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'internal error';
+
+      // Surface MaintainerNotFound (code 17) as a 404 so the client can
+      // distinguish "already-deregistered" from generic 400/500 errors.
+      if (msg.includes('MaintainerNotFound') || msg.includes('error code=17')) {
+        res.status(404).json({
+          error: 'MaintainerNotFound',
+          code: 17,
+          message: `Maintainer ${maintainer_address} is not registered for org ${org_id}`,
+        });
+        return;
+      }
+
+      logger.error({
+        correlationId: adminReq.correlationId,
+        error: msg,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      res.status(400).json({ error: msg });
+    }
+  },
+);
+
 // POST /api/admin/orgs
 // Body: { github_org: string, org_id: string, maintainers: string[], org_cap?: number }
 // 1. Validates github_org exists via the GitHub API (422 if not found)
@@ -148,8 +219,8 @@ router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response
 
   // ── Step 3: Insert the org record ────────────────────────────────────────
   await pool.query(
-    `INSERT INTO orgs (org_id, github_org, org_cap, created_at)
-     VALUES ($1, $2, $3, NOW())`,
+    `INSERT INTO orgs (org_id, github_org, org_cap)
+     VALUES ($1, $2, $3)`,
     [org_id, github_org, org_cap],
   );
 
