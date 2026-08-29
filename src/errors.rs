@@ -68,4 +68,31 @@ pub enum ContractError {
     /// that was never registered (or was already deregistered).
     /// Discriminant: `17`.
     MaintainerNotFound = 17,
+
+    /// A counter/sentinel inconsistency was detected in persistent storage.
+    ///
+    /// Fired by `revoke_assignment` and `complete_assignment` (and their debug
+    /// assertions in `assign_issue`) when the assignment sentinel exists but the
+    /// org assignment counter is unexpectedly zero (or vice-versa).  This indicates
+    /// a storage migration issue or a data-corruption event and should be treated
+    /// as a fatal internal error.
+    ///
+    /// Discriminant: `13`.
+    CounterInconsistency = 13,
+
+    /// A re-entrant call was detected: a state-mutating function was entered while
+    /// another state-mutating function on this contract was already executing.
+    ///
+    /// Under Soroban's single-threaded execution model this should never fire in
+    /// production.  It exists as a forward-looking guard for when cross-contract
+    /// calls are added, and as evidence that the contract explicitly defends against
+    /// re-entrancy at a protocol level.
+    ///
+    /// Discriminant: `14`.
+    ReentrancyDetected = 14,
+
+    /// The requested per-org assignment cap is outside the permitted range `[1, 20]`.
+    /// Returned by `set_org_cap` when `new_cap == 0 || new_cap > 20`.
+    /// Discriminant: `15`.
+    InvalidOrgCap = 15,
 }

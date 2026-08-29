@@ -75,6 +75,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
+/// Minimum valid value for the per-org assignment cap (inclusive).
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum valid value for the per-org assignment cap (inclusive).
+pub const ORG_CAP_MAX: u32 = 20;
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
 // ---------------------------------------------------------------------------
@@ -231,27 +237,6 @@ pub(crate) fn extend_app_entry_ttl(
     env.storage()
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
-}
-
-// ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,4 +422,46 @@ pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> u32 {
 pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Re-entrancy guard
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("reentr")` (singleton)
+// Value: `bool`
+//
+// Rationale: Soroban's single-threaded host prevents classic re-entrancy today.
+// This guard is a forward-looking defence: if a future refactor adds a
+// cross-contract call inside a state-mutating function, any re-entrant
+// attempt will be caught immediately rather than silently corrupting counters.
+//
+// Pattern 8 — prefix "reentr" is distinct from all other prefixes:
+//   "g_apps", "app", "admin", "maint", "o_asgn", "asgn", "o_cap".
+
+fn reentracy_guard_key() -> Symbol {
+    symbol_short!("reentr")
+}
+
+/// Returns `true` if a state-mutating function is currently executing.
+pub(crate) fn is_reentrancy_locked(env: &Env) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&reentracy_guard_key())
+        .unwrap_or(false)
+}
+
+/// Acquires the re-entrancy lock.  Must be paired with a call to
+/// [`release_reentrancy_lock`] before the function returns.
+pub(crate) fn acquire_reentrancy_lock(env: &Env) {
+    env.storage()
+        .persistent()
+        .set(&reentracy_guard_key(), &true);
+}
+
+/// Releases the re-entrancy lock set by [`acquire_reentrancy_lock`].
+pub(crate) fn release_reentrancy_lock(env: &Env) {
+    env.storage()
+        .persistent()
+        .remove(&reentracy_guard_key());
 }

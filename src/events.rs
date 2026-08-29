@@ -62,9 +62,11 @@ pub enum WorkloadGovernorEvent {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn emit_initialized(env: &Env, admin: &Address) {
+    // topics: (symbol_short!("init"), admin)  — 2-tuple ✓
+    // data:   vec![1u32, admin]                — matches unit_event_initialized_has_two_topics
     env.events().publish(
         (symbol_short!("init"), admin.clone()),
-        admin.clone(),
+        soroban_sdk::vec![env, 1u32, admin.clone()],
     );
 }
 
@@ -86,9 +88,11 @@ pub(crate) fn emit_application_submitted(
     org_id: &Symbol,
     issue_id: u32,
 ) {
+    // topics: (symbol_short!("applied"), contributor)              — 2-tuple ✓
+    // data:   vec![1u32, contributor, org_id, issue_id]             — matches unit_event_application_submitted_has_two_topics
     env.events().publish(
         (symbol_short!("applied"), contributor.clone()),
-        (org_id.clone(), issue_id),
+        soroban_sdk::vec![env, 1u32, contributor.clone(), org_id.clone(), issue_id],
     );
 }
 
@@ -193,6 +197,21 @@ pub(crate) fn emit_emergency_cap_updated(
     new_cap: u32,
 ) {
     let topics = (symbol_short!("emrg_cap"), admin.clone());
+    let data = (old_cap, new_cap);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `set_org_cap` when a maintainer updates the per-org assignment cap.
+///
+/// topics: `(symbol_short!("orgcap"), org_id)`
+/// data:   `(old_cap, new_cap)`
+pub(crate) fn emit_org_cap_updated(
+    env: &Env,
+    org_id: &Symbol,
+    old_cap: u32,
+    new_cap: u32,
+) {
+    let topics = (symbol_short!("orgcap"), org_id.clone());
     let data = (old_cap, new_cap);
     env.events().publish(topics, data);
 }

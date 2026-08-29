@@ -2078,9 +2078,195 @@ mod error_cases {
 }
 
 
+/// Issue #49: Cap invariant property tests (10 000 cases each)
 // ---------------------------------------------------------------------------
-// Issue #49: Cap invariant property tests (10 000 cases each)
+
 // ---------------------------------------------------------------------------
+// SECURITY TESTS — Re-entrancy guard
+// ---------------------------------------------------------------------------
+//
+// These tests verify that the persistent re-entrancy lock (storage key "reentr")
+// is acquired before any state mutation and released after the function returns.
+//
+// Soroban's single-threaded host makes classic re-entrancy impossible today,
+// but the guard documents intent and will catch violations if cross-contract
+// calls are added in the future.
+//
+// Test strategy:
+//   1. Manually acquire the lock (simulating a concurrent invocation that started
+//      first) and verify that the second invocation panics with ReentrancyDetected.
+//   2. Verify the lock is *released* on normal completion so that subsequent calls
+//      succeed.
+//   3. Verify the lock is *released* even when a function panics mid-execution
+//      (Soroban rolls back the entire invocation, so the persistent lock write is
+//      also rolled back — i.e., the lock can never be left stuck by a panicked call).
+
+/// AC: Re-entrancy guard is released after normal completion.
+///
+/// After any state-mutating function completes successfully, a subsequent call
+/// to the same function must not fail with ReentrancyDetected.
+#[test]
+fn security_reentrancy_guard_released_after_success() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("reent1");
+
+    t.client.initialize(&admin);
+
+    // First call
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    // Second call on the same function must succeed — lock must have been released
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 2);
+}
+
+/// AC: Lock is not left permanently set after a rejected (panicked) call.
+///
+/// When a state-mutating function panics (e.g. DuplicateApplication), Soroban's
+/// host rolls back *all* storage writes for that invocation — including the
+/// re-entrancy lock write.  The next call must therefore succeed.
+#[test]
+fn security_reentrancy_lock_not_stuck_after_rejected_call() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("reent2");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    // This call panics with DuplicateApplication (error 8). The lock must NOT
+    // be permanently set after this rollback.
+    let rejected = t.client.try_apply_for_issue(&contributor, &org, &1u32);
+    assert_eq!(
+        rejected,
+        Err(Ok(ContractError::DuplicateApplication.into_val(&t.env))),
+        "expected DuplicateApplication error"
+    );
+
+    // The next call must succeed — if the lock were stuck we would see ReentrancyDetected
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        2,
+        "lock must not be stuck after a rolled-back invocation"
+    );
+}
+
+/// AC: Re-entrancy guard fires when the lock key is manually pre-set.
+///
+/// We directly write the "reentr" persistent key to `true` (simulating a
+/// concurrent invocation that has not yet released the lock) and then call a
+/// state-mutating function.  It must panic with ReentrancyDetected (code 14).
+#[test]
+fn security_reentrancy_guard_fires_when_lock_held() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("reent3");
+
+    t.client.initialize(&admin);
+
+    // Manually acquire the re-entrancy lock — simulates a concurrent invocation
+    // that started but has not yet released the lock.
+    crate::storage::acquire_reentrancy_lock(&t.env);
+
+    // Any state-mutating call must now fail with ReentrancyDetected (code 14)
+    let result = t.client.try_apply_for_issue(&contributor, &org, &1u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::ReentrancyDetected.into_val(&t.env))),
+        "expected ReentrancyDetected (code 14) when lock is already held"
+    );
+}
+
+/// AC: Guard fires on every state-mutating function when lock is pre-held.
+///
+/// Spot-checks assign_issue, withdraw_application, and complete_assignment to
+/// confirm the guard is present uniformly — not just on apply_for_issue.
+#[test]
+fn security_reentrancy_guard_covers_all_mutating_functions() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("reent4");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &99u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &99u32);
+
+    // Acquire lock to simulate a concurrent in-progress call
+    crate::storage::acquire_reentrancy_lock(&t.env);
+
+    // withdraw_application must be blocked
+    let r1 = t.client.try_withdraw_application(&contributor, &org, &99u32);
+    assert_eq!(
+        r1,
+        Err(Ok(ContractError::ReentrancyDetected.into_val(&t.env))),
+        "withdraw_application must be blocked by re-entrancy guard"
+    );
+
+    // complete_assignment must be blocked
+    let r2 = t.client.try_complete_assignment(&maintainer, &contributor, &org, &99u32);
+    assert_eq!(
+        r2,
+        Err(Ok(ContractError::ReentrancyDetected.into_val(&t.env))),
+        "complete_assignment must be blocked by re-entrancy guard"
+    );
+
+    // revoke_assignment must be blocked
+    let r3 = t.client.try_revoke_assignment(&maintainer, &contributor, &org, &99u32);
+    assert_eq!(
+        r3,
+        Err(Ok(ContractError::ReentrancyDetected.into_val(&t.env))),
+        "revoke_assignment must be blocked by re-entrancy guard"
+    );
+}
+
+/// AC: No performance regression — guard overhead is a single persistent read + write.
+///
+/// This test measures that apply_for_issue (with the guard) still fits comfortably
+/// within the defined CPU threshold.  The guard adds exactly two persistent-storage
+/// operations (acquire + release) which are negligible compared to the existing
+/// storage work in each function.
+#[test]
+fn security_reentrancy_guard_no_performance_regression() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+    let client = WorkloadGovernorClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let contributor = Address::generate(env);
+    let org = Symbol::new(env, "perftest");
+
+    client.initialize(&admin);
+    env.cost_estimate().budget().reset_default();
+    client.apply_for_issue(&contributor, &org, &1u32);
+
+    let cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    // Threshold is the same as defined in the benchmark module (500_000).
+    // The guard must not push us over it.
+    assert!(
+        cpu <= 500_000,
+        "apply_for_issue CPU {} exceeded 500_000 threshold after adding re-entrancy guard",
+        cpu
+    );
+}
 
 // Property: for any (contributor, org), assignment count never exceeds 4
 // under arbitrary apply/assign/complete/revoke sequences.

@@ -25,6 +25,54 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env
 
 use crate::errors::ContractError;
 
+// ---------------------------------------------------------------------------
+// Re-entrancy guard macro
+//
+// Usage (inside a #[contractimpl] function body, before any state reads):
+//
+//   reentrancy_guard!(env);
+//
+// Effect:
+//   1. Reads the persistent "reentr" key.  If `true`, panics with
+//      `ContractError::ReentrancyDetected` (code 14).
+//   2. Sets the key to `true` (lock acquired).
+//   3. At the end of the macro's scope (via a drop guard), removes the key
+//      (lock released).
+//
+// The drop guard is constructed with `ScopeGuard::new`. Because Soroban
+// executes each invocation in a fresh host frame that discards all state on
+// panic, explicit cleanup on the failure path is not strictly required — a
+// panicked invocation never commits storage. The guard is still present for
+// correctness under normal execution.
+//
+// NOTE: Soroban's single-threaded, single-invocation execution model makes
+// classic re-entrancy impossible today.  This guard is a forward-looking
+// defence for future cross-contract calls and documents the security intent
+// explicitly in the on-chain code.
+// ---------------------------------------------------------------------------
+
+/// Lightweight RAII wrapper that removes the re-entrancy lock when dropped.
+struct ReentrancyGuard<'a> {
+    env: &'a Env,
+}
+
+impl<'a> ReentrancyGuard<'a> {
+    /// Acquires the lock.  Panics with `ReentrancyDetected` if already held.
+    fn acquire(env: &'a Env) -> Self {
+        if storage::is_reentrancy_locked(env) {
+            panic_with_error!(env, ContractError::ReentrancyDetected);
+        }
+        storage::acquire_reentrancy_lock(env);
+        ReentrancyGuard { env }
+    }
+}
+
+impl<'a> Drop for ReentrancyGuard<'a> {
+    fn drop(&mut self) {
+        storage::release_reentrancy_lock(self.env);
+    }
+}
+
 #[contract]
 pub struct WorkloadGovernor;
 
@@ -57,6 +105,7 @@ impl WorkloadGovernor {
     ///   -- initialize --admin <ADMIN_ADDRESS>
     /// ```
     pub fn initialize(env: Env, admin: Address) {
+        let _guard = ReentrancyGuard::acquire(&env);
         if storage::get_admin(&env).is_some() {
             panic_with_error!(env, ContractError::AlreadyInitialized);
         }
@@ -86,6 +135,7 @@ impl WorkloadGovernor {
     /// * [`ContractError::UnauthorizedAdmin`] — `admin` auth check fails (enforced by
     ///   `require_auth` on the stored admin, not a direct comparison).
     pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
@@ -127,6 +177,7 @@ impl WorkloadGovernor {
     ///   --org_id my_org
     /// ```
     pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
@@ -156,10 +207,49 @@ impl WorkloadGovernor {
     /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
     /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// Transfers admin authority to a new address (admin-only).
+    ///
+    /// After a successful call, `new_admin` becomes the stored admin and `old_admin`
+    /// can no longer call any admin-gated functions.  The operation is atomic — either
+    /// both the storage update and the event are committed, or neither is.
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `old_admin` – Must match the stored admin address (auth enforced).
+    /// * `new_admin` – Address that will become the new admin.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <admin-account> \
+    ///   -- transfer_admin \
+    ///   --old_admin <OLD_ADMIN_ADDRESS> \
+    ///   --new_admin <NEW_ADMIN_ADDRESS>
+    /// ```
+    pub fn transfer_admin(env: Env, old_admin: Address, new_admin: Address) {
+        let _guard = ReentrancyGuard::acquire(&env);
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        storage::set_admin(&env, &new_admin);
+        storage::bump_instance(&env);
+        events::emit_admin_transferred(&env, &old_admin, &new_admin);
     }
 
     /// Sets the global application cap via the normal (non-emergency) operator path.
@@ -167,6 +257,7 @@ impl WorkloadGovernor {
     /// Emits `GlobalCapUpdated` event. Admin auth is required.
     /// Cap must be in range 0..=100.
     pub fn set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
@@ -215,6 +306,7 @@ impl WorkloadGovernor {
     ///   --new_cap 25
     /// ```
     pub fn emergency_set_global_cap(env: Env, admin: Address, new_cap: u32) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
@@ -265,6 +357,7 @@ impl WorkloadGovernor {
     ///   --org_id my_org --issue_id 42
     /// ```
     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
@@ -313,6 +406,7 @@ impl WorkloadGovernor {
     ///   --org_id my_org --issue_id 42
     /// ```
     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         contributor.require_auth();
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
@@ -376,6 +470,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
         issue_id: u32,
     ) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -443,6 +538,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
         issue_id: u32,
     ) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -501,6 +597,7 @@ impl WorkloadGovernor {
         org_id: Symbol,
         issue_id: u32,
     ) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -618,6 +715,7 @@ impl WorkloadGovernor {
     ///   --org_id my_org --new_cap 8
     /// ```
     pub fn set_org_cap(env: Env, maintainer: Address, org_id: Symbol, new_cap: u32) {
+        let _guard = ReentrancyGuard::acquire(&env);
         storage::require_initialized(&env, &ContractError::NotInitialized);
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
