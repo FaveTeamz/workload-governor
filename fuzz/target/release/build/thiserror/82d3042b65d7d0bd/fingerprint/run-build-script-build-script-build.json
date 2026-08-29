@@ -1,0 +1,1 @@
+{"rustc":1774137193443974975,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[8008191657135824715,"build_script_build",false,12677256971451391253]],"local":[{"RerunIfChanged":{"output":"release/build/thiserror/82d3042b65d7d0bd/run/stdout","paths":["build/probe.rs"]}}],"rustflags":[],"config":0,"compile_kind":0}
