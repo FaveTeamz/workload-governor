@@ -87,6 +87,9 @@ impl WorkloadGovernor {
     ///   `require_auth` on the stored admin, not a direct comparison).
     pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         storage::set_maintainer(&env, &maintainer, &org_id);
@@ -128,6 +131,9 @@ impl WorkloadGovernor {
     /// ```
     pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -157,6 +163,9 @@ impl WorkloadGovernor {
     /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         env.deployer().update_current_contract_wasm(new_wasm_hash);
@@ -168,6 +177,9 @@ impl WorkloadGovernor {
     /// Cap must be in range 0..=100.
     pub fn set_global_cap(env: Env, admin: Address, new_cap: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         if new_cap > 100 {
@@ -216,6 +228,9 @@ impl WorkloadGovernor {
     /// ```
     pub fn emergency_set_global_cap(env: Env, admin: Address, new_cap: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         if new_cap > 100 {
@@ -225,6 +240,101 @@ impl WorkloadGovernor {
         storage::set_global_cap(&env, new_cap);
         storage::bump_instance(&env);
         events::emit_emergency_cap_updated(&env, &admin, old_cap, new_cap);
+    }
+
+    /// Pauses all state-changing operations on the contract (admin-only).
+    ///
+    /// When paused, every state-changing function panics with
+    /// [`ContractError::ContractPaused`] (code 15). Read-only query functions
+    /// (`get_*`, `has_*`, `is_*`, `check_*`) continue to work normally.
+    ///
+    /// Use this for emergency incident response to freeze the contract instantly
+    /// without requiring a full WASM upgrade (10–30 minutes). Call `unpause` to
+    /// resume normal operation once the incident is resolved.
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin` – Must match the stored admin address (auth enforced).
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    pub fn pause(env: Env, admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        storage::set_contract_paused(&env, true);
+        storage::bump_instance(&env);
+        events::emit_contract_paused(&env, &admin);
+    }
+
+    /// Resumes normal contract operation after a pause (admin-only).
+    ///
+    /// Clears the paused flag so that all state-changing functions become
+    /// accessible again.
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin` – Must match the stored admin address (auth enforced).
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    pub fn unpause(env: Env, admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        storage::set_contract_paused(&env, false);
+        storage::bump_instance(&env);
+        events::emit_contract_unpaused(&env, &admin);
+    }
+
+    /// Returns `true` if the contract is currently paused.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Returns
+    /// `true` if paused; `false` if operational.
+    pub fn is_paused(env: Env) -> bool {
+        storage::is_contract_paused(&env)
+    }
+
+    /// Transfers admin authority to a new address (admin-only).
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin`     – Must match the stored admin address (auth enforced).
+    /// * `new_admin` – Address to receive admin privileges.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        storage::set_admin(&env, &new_admin);
+        storage::bump_instance(&env);
+        events::emit_admin_transferred(&env, &admin, &new_admin);
     }
 
     // -----------------------------------------------------------------------
@@ -266,6 +376,9 @@ impl WorkloadGovernor {
     /// ```
     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
         if count >= storage::get_global_cap(&env) {
@@ -314,6 +427,9 @@ impl WorkloadGovernor {
     /// ```
     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         contributor.require_auth();
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::ApplicationNotFound);
@@ -377,6 +493,9 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -444,6 +563,9 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -502,6 +624,9 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -619,6 +744,9 @@ impl WorkloadGovernor {
     /// ```
     pub fn set_org_cap(env: Env, maintainer: Address, org_id: Symbol, new_cap: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        if storage::is_contract_paused(&env) {
+            panic_with_error!(env, ContractError::ContractPaused);
+        }
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);

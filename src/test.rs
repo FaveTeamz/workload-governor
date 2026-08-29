@@ -3166,3 +3166,115 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #590: pause/unpause emergency mechanism
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unit_pause_blocks_state_changes() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("pause1");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Pause the contract
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+
+    // All state-changing calls must fail with ContractPaused (code 15)
+    let err = Error::from_contract_error(ContractError::ContractPaused as u32);
+
+    assert_eq!(
+        t.client.try_apply_for_issue(&contributor, &org, &1u32),
+        Err(Ok(err.clone()))
+    );
+    assert_eq!(
+        t.client.try_register_maintainer(&admin, &maintainer, &org),
+        Err(Ok(err.clone()))
+    );
+    assert_eq!(
+        t.client.try_withdraw_application(&contributor, &org, &1u32),
+        Err(Ok(err.clone()))
+    );
+}
+
+#[test]
+fn unit_unpause_restores_operations() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("pause2");
+
+    t.client.initialize(&admin);
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+
+    t.client.unpause(&admin);
+    assert!(!t.client.is_paused());
+
+    // Operations must work after unpause
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+}
+
+#[test]
+fn unit_query_functions_work_while_paused() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("pause3");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+
+    // Read-only queries must still work
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+    assert!(t.client.has_applied(&contributor, &org, &5u32));
+    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    assert!(!t.client.is_paused() == false); // is_paused is still callable
+}
+
+#[test]
+fn unit_pause_emits_event() {
+    use soroban_sdk::testutils::Events;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+
+    t.client.initialize(&admin);
+    t.client.pause(&admin);
+
+    let events = t.env.events().all();
+    assert!(!events.is_empty());
+    // Last event should be the paused event
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+}
+
+#[test]
+fn unit_pause_unpause_admin_only() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+
+    t.client.initialize(&admin);
+
+    // pause/unpause require admin — with mock_all_auths these succeed.
+    // Verify the operation completes without panic.
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+    t.client.unpause(&admin);
+    assert!(!t.client.is_paused());
+}

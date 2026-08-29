@@ -75,6 +75,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
+/// Minimum valid value for the per-org assignment cap.
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum valid value for the per-org assignment cap.
+pub const ORG_CAP_MAX: u32 = 20;
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
 // ---------------------------------------------------------------------------
@@ -239,20 +245,8 @@ pub(crate) fn extend_app_entry_ttl(
 //
 // Key: `symbol_short!("g_cap")`
 // Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
-}
+//
+// (Duplicate section removed — the authoritative implementation is earlier in this file)
 
 // ---------------------------------------------------------------------------
 // Persistent storage — Admin
@@ -437,4 +431,34 @@ pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> u32 {
 pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Contract Paused Flag  (Issue #590)
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("paused")`
+// Value: `bool` — true when contract is paused
+//
+// When absent the contract is unpaused (default: operational).
+
+fn paused_key() -> Symbol {
+    symbol_short!("paused")
+}
+
+/// Returns `true` if the contract is currently paused.
+pub(crate) fn is_contract_paused(env: &Env) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&paused_key())
+        .unwrap_or(false)
+}
+
+/// Sets the contract paused state.
+pub(crate) fn set_contract_paused(env: &Env, paused: bool) {
+    if paused {
+        env.storage().persistent().set(&paused_key(), &true);
+    } else {
+        env.storage().persistent().remove(&paused_key());
+    }
 }
