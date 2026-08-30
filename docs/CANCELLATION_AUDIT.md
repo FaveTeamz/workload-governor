@@ -1,18 +1,7 @@
 # Cancellation Audit API
 
 ## Overview
-The cancellation audit API provides access to logs of all revoked and withdrawn applications. Each cancellation record captures the reason for the cancellation, enabling operators to distinguish between different cancellation scenarios.
-
-## Cancellation Reason Codes
-
-The following reason codes identify why a cancellation occurred:
-
-| Code | Description |
-|------|-------------|
-| `CONTRIBUTOR_WITHDREW` | Contributor voluntarily withdrew their application |
-| `MAINTAINER_REVOKED` | Maintainer/Operator revoked the subscription |
-| `TTL_EXPIRED` | Subscription expired due to time-to-live timeout |
-| `ADMIN_CANCELLED` | Admin cancelled the subscription |
+The cancellation audit API provides access to logs of all revoked and withdrawn applications.
 
 ## Endpoints
 
@@ -53,7 +42,7 @@ Get paginated cancellation audit records.
       "contributor": "GDEF...",
       "org_id": "org-123",
       "issue_id": 456,
-      "reason": "MAINTAINER_REVOKED",
+      "reason": "Violation of terms",
       "timestamp": "2024-01-01T00:00:00.000Z",
       "tx_hash": "0x123..."
     }
@@ -77,11 +66,6 @@ Get paginated cancellation audit records.
       "GABC...": 12,
       "GDEF...": 8,
       "GHIJ...": 5
-    "byReason": {
-      "MAINTAINER_REVOKED": 12,
-      "CONTRIBUTOR_WITHDREW": 8,
-      "TTL_EXPIRED": 3,
-      "ADMIN_CANCELLED": 2
     }
   }
 }
