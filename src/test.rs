@@ -394,6 +394,24 @@ fn unit_event_application_submitted_has_two_topics() {
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
 }
 
+#[test]
+fn unit_org_cap_event_has_two_topics() {
+    use soroban_sdk::testutils::Events;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let org = t.org("cap_event");
+
+    t.client.initialize(&admin);
+    t.client.set_org_cap(&admin, &org, &3u32);
+
+    let events = t.env.events().all();
+    assert!(!events.is_empty());
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple for org cap event");
+}
+
 // ---------------------------------------------------------------------------
 // PROPERTY-BASED TESTS
 // ---------------------------------------------------------------------------
