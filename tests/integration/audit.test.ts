@@ -99,6 +99,18 @@ describe('Audit API', () => {
       expect(response.body.data).toHaveProperty('total');
       expect(response.body.data).toHaveProperty('byEventType');
       expect(response.body.data).toHaveProperty('byActor');
+      expect(response.body.data).toHaveProperty('byReason');
+    });
+
+    it('should include all reason codes in statistics', async () => {
+      const response = await request(app)
+        .get('/api/audit/cancellations/stats')
+        .set('Authorization', `******`)
+        .query({ org_id: orgId });
+
+      expect(response.status).toBe(200);
+      const byReason = response.body.data.byReason;
+      expect(byReason).toBeDefined();
     });
   });
 });
