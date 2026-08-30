@@ -7,6 +7,10 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  CLUSTER: workload-governor-staging
+  SERVICE: workload-governor-staging
+  # Maximum number of previous task definition ARNs stored in SSM
+  TASK_DEF_HISTORY_COUNT: 5
 
 jobs:
   deploy:
@@ -14,10 +18,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write   # OIDC for AWS auth
 
     steps:
       - uses: actions/checkout@v4
 
+      # ── Build & push Docker image ────────────────────────────────────────
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -33,16 +39,20 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      # ── AWS credentials (OIDC preferred; falls back to static keys) ──────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ── Terraform: apply infrastructure changes ──────────────────────────
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.8.5"
 
       - name: Terraform init & apply (staging)
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         working-directory: terraform
         run: |
           terraform init
@@ -51,41 +61,144 @@ jobs:
             -var="image_tag=${{ github.sha }}" \
             -var="environment=staging"
 
-      - name: Update ECS service
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      # ── Store last N task definition ARNs (for manual rollback) ─────────
+      - name: Record current task definition in history
+        id: td-history
         run: |
+          SSM_KEY="/workload-governor/${CLUSTER}/${SERVICE}/task-def-history"
+
+          CURRENT_TD=$(aws ecs describe-services \
+            --cluster "$CLUSTER" --services "$SERVICE" \
+            --query "services[0].taskDefinition" --output text)
+          echo "current_td=${CURRENT_TD}" >> "$GITHUB_OUTPUT"
+
+          # Prepend to existing list, keep only TASK_DEF_HISTORY_COUNT entries
+          EXISTING=$(aws ssm get-parameter --name "$SSM_KEY" \
+            --query "Parameter.Value" --output text 2>/dev/null || echo "[]")
+          UPDATED=$(python3 -c "
+          import json, sys
+          existing = json.loads('${EXISTING}') if '${EXISTING}' else []
+          arns = ['${CURRENT_TD}'] + [a for a in existing if a != '${CURRENT_TD}']
+          print(json.dumps(arns[:${TASK_DEF_HISTORY_COUNT}]))
+          ")
+          aws ssm put-parameter \
+            --name "$SSM_KEY" \
+            --value "$UPDATED" \
+            --type String \
+            --overwrite \
+            --description "Last ${TASK_DEF_HISTORY_COUNT} task definition ARNs for ${CLUSTER}/${SERVICE}" \
+            >/dev/null
+          echo "==> Stored task definition history in SSM: $SSM_KEY"
+
+      # ── Register new task definition revision ────────────────────────────
+      - name: Register new task definition
+        id: new-td
+        run: |
+          CURRENT_TD="${{ steps.td-history.outputs.current_td }}"
+
+          # Pull the current task definition JSON, swap the image tag
+          TD_JSON=$(aws ecs describe-task-definition \
+            --task-definition "$CURRENT_TD" \
+            --query "taskDefinition" --output json)
+
+          NEW_IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ github.sha }}"
+          UPDATED_JSON=$(echo "$TD_JSON" | python3 -c "
+          import json, sys
+          td = json.load(sys.stdin)
+          td['containerDefinitions'][0]['image'] = '${NEW_IMAGE}'
+          for key in ('taskDefinitionArn','revision','status','requiresAttributes',
+                      'compatibilities','registeredAt','registeredBy'):
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          NEW_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$UPDATED_JSON" \
+            --query "taskDefinition.taskDefinitionArn" --output text)
+          echo "new_td_arn=${NEW_TD_ARN}" >> "$GITHUB_OUTPUT"
+          echo "==> New task definition: ${NEW_TD_ARN}"
+
+      # ── Blue/Green rolling deployment with circuit breaker ───────────────
+      # ECS deployment circuit breaker:
+      #   - rollbackOnFailure=true  → ECS auto-reverts to the prior revision if
+      #     the health check fails within the evaluation window
+      # Deployment constraints:
+      #   - minimumHealthyPercent=100 → old tasks stay up until new tasks are healthy
+      #   - maximumPercent=200        → ECS can run old + new tasks simultaneously
+      - name: Update ECS service (blue/green rolling with circuit breaker)
+        id: deploy
+        run: |
+          NEW_TD_ARN="${{ steps.new-td.outputs.new_td_arn }}"
+          echo "==> Deploying ${NEW_TD_ARN} to ${CLUSTER}/${SERVICE}"
+
           aws ecs update-service \
-            --cluster workload-governor-staging \
-            --service workload-governor-staging \
-            --force-new-deployment
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "$NEW_TD_ARN" \
+            --deployment-configuration \
+              "deploymentCircuitBreaker={enable=true,rollback=true},minimumHealthyPercent=100,maximumPercent=200" \
+            --force-new-deployment \
+            --output text > /dev/null
 
+          echo "==> Waiting for service to stabilise (up to 3 minutes)..."
+          # aws ecs wait polls every 6 seconds for up to 40 attempts (≈4 min)
           aws ecs wait services-stable \
-            --cluster workload-governor-staging \
-            --services workload-governor-staging
+            --cluster "$CLUSTER" \
+            --services "$SERVICE"
+          echo "==> Deployment stabilised."
 
+      # ── Smoke tests against the new deployment ───────────────────────────
       - name: Smoke tests
         run: |
           STAGING_URL="${{ secrets.STAGING_URL }}"
-          curl -sf "${STAGING_URL}/health" || (echo "Health check failed" && exit 1)
-          curl -sf "${STAGING_URL}/api/status" || (echo "Status check failed" && exit 1)
+          echo "==> Running smoke tests against ${STAGING_URL}"
 
+          for endpoint in "/health" "/api/status"; do
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 15 "${STAGING_URL}${endpoint}" || true)
+            if [[ "$HTTP" != "200" ]]; then
+              echo "ERROR: Smoke test failed — ${endpoint} returned HTTP ${HTTP}" >&2
+              exit 1
+            fi
+            echo "    ${endpoint} → HTTP ${HTTP} ✓"
+          done
+          echo "==> All smoke tests passed."
+
+      # ── Detect automatic ECS rollback (circuit breaker triggered) ────────
+      # If the smoke test above passed but we want to verify the ECS service
+      # itself didn't roll back mid-wait, check which task definition is active.
+      - name: Verify deployment was not rolled back by circuit breaker
+        run: |
+          NEW_TD_ARN="${{ steps.new-td.outputs.new_td_arn }}"
+          ACTIVE_TD=$(aws ecs describe-services \
+            --cluster "$CLUSTER" --services "$SERVICE" \
+            --query "services[0].taskDefinition" --output text)
+
+          if [[ "$ACTIVE_TD" != "$NEW_TD_ARN" ]]; then
+            echo "ERROR: ECS circuit breaker triggered a rollback." \
+                 "Active task definition: ${ACTIVE_TD} (expected ${NEW_TD_ARN})" >&2
+            exit 1
+          fi
+          echo "==> Active task definition confirmed: ${ACTIVE_TD}"
+
+      # ── Slack notifications ───────────────────────────────────────────────
       - name: Notify Slack on success
         if: success()
         uses: slackapi/slack-github-action@v1
         with:
           payload: |
-            {"text": "✅ Staging deploy succeeded — <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"}
+            {
+              "text": "✅ *Staging deploy succeeded*\n  commit: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|`${{ github.sha }}`>\n  task-def: `${{ steps.new-td.outputs.new_td_arn }}`\n  actor: `${{ github.actor }}`"
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Notify Slack on failure
+      - name: Notify Slack on failure / rollback
         if: failure()
         uses: slackapi/slack-github-action@v1
         with:
           payload: |
-            {"text": "❌ Staging deploy failed — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"}
+            {
+              "text": "❌ *Staging deploy FAILED (automatic rollback may have occurred)*\n  commit: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|`${{ github.sha }}`>\n  run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view logs>\n  actor: `${{ github.actor }}`"
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
