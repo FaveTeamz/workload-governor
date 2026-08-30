@@ -331,6 +331,82 @@ router.get('/:address/counts', async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /:address/summary — cross-org summary (public, no auth required)
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/:address/summary', async (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  if (!isValidStellarAddress(address)) {
+    res.status(400).json({ error: 'invalid stellar address format' });
+    return;
+  }
+
+  try {
+    // Get global application count
+    const globalApplicationCount = await countApplications(address);
+
+    // Get per-org assignment counts
+    const orgAssignmentRows = await pool.query<{
+      org_id: string;
+      count: string;
+    }>(
+      'SELECT org_id, COUNT(*) as count FROM assignments WHERE contributor = $1 GROUP BY org_id',
+      [address],
+    );
+    const orgAssignmentCounts = orgAssignmentRows.rows.map((r) => ({
+      org_id: r.org_id,
+      count: parseInt(r.count, 10),
+    }));
+
+    // Get active applications (open issues only)
+    const activeAppsRows = await pool.query<{
+      org_id: string;
+      issue_id: number;
+      ttl_remaining: number | null;
+    }>(
+      `SELECT a.org_id, a.issue_id,
+              CASE WHEN i.opened_at IS NOT NULL
+                   THEN GREATEST(0, EXTRACT(EPOCH FROM (i.opened_at::timestamp + INTERVAL '30 days' - NOW()))::int)
+                   ELSE NULL END AS ttl_remaining
+       FROM applications a
+       LEFT JOIN issues i ON a.issue_id = i.id
+       WHERE a.contributor = $1`,
+      [address],
+    );
+    const activeApplications = activeAppsRows.rows.map((r) => ({
+      org_id: r.org_id,
+      issue_id: r.issue_id,
+      ttl_remaining: r.ttl_remaining,
+    }));
+
+    // Get active assignments
+    const activeAssignRows = await pool.query<{
+      org_id: string;
+      issue_id: number;
+    }>(
+      'SELECT org_id, issue_id FROM assignments WHERE contributor = $1',
+      [address],
+    );
+    const activeAssignments = activeAssignRows.rows.map((r) => ({
+      org_id: r.org_id,
+      issue_id: r.issue_id,
+    }));
+
+    res.json({
+      address,
+      global_application_count: globalApplicationCount,
+      org_assignment_counts: orgAssignmentCounts,
+      active_applications: activeApplications,
+      active_assignments: activeAssignments,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal server error';
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /:address/activity — monthly bar-chart data (last 12 months)
 // ─────────────────────────────────────────────────────────────────────────────
 

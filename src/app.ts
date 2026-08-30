@@ -15,6 +15,7 @@ import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
+import { auditMiddleware } from './middleware/audit';
 
 export function createApp(): express.Application {
   const app = express();
@@ -40,6 +41,9 @@ export function createApp(): express.Application {
   // Rate limiting middleware
   app.use(globalLimiter);
   app.use(apiKeyAuth);
+
+  // Audit logging for all state-changing operations
+  app.use(auditMiddleware);
 
   setupSwagger(app);
 
