@@ -1,13 +1,19 @@
 import { db } from '../config/database';
 import { cancellationAudit } from '../cancellation_audit';
 
+export type CancellationReasonCode = 
+  | 'CONTRIBUTOR_WITHDREW' 
+  | 'MAINTAINER_REVOKED' 
+  | 'TTL_EXPIRED' 
+  | 'ADMIN_CANCELLED';
+
 export interface CancellationRecord {
   event_type: string;
   actor: string;
   contributor: string;
   org_id: string;
   issue_id: number;
-  reason: string;
+  reason: CancellationReasonCode | string;
   timestamp: Date;
   tx_hash: string;
 }
@@ -127,6 +133,7 @@ export class AuditService {
     total: number;
     byEventType: Record<string, number>;
     byActor: Record<string, number>;
+    byReason: Record<string, number>;
   }> {
     let query = db('cancellation_audit');
     
@@ -161,7 +168,21 @@ export class AuditService {
       byActor[row.actor] = parseInt(row.count, 10);
     });
 
-    return { total, byEventType, byActor };
+    // Group by reason
+    const byReasonResult = await query.clone()
+      .select('reason')
+      .count('* as count')
+      .groupBy('reason')
+      .orderBy('count', 'desc');
+
+    const byReason: Record<string, number> = {};
+    byReasonResult.forEach((row: any) => {
+      if (row.reason) {
+        byReason[row.reason] = parseInt(row.count, 10);
+      }
+    });
+
+    return { total, byEventType, byActor, byReason };
   }
 }
 
