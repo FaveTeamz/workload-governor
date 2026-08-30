@@ -148,6 +148,25 @@ fn unit_saturating_sub_zero_floor_global() {
 }
 
 #[test]
+#[test]
+fn unit_zero_count_assigned_slot_does_not_underflow() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("zero_count");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.set_org_cap(&admin, &org, &2u32);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
+
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    assert_eq!(t.client.get_org_cap(&org), 2);
+}
+
 fn unit_saturating_sub_zero_floor_org() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
