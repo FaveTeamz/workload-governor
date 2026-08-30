@@ -1,0 +1,32 @@
+🚀 vesting-backend deployed successfully!
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Version:   {{ include "vesting-backend.imageTag" . }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ACCESS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}/health
+{{- end }}
+{{- else }}
+  kubectl port-forward svc/{{ include "vesting-backend.fullname" . }} 3000:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  Then visit: http://localhost:3000/health
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  NEXT STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Ensure a ClusterSecretStore named "{{ .Values.externalSecrets.secretStoreName }}" exists
+   (or disable ExternalSecrets with --set externalSecrets.enabled=false).
+
+2. Set your CONTRACT_ID:
+   helm upgrade {{ .Release.Name }} . --set config.CONTRACT_ID=<YOUR_CONTRACT_ID>
+
+3. Confirm pods are running:
+   kubectl get pods -l app.kubernetes.io/name={{ include "vesting-backend.name" . }} -n {{ .Release.Namespace }}
+
+4. Check logs:
+   kubectl logs -l app.kubernetes.io/name={{ include "vesting-backend.name" . }} -n {{ .Release.Namespace }} --tail=50
