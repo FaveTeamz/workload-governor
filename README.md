@@ -25,6 +25,8 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `register_maintainer(admin, maintainer, org_id)` | Admin | Authorize a maintainer for an org |
 | `deregister_maintainer(admin, maintainer, org_id)` | Admin | Revoke a maintainer's authorization for an org |
 | `upgrade(new_wasm_hash)` | Admin | Upgrade the contract WASM |
+| `propose_admin(current_admin, new_admin)` | Admin | Step 1: nominate a new admin address |
+| `accept_admin(new_admin)` | Pending admin | Step 2: accept the pending admin nomination |
 | `apply_for_issue(contributor, org_id, issue_id)` | Contributor | Submit a pending application |
 | `withdraw_application(contributor, org_id, issue_id)` | Contributor | Cancel a pending application |
 | `assign_issue(maintainer, contributor, org_id, issue_id)` | Maintainer | Convert application to assignment |
@@ -36,7 +38,6 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `has_applied(contributor, org_id, issue_id)` | Anyone | Check if application exists |
 | `is_assigned(contributor, org_id, issue_id)` | Anyone | Check if assignment is active |
 | `check_consistency(pairs, issue_ids)` | Anyone | Return `(contributor, org_id)` pairs with counter inconsistency |
-| `check_consistency(pairs, issue_ids)` | Anyone | Return (contributor, org_id) pairs with counter inconsistency |
 
 ## Error Codes
 
@@ -44,7 +45,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 |---|---|---|
 | 1 | `AlreadyInitialized` | `initialize` called twice |
 | 2 | `NotInitialized` | State-changing call before `initialize` |
-| 3 | `UnauthorizedAdmin` | Wrong admin credentials |
+| 3 | `UnauthorizedAdmin` | Wrong admin credentials, or `accept_admin` caller doesn't match pending admin |
 | 4 | `UnauthorizedMaintainer` | Maintainer not registered for org |
 | 5 | `UnauthorizedContributor` | Auth failure on contributor call |
 | 6 | `GlobalApplicationLimitReached` | Contributor has 15 pending applications |
@@ -53,6 +54,11 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
+| 12 | `CapOutOfRange` | `emergency_set_global_cap` called with `new_cap > 100` |
+| 13 | `CounterInconsistency` | Internal counter/sentinel mismatch (debug builds only) |
+| 14 | `InvalidOrgCap` | `set_org_cap` called with `new_cap` outside `[1, 20]` |
+| 15 | `NoPendingAdminTransfer` | `accept_admin` called with no active proposal |
+| 16 | `PendingAdminTransferExists` | Reserved for future use |
 | 17 | `MaintainerNotFound` | Maintainer not registered for the org (returned by `deregister_maintainer`) |
 
 ## Storage Design
@@ -62,6 +68,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | Global App Count | Temporary (Wave TTL) | `("g_apps", contributor)` | `u32` |
 | App Entry | Temporary (Wave TTL) | `("app", contributor, org_id, issue_id)` | `bool` |
 | Admin | Persistent | `"admin"` | `Address` |
+| Pending Admin | Persistent | `"p_admin"` | `Address` |
 | Maintainer | Persistent | `("maint", maintainer, org_id)` | `bool` |
 | Org Assignment Count | Persistent | `("o_asgn", contributor, org_id)` | `u32` |
 | Assignment Entry | Persistent | `("asgn", org_id, issue_id, contributor)` | `bool` |

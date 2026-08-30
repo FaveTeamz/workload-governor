@@ -557,29 +557,39 @@ fn unit_event_application_submitted_has_two_topics() {
 }
 
 // ---------------------------------------------------------------------------
-// transfer_admin tests (Issue: admin key rotation)
+// propose_admin / accept_admin tests (two-step admin key rotation)
 // ---------------------------------------------------------------------------
 
-/// Happy path: new admin can perform admin actions after transfer; old admin cannot.
+/// Happy path: new admin can perform admin actions after completing transfer;
+/// old admin cannot after accept_admin is called.
 #[test]
-fn unit_transfer_admin_happy_path() {
+fn unit_propose_accept_admin_happy_path() {
     let t = TestEnv::new();
     let old_admin = Address::generate(&t.env);
     let new_admin = Address::generate(&t.env);
     let org = t.org("xfer");
 
     t.client.initialize(&old_admin);
-    t.client.transfer_admin(&old_admin, &new_admin);
+
+    // Step 1: current admin proposes new admin
+    t.client.propose_admin(&old_admin, &new_admin);
+
+    // Old admin is still active before acceptance
+    let maintainer_tmp = Address::generate(&t.env);
+    t.client.register_maintainer(&old_admin, &maintainer_tmp, &org);
+
+    // Step 2: new admin accepts
+    t.client.accept_admin(&new_admin);
 
     // New admin can register a maintainer
     let maintainer = Address::generate(&t.env);
     t.client.register_maintainer(&new_admin, &maintainer, &org);
 }
 
-/// Old admin cannot call admin functions after transfer.
+/// Old admin cannot call admin functions after accept_admin completes the transfer.
 #[test]
 #[should_panic]
-fn unit_transfer_admin_old_admin_rejected() {
+fn unit_propose_accept_admin_old_admin_rejected() {
     let t = TestEnv::new();
     let old_admin = Address::generate(&t.env);
     let new_admin = Address::generate(&t.env);
@@ -587,42 +597,168 @@ fn unit_transfer_admin_old_admin_rejected() {
     let maintainer = Address::generate(&t.env);
 
     t.client.initialize(&old_admin);
-    t.client.transfer_admin(&old_admin, &new_admin);
+    t.client.propose_admin(&old_admin, &new_admin);
+    t.client.accept_admin(&new_admin);
 
     // Old admin tries to register a maintainer — must fail
     t.client.register_maintainer(&old_admin, &maintainer, &org);
 }
 
-/// transfer_admin requires the contract to be initialized.
+/// propose_admin requires the contract to be initialized.
 #[test]
 #[should_panic]
-fn unit_transfer_admin_requires_initialized() {
+fn unit_propose_admin_requires_initialized() {
     let t = TestEnv::new();
     let old_admin = Address::generate(&t.env);
     let new_admin = Address::generate(&t.env);
 
     // No initialize() call — must panic with NotInitialized
-    t.client.transfer_admin(&old_admin, &new_admin);
+    t.client.propose_admin(&old_admin, &new_admin);
 }
 
-/// AdminTransferred event is emitted on successful transfer.
+/// accept_admin requires a prior propose_admin call.
 #[test]
-fn unit_transfer_admin_emits_event() {
+fn unit_accept_admin_requires_pending_transfer() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+
+    t.client.initialize(&admin);
+
+    // No propose_admin call — must return NoPendingAdminTransfer
+    let result = t.client.try_accept_admin(&new_admin);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NoPendingAdminTransfer.into_val(&t.env)))
+    );
+}
+
+/// accept_admin rejects a caller that was not the nominated pending admin.
+#[test]
+fn unit_accept_admin_rejects_wrong_address() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+    let impostor = Address::generate(&t.env);
+
+    t.client.initialize(&old_admin);
+    t.client.propose_admin(&old_admin, &new_admin);
+
+    // impostor tries to accept — must return UnauthorizedAdmin
+    let result = t.client.try_accept_admin(&impostor);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::UnauthorizedAdmin.into_val(&t.env)))
+    );
+
+    // Old admin is still active after failed acceptance
+    let maintainer = Address::generate(&t.env);
+    t.client.register_maintainer(&old_admin, &maintainer, &t.org("stillok"));
+}
+
+/// Old admin remains valid until accept_admin is called.
+#[test]
+fn unit_old_admin_valid_until_accept() {
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+    let org = t.org("pending");
+
+    t.client.initialize(&old_admin);
+    t.client.propose_admin(&old_admin, &new_admin);
+
+    // Old admin can still operate before acceptance
+    let maintainer = Address::generate(&t.env);
+    t.client.register_maintainer(&old_admin, &maintainer, &org);
+    assert!(true); // no panic = old admin still works
+}
+
+/// AdminTransferred event is emitted on accept_admin.
+#[test]
+fn unit_accept_admin_emits_admin_transferred_event() {
+    use soroban_sdk::{testutils::Events, IntoVal};
+
     let t = TestEnv::new();
     let old_admin = Address::generate(&t.env);
     let new_admin = Address::generate(&t.env);
 
     t.client.initialize(&old_admin);
-    t.client.transfer_admin(&old_admin, &new_admin);
+    t.client.propose_admin(&old_admin, &new_admin);
+    t.client.accept_admin(&new_admin);
 
+    // There must be at least one event from accept_admin (AdminTransferred).
     let events = t.env.events().all();
-    assert!(!events.is_empty());
+    assert!(!events.is_empty(), "accept_admin must emit at least one event");
+
+    // The last event is the AdminTransferred event — verify data payload is new_admin.
+    let (_, _topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    let expected_data: soroban_sdk::Val = new_admin.clone().into_val(&t.env);
+    assert_eq!(data, expected_data, "AdminTransferred event data must be new_admin");
 }
 
-/// transfer_admin is idempotent in the sense that calling it twice (chain of transfers)
-/// works correctly.
+/// AdminTransferProposed event is emitted on propose_admin.
 #[test]
-fn unit_transfer_admin_chain() {
+fn unit_propose_admin_emits_proposed_event() {
+    use soroban_sdk::testutils::Events;
+
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin = Address::generate(&t.env);
+
+    t.client.initialize(&old_admin);
+    let events_before = t.env.events().all().len();
+    t.client.propose_admin(&old_admin, &new_admin);
+
+    let events = t.env.events().all();
+    assert!(
+        events.len() > events_before,
+        "propose_admin must emit at least one event"
+    );
+}
+
+/// propose_admin overwrites a previous pending proposal (no PendingAdminTransferExists error).
+#[test]
+fn unit_propose_admin_can_overwrite_pending() {
+    let t = TestEnv::new();
+    let old_admin = Address::generate(&t.env);
+    let new_admin_a = Address::generate(&t.env);
+    let new_admin_b = Address::generate(&t.env);
+
+    t.client.initialize(&old_admin);
+
+    // First proposal
+    t.client.propose_admin(&old_admin, &new_admin_a);
+
+    // Overwrite with a different proposed admin — must not panic
+    t.client.propose_admin(&old_admin, &new_admin_b);
+
+    // new_admin_a can no longer accept (proposal was overwritten)
+    {
+        use crate::errors::ContractError;
+        use soroban_sdk::IntoVal;
+        let result = t.client.try_accept_admin(&new_admin_a);
+        assert_eq!(
+            result,
+            Err(Ok(ContractError::UnauthorizedAdmin.into_val(&t.env)))
+        );
+    }
+
+    // new_admin_b can accept
+    t.client.accept_admin(&new_admin_b);
+    let maintainer = Address::generate(&t.env);
+    t.client.register_maintainer(&new_admin_b, &maintainer, &t.org("ow"));
+}
+
+/// Chain of transfers: A→B, then B→C.
+#[test]
+fn unit_propose_accept_admin_chain() {
     let t = TestEnv::new();
     let admin_a = Address::generate(&t.env);
     let admin_b = Address::generate(&t.env);
@@ -631,8 +767,10 @@ fn unit_transfer_admin_chain() {
     let maintainer = Address::generate(&t.env);
 
     t.client.initialize(&admin_a);
-    t.client.transfer_admin(&admin_a, &admin_b);
-    t.client.transfer_admin(&admin_b, &admin_c);
+    t.client.propose_admin(&admin_a, &admin_b);
+    t.client.accept_admin(&admin_b);
+    t.client.propose_admin(&admin_b, &admin_c);
+    t.client.accept_admin(&admin_c);
 
     // Only admin_c can act now
     t.client.register_maintainer(&admin_c, &maintainer, &org);
@@ -698,9 +836,9 @@ mod benchmarks {
     const EXTEND_CPU_THRESHOLD: u64    = 400_000;
     const EXTEND_MEM_THRESHOLD: u64    = 150_000;
 
-    /// transfer_admin: 1 persistent write + event
-    const TRANSFER_ADMIN_CPU_THRESHOLD: u64 = 400_000;
-    const TRANSFER_ADMIN_MEM_THRESHOLD: u64 = 150_000;
+    /// propose_admin + accept_admin (two-step transfer): 2 persistent writes + 2 events
+    const TRANSFER_ADMIN_CPU_THRESHOLD: u64 = 800_000;
+    const TRANSFER_ADMIN_MEM_THRESHOLD: u64 = 300_000;
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -940,10 +1078,11 @@ mod benchmarks {
     }
 
     // -----------------------------------------------------------------------
-    // Benchmark: transfer_admin
+    // Benchmark: propose_admin + accept_admin (two-step transfer)
     // -----------------------------------------------------------------------
-    // Ledger writes: 1 persistent (admin) + 1 instance bump
-    // Ledger reads:  1 persistent (admin check via require_initialized + get_admin)
+    // Ledger writes: 1 persistent (pending_admin) + 1 instance bump for propose;
+    //               1 persistent (admin overwrite) + remove pending + 1 instance bump for accept.
+    // Ledger reads:  1 persistent (admin check) per step.
 
     #[test]
     fn bench_transfer_admin() {
@@ -953,7 +1092,8 @@ mod benchmarks {
 
         b.client.initialize(&old_admin);
         b.env.cost_estimate().budget().reset_default();
-        b.client.transfer_admin(&old_admin, &new_admin);
+        b.client.propose_admin(&old_admin, &new_admin);
+        b.client.accept_admin(&new_admin);
         let (cpu, mem) = b.measure("transfer_admin");
 
         assert!(

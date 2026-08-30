@@ -369,7 +369,7 @@ message. Look for `ContractError(N)` or `Error(Contract, #N)` in the CLI output.
 |------|---------|------------------|-----------|
 | 1 | `AlreadyInitialized` | `initialize` called twice | Do not call `initialize` more than once. Contact a platform admin if you need the contract redeployed. |
 | 2 | `NotInitialized` | Any state-changing call before the contract was initialized | The contract has not been set up. Contact a platform admin to run `initialize`. |
-| 3 | `UnauthorizedAdmin` | Admin function called without the stored admin signing | You are not the admin. Admin-only operations (`register_maintainer`, `upgrade`, `transfer_admin`) require the admin's key. |
+| 3 | `UnauthorizedAdmin` | Admin function called without the stored admin signing | You are not the admin. Admin-only operations (`register_maintainer`, `upgrade`, `propose_admin`) require the admin's key. For `accept_admin`, the caller must match the pending admin address set by `propose_admin`. |
 | 4 | `UnauthorizedMaintainer` | Maintainer function called by an unregistered address | Only registered maintainers can call `assign_issue`, `complete_assignment`, or `revoke_assignment`. Ask the admin to register your address with `register_maintainer`. |
 | 5 | `UnauthorizedContributor` | `--source` does not match `--contributor` | The `--source` key must belong to the same address passed as `--contributor`. Re-run with the correct `--source`. |
 | 6 | `GlobalApplicationLimitReached` | You already hold 15 pending applications | Withdraw at least one application with `withdraw_application`, then retry. |

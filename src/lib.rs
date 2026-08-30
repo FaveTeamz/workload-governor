@@ -162,6 +162,102 @@ impl WorkloadGovernor {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
+    /// Proposes a new admin address to take over admin authority (Step 1 of 2).
+    ///
+    /// Stores `new_admin` as the pending admin. The transfer is **not yet active** —
+    /// the new admin must call [`WorkloadGovernor::accept_admin`] to complete it.
+    /// The current admin remains fully authorised until `accept_admin` is called.
+    ///
+    /// Calling `propose_admin` again while a proposal is already pending **overwrites**
+    /// the previous proposal. This lets the current admin correct a mistaken proposal
+    /// without first cancelling it.
+    ///
+    /// Emits `AdminTransferProposed { current_admin, new_admin }`.
+    ///
+    /// # Who can call
+    /// The stored (current) admin address only.
+    ///
+    /// # Arguments
+    /// * `current_admin` – Must match the stored admin address (auth enforced).
+    /// * `new_admin`     – Address being nominated to receive admin authority.
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — `current_admin` auth check fails.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <admin-account> \
+    ///   -- propose_admin \
+    ///   --current_admin <CURRENT_ADMIN_ADDRESS> \
+    ///   --new_admin <NEW_ADMIN_ADDRESS>
+    /// ```
+    pub fn propose_admin(env: Env, current_admin: Address, new_admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        storage::set_pending_admin(&env, &new_admin);
+        storage::bump_instance(&env);
+        events::emit_admin_transfer_proposed(&env, &current_admin, &new_admin);
+    }
+
+    /// Completes an in-progress admin transfer by accepting the pending proposal (Step 2 of 2).
+    ///
+    /// The caller must be the address that was nominated by the current admin via
+    /// [`WorkloadGovernor::propose_admin`]. On success the stored admin is atomically
+    /// replaced and the pending proposal is cleared.
+    ///
+    /// The old admin loses all privileges immediately upon on-chain confirmation of
+    /// this transaction.
+    ///
+    /// Emits `AdminTransferred { old_admin, new_admin }`.
+    ///
+    /// # Who can call
+    /// The pending admin address (the address passed to `propose_admin`).
+    ///
+    /// # Arguments
+    /// * `new_admin` – Must match the pending admin address stored by `propose_admin`
+    ///                 (auth enforced).
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]        — contract has not been initialised yet.
+    /// * [`ContractError::NoPendingAdminTransfer`] — no `propose_admin` call is in progress.
+    /// * [`ContractError::UnauthorizedAdmin`]      — `new_admin` auth check fails, or the
+    ///                                               provided address does not match the
+    ///                                               stored pending admin.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet --source <new-admin-account> \
+    ///   -- accept_admin \
+    ///   --new_admin <NEW_ADMIN_ADDRESS>
+    /// ```
+    pub fn accept_admin(env: Env, new_admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let pending = match storage::get_pending_admin(&env) {
+            Some(p) => p,
+            None => panic_with_error!(env, ContractError::NoPendingAdminTransfer),
+        };
+        // The pending admin must match and must authorise the acceptance.
+        if pending != new_admin {
+            panic_with_error!(env, ContractError::UnauthorizedAdmin);
+        }
+        new_admin.require_auth();
+        let old_admin = storage::get_admin(&env).unwrap();
+        storage::set_admin(&env, &new_admin);
+        storage::remove_pending_admin(&env);
+        storage::bump_instance(&env);
+        events::emit_admin_transferred(&env, &old_admin, &new_admin);
+    }
+
     /// Sets the global application cap via the normal (non-emergency) operator path.
     ///
     /// Emits `GlobalCapUpdated` event. Admin auth is required.
