@@ -140,6 +140,19 @@ The contract address does not change. All storage entries are preserved.
 
 ---
 
+## REST API Token Management
+
+The WorkloadGovernor backend exposes admin REST endpoints (`POST /api/admin/maintainers`,
+`DELETE /api/admin/maintainers/:address`) that are protected by the `ADMIN_TOKEN`
+environment variable. This is a separate credential from the on-chain Stellar admin
+keypair.
+
+For the full lifecycle — generating the token, storing it securely, rotating it on a
+schedule, and responding to a compromised token — see
+[docs/api-key-guide.md](api-key-guide.md).
+
+---
+
 ## Error Reference
 
 For the full list of error codes and their resolutions, see [docs/error-reference.md](error-reference.md).
