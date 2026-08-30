@@ -6,7 +6,8 @@ describe('GET /health', () => {
     const res = await request(app).get('/health');
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('status', 'ok');
+    expect(res.body).toHaveProperty('status');
+    expect(['ok', 'degraded']).toContain(res.body.status);
     expect(res.body).toHaveProperty('timestamp');
     expect(typeof res.body.timestamp).toBe('string');
     // Verify it's a valid ISO 8601 date
@@ -17,5 +18,21 @@ describe('GET /health', () => {
   it('does not require authentication', async () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
+  });
+
+  it('includes db pool stats in the response body', async () => {
+    const res = await request(app).get('/health');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('db');
+    expect(res.body.db).toHaveProperty('status');
+    expect(['ok', 'error']).toContain(res.body.db.status);
+    expect(res.body.db).toHaveProperty('pool');
+    expect(res.body.db.pool).toHaveProperty('total');
+    expect(res.body.db.pool).toHaveProperty('idle');
+    expect(res.body.db.pool).toHaveProperty('waiting');
+    expect(typeof res.body.db.pool.total).toBe('number');
+    expect(typeof res.body.db.pool.idle).toBe('number');
+    expect(typeof res.body.db.pool.waiting).toBe('number');
   });
 });
