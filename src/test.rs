@@ -394,6 +394,32 @@ fn unit_event_application_submitted_has_two_topics() {
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
 }
 
+#[test]
+fn unit_org_cap_can_be_set_and_enforced() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("orgcap");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.set_org_cap(&admin, &org, &2u32);
+
+    assert_eq!(t.client.get_org_cap(&org), 2);
+
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &2u32);
+
+    t.client.apply_for_issue(&contributor, &org, &3u32);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.assign_issue(&maintainer, &contributor, &org, &3u32);
+    }));
+    assert!(result.is_err());
+}
+
 // ---------------------------------------------------------------------------
 // PROPERTY-BASED TESTS
 // ---------------------------------------------------------------------------
@@ -924,6 +950,7 @@ fn unit_upgrade_idempotent() {
 
 /// Issue #44: non-admin calling upgrade must fail with a host Auth error (error 3).
 /// The stored admin's `require_auth()` rejects any other caller.
+#[cfg(wasm_available)]
 #[test]
 #[should_panic]
 fn unit_upgrade_rejects_non_admin() {

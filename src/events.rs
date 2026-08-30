@@ -108,3 +108,13 @@ pub(crate) fn emit_assignment_revoked(
     let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_org_cap`.
+///
+/// topics: `(symbol_short!("o_cap_set"), admin)`
+/// data:   `(org_id, cap)`
+pub(crate) fn emit_org_cap_set(env: &Env, admin: &Address, org_id: &Symbol, cap: u32) {
+    let topics = (symbol_short!("o_cap_set"), admin.clone());
+    let data = (org_id.clone(), cap);
+    env.events().publish(topics, data);
+}

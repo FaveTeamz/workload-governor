@@ -248,6 +248,28 @@ pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
 }
 
 // ---------------------------------------------------------------------------
+// Persistent storage — Org assignment cap
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("o_cap"), org_id: Symbol)`
+// Value: `u32`
+
+fn org_cap_key(org_id: &Symbol) -> (Symbol, Symbol) {
+    (symbol_short!("o_cap"), org_id.clone())
+}
+
+/// Returns the configured cap for `org_id`, or the default org assignment limit.
+pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> Option<u32> {
+    env.storage().persistent().get(&org_cap_key(org_id))
+}
+
+/// Writes the configured assignment cap for `org_id`.
+pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
+    let key = org_cap_key(org_id);
+    env.storage().persistent().set(&key, &cap);
+}
+
+// ---------------------------------------------------------------------------
 // Persistent storage — Org Assignment Count
 // ---------------------------------------------------------------------------
 //

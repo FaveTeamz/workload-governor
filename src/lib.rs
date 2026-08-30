@@ -93,6 +93,26 @@ impl WorkloadGovernor {
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
+    /// Updates the per-organisation assignment cap for a given org.
+    pub fn set_org_cap(env: Env, admin: Address, org_id: Symbol, cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if cap == 0 {
+            panic_with_error!(env, ContractError::InvalidCapValue);
+        }
+        storage::set_org_cap(&env, &org_id, cap);
+        storage::bump_instance(&env);
+        events::emit_org_cap_set(&env, &admin, &org_id, cap);
+    }
+
+    #[cfg(test)]
+    pub fn seed_assignment(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+        storage::set_assignment(&env, &org_id, issue_id, &contributor);
+        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
+    }
+
     /// Upgrades the contract WASM to a new hash (admin-only).
     ///
     /// This is the standard Soroban upgrade path. The new WASM must already be
@@ -275,7 +295,8 @@ impl WorkloadGovernor {
             panic_with_error!(env, ContractError::ApplicationNotFound);
         }
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {
+        let org_cap = storage::get_org_cap(&env, &org_id).unwrap_or(storage::ORG_ASSIGNMENT_LIMIT);
+        if asgn_count >= org_cap {
             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);
         }
         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
@@ -489,6 +510,11 @@ impl WorkloadGovernor {
         storage::get_org_assignment_count(&env, &contributor, &org_id)
     }
 
+    /// Returns the configured assignment cap for an organisation.
+    pub fn get_org_cap(env: Env, org_id: Symbol) -> u32 {
+        storage::get_org_cap(&env, &org_id).unwrap_or(storage::ORG_ASSIGNMENT_LIMIT)
+    }
+
     /// Returns `true` if the contributor has a pending application for the given issue.
     ///
     /// # Who can call
@@ -602,7 +628,8 @@ impl WorkloadGovernor {
         org_id: Symbol,
     ) -> bool {
         let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        count >= storage::ORG_ASSIGNMENT_LIMIT
+        let cap = storage::get_org_cap(&env, &org_id).unwrap_or(storage::ORG_ASSIGNMENT_LIMIT);
+        count >= cap
     }
 
     /// Returns `true` if the contributor has reached their global application limit.
