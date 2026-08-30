@@ -105,6 +105,39 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+    post:
+      operationId: bulkRegisterIssues
+      tags: [issues]
+      summary: Bulk register multiple issues for an org
+      description: >
+        Register multiple issues in a single transaction. All issues are registered
+        atomically; if any registration fails, all are rolled back. Maximum 100
+        issues per request. Returns a detailed report of successes and failures.
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRegisterIssuesRequest'
+      responses:
+        '201':
+          description: Issues registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRegistrationReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /orgs/{orgId}/applications:
     get:
@@ -536,6 +569,56 @@ components:
           type: object
           additionalProperties:
             type: integer
+
+    BulkRegisterIssuesRequest:
+      type: object
+      required: [issue_ids]
+      properties:
+        issue_ids:
+          type: array
+          items:
+            type: integer
+          minItems: 1
+          maxItems: 100
+          description: Array of issue IDs to register (1-100 items)
+          example: [1, 2, 3, 42, 99]
+
+    BulkRegistrationFailure:
+      type: object
+      required: [issueId, error]
+      properties:
+        issueId:
+          type: integer
+          description: Issue ID that failed to register
+          example: 42
+        error:
+          type: string
+          description: Error message explaining why registration failed
+          example: Issue already registered
+
+    BulkRegistrationReport:
+      type: object
+      required: [succeeded, failed, total, timestamp]
+      properties:
+        succeeded:
+          type: array
+          items:
+            type: integer
+          description: Array of successfully registered issue IDs
+          example: [1, 2, 3]
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkRegistrationFailure'
+          description: Array of issues that failed to register with error details
+        total:
+          type: integer
+          description: Total number of issues in the request
+          example: 5
+        timestamp:
+          type: string
+          format: date-time
+          description: Time when the bulk registration was processed
 
     Error:
       type: object
