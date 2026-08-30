@@ -358,12 +358,12 @@ fn unit_error_already_assigned() {
 }
 
 // ---------------------------------------------------------------------------
-// UNIT TESTS — event structure
+// UNIT TESTS — event structure (topics use ["workload", operation] format)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn unit_event_initialized_has_two_topics() {
-    use soroban_sdk::testutils::Events;
+fn unit_event_initialized_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -373,11 +373,13 @@ fn unit_event_initialized_has_two_topics() {
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"), "First topic must be 'workload'");
 }
 
 #[test]
-fn unit_event_application_submitted_has_two_topics() {
-    use soroban_sdk::testutils::Events;
+fn unit_event_application_submitted_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -392,15 +394,79 @@ fn unit_event_application_submitted_has_two_topics() {
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
 }
 
 #[test]
-fn unit_org_cap_event_has_two_topics() {
-    use soroban_sdk::testutils::Events;
+fn unit_event_withdraw_application_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let org = t.org("cap_event");
+    let contributor = Address::generate(&t.env);
+    let org = t.org("wdwevt");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &3u32);
+    t.client.withdraw_application(&contributor, &org, &3u32);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_deregister_maintainer_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("dereg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.deregister_maintainer(&admin, &maintainer, &org);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_deregister_maintainer_revokes_access() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revoke");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.deregister_maintainer(&admin, &maintainer, &org);
+
+    // maintainer can no longer assign
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    }));
+    assert!(result.is_err(), "deregistered maintainer must be rejected");
+}
+
+#[test]
+fn unit_event_org_cap_set_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let org = t.org("capevt");
 
     t.client.initialize(&admin);
     t.client.set_org_cap(&admin, &org, &3u32);
@@ -410,6 +476,79 @@ fn unit_org_cap_event_has_two_topics() {
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple for org cap event");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_assign_issue_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("asgnevt");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_complete_assignment_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("compevt");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_revoke_assignment_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revkevt");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
 }
 
 // ---------------------------------------------------------------------------
