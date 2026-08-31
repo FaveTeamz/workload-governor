@@ -96,9 +96,10 @@ impl WorkloadGovernor {
 
     /// Revokes a maintainer's authorisation for a specific organisation (admin-only).
     ///
-    /// Deletes the `(maint, maintainer, org_id)` persistent storage entry so that
-    /// subsequent calls to maintainer-gated functions (e.g. `assign_issue`) will fail
-    /// with [`ContractError::UnauthorizedMaintainer`].
+    /// Removes the maintainer registration for `(maintainer, org_id)`. After this
+    /// call the maintainer can no longer call `assign_issue`, `complete_assignment`,
+    /// or `revoke_assignment` for the given organisation. The operation is idempotent —
+    /// calling it when the maintainer is already deregistered is a no-op.
     ///
     /// # Who can call
     /// The stored admin address only.
@@ -106,7 +107,7 @@ impl WorkloadGovernor {
     /// # Arguments
     /// * `admin`      – Must match the stored admin address (auth enforced).
     /// * `maintainer` – Address whose maintainer rights are being revoked.
-    /// * `org_id`     – Organisation symbol the maintainer is being deregistered from.
+    /// * `org_id`     – Organisation the maintainer is being deregistered from.
     ///
     /// # Returns
     /// `()` on success.
@@ -114,28 +115,56 @@ impl WorkloadGovernor {
     /// # Errors
     /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
     /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
-    /// * [`ContractError::MaintainerNotFound`] — `maintainer` is not currently registered
-    ///   for `org_id` (code 17).
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <admin-account> \
-    ///   -- deregister_maintainer \
-    ///   --admin <ADMIN_ADDRESS> \
-    ///   --maintainer <MAINTAINER_ADDRESS> \
-    ///   --org_id my_org
-    /// ```
     pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
-        if !storage::is_maintainer(&env, &maintainer, &org_id) {
-            panic_with_error!(env, ContractError::MaintainerNotFound);
-        }
         storage::remove_maintainer(&env, &maintainer, &org_id);
         storage::bump_instance(&env);
         events::emit_maintainer_deregistered(&env, &admin, &maintainer, &org_id);
+    }
+
+    /// Sets the per-organisation assignment cap (admin-only).
+    ///
+    /// Overrides the default [`storage::ORG_ASSIGNMENT_LIMIT`] for a specific org,
+    /// allowing different organisations to have different assignment slot limits.
+    ///
+    /// # Who can call
+    /// The stored admin address only.
+    ///
+    /// # Arguments
+    /// * `admin`   – Must match the stored admin address (auth enforced).
+    /// * `org_id`  – Organisation whose cap is being configured.
+    /// * `cap`     – New cap value; must be in range [1, 20].
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    /// * [`ContractError::InvalidCapValue`]   — `cap` is 0 or greater than 20.
+    pub fn set_org_cap(env: Env, admin: Address, org_id: Symbol, cap: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+        if cap == 0 || cap > 20 {
+            panic_with_error!(env, ContractError::InvalidCapValue);
+        }
+        let old_cap = storage::get_org_cap(&env, &org_id)
+            .unwrap_or(storage::ORG_ASSIGNMENT_LIMIT);
+        storage::set_org_cap(&env, &org_id, cap);
+        storage::bump_instance(&env);
+        events::emit_org_cap_set(&env, &org_id, old_cap, cap);
+    }
+
+    /// Returns the configured per-org assignment cap (or the default if not set).
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    pub fn get_org_cap(env: Env, org_id: Symbol) -> u32 {
+        storage::get_org_cap(&env, &org_id)
+            .unwrap_or(storage::ORG_ASSIGNMENT_LIMIT)
     }
 
     /// Upgrades the contract WASM to a new hash (admin-only).
@@ -481,7 +510,9 @@ impl WorkloadGovernor {
             panic_with_error!(env, ContractError::ApplicationNotFound);
         }
         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        if asgn_count >= storage::get_org_cap(&env, &org_id) {
+        let org_cap = storage::get_org_cap(&env, &org_id)
+            .unwrap_or(storage::ORG_ASSIGNMENT_LIMIT);
+        if asgn_count >= org_cap {
             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);
         }
         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
@@ -979,7 +1010,9 @@ impl WorkloadGovernor {
         org_id: Symbol,
     ) -> bool {
         let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        count >= storage::get_org_cap(&env, &org_id)
+        let cap = storage::get_org_cap(&env, &org_id)
+            .unwrap_or(storage::ORG_ASSIGNMENT_LIMIT);
+        count >= cap
     }
 
     /// Returns `true` if the contributor has reached their global application limit.

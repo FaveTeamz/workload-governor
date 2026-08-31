@@ -286,29 +286,33 @@ pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
     env.storage().persistent().set(&key, &true);
 }
 
-/// Removes the maintainer registration for `(maintainer, org_id)`.
+/// Deregisters `maintainer` for `org_id` (idempotent — safe to call even if not registered).
 pub(crate) fn remove_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
     let key = maintainer_key(maintainer, org_id);
     env.storage().persistent().remove(&key);
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Org assignment cap
+// Persistent storage — Per-Org Assignment Cap
 // ---------------------------------------------------------------------------
 //
 // Key: `(symbol_short!("o_cap"), org_id: Symbol)`
 // Value: `u32`
+//
+// When absent the default `ORG_ASSIGNMENT_LIMIT` is used, making this
+// storage entry optional.
 
 fn org_cap_key(org_id: &Symbol) -> (Symbol, Symbol) {
     (symbol_short!("o_cap"), org_id.clone())
 }
 
-/// Returns the configured cap for `org_id`, or the default org assignment limit.
+/// Returns the configured per-org assignment cap, or `None` if not set (use default).
 pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> Option<u32> {
-    env.storage().persistent().get(&org_cap_key(org_id))
+    let key = org_cap_key(org_id);
+    env.storage().persistent().get(&key)
 }
 
-/// Writes the configured assignment cap for `org_id`.
+/// Writes the per-org assignment cap.
 pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);

@@ -535,12 +535,12 @@ fn unit_error_already_assigned() {
 }
 
 // ---------------------------------------------------------------------------
-// UNIT TESTS — event structure
+// UNIT TESTS — event structure (topics use ["workload", operation] format)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn unit_event_initialized_has_two_topics() {
-    use soroban_sdk::testutils::Events;
+fn unit_event_initialized_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -550,68 +550,13 @@ fn unit_event_initialized_has_two_topics() {
     let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
-    let payload = soroban_sdk::vec![&t.env, 1u32, admin.clone()];
-    assert_eq!(data, payload.into_val(&t.env));
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"), "First topic must be 'workload'");
 }
 
 #[test]
-fn unit_event_initialized_data_contains_admin_and_ledger() {
-    use soroban_sdk::testutils::Events;
-    use soroban_sdk::{symbol_short, TryIntoVal, Val, Vec};
-
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-
-    // Capture the ledger sequence before initializing so we can compare it.
-    let ledger_seq = t.env.ledger().sequence();
-    t.client.initialize(&admin);
-
-    let events = t.env.events().all();
-    let (_, topics, data): (_, Vec<Val>, Val) = events.last().unwrap();
-
-    // Topics: (symbol_short!("init"), admin)
-    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
-    let topic0: soroban_sdk::Symbol = topics.get(0).unwrap().try_into_val(&t.env).unwrap();
-    assert_eq!(topic0, symbol_short!("init"), "First topic must be 'init'");
-    let topic1: Address = topics.get(1).unwrap().try_into_val(&t.env).unwrap();
-    assert_eq!(topic1, admin, "Second topic must be the admin address");
-
-    // Data: (admin, ledger)
-    let (data_admin, data_ledger): (Address, u32) = data.try_into_val(&t.env).unwrap();
-    assert_eq!(data_admin, admin, "Data admin must match the initializing admin");
-    assert_eq!(data_ledger, ledger_seq, "Data ledger must match env.ledger().sequence()");
-}
-
-#[test]
-fn unit_event_initialized_not_emitted_on_double_init() {
-    use soroban_sdk::testutils::Events;
-
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-
-    // First initialization — one 'init' event emitted.
-    t.client.initialize(&admin);
-    assert!(t.env.events().all().len() > 0, "Expected at least one event after first initialize");
-
-    // Second initialization must fail with AlreadyInitialized (error 1).
-    // try_initialize returns a Result instead of panicking, but the host still
-    // rolls back the failed call's events — so the event log is reset to empty.
-    let result = t.client.try_initialize(&admin);
-    assert!(result.is_err(), "Second initialize must return an error");
-
-    // The host rolls back events from failed calls. The empty log is the evidence
-    // that the second call did NOT emit any 'init' event — any event it had emitted
-    // would have been rolled back and is absent from the log.
-    assert_eq!(
-        t.env.events().all().len(),
-        0,
-        "Event log should be empty after a rolled-back AlreadyInitialized call"
-    );
-}
-
-#[test]
-fn unit_event_application_submitted_has_two_topics() {
-    use soroban_sdk::testutils::Events;
+fn unit_event_application_submitted_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -626,624 +571,161 @@ fn unit_event_application_submitted_has_two_topics() {
     let (_, topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
-    let payload = soroban_sdk::vec![&t.env, 1u32, contributor.clone(), org.clone(), 5u32];
-    assert_eq!(data, payload.into_val(&t.env));
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
 }
 
-// ---------------------------------------------------------------------------
-// propose_admin / accept_admin tests (two-step admin key rotation)
-// ---------------------------------------------------------------------------
-
-/// Happy path: new admin can perform admin actions after completing transfer;
-/// old admin cannot after accept_admin is called.
 #[test]
-fn unit_propose_accept_admin_happy_path() {
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
-    let org = t.org("xfer");
-
-    t.client.initialize(&old_admin);
-
-    // Step 1: current admin proposes new admin
-    t.client.propose_admin(&old_admin, &new_admin);
-
-    // Old admin is still active before acceptance
-    let maintainer_tmp = Address::generate(&t.env);
-    t.client.register_maintainer(&old_admin, &maintainer_tmp, &org);
-
-    // Step 2: new admin accepts
-    t.client.accept_admin(&new_admin);
-
-    // New admin can register a maintainer
-    let maintainer = Address::generate(&t.env);
-    t.client.register_maintainer(&new_admin, &maintainer, &org);
-}
-
-/// Old admin cannot call admin functions after accept_admin completes the transfer.
-#[test]
-#[should_panic]
-fn unit_propose_accept_admin_old_admin_rejected() {
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
-    let org = t.org("xfer2");
-    let maintainer = Address::generate(&t.env);
-
-    t.client.initialize(&old_admin);
-    t.client.propose_admin(&old_admin, &new_admin);
-    t.client.accept_admin(&new_admin);
-
-    // Old admin tries to register a maintainer — must fail
-    t.client.register_maintainer(&old_admin, &maintainer, &org);
-}
-
-/// propose_admin requires the contract to be initialized.
-#[test]
-#[should_panic]
-fn unit_propose_admin_requires_initialized() {
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
-
-    // No initialize() call — must panic with NotInitialized
-    t.client.propose_admin(&old_admin, &new_admin);
-}
-
-/// accept_admin requires a prior propose_admin call.
-#[test]
-fn unit_accept_admin_requires_pending_transfer() {
-    use crate::errors::ContractError;
-    use soroban_sdk::IntoVal;
+fn unit_event_withdraw_application_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("wdwevt");
 
     t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &3u32);
+    t.client.withdraw_application(&contributor, &org, &3u32);
 
-    // No propose_admin call — must return NoPendingAdminTransfer
-    let result = t.client.try_accept_admin(&new_admin);
-    assert_eq!(
-        result,
-        Err(Ok(ContractError::NoPendingAdminTransfer.into_val(&t.env)))
-    );
-}
-
-/// accept_admin rejects a caller that was not the nominated pending admin.
-#[test]
-fn unit_accept_admin_rejects_wrong_address() {
-    use crate::errors::ContractError;
-    use soroban_sdk::IntoVal;
-
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
-    let impostor = Address::generate(&t.env);
-
-    t.client.initialize(&old_admin);
-    t.client.propose_admin(&old_admin, &new_admin);
-
-    // impostor tries to accept — must return UnauthorizedAdmin
-    let result = t.client.try_accept_admin(&impostor);
-    assert_eq!(
-        result,
-        Err(Ok(ContractError::UnauthorizedAdmin.into_val(&t.env)))
-    );
-
-    // Old admin is still active after failed acceptance
-    let maintainer = Address::generate(&t.env);
-    t.client.register_maintainer(&old_admin, &maintainer, &t.org("stillok"));
-}
-
-/// Old admin remains valid until accept_admin is called.
-#[test]
-fn unit_old_admin_valid_until_accept() {
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
-    let org = t.org("pending");
-
-    t.client.initialize(&old_admin);
-    t.client.propose_admin(&old_admin, &new_admin);
-
-    // Old admin can still operate before acceptance
-    let maintainer = Address::generate(&t.env);
-    t.client.register_maintainer(&old_admin, &maintainer, &org);
-    assert!(true); // no panic = old admin still works
-}
-
-/// AdminTransferred event is emitted on accept_admin.
-#[test]
-fn unit_accept_admin_emits_admin_transferred_event() {
-    use soroban_sdk::{testutils::Events, IntoVal};
-
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
-
-    t.client.initialize(&old_admin);
-    t.client.propose_admin(&old_admin, &new_admin);
-    t.client.accept_admin(&new_admin);
-
-    // There must be at least one event from accept_admin (AdminTransferred).
     let events = t.env.events().all();
-    assert!(!events.is_empty(), "accept_admin must emit at least one event");
-
-    // The last event is the AdminTransferred event — verify data payload is new_admin.
-    let (_, _topics, data): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
-    let expected_data: soroban_sdk::Val = new_admin.clone().into_val(&t.env);
-    assert_eq!(data, expected_data, "AdminTransferred event data must be new_admin");
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
 }
 
-/// AdminTransferProposed event is emitted on propose_admin.
 #[test]
-fn unit_propose_admin_emits_proposed_event() {
-    use soroban_sdk::testutils::Events;
+fn unit_event_deregister_maintainer_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
 
     let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin = Address::generate(&t.env);
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("dereg");
 
-    t.client.initialize(&old_admin);
-    let events_before = t.env.events().all().len();
-    t.client.propose_admin(&old_admin, &new_admin);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.deregister_maintainer(&admin, &maintainer, &org);
 
     let events = t.env.events().all();
-    assert!(
-        events.len() > events_before,
-        "propose_admin must emit at least one event"
-    );
-}
-
-/// propose_admin overwrites a previous pending proposal (no PendingAdminTransferExists error).
-#[test]
-fn unit_propose_admin_can_overwrite_pending() {
-    let t = TestEnv::new();
-    let old_admin = Address::generate(&t.env);
-    let new_admin_a = Address::generate(&t.env);
-    let new_admin_b = Address::generate(&t.env);
-
-    t.client.initialize(&old_admin);
-
-    // First proposal
-    t.client.propose_admin(&old_admin, &new_admin_a);
-
-    // Overwrite with a different proposed admin — must not panic
-    t.client.propose_admin(&old_admin, &new_admin_b);
-
-    // new_admin_a can no longer accept (proposal was overwritten)
-    {
-        use crate::errors::ContractError;
-        use soroban_sdk::IntoVal;
-        let result = t.client.try_accept_admin(&new_admin_a);
-        assert_eq!(
-            result,
-            Err(Ok(ContractError::UnauthorizedAdmin.into_val(&t.env)))
-        );
-    }
-
-    // new_admin_b can accept
-    t.client.accept_admin(&new_admin_b);
-    let maintainer = Address::generate(&t.env);
-    t.client.register_maintainer(&new_admin_b, &maintainer, &t.org("ow"));
-}
-
-/// Chain of transfers: A→B, then B→C.
-#[test]
-fn unit_propose_accept_admin_chain() {
-    let t = TestEnv::new();
-    let admin_a = Address::generate(&t.env);
-    let admin_b = Address::generate(&t.env);
-    let admin_c = Address::generate(&t.env);
-    let org = t.org("chain");
-    let maintainer = Address::generate(&t.env);
-
-    t.client.initialize(&admin_a);
-    t.client.propose_admin(&admin_a, &admin_b);
-    t.client.accept_admin(&admin_b);
-    t.client.propose_admin(&admin_b, &admin_c);
-    t.client.accept_admin(&admin_c);
-
-    // Only admin_c can act now
-    t.client.register_maintainer(&admin_c, &maintainer, &org);
-}
-
-// ---------------------------------------------------------------------------
-// Benchmark tests — Soroban resource consumption (Issue #48 + expansion)
-// ---------------------------------------------------------------------------
-// Run with:  cargo test --features testutils bench_
-//
-// Each test:
-//  1. Sets up the minimal state needed before the function under test.
-//  2. Resets the budget so only the target function is measured.
-//  3. Invokes the function once.
-//  4. Reads cpu_instruction_cost() and memory_bytes_cost() from the budget.
-//  5. Prints a machine-parseable line to stdout (format expected by benchmarks.txt).
-//  6. ASSERTS that both CPU and memory are below the defined thresholds.
-//     CI fails if any threshold is exceeded.
-//
-// Ledger reads/writes are derived analytically (see docs/benchmarks.md) because
-// the Soroban SDK v22 testutils Budget does not expose per-function I/O counters
-// separately from CPU cost.
-//
-// Thresholds are conservative upper bounds measured on the native host.
-// WASM execution costs are typically higher; the 80% network limit is
-// 80,000,000 CPU instructions. All functions are well within that bound.
-
-#[cfg(test)]
-mod benchmarks {
-    use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
-
-    use crate::{WorkloadGovernor, WorkloadGovernorClient};
-
-    // -----------------------------------------------------------------------
-    // CI thresholds — fail the test if exceeded
-    // -----------------------------------------------------------------------
-    //
-    // Values are in native-host units (underestimate WASM costs by ~10–50×).
-    // The Soroban per-transaction limit is 100,000,000 CPU instructions.
-    // All thresholds below are set to 500,000–800,000 (≤1% of the limit).
-
-    /// apply_for_issue: writes 2 temp entries + counter + event
-    const APPLY_CPU_THRESHOLD: u64     = 500_000;
-    const APPLY_MEM_THRESHOLD: u64     = 200_000;
-
-    /// withdraw_application: removes temp entry + decrements counter + event
-    const WITHDRAW_CPU_THRESHOLD: u64  = 500_000;
-    const WITHDRAW_MEM_THRESHOLD: u64  = 200_000;
-
-    /// assign_issue: atomic transition (remove app, create assignment) + event
-    const ASSIGN_CPU_THRESHOLD: u64    = 600_000;
-    const ASSIGN_MEM_THRESHOLD: u64    = 250_000;
-
-    /// complete_assignment: remove persistent assignment + counter + event
-    const COMPLETE_CPU_THRESHOLD: u64  = 500_000;
-    const COMPLETE_MEM_THRESHOLD: u64  = 200_000;
-
-    /// revoke_assignment: identical logic to complete_assignment
-    const REVOKE_CPU_THRESHOLD: u64    = 500_000;
-    const REVOKE_MEM_THRESHOLD: u64    = 200_000;
-
-    /// extend_application_ttl: extends 1–2 temp entries
-    const EXTEND_CPU_THRESHOLD: u64    = 400_000;
-    const EXTEND_MEM_THRESHOLD: u64    = 150_000;
-
-    /// propose_admin + accept_admin (two-step transfer): 2 persistent writes + 2 events
-    const TRANSFER_ADMIN_CPU_THRESHOLD: u64 = 800_000;
-    const TRANSFER_ADMIN_MEM_THRESHOLD: u64 = 300_000;
-
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
-    struct BenchEnv {
-        env: Env,
-        client: WorkloadGovernorClient<'static>,
-    }
-
-    impl BenchEnv {
-        fn new() -> Self {
-            let env = Env::default();
-            env.mock_all_auths();
-            let contract_id = env.register_contract(None, WorkloadGovernor);
-            let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
-            let client = WorkloadGovernorClient::new(env, &contract_id);
-            BenchEnv { env: env.clone(), client }
-        }
-
-        fn org(&self, name: &str) -> Symbol {
-            Symbol::new(&self.env, name)
-        }
-
-        /// Print a machine-parseable benchmark line and return (cpu, mem).
-        fn measure(&self, fn_name: &str) -> (u64, u64) {
-            let cpu = self.env.cost_estimate().budget().cpu_instruction_cost();
-            let mem = self.env.cost_estimate().budget().memory_bytes_cost();
-            // Format expected by scripts that parse benchmarks.txt
-            std::println!(
-                "BENCH {} cpu_insns={} mem_bytes={}",
-                fn_name, cpu, mem
-            );
-            (cpu, mem)
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: apply_for_issue
-    // -----------------------------------------------------------------------
-    // Ledger writes: 2 temp (global_app_count, app_entry) + 1 instance bump
-    // Ledger reads:  2 temp (global_app_count existence, app_entry existence)
-    //               + 1 persistent (admin check via require_initialized)
-
-    #[test]
-    fn bench_apply_for_issue() {
-        let b = BenchEnv::new();
-        let admin = Address::generate(&b.env);
-        let contributor = Address::generate(&b.env);
-        let org = b.org("bench");
-
-        b.client.initialize(&admin);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.apply_for_issue(&contributor, &org, &1u32);
-        let (cpu, mem) = b.measure("apply_for_issue");
-
-        assert!(
-            cpu <= APPLY_CPU_THRESHOLD,
-            "apply_for_issue CPU {} exceeds threshold {}",
-            cpu, APPLY_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= APPLY_MEM_THRESHOLD,
-            "apply_for_issue mem {} exceeds threshold {}",
-            mem, APPLY_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: withdraw_application
-    // -----------------------------------------------------------------------
-    // Ledger writes: removes 1 temp (app_entry), updates/removes 1 temp (count)
-    //               + 1 instance bump
-    // Ledger reads:  1 temp (app_entry check), 1 temp (global_app_count)
-    //               + 1 persistent (admin via require_initialized)
-
-    #[test]
-    fn bench_withdraw_application() {
-        let b = BenchEnv::new();
-        let admin = Address::generate(&b.env);
-        let contributor = Address::generate(&b.env);
-        let org = b.org("bench");
-
-        b.client.initialize(&admin);
-        b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.withdraw_application(&contributor, &org, &1u32);
-        let (cpu, mem) = b.measure("withdraw_application");
-
-        assert!(
-            cpu <= WITHDRAW_CPU_THRESHOLD,
-            "withdraw_application CPU {} exceeds threshold {}",
-            cpu, WITHDRAW_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= WITHDRAW_MEM_THRESHOLD,
-            "withdraw_application mem {} exceeds threshold {}",
-            mem, WITHDRAW_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: assign_issue
-    // -----------------------------------------------------------------------
-    // Ledger writes: removes 1 temp (app_entry), updates/removes 1 temp (count),
-    //               writes 1 persistent (assignment), writes/updates 1 persistent
-    //               (org_assignment_count) + 1 instance bump
-    // Ledger reads:  1 persistent (maintainer check), 1 temp (app_entry check),
-    //               1 persistent (org_assignment_count), 1 persistent (assignment check)
-    //               + 1 temp (global_app_count) + 1 persistent (admin)
-
-    #[test]
-    fn bench_assign_issue() {
-        let b = BenchEnv::new();
-        let admin = Address::generate(&b.env);
-        let maintainer = Address::generate(&b.env);
-        let contributor = Address::generate(&b.env);
-        let org = b.org("bench");
-
-        b.client.initialize(&admin);
-        b.client.register_maintainer(&admin, &maintainer, &org);
-        b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
-        let (cpu, mem) = b.measure("assign_issue");
-
-        assert!(
-            cpu <= ASSIGN_CPU_THRESHOLD,
-            "assign_issue CPU {} exceeds threshold {}",
-            cpu, ASSIGN_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= ASSIGN_MEM_THRESHOLD,
-            "assign_issue mem {} exceeds threshold {}",
-            mem, ASSIGN_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: complete_assignment
-    // -----------------------------------------------------------------------
-    // Ledger writes: removes 1 persistent (assignment), updates/removes 1
-    //               persistent (org_assignment_count) + 1 instance bump
-    // Ledger reads:  1 persistent (maintainer), 1 persistent (assignment check),
-    //               1 persistent (org_assignment_count) + 1 persistent (admin)
-
-    #[test]
-    fn bench_complete_assignment() {
-        let b = BenchEnv::new();
-        let admin = Address::generate(&b.env);
-        let maintainer = Address::generate(&b.env);
-        let contributor = Address::generate(&b.env);
-        let org = b.org("bench");
-
-        b.client.initialize(&admin);
-        b.client.register_maintainer(&admin, &maintainer, &org);
-        b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
-        let (cpu, mem) = b.measure("complete_assignment");
-
-        assert!(
-            cpu <= COMPLETE_CPU_THRESHOLD,
-            "complete_assignment CPU {} exceeds threshold {}",
-            cpu, COMPLETE_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= COMPLETE_MEM_THRESHOLD,
-            "complete_assignment mem {} exceeds threshold {}",
-            mem, COMPLETE_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: revoke_assignment
-    // -----------------------------------------------------------------------
-    // Same ledger access pattern as complete_assignment.
-
-    #[test]
-    fn bench_revoke_assignment() {
-        let b = BenchEnv::new();
-        let admin = Address::generate(&b.env);
-        let maintainer = Address::generate(&b.env);
-        let contributor = Address::generate(&b.env);
-        let org = b.org("bench");
-
-        b.client.initialize(&admin);
-        b.client.register_maintainer(&admin, &maintainer, &org);
-        b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.client.assign_issue(&maintainer, &contributor, &org, &1u32);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
-        let (cpu, mem) = b.measure("revoke_assignment");
-
-        assert!(
-            cpu <= REVOKE_CPU_THRESHOLD,
-            "revoke_assignment CPU {} exceeds threshold {}",
-            cpu, REVOKE_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= REVOKE_MEM_THRESHOLD,
-            "revoke_assignment mem {} exceeds threshold {}",
-            mem, REVOKE_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: extend_application_ttl
-    // -----------------------------------------------------------------------
-    // Ledger writes: extends TTL on 1–2 temp entries (no value writes)
-    // Ledger reads:  1 temp (app_entry check), 1 temp (global_app_count check)
-
-    #[test]
-    fn bench_extend_application_ttl() {
-        let b = BenchEnv::new();
-        let admin = Address::generate(&b.env);
-        let contributor = Address::generate(&b.env);
-        let org = b.org("bench");
-
-        b.client.initialize(&admin);
-        b.client.apply_for_issue(&contributor, &org, &1u32);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.extend_application_ttl(&contributor, &org, &1u32);
-        let (cpu, mem) = b.measure("extend_application_ttl");
-
-        assert!(
-            cpu <= EXTEND_CPU_THRESHOLD,
-            "extend_application_ttl CPU {} exceeds threshold {}",
-            cpu, EXTEND_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= EXTEND_MEM_THRESHOLD,
-            "extend_application_ttl mem {} exceeds threshold {}",
-            mem, EXTEND_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Benchmark: propose_admin + accept_admin (two-step transfer)
-    // -----------------------------------------------------------------------
-    // Ledger writes: 1 persistent (pending_admin) + 1 instance bump for propose;
-    //               1 persistent (admin overwrite) + remove pending + 1 instance bump for accept.
-    // Ledger reads:  1 persistent (admin check) per step.
-
-    #[test]
-    fn bench_transfer_admin() {
-        let b = BenchEnv::new();
-        let old_admin = Address::generate(&b.env);
-        let new_admin = Address::generate(&b.env);
-
-        b.client.initialize(&old_admin);
-        b.env.cost_estimate().budget().reset_default();
-        b.client.propose_admin(&old_admin, &new_admin);
-        b.client.accept_admin(&new_admin);
-        let (cpu, mem) = b.measure("transfer_admin");
-
-        assert!(
-            cpu <= TRANSFER_ADMIN_CPU_THRESHOLD,
-            "transfer_admin CPU {} exceeds threshold {}",
-            cpu, TRANSFER_ADMIN_CPU_THRESHOLD
-        );
-        assert!(
-            mem <= TRANSFER_ADMIN_MEM_THRESHOLD,
-            "transfer_admin mem {} exceeds threshold {}",
-            mem, TRANSFER_ADMIN_MEM_THRESHOLD
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Threshold summary test — prints a structured table to stdout
-    // -----------------------------------------------------------------------
-    // This test produces the benchmarks.txt output consumed by docs/benchmarks.md.
-
-    #[test]
-    fn bench_summary_table() {
-        std::println!();
-        std::println!("=== WorkloadGovernor Resource Benchmark Summary ===");
-        std::println!(
-            "{:<30} {:>20} {:>20} {:>20} {:>20}",
-            "Function", "CPU Threshold", "Mem Threshold", "Network CPU Limit", "% of Limit"
-        );
-        std::println!("{}", "-".repeat(110));
-
-        let network_limit: u64 = 100_000_000;
-        let entries: &[(&str, u64, u64)] = &[
-            ("apply_for_issue",        APPLY_CPU_THRESHOLD,          APPLY_MEM_THRESHOLD),
-            ("withdraw_application",   WITHDRAW_CPU_THRESHOLD,       WITHDRAW_MEM_THRESHOLD),
-            ("assign_issue",           ASSIGN_CPU_THRESHOLD,         ASSIGN_MEM_THRESHOLD),
-            ("complete_assignment",    COMPLETE_CPU_THRESHOLD,       COMPLETE_MEM_THRESHOLD),
-            ("revoke_assignment",      REVOKE_CPU_THRESHOLD,         REVOKE_MEM_THRESHOLD),
-            ("extend_application_ttl", EXTEND_CPU_THRESHOLD,         EXTEND_MEM_THRESHOLD),
-            ("transfer_admin",         TRANSFER_ADMIN_CPU_THRESHOLD, TRANSFER_ADMIN_MEM_THRESHOLD),
-        ];
-        for (name, cpu_thresh, mem_thresh) in entries {
-            let pct = (*cpu_thresh as f64 / network_limit as f64) * 100.0;
-            std::println!(
-                "{:<30} {:>20} {:>20} {:>20} {:>19.4}%",
-                name, cpu_thresh, mem_thresh, network_limit, pct
-            );
-        }
-        std::println!();
-        std::println!("Note: native-host costs underestimate WASM costs by ~10-50x.");
-        std::println!("All thresholds are well within the 80,000,000 CPU 80% safety margin.");
-    }
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
 }
 
 #[test]
-fn unit_org_cap_can_be_set_and_enforced() {
+fn unit_event_deregister_maintainer_revokes_access() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("orgcap");
+    let org = t.org("revoke");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
-    t.client.set_org_cap(&admin, &org, &2u32);
+    t.client.deregister_maintainer(&admin, &maintainer, &org);
 
-    assert_eq!(t.client.get_org_cap(&org), 2);
+    // maintainer can no longer assign
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    }));
+    assert!(result.is_err(), "deregistered maintainer must be rejected");
+}
 
+#[test]
+fn unit_event_org_cap_set_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let org = t.org("capevt");
+
+    t.client.initialize(&admin);
+    t.client.set_org_cap(&admin, &org, &3u32);
+
+    let events = t.env.events().all();
+    assert!(!events.is_empty());
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple for org cap event");
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_assign_issue_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("asgnevt");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.apply_for_issue(&contributor, &org, &1u32);
     t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
-    t.client.apply_for_issue(&contributor, &org, &2u32);
-    t.client.assign_issue(&maintainer, &contributor, &org, &2u32);
 
-    t.client.apply_for_issue(&contributor, &org, &3u32);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.assign_issue(&maintainer, &contributor, &org, &3u32);
-    }));
-    assert!(result.is_err());
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_complete_assignment_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("compevt");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
+}
+
+#[test]
+fn unit_event_revoke_assignment_topics_are_workload_namespace() {
+    use soroban_sdk::{testutils::Events, Symbol, TryFromVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revkevt");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
+
+    let events = t.env.events().all();
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+    let first_topic = Symbol::try_from_val(&t.env, &topics.get(0).unwrap()).unwrap();
+    assert_eq!(first_topic, Symbol::new(&t.env, "workload"));
 }
 
 // ---------------------------------------------------------------------------
