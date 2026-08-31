@@ -170,7 +170,7 @@ fn unit_error_revoke_counter_inconsistency() {
     let result = t.client.try_revoke_assignment(&maintainer, &contributor, &org, &7u32);
     assert_eq!(
         result,
-        Err(Ok(ContractError::CounterInconsistency.into_val(&t.env)))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::CounterInconsistency as u32)))
     );
 }
 
@@ -648,7 +648,10 @@ fn unit_event_org_cap_set_topics_are_workload_namespace() {
     t.client.initialize(&admin);
     t.client.set_org_cap(&admin, &org, &3u32);
 
-    let events = t.env.events().all();
+    let events = {
+        use soroban_sdk::testutils::Events as _;
+        t.env.events().all()
+    };
     assert!(!events.is_empty());
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
@@ -3515,7 +3518,7 @@ fn unit_assign_no_application_returns_error() {
     let result = t.client.try_assign_issue(&maintainer, &contributor, &org, &42u32, &None::<u32>);
     assert_eq!(
         result,
-        Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env)))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::ApplicationNotFound as u32)))
     );
 }
 
@@ -3559,7 +3562,7 @@ fn unit_complete_nonexistent_returns_error() {
     let result = t.client.try_complete_assignment(&maintainer, &contributor, &org, &77u32);
     assert_eq!(
         result,
-        Err(Ok(ContractError::AssignmentNotFound.into_val(&t.env)))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AssignmentNotFound as u32)))
     );
 }
 
