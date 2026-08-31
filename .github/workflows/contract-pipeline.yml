@@ -3,6 +3,8 @@ name: Contract Pipeline
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*.*.*'
   pull_request:
     branches: [main]
   schedule:
@@ -46,7 +48,7 @@ jobs:
       - name: clippy
         run: cargo clippy --features testutils -- -D warnings
 
-  # ── 2. Test + Coverage ───────────────────────────────────────────────────
+  # ── 2. Test (full suite) ─────────────────────────────────────────────────
   test:
     name: Test & Coverage
     runs-on: ubuntu-latest
@@ -70,8 +72,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Run tests with coverage
+      - name: Run full test suite with coverage
         run: |
+          cargo test --features testutils
           cargo llvm-cov --features testutils \
             --lcov --output-path lcov.info \
             --summary-only 2>&1 | tee coverage-summary.txt
@@ -147,12 +150,18 @@ jobs:
           path: target/wasm32v1-none/release/workload_governor.wasm
           retention-days: 7
 
-  # ── 4. Optimize WASM (main only) ─────────────────────────────────────────
+  # ── 4. Optimize WASM + size gate ─────────────────────────────────────────
   optimize:
     name: Optimize WASM
     runs-on: ubuntu-latest
     needs: build-wasm
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Run on push to main AND on version tags
+    if: |
+      github.event_name != 'schedule' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      )
     steps:
       - uses: actions/checkout@v4
 
@@ -181,6 +190,25 @@ jobs:
             --wasm target/wasm32v1-none/release/workload_governor.wasm \
             --wasm-out target/wasm32v1-none/release/workload_governor.optimized.wasm
 
+      - name: Check WASM size (limit 60 KB)
+        run: |
+          WASM_PATH="target/wasm32v1-none/release/workload_governor.optimized.wasm"
+          WASM_SIZE=$(wc -c < "$WASM_PATH")
+          LIMIT_BYTES=61440  # 60 KB
+          echo "Optimized WASM size: ${WASM_SIZE} bytes (limit: ${LIMIT_BYTES} bytes)"
+          echo "### 📦 WASM Size Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Size | $(( WASM_SIZE / 1024 )) KB (${WASM_SIZE} bytes) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Limit | 60 KB (${LIMIT_BYTES} bytes) |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$WASM_SIZE" -gt "$LIMIT_BYTES" ]; then
+            echo "| Status | ❌ EXCEEDS LIMIT |" >> "$GITHUB_STEP_SUMMARY"
+            echo "ERROR: WASM size ${WASM_SIZE} bytes exceeds 60 KB limit (${LIMIT_BYTES} bytes)."
+            exit 1
+          fi
+          echo "| Status | ✅ Within limit |" >> "$GITHUB_STEP_SUMMARY"
+          echo "WASM size check passed: ${WASM_SIZE} bytes ≤ ${LIMIT_BYTES} bytes."
+
       - name: Upload optimized WASM artifact
         uses: actions/upload-artifact@v4
         with:
@@ -188,7 +216,163 @@ jobs:
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
           retention-days: 90
 
-  # ── 5. Fuzz (nightly schedule only) ──────────────────────────────────────
+  # ── 5. Testnet Deploy + Smoke Test (main branch merges only) ─────────────
+  testnet-deploy:
+    name: Testnet Deploy & Smoke Test
+    runs-on: ubuntu-latest
+    needs: [optimize, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: testnet
+    outputs:
+      contract_id: ${{ steps.deploy.outputs.contract_id }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history to push the contracts.json update
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Download optimized WASM
+        uses: actions/download-artifact@v4
+        with:
+          name: workload-governor-wasm-optimized
+          path: wasm
+
+      - name: Import CI admin key
+        run: |
+          stellar keys add ci-admin --secret-key "${{ secrets.TESTNET_ADMIN_SECRET }}"
+
+      - name: Fund CI key via friendbot
+        run: |
+          ADDR=$(stellar keys address ci-admin)
+          curl -sf "https://friendbot.stellar.org?addr=${ADDR}" > /dev/null
+
+      - name: Deploy contract
+        id: deploy
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm wasm/workload_governor.optimized.wasm \
+            --network testnet \
+            --source ci-admin)
+          echo "contract_id=${CONTRACT_ID}" >> "$GITHUB_OUTPUT"
+          echo "### 🚀 Testnet Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Key | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ----- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Network | testnet |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Initialize contract
+        run: |
+          ADMIN_ADDR=$(stellar keys address ci-admin)
+          stellar contract invoke \
+            --id "${{ steps.deploy.outputs.contract_id }}" \
+            --network testnet \
+            --source ci-admin \
+            -- initialize \
+            --admin "${ADMIN_ADDR}"
+
+      - name: Run smoke tests
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+          CI_KEY: ci-admin
+          NETWORK: testnet
+        run: bash tests/smoke/testnet-smoke.sh
+
+      - name: Update config/contracts.json (testnet)
+        run: |
+          jq --arg cid "${{ steps.deploy.outputs.contract_id }}" \
+             '.testnet.workload_governor = $cid' \
+             config/contracts.json > tmp.json && mv tmp.json config/contracts.json
+          echo "Updated testnet contract ID: ${{ steps.deploy.outputs.contract_id }}"
+
+      - name: Commit updated contracts.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add config/contracts.json
+          git diff --staged --quiet || \
+            git commit -m "chore(deploy): update testnet contract ID to ${{ steps.deploy.outputs.contract_id }} [skip ci]"
+          git push
+
+  # ── 6. Mainnet Deploy (tagged releases only, requires 2 approvals) ────────
+  mainnet-deploy:
+    name: Mainnet Deploy
+    runs-on: ubuntu-latest
+    needs: optimize
+    # Only trigger on version tags (e.g. v1.0.0)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # The 'mainnet' GitHub environment must be configured with 2 required reviewers
+    environment: mainnet
+    outputs:
+      contract_id: ${{ steps.deploy.outputs.contract_id }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Download optimized WASM
+        uses: actions/download-artifact@v4
+        with:
+          name: workload-governor-wasm-optimized
+          path: wasm
+
+      - name: Import mainnet admin key
+        run: |
+          stellar keys add mainnet-admin --secret-key "${{ secrets.MAINNET_ADMIN_SECRET }}"
+
+      - name: Deploy contract to mainnet
+        id: deploy
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm wasm/workload_governor.optimized.wasm \
+            --network mainnet \
+            --source mainnet-admin)
+          echo "contract_id=${CONTRACT_ID}" >> "$GITHUB_OUTPUT"
+          echo "### 🚀 Mainnet Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Key | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ----- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Network | mainnet |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Initialize contract on mainnet
+        run: |
+          ADMIN_ADDR=$(stellar keys address mainnet-admin)
+          stellar contract invoke \
+            --id "${{ steps.deploy.outputs.contract_id }}" \
+            --network mainnet \
+            --source mainnet-admin \
+            -- initialize \
+            --admin "${ADMIN_ADDR}"
+
+      - name: Update config/contracts.json (mainnet)
+        run: |
+          jq --arg cid "${{ steps.deploy.outputs.contract_id }}" \
+             '.mainnet.workload_governor = $cid' \
+             config/contracts.json > tmp.json && mv tmp.json config/contracts.json
+          echo "Updated mainnet contract ID: ${{ steps.deploy.outputs.contract_id }}"
+
+      - name: Commit updated contracts.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add config/contracts.json
+          git diff --staged --quiet || \
+            git commit -m "chore(deploy): update mainnet contract ID to ${{ steps.deploy.outputs.contract_id }} for ${{ github.ref_name }} [skip ci]"
+          git push origin HEAD:main
+
+  # ── 7. Fuzz (nightly schedule only) ─────────────────────────────────────
   fuzz:
     name: Fuzz (10 min)
     runs-on: ubuntu-latest
@@ -212,7 +396,6 @@ jobs:
 
       - name: Run fuzz targets (10 minutes each)
         run: |
-          # List all fuzz targets and run each for 600 seconds
           for target in $(cargo fuzz list 2>/dev/null || echo ""); do
             echo "Fuzzing target: $target"
             cargo fuzz run "$target" -- -max_total_time=600 || true

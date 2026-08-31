@@ -1,0 +1,101 @@
+name: Frontend Build & Storybook
+
+# Trigger on PRs targeting main and on direct pushes to main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1: Lint, type-check, test, build
+  # Fail fast: lint + typecheck run before tests, tests before build.
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: Lint → Test → Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Cache node_modules keyed on the hash of package-lock.json so that
+      # identical dependency trees reuse the cached layer without re-running npm ci.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-node-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            frontend-node-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Fail fast: lint and type-check run before tests ──────────────────
+
+      - name: Lint (oxlint / next lint)
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      # ── Tests ─────────────────────────────────────────────────────────────
+
+      - name: Unit tests
+        run: npm test -- --watchAll=false
+
+      # ── Build ─────────────────────────────────────────────────────────────
+
+      - name: Build
+        run: npm run build
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2: Build Storybook and upload the static output as an artifact.
+  # Runs in parallel with the build job; does not block on it.
+  # ──────────────────────────────────────────────────────────────────────────
+  storybook:
+    name: Build Storybook
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-node-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            frontend-node-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Storybook
+        run: npm run build-storybook
+
+      # Upload the static Storybook output as a downloadable artifact so
+      # reviewers can preview component changes without running locally.
+      - name: Upload Storybook artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-static
+          path: frontend/storybook-static/
+          retention-days: 7

@@ -1,0 +1,85 @@
+/* =============================================================
+   Breadcrumb — closes #334
+   Desktop: shows full chain
+   Mobile (< 640px): shows one level up + current page only
+   ============================================================= */
+
+.breadcrumb {
+  padding: var(--space-2) 0;
+}
+
+.breadcrumb__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.breadcrumb__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.breadcrumb__link {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb__link:hover,
+.breadcrumb__link:focus-visible {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.breadcrumb__text {
+  color: var(--color-text);
+  font-weight: var(--font-medium);
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb__separator {
+  color: var(--color-border);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ── Mobile: hide all items except the direct parent (one level up) ──
+   Items that are not --parent or --current are hidden on narrow screens.
+   The --parent item is the one immediately before the --current item.     */
+@media (max-width: 639px) {
+  .breadcrumb__item:not(.breadcrumb__item--parent):not(.breadcrumb__item--current) {
+    display: none;
+  }
+
+  /* Also hide the separator that trails the hidden items.
+     The parent item's trailing separator is still shown. */
+  .breadcrumb__item:not(.breadcrumb__item--parent):not(.breadcrumb__item--current)
+    + .breadcrumb__item--parent
+    > .breadcrumb__link::before {
+    content: "‹ ";
+  }
+
+  /* Add a leading back-arrow to the parent link on mobile for clarity */
+  .breadcrumb__item--parent > .breadcrumb__link::before {
+    content: "‹ ";
+    font-size: var(--text-base);
+    line-height: 1;
+  }
+}
