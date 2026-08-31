@@ -61,11 +61,18 @@ pub enum WorkloadGovernorEvent {
 // tuples directly.
 // ---------------------------------------------------------------------------
 
-pub(crate) fn emit_initialized(env: &Env, admin: &Address) {
-    env.events().publish(
-        (symbol_short!("init"), admin.clone()),
-        admin.clone(),
-    );
+/// Emitted by `initialize`.
+///
+/// topics: `(symbol_short!("init"), admin)`
+/// data:   `(admin, ledger)`
+///
+/// The `ledger` field is the sequence number of the ledger in which the
+/// contract was initialised. Indexers can use it to establish a precise
+/// on-chain timestamp for the deployment.
+pub(crate) fn emit_initialized(env: &Env, admin: &Address, ledger: u32) {
+    let topics = (symbol_short!("init"), admin.clone());
+    let data = (admin.clone(), ledger);
+    env.events().publish(topics, data);
 }
 
 pub(crate) fn emit_maintainer_registered(

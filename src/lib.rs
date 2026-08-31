@@ -64,7 +64,7 @@ impl WorkloadGovernor {
         storage::set_admin(&env, &admin);
         storage::set_global_cap(&env, storage::GLOBAL_APP_LIMIT);
         storage::bump_instance(&env);
-        events::emit_initialized(&env, &admin);
+        events::emit_initialized(&env, &admin, env.ledger().sequence());
     }
 
     /// Authorises a maintainer to manage issues within a specific organisation.
@@ -898,6 +898,20 @@ impl WorkloadGovernor {
     /// ```
     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
         storage::has_assignment(&env, &org_id, issue_id, &contributor)
+    }
+
+    // -----------------------------------------------------------------------
+    // Test-only helpers — compiled out of production WASM
+    // -----------------------------------------------------------------------
+
+    /// Plants an assignment entry directly in persistent storage, bypassing all
+    /// authorization and business-logic guards. Used only by unit and integration
+    /// tests to reach the `AlreadyAssigned` (error 11) guard inside `assign_issue`.
+    ///
+    /// This function is only available when the `testutils` feature is enabled.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn seed_assignment(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+        storage::set_assignment(&env, &org_id, issue_id, &contributor);
     }
 
     // -----------------------------------------------------------------------
