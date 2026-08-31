@@ -33,13 +33,33 @@ export function getPool(): Pool {
   if (!_pool) {
     _pool = new Pool({
       connectionString: process.env['DATABASE_URL'],
+      // Pool sizing — configurable via environment variables.
+      // DB_POOL_MIN: minimum connections kept alive (default 2)
+      // DB_POOL_MAX: maximum connections allowed (default 10)
+      min: parseInt(process.env['DB_POOL_MIN'] ?? '2', 10),
       max: parseInt(process.env['DB_POOL_MAX'] ?? '10', 10),
       idleTimeoutMillis: parseInt(process.env['DB_IDLE_TIMEOUT'] ?? '30000', 10),
       connectionTimeoutMillis: parseInt(process.env['DB_CONNECTION_TIMEOUT'] ?? '5000', 10),
     });
+
+    // Log and alert on unexpected idle-client errors (fixes issue #561)
     _pool.on('error', (err) => {
-      console.error('Unexpected error on idle DB client', err);
+      console.error('[db] Unexpected error on idle DB client:', err.message, err.stack);
     });
+
+    // Optionally log new connections in non-production environments for
+    // visibility into pool churn during development/staging.
+    if (process.env['NODE_ENV'] !== 'production') {
+      _pool.on('connect', () => {
+        // Fire-and-forget: log pool counts when a new connection is established
+        const p = _pool;
+        if (p) {
+          console.debug(
+            `[db] New connection established. Pool stats — total: ${p.totalCount}, idle: ${p.idleCount}, waiting: ${p.waitingCount}`,
+          );
+        }
+      });
+    }
   }
   return _pool;
 }
