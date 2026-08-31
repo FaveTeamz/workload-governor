@@ -1,0 +1,1 @@
+cargo:rerun-if-changed=target/wasm32v1-none/release/workload_governor.wasm

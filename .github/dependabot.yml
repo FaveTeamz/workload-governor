@@ -1,0 +1,58 @@
+version: 2
+
+updates:
+  # ── Rust / Cargo ─────────────────────────────────────────────────────────
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+    reviewers:
+      - "dependabot"
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # soroban-sdk minor/major bumps require manual testing against testnet
+      - dependency-name: "soroban-sdk"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # ── Node / npm ───────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+    reviewers:
+      - "dependabot"
+    commit-message:
+      prefix: "chore(deps)"
+    versioning-strategy: increase-if-necessary
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    reviewers:
+      - "dependabot"
+    commit-message:
+      prefix: "chore(deps)"

@@ -1,101 +1,158 @@
-# Admin Guide
+# WorkloadGovernor Admin Guide
 
-Operational guide for WorkloadGovernor contract administrators.
+This guide covers operational procedures for the admin of the WorkloadGovernor contract. The admin address is set once at initialisation and cannot be changed without a contract upgrade.
 
-## Single-Admin Mode (Default)
+## Prerequisites
 
-After `initialize`, the contract is in single-admin mode. The stored admin
-address must sign every admin operation:
+- Stellar CLI installed (`stellar --version`)
+- Admin account key available to your local keystore
+- `CONTRACT_ID` and `--network` values for your target environment
+
+---
+
+## Contract Initialisation
+
+Call `initialize` once after deploying the contract WASM. This is a one-time operation — calling it a second time returns error `1` (`AlreadyInitialized`).
 
 ```bash
 stellar contract invoke \
   --id <CONTRACT_ID> \
-  --network mainnet \
+  --network testnet \
+  --source <admin-account> \
+  -- initialize \
+  --admin <ADMIN_ADDRESS>
+```
+
+---
+
+## Maintainer Onboarding
+
+Authorise a maintainer to manage issues within a specific organisation using `register_maintainer`. The operation is idempotent — registering the same `(maintainer, org_id)` pair twice is safe.
+
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network testnet \
   --source <admin-account> \
   -- register_maintainer \
   --admin <ADMIN_ADDRESS> \
   --maintainer <MAINTAINER_ADDRESS> \
-  --org_id myorg
+  --org_id <ORG_ID>
 ```
 
-## Multi-Sig Admin Setup (#603)
+**On success** the contract emits a `maint_reg` event with `(maintainer, org_id)` in the data payload.
 
-To require M-of-N signatures for admin operations, call `set_admin_threshold`:
+**Errors**
+
+| Code | Variant | Cause |
+|------|---------|-------|
+| 2 | `NotInitialized` | Contract has not been initialised yet |
+| 3 | `UnauthorizedAdmin` | Caller is not the stored admin |
+
+---
+
+## Maintainer Offboarding
+
+When a maintainer leaves an organisation, their access must be revoked immediately to preserve security integrity. Use `deregister_maintainer` to delete the `(maint, maintainer, org_id)` persistent storage entry.
+
+Once deregistered, any call the former maintainer makes to `assign_issue`, `complete_assignment`, or `revoke_assignment` for that organisation will fail with error `4` (`UnauthorizedMaintainer`).
+
+### Procedure
+
+1. Confirm the maintainer's address and the target `org_id`.
+2. Invoke `deregister_maintainer` as the admin:
 
 ```bash
 stellar contract invoke \
   --id <CONTRACT_ID> \
-  --network mainnet \
+  --network testnet \
   --source <admin-account> \
-  -- set_admin_threshold \
-  --threshold 2 \
-  --signers '["GSIGNER1ADDRESS", "GSIGNER2ADDRESS", "GSIGNER3ADDRESS"]'
+  -- deregister_maintainer \
+  --admin <ADMIN_ADDRESS> \
+  --maintainer <MAINTAINER_ADDRESS> \
+  --org_id <ORG_ID>
 ```
 
-### Rules
+3. Verify the transaction is confirmed on-chain and the `maint_drg` event has been emitted.
+4. Optionally re-register a replacement maintainer for the same org using `register_maintainer`.
 
-- `threshold` must be >= 1 and <= `len(signers)`.
-- Signers are an **ordered list**. When an admin operation is submitted,
-  the first `threshold` signers in the list must each provide `require_auth`.
-- The Stellar protocol enforces multi-sig: all required `require_auth` calls
-  must be satisfied in a single transaction.
-- The admin address itself is always required regardless of threshold.
+### Verification
 
-### 2-of-3 Example
+After deregistration, confirm the maintainer no longer has access by attempting a dry-run call:
 
 ```bash
-# Set up 2-of-3: any 2 of [alice, bob, carol] must sign
+# This should fail with UnauthorizedMaintainer (code 4)
 stellar contract invoke \
   --id <CONTRACT_ID> \
-  --source alice \           # alice is the current stored admin
-  -- set_admin_threshold \
-  --threshold 2 \
-  --signers '["GALICE", "GBOB", "GCAROL"]'
-
-# Now register_maintainer requires: stored_admin + alice + bob (first 2 of 3)
-stellar contract invoke \
-  --id <CONTRACT_ID> \
-  --auth GALICE,GBOB \       # both must sign
-  --source alice \
-  -- register_maintainer \
-  --admin GALICE \
-  --maintainer GMAINTAINER \
-  --org_id acme
+  --network testnet \
+  --source <former-maintainer-account> \
+  -- assign_issue \
+  --maintainer <MAINTAINER_ADDRESS> \
+  --contributor <ANY_ADDRESS> \
+  --org_id <ORG_ID> \
+  --issue_id 1
 ```
 
-### Resetting to Single-Admin
+### Emitted Event
 
-To remove multi-sig, call `set_admin_threshold` with threshold=1 and a
-single-element signers list containing only the admin address.
+`deregister_maintainer` publishes a `maint_drg` event:
+
+| Field | Value |
+|-------|-------|
+| Topic 0 | `maint_drg` (Symbol) |
+| Topic 1 | `admin` (Address) |
+| Data 0 | `maintainer` (Address) |
+| Data 1 | `org_id` (Symbol) |
+
+### Errors
+
+| Code | Variant | Cause |
+|------|---------|-------|
+| 2 | `NotInitialized` | Contract has not been initialised yet |
+| 3 | `UnauthorizedAdmin` | Caller is not the stored admin |
+| 17 | `MaintainerNotFound` | The maintainer is not registered for this org (already deregistered or was never registered) |
+
+### Important Notes
+
+- **Active assignments are not revoked automatically.** Deregistering a maintainer does not touch any open assignments they created. Review and revoke outstanding assignments manually using `revoke_assignment` before or after deregistration as appropriate.
+- **The operation is per-org.** If a maintainer is registered for multiple organisations, you must call `deregister_maintainer` once per `org_id`.
+- **The operation is not reversible via this function.** To re-authorise the same address, call `register_maintainer` again.
+
+---
+
+## Contract Upgrade
+
+To upgrade the contract WASM:
+
+1. Upload the new WASM to the network and note the resulting hash.
+2. Call `upgrade`:
+
+```bash
+stellar contract invoke \
+  --id <CONTRACT_ID> \
+  --network testnet \
+  --source <admin-account> \
+  -- upgrade \
+  --new_wasm_hash <32-BYTE-HASH-HEX>
+```
+
+The contract address does not change. All storage entries are preserved.
+
+---
+
+## REST API Token Management
+
+The WorkloadGovernor backend exposes admin REST endpoints (`POST /api/admin/maintainers`,
+`DELETE /api/admin/maintainers/:address`) that are protected by the `ADMIN_TOKEN`
+environment variable. This is a separate credential from the on-chain Stellar admin
+keypair.
+
+For the full lifecycle — generating the token, storing it securely, rotating it on a
+schedule, and responding to a compromised token — see
+[docs/api-key-guide.md](api-key-guide.md).
+
+---
 
 ## Error Reference
 
-| Code | Variant | Trigger |
-|---|---|---|
-| 1 | `AlreadyInitialized` | `initialize` called twice |
-| 2 | `NotInitialized` | State-changing call before `initialize` |
-| 3 | `UnauthorizedAdmin` | Wrong admin credentials |
-| 4 | `UnauthorizedMaintainer` | Maintainer not registered for org |
-| 5 | `UnauthorizedContributor` | Auth failure on contributor call |
-| 6 | `GlobalApplicationLimitReached` | Contributor has hit the global cap |
-| 7 | `OrgAssignmentLimitReached` | Contributor has 4 active assignments in org |
-| 8 | `DuplicateApplication` | Same (contributor, org, issue) applied twice |
-| 9 | `ApplicationNotFound` | Application does not exist |
-| 10 | `AssignmentNotFound` | Assignment does not exist |
-| 11 | `AlreadyAssigned` | Issue already has an active assignment |
-| 12 | `MigrationAlreadyDone` | `migrate_v1_to_v2` called a second time |
-| 13 | `InvalidIssueId` | `issue_id` is 0 or u32::MAX |
-| 14 | `InvalidThreshold` | Threshold is 0 or exceeds signer count |
-| 15 | `ProposalNotFound` | Governance proposal ID does not exist |
-| 16 | `ProposalExpired` | Proposal TTL elapsed |
-| 17 | `AlreadyVoted` | Maintainer voted twice on same proposal |
-| 18 | `QuorumNotMet` | Total votes < 3 at execution time |
-| 19 | `InsufficientApproval` | yes votes <= 50% of total votes |
-
-## issue_id Validation (#601)
-
-The contract rejects `issue_id` values of **0** and **u32::MAX** (4 294 967 295)
-with error code 13 (`InvalidIssueId`). GitHub issue IDs start at 1, so 0 is
-never valid. u32::MAX is reserved as a sentinel value to prevent misuse.
-
-Valid range: `1 <= issue_id <= 4 294 967 294`.
+For the full list of error codes and their resolutions, see [docs/error-reference.md](error-reference.md).

@@ -1,0 +1,71 @@
+{
+  "nav": {
+    "home": "Home",
+    "issues": "Issues",
+    "assignments": "Assignments",
+    "settings": "Settings",
+    "connect_wallet": "Connect Wallet",
+    "disconnect": "Disconnect",
+    "switch_org": "Switch Organization",
+    "search_orgs": "Search organizations…",
+    "no_orgs_found": "No organizations found",
+    "recent_orgs": "Recent Organizations",
+    "notifications": "Notifications",
+    "no_notifications": "No new notifications",
+    "mark_all_read": "Mark all as read",
+    "open_menu": "Open menu",
+    "close_menu": "Close menu"
+  },
+  "cap": {
+    "global_applications": "Global Applications",
+    "of_15": "of 15",
+    "applications_remaining": "{{count}} application slots remaining",
+    "at_limit": "Application limit reached",
+    "near_limit": "Near application limit"
+  },
+  "org": {
+    "assignments": "Assignments",
+    "of_4": "of 4",
+    "capacity_remaining": "{{count}} assignment slots remaining",
+    "at_limit": "Assignment limit reached"
+  },
+  "issue": {
+    "apply": "Apply",
+    "withdraw": "Withdraw",
+    "assign": "Assign",
+    "complete": "Complete",
+    "revoke": "Revoke",
+    "status_pending": "Pending",
+    "status_assigned": "Assigned",
+    "status_available": "Available",
+    "status_completed": "Completed"
+  },
+  "errors": {
+    "already_initialized": "Contract already initialized",
+    "not_initialized": "Contract not yet initialized",
+    "unauthorized_admin": "Unauthorized: admin credentials required",
+    "unauthorized_maintainer": "Unauthorized: maintainer not registered for this organization",
+    "unauthorized_contributor": "Unauthorized: contributor authentication failed",
+    "global_limit_reached": "You have reached the maximum of 15 pending applications",
+    "org_limit_reached": "You have reached the maximum of 4 active assignments in this organization",
+    "duplicate_application": "You have already applied to this issue",
+    "application_not_found": "Application not found",
+    "assignment_not_found": "Assignment not found",
+    "already_assigned": "This issue already has an active assignment"
+  },
+  "settings": {
+    "language": "Language",
+    "select_language": "Select language",
+    "theme": "Theme",
+    "notifications_enabled": "Enable notifications"
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Error",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "close": "Close"
+  }
+}
