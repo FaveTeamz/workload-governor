@@ -22,6 +22,14 @@ import { ContributorProfilePage } from "./pages/ContributorProfilePage";
 import "./app.css";
 import "../app/animations.css";
 
+const DEMO_ISSUES: SearchableIssue[] = [
+  { id: 42, org_id: "stellar-org", title: "Fix TTL extension bug", status: "open" },
+  { id: 43, org_id: "stellar-org", title: "Add prop tests for assign_issue", status: "open" },
+  { id: 44, org_id: "meridian-dao", title: "Docs: storage design overview", status: "assigned" },
+  { id: 45, org_id: "meridian-dao", title: "Optimize WASM binary size", status: "open" },
+  { id: 46, org_id: "stellar-org", title: "Integration tests for SDK", status: "completed" },
+];
+
 const DEMO_APPS: Application[] = [
   { id: "1", contributor: "GBXXX1ABCDEFGHIJKLMNO12345", org: "stellar-org", issueTitle: "Fix TTL extension bug", appliedDate: "2026-06-20" },
   { id: "2", contributor: "GCYYY2PQRSTUVWXYZABCDE67890", org: "stellar-org", issueTitle: "Add prop tests for assign_issue", appliedDate: "2026-06-21" },
