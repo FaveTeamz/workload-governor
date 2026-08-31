@@ -83,12 +83,13 @@ interface ApiKeyRow {
   label: string;
   scopes: string[] | null;
   expires_at: Date | null;
+  rotating_until: Date | string | null;
 }
 
 async function lookupApiKey(raw: string): Promise<ApiKeyRow | null> {
   const h = hashKey(raw);
   const { rows } = await pool.query<ApiKeyRow>(
-    `SELECT id, label, scopes, expires_at
+    `SELECT id, label, scopes, expires_at, rotating_until
      FROM api_keys
      WHERE key_hash = $1`,
     [h],
@@ -187,6 +188,11 @@ export async function apiKeyAuth(
       // Check expiry (if the table has expires_at column)
       if (row.expires_at !== null && new Date(row.expires_at) < new Date()) {
         res.status(401).json({ error: 'invalid api key', code: 'key_expired' });
+        return;
+      }
+
+      if (row.rotating_until && new Date(row.rotating_until) <= new Date()) {
+        res.status(401).json({ error: 'invalid api key', code: 'rotation_grace_period_expired' });
         return;
       }
 
