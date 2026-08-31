@@ -75,10 +75,10 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum valid value for a per-org assignment cap (via `set_org_cap`).
+/// Minimum valid value for the per-org assignment cap (inclusive).
 pub const ORG_CAP_MIN: u32 = 1;
 
-/// Maximum valid value for a per-org assignment cap (via `set_org_cap`).
+/// Maximum valid value for the per-org assignment cap (inclusive).
 pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
@@ -451,34 +451,43 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Pending Admin Transfer
+// Persistent storage — Re-entrancy guard
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("p_admin")`
-// Value: `Address`
+// Key: `symbol_short!("reentr")` (singleton)
+// Value: `bool`
 //
-// Stores the proposed new admin address set by `propose_admin`. Cleared on
-// `accept_admin` (transfer complete) or by a subsequent `propose_admin` call
-// from the current admin.
+// Rationale: Soroban's single-threaded host prevents classic re-entrancy today.
+// This guard is a forward-looking defence: if a future refactor adds a
+// cross-contract call inside a state-mutating function, any re-entrant
+// attempt will be caught immediately rather than silently corrupting counters.
+//
+// Pattern 8 — prefix "reentr" is distinct from all other prefixes:
+//   "g_apps", "app", "admin", "maint", "o_asgn", "asgn", "o_cap".
 
-fn pending_admin_key() -> Symbol {
-    symbol_short!("p_admin")
+fn reentracy_guard_key() -> Symbol {
+    symbol_short!("reentr")
 }
 
-/// Returns the pending admin address if a transfer has been proposed, or `None`.
-pub(crate) fn get_pending_admin(env: &Env) -> Option<Address> {
-    env.storage().persistent().get(&pending_admin_key())
-}
-
-/// Stores the proposed new admin address.
-pub(crate) fn set_pending_admin(env: &Env, new_admin: &Address) {
+/// Returns `true` if a state-mutating function is currently executing.
+pub(crate) fn is_reentrancy_locked(env: &Env) -> bool {
     env.storage()
         .persistent()
-        .set(&pending_admin_key(), new_admin);
+        .get::<_, bool>(&reentracy_guard_key())
+        .unwrap_or(false)
 }
 
-/// Removes the pending admin entry (called after `accept_admin` completes or
-/// if the proposal is superseded).
-pub(crate) fn remove_pending_admin(env: &Env) {
-    env.storage().persistent().remove(&pending_admin_key());
+/// Acquires the re-entrancy lock.  Must be paired with a call to
+/// [`release_reentrancy_lock`] before the function returns.
+pub(crate) fn acquire_reentrancy_lock(env: &Env) {
+    env.storage()
+        .persistent()
+        .set(&reentracy_guard_key(), &true);
+}
+
+/// Releases the re-entrancy lock set by [`acquire_reentrancy_lock`].
+pub(crate) fn release_reentrancy_lock(env: &Env) {
+    env.storage()
+        .persistent()
+        .remove(&reentracy_guard_key());
 }
