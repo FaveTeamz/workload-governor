@@ -490,43 +490,37 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Re-entrancy guard
+// Persistent storage — Maintainer Orgs Index  (Issue #589)
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("reentr")` (singleton)
-// Value: `bool`
+// Key: `(symbol_short!("m_idx"), maintainer: Address)`
+// Value: `Vec<Symbol>` — list of org_ids the maintainer is registered for
 //
-// Rationale: Soroban's single-threaded host prevents classic re-entrancy today.
-// This guard is a forward-looking defence: if a future refactor adds a
-// cross-contract call inside a state-mutating function, any re-entrant
-// attempt will be caught immediately rather than silently corrupting counters.
-//
-// Pattern 8 — prefix "reentr" is distinct from all other prefixes:
-//   "g_apps", "app", "admin", "maint", "o_asgn", "asgn", "o_cap".
+// This index avoids a full storage scan when querying a maintainer's orgs.
+// It is updated atomically alongside the main maint key in register_maintainer
+// and deregister_maintainer.
 
-fn reentracy_guard_key() -> Symbol {
-    symbol_short!("reentr")
+fn maintainer_orgs_key(maintainer: &Address) -> (Symbol, Address) {
+    (symbol_short!("m_idx"), maintainer.clone())
 }
 
-/// Returns `true` if a state-mutating function is currently executing.
-pub(crate) fn is_reentrancy_locked(env: &Env) -> bool {
+/// Returns the list of org_ids the maintainer is currently registered for.
+/// Returns an empty Vec if the maintainer has never been registered.
+pub(crate) fn get_maintainer_orgs_index(env: &Env, maintainer: &Address) -> soroban_sdk::Vec<Symbol> {
+    let key = maintainer_orgs_key(maintainer);
     env.storage()
         .persistent()
-        .get::<_, bool>(&reentracy_guard_key())
-        .unwrap_or(false)
+        .get(&key)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
 }
 
-/// Acquires the re-entrancy lock.  Must be paired with a call to
-/// [`release_reentrancy_lock`] before the function returns.
-pub(crate) fn acquire_reentrancy_lock(env: &Env) {
-    env.storage()
-        .persistent()
-        .set(&reentracy_guard_key(), &true);
-}
-
-/// Releases the re-entrancy lock set by [`acquire_reentrancy_lock`].
-pub(crate) fn release_reentrancy_lock(env: &Env) {
-    env.storage()
-        .persistent()
-        .remove(&reentracy_guard_key());
+/// Writes the maintainer orgs index.
+/// If `orgs` is empty the key is removed from storage to reclaim space.
+pub(crate) fn set_maintainer_orgs_index(env: &Env, maintainer: &Address, orgs: &soroban_sdk::Vec<Symbol>) {
+    let key = maintainer_orgs_key(maintainer);
+    if orgs.is_empty() {
+        env.storage().persistent().remove(&key);
+    } else {
+        env.storage().persistent().set(&key, orgs);
+    }
 }
