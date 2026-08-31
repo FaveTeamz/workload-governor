@@ -237,7 +237,7 @@ jobs:
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download optimized WASM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: workload-governor-wasm-optimized
           path: wasm
@@ -321,7 +321,7 @@ jobs:
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download optimized WASM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: workload-governor-wasm-optimized
           path: wasm
