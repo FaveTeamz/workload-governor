@@ -83,10 +83,10 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum value for a per-org assignment cap set via `set_org_cap`.
+/// Minimum per-org assignment cap value accepted by `set_org_cap`.
 pub const ORG_CAP_MIN: u32 = 1;
 
-/// Maximum value for a per-org assignment cap set via `set_org_cap`.
+/// Maximum per-org assignment cap value accepted by `set_org_cap`.
 pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
@@ -498,92 +498,59 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Temporary storage — Application Index  (Issue #598)
+// Persistent storage — Assignment Deadline  (Issue #604)
 // ---------------------------------------------------------------------------
 //
-// Key:   `(symbol_short!("app_idx"), contributor: Address)`
-// Value: `Vec<(Symbol, u32)>` — list of `(org_id, issue_id)` pairs
-// Tier:  Temporary (same TTL as per-issue application entries)
+// Key: `(symbol_short!("dead"), org_id: Symbol, issue_id: u32, contributor: Address)`
+// Value: `u32` (deadline ledger sequence number)
 //
-// Maintains an enumerable index of all pending applications for a contributor.
-// Updated atomically with the per-issue application sentinel on every
-// `apply_for_issue` and `withdraw_application` call.
-//
-// Prefix "app_idx" is distinct from all existing prefixes:
-//   "app", "g_apps", "admin", "maint", "o_asgn", "asgn", "o_cap", "g_cap".
+// Stores the optional deadline for an assignment. When absent, no deadline is
+// set and `expire_assignment` cannot be called for that assignment.
+// Prefix `"dead"` is distinct from all other prefixes — zero collision risk.
 
-fn app_index_key(contributor: &Address) -> (Symbol, Address) {
-    (symbol_short!("app_idx"), contributor.clone())
-}
-
-/// Returns the contributor's current list of pending (org_id, issue_id) pairs.
-///
-/// Returns an empty `Vec` if no index entry exists (contributor has no applications,
-/// or all applications have expired).
-pub(crate) fn get_app_index(env: &Env, contributor: &Address) -> Vec<(Symbol, u32)> {
-    let key = app_index_key(contributor);
-    env.storage()
-        .temporary()
-        .get::<_, Vec<(Symbol, u32)>>(&key)
-        .unwrap_or_else(|| Vec::new(env))
-}
-
-/// Writes the contributor's application index.
-pub(crate) fn set_app_index(env: &Env, contributor: &Address, index: &Vec<(Symbol, u32)>) {
-    let key = app_index_key(contributor);
-    env.storage().temporary().set(&key, index);
-}
-
-/// Removes the contributor's application index entry (called when the list becomes empty).
-pub(crate) fn remove_app_index(env: &Env, contributor: &Address) {
-    let key = app_index_key(contributor);
-    env.storage().temporary().remove(&key);
-}
-
-/// Extends the TTL of the contributor's application index entry.
-pub(crate) fn extend_app_index_ttl(env: &Env, contributor: &Address) {
-    let key = app_index_key(contributor);
-    env.storage()
-        .temporary()
-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
-}
-
-/// Adds `(org_id, issue_id)` to the contributor's application index.
-///
-/// The index uses the same TTL as application entries so both expire together.
-pub(crate) fn index_add_application(
-    env: &Env,
-    contributor: &Address,
+fn assignment_deadline_key(
     org_id: &Symbol,
     issue_id: u32,
-) {
-    let mut index = get_app_index(env, contributor);
-    index.push_back((org_id.clone(), issue_id));
-    set_app_index(env, contributor, &index);
-    extend_app_index_ttl(env, contributor);
+    contributor: &Address,
+) -> (Symbol, Symbol, u32, Address) {
+    (
+        symbol_short!("dead"),
+        org_id.clone(),
+        issue_id,
+        contributor.clone(),
+    )
 }
 
-/// Removes `(org_id, issue_id)` from the contributor's application index.
-///
-/// Removes the index entry entirely when the list becomes empty.
-pub(crate) fn index_remove_application(
+/// Returns the deadline ledger for an assignment, or `None` if no deadline was set.
+pub(crate) fn get_assignment_deadline(
     env: &Env,
-    contributor: &Address,
     org_id: &Symbol,
     issue_id: u32,
+    contributor: &Address,
+) -> Option<u32> {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().get::<_, u32>(&key)
+}
+
+/// Writes the deadline ledger for an assignment.
+pub(crate) fn set_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+    deadline: u32,
 ) {
-    let old = get_app_index(env, contributor);
-    let mut new_index: Vec<(Symbol, u32)> = Vec::new(env);
-    for pair in old.iter() {
-        let (ref o, i) = pair;
-        if !(o == org_id && i == issue_id) {
-            new_index.push_back(pair);
-        }
-    }
-    if new_index.is_empty() {
-        remove_app_index(env, contributor);
-    } else {
-        set_app_index(env, contributor, &new_index);
-        extend_app_index_ttl(env, contributor);
-    }
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().set(&key, &deadline);
+}
+
+/// Removes the deadline entry for an assignment (called on complete/revoke/expire).
+pub(crate) fn remove_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().remove(&key);
 }

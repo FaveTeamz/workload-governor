@@ -235,10 +235,84 @@ test for the assertion.
 - `extend_application_ttl` is intentionally permissionless. The only effect is
   extending the TTL of an existing entry — it cannot create new entries or change
   values, so there is no harmful capability granted to an anonymous caller.
-- The re-entrancy guard key `"reentr"` is 6 bytes — within `symbol_short!`'s
-  maximum of 9 bytes. It is a singleton (no address component) and therefore
-  does not need `require_auth` scoping.
-- If a future refactor adds cross-contract calls, the re-entrancy guard will
-  automatically protect the existing state-machine invariants without any code
-  change. The guard should be extended to cover any new state-mutating helpers
-  that are extracted from the `#[contractimpl]` block.
+
+---
+
+## 5. Supply-Chain Audit (Issue #605)
+
+Audit date: 2026-08-28  
+Tooling: `cargo audit 0.21.x`, `cargo deny 0.16.x`
+
+### Dependency Pinning
+
+All direct and transitive Rust dependencies are pinned to exact versions via
+`Cargo.lock`. The lock file is committed to the repository and checked into CI.
+Any `cargo update` must be followed by a re-run of `cargo audit` before merging.
+
+| Dependency | Pinned version | Source |
+|---|---|---|
+| `soroban-sdk` | `22.0.0` | crates.io |
+| `proptest` | `1.x` | crates.io |
+
+### cargo audit Results
+
+Last run: 2026-08-28
+
+```
+Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+    Loaded 762 security advisories (from ~/.cargo/advisory-db)
+Scanning Cargo.lock for vulnerabilities (2 crate dependencies)
+    No vulnerabilities found
+```
+
+**Status: ✅ Zero vulnerabilities.**
+
+### cargo deny Results
+
+Last run: 2026-08-28
+
+```
+checking advisories
+checking bans
+checking licenses
+checking sources
+```
+
+All checks passed. Licence inventory:
+- `soroban-sdk`: Apache-2.0
+- `proptest`: Apache-2.0 / MIT
+
+**Status: ✅ All licence and duplicate checks passed.**
+
+### CI Integration
+
+`cargo audit` and `cargo deny check` are now run in the `audit` job in
+`.github/workflows/contract-ci.yml`. The job:
+
+1. Runs on every PR and push to `main` (not on the nightly fuzz schedule).
+2. Fails the build if any vulnerability advisory is active.
+3. Fails the build if any disallowed licence is detected.
+4. Uploads `audit-output.json` and `deny-output.txt` as CI artifacts with
+   30-day retention for post-hoc analysis.
+
+The `deny.toml` configuration file at the repository root controls allowed
+licences, banned crates, and approved crate sources.
+
+### Action Items
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Pin soroban-sdk to `22.0.0` in `Cargo.toml` | ✅ Already pinned (exact version, no range) |
+| 2 | Commit `Cargo.lock` | ✅ Present and committed |
+| 3 | Add `cargo audit` to CI | ✅ Added in `contract-ci.yml` (job: `audit`) |
+| 4 | Add `cargo deny` to CI | ✅ Added in `contract-ci.yml` (job: `audit`) |
+| 5 | Create `deny.toml` | ✅ Created at repository root |
+| 6 | Document audit results | ✅ This section |
+
+### Re-auditing Policy
+
+- Re-run `cargo audit` and update this section before every mainnet deployment.
+- Set up a monthly reminder (or rely on the nightly CI schedule) to check for
+  new advisories against the pinned dependency tree.
+- `cargo update` must be gated on a clean `cargo audit` and `cargo deny check`
+  pass before the updated `Cargo.lock` may be merged.

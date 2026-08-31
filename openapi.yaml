@@ -35,6 +35,12 @@ tags:
     description: On-chain event history
   - name: contributors
     description: Contributor statistics
+  - name: audit
+    description: Cancellation and activity audit log
+  - name: admin
+    description: Admin-only diagnostic and consistency operations
+  - name: transactions
+    description: XDR transaction building and verification
 
 paths:
   /health:
@@ -354,47 +360,264 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /contributors/{address}/activity:
+  /contributors/{address}/summary:
     get:
-      operationId: getContributorActivity
+      operationId: getContributorSummary
       tags: [contributors]
-      summary: Get contributor activity heatmap data
+      summary: Get full aggregated profile for a contributor
       description: >
-        Returns daily counts of applications, assignments, completions, and withdrawals
-        grouped by week for a contributor over a configurable time period (30d, 90d, 365d).
-        Cached in Redis for 1 hour.
+        Returns the contributor's address, global application count,
+        global assignment count, per-org breakdown, and the last 50
+        on-chain events. Returns 404 when the contributor has no recorded
+        on-chain activity.
       parameters:
         - name: address
           in: path
           required: true
           schema:
             type: string
-          description: Contributor Stellar address
-        - name: period
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [30d, 90d, 365d]
-            default: 90d
-          description: Time period for activity history (30d, 90d, or 365d)
+          description: Stellar public key (G…) of the contributor
       responses:
         '200':
-          description: Contributor activity heatmap data
-          headers:
-            X-Cache:
-              description: HIT when served from Redis cache, MISS otherwise
-              schema:
-                type: string
-                enum: [HIT, MISS]
+          description: Full contributor profile
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ContributorActivityResponse'
+                $ref: '#/components/schemas/ContributorProfile'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /audit:
+    get:
+      operationId: getAuditCancellations
+      tags: [audit]
+      summary: Get paginated cancellation audit records
+      description: >
+        Returns a paginated list of assignment cancellation / revocation
+        events for monitoring and compliance purposes. Admin users may
+        omit `org_id` to fetch across all organisations.
+      parameters:
+        - name: org_id
+          in: query
+          description: Filter records to a specific organisation (required for non-admin callers)
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated audit records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPaginatedResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/consistency:
+    get:
+      operationId: getConsistency
+      tags: [admin]
+      summary: Check on-chain counter consistency
+      description: >
+        Invokes the contract's `check_consistency` function with a supplied list
+        of `(contributor, org_id)` pairs and issue IDs, and returns any pairs
+        where the stored org assignment counter disagrees with the live assignment
+        sentinels. Used to detect storage corruption after migrations.
+      parameters:
+        - name: pairs
+          in: query
+          required: true
+          description: >
+            JSON-encoded array of `[address, org_id]` pairs to probe.
+            Example: `[["GABC...","my_org"]]`
+          schema:
+            type: string
+        - name: issue_ids
+          in: query
+          required: true
+          description: >
+            Comma-separated list of issue IDs to probe per pair.
+            Example: `1,2,3,42`
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of inconsistent pairs (empty when all consistent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsistencyResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/consistency/remediate:
+    post:
+      operationId: postConsistencyRemediate
+      tags: [admin]
+      summary: Remediate detected counter inconsistencies
+      description: >
+        Accepts the output of `GET /api/admin/consistency` and attempts to
+        correct each inconsistent pair by rebuilding the org assignment counter
+        from live assignment sentinels. **Requires admin authentication.**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemediateRequest'
+      responses:
+        '200':
+          description: Remediation results per pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /verify-xdr:
+    post:
+      operationId: verifyXdr
+      tags: [transactions]
+      summary: Verify a signed Stellar XDR transaction
+      description: >
+        Validates a base64-encoded signed Stellar XDR transaction envelope without
+        submitting it to the network. Checks that:
+
+          1. The XDR is well-formed.
+          2. The transaction targets the configured contract ID.
+          3. `timeBounds` have not expired.
+          4. At least one signature matches the contributor address embedded in
+             the first operation argument.
+
+        Returns `ok: true` with `signerAddress` and `contractId` on success,
+        or `ok: false` with a `reason` code on failure.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyXdrRequest'
+      responses:
+        '200':
+          description: Verification result (check `ok` field)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyXdrResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /orgs/{orgId}/cap:
+    get:
+      operationId: getOrgCap
+      tags: [orgs]
+      summary: Get the per-org assignment cap
+      description: >
+        Returns the effective assignment cap for the organisation. Returns the
+        per-org override if one has been set via `PUT /api/orgs/{orgId}/cap`,
+        otherwise returns the platform default of `4`.
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+      responses:
+        '200':
+          description: Current org cap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgCapResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      operationId: setOrgCap
+      tags: [orgs]
+      summary: Set the per-org assignment cap (maintainer-only)
+      description: >
+        Overrides the org-level assignment cap. The cap must be in the range
+        `[1, 20]` inclusive. The change takes effect immediately on the next
+        `assign_issue` call for this org.
+
+        Requires a valid maintainer signature in the `Authorization` header.
+      parameters:
+        - $ref: '#/components/parameters/orgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetOrgCapRequest'
+      responses:
+        '200':
+          description: Cap updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgCapResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -434,6 +657,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Caller lacks the required role or signature
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     NotFound:
       description: Resource not found
       content:
@@ -442,6 +671,12 @@ components:
             $ref: '#/components/schemas/Error'
     Conflict:
       description: Conflict with current state (e.g. duplicate application)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Rate limit exceeded
       content:
         application/json:
           schema:
@@ -615,68 +850,247 @@ components:
           additionalProperties:
             type: integer
 
-    DailyActivity:
+    ContributorProfile:
       type: object
-      required: [date, applications, assignments, completions, withdrawals, total]
-      properties:
-        date:
-          type: string
-          format: date
-          example: '2026-06-01'
-        applications:
-          type: integer
-          example: 1
-        assignments:
-          type: integer
-          example: 0
-        completions:
-          type: integer
-          example: 0
-        withdrawals:
-          type: integer
-          example: 0
-        total:
-          type: integer
-          example: 1
-
-    WeekActivity:
-      type: object
-      required: [week_start, days, total]
-      properties:
-        week_start:
-          type: string
-          format: date
-          example: '2026-06-01'
-        days:
-          type: array
-          items:
-            $ref: '#/components/schemas/DailyActivity'
-        total:
-          type: integer
-          example: 3
-
-    ContributorActivityResponse:
-      type: object
-      required: [address, period, total_activities, days, weeks]
+      required: [address, global_application_count, global_assignment_count, orgs, recent_events]
       properties:
         address:
           type: string
+          description: Stellar public key of the contributor
           example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
-        period:
-          type: string
-          enum: [30d, 90d, 365d]
-          example: 90d
-        total_activities:
+        global_application_count:
           type: integer
-          example: 12
-        days:
+          minimum: 0
+          description: Total pending applications across all organisations
+        global_assignment_count:
+          type: integer
+          minimum: 0
+          description: Total active assignments across all organisations
+        orgs:
+          type: array
+          description: Per-organisation breakdown of applications and assignments
+          items:
+            $ref: '#/components/schemas/OrgBreakdown'
+        recent_events:
+          type: array
+          description: Last 50 on-chain events for this contributor (newest first)
+          items:
+            $ref: '#/components/schemas/ContributorEvent'
+
+    OrgBreakdown:
+      type: object
+      required: [org_id, applications, assignments]
+      properties:
+        org_id:
+          type: string
+        applications:
+          type: integer
+          minimum: 0
+        assignments:
+          type: integer
+          minimum: 0
+
+    ContributorEvent:
+      type: object
+      required: [id, event_type, tx_hash, ledger, timestamp]
+      properties:
+        id:
+          type: integer
+        event_type:
+          type: string
+          enum: [applied, withdrawn, assigned, completed, revoked, expired]
+        org_id:
+          type: string
+          nullable: true
+        issue_id:
+          type: integer
+          nullable: true
+        tx_hash:
+          type: string
+        ledger:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    AuditCancellationRecord:
+      type: object
+      required: [event_type, actor, contributor, org_id, issue_id, timestamp]
+      properties:
+        event_type:
+          type: string
+          enum: [revoked, expired, completed]
+        actor:
+          type: string
+          description: Maintainer address who triggered the event
+        contributor:
+          type: string
+          description: Contributor address affected
+        org_id:
+          type: string
+        issue_id:
+          type: integer
+        reason:
+          type: string
+          description: Human-readable reason (may be empty)
+        timestamp:
+          type: string
+          format: date-time
+        tx_hash:
+          type: string
+
+    AuditPaginatedResult:
+      type: object
+      required: [data, total, page, pageSize, totalPages]
+      properties:
+        data:
           type: array
           items:
-            $ref: '#/components/schemas/DailyActivity'
-        weeks:
+            $ref: '#/components/schemas/AuditCancellationRecord'
+        total:
+          type: integer
+          description: Total number of matching records
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
+
+    ConsistencyPair:
+      type: object
+      required: [contributor, org_id]
+      properties:
+        contributor:
+          type: string
+          description: Stellar address of the contributor
+          example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+        org_id:
+          type: string
+          description: Organisation identifier
+          example: my_org
+
+    ConsistencyResult:
+      type: object
+      required: [inconsistent_pairs, checked_at]
+      properties:
+        inconsistent_pairs:
           type: array
+          description: Pairs where counter and sentinels disagree (empty = all consistent)
           items:
-            $ref: '#/components/schemas/WeekActivity'
+            $ref: '#/components/schemas/ConsistencyPair'
+        checked_at:
+          type: string
+          format: date-time
+
+    RemediateRequest:
+      type: object
+      required: [pairs, issue_ids]
+      properties:
+        pairs:
+          type: array
+          description: List of (contributor, org_id) pairs to remediate
+          items:
+            $ref: '#/components/schemas/ConsistencyPair'
+        issue_ids:
+          type: array
+          description: Issue IDs to probe when rebuilding counters
+          items:
+            type: integer
+
+    RemediateResponse:
+      type: object
+      required: [remediated, failed, summary]
+      properties:
+        remediated:
+          type: array
+          description: Pairs that were successfully corrected
+          items:
+            $ref: '#/components/schemas/ConsistencyPair'
+        failed:
+          type: array
+          description: Pairs where remediation failed (with reason)
+          items:
+            type: object
+            required: [pair, reason]
+            properties:
+              pair:
+                $ref: '#/components/schemas/ConsistencyPair'
+              reason:
+                type: string
+        summary:
+          type: object
+          required: [total, remediated_count, failed_count]
+          properties:
+            total:
+              type: integer
+            remediated_count:
+              type: integer
+            failed_count:
+              type: integer
+
+    VerifyXdrRequest:
+      type: object
+      required: [xdr]
+      properties:
+        xdr:
+          type: string
+          description: Base64-encoded signed Stellar XDR transaction envelope
+
+    VerifyXdrResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          description: true when all verification checks pass
+        signerAddress:
+          type: string
+          description: Contributor Stellar address extracted from the transaction (present when ok=true)
+        contractId:
+          type: string
+          description: Contract ID targeted by the transaction (present when ok=true)
+        reason:
+          type: string
+          description: Failure reason code (present when ok=false)
+          enum:
+            - MISSING_SIGNATURE
+            - SIGNER_MISMATCH
+            - TRANSACTION_EXPIRED
+            - TRANSACTION_NOT_YET_VALID
+            - WRONG_CONTRACT
+            - MALFORMED_XDR
+            - MISSING_CONTRIBUTOR_ARG
+        detail:
+          type: string
+          description: Human-readable failure detail (present when ok=false)
+
+    OrgCapResponse:
+      type: object
+      required: [org_id, cap]
+      properties:
+        org_id:
+          type: string
+          example: my_org
+        cap:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Current effective assignment cap for this org
+          example: 4
+
+    SetOrgCapRequest:
+      type: object
+      required: [maintainer_address, new_cap]
+      properties:
+        maintainer_address:
+          type: string
+          description: Registered maintainer Stellar address
+        new_cap:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: New assignment cap value (1–20 inclusive)
 
     Error:
       type: object

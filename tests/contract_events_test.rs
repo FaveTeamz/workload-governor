@@ -158,8 +158,243 @@ fn contract_initialized_event_not_emitted_on_double_init() {
         "Expected at least one event after the first initialize"
     );
 
-    // Second call must fail with AlreadyInitialized.
-    let result = client.try_initialize(&admin);
+    // topic[1] == contributor address
+    let expected_topic1: Val = contributor.clone().into_val(&env);
+    assert_eq!(
+        topics.get(1).unwrap(),
+        expected_topic1,
+        "apply_for_issue: topic[1] must be contributor address"
+    );
+
+    // data == (org_id, issue_id)
+    let expected_data: Val = (org_id.clone(), issue_id).into_val(&env);
+    assert_eq!(
+        data,
+        expected_data,
+        "apply_for_issue: data must be (org_id, issue_id)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 3: withdraw_application emits withdrew event with correct fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_withdraw_event_fields() {
+    let (env, client, _admin) = setup();
+
+    let contributor = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id: u32 = 42;
+
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    let before = env.events().all().len();
+
+    client.withdraw_application(&contributor, &org_id, &issue_id);
+
+    let all = env.events().all();
+    let new_count = all.len() - before;
+    assert_eq!(new_count, 1, "expected exactly 1 event from withdraw_application");
+
+    let (_, topics, data) = all.last().unwrap();
+
+    // topic[0] == symbol_short!("withdrew")
+    let expected_topic0: Val = symbol_short!("withdrew").into_val(&env);
+    assert_eq!(
+        topics.get(0).unwrap(),
+        expected_topic0,
+        "withdraw_application: topic[0] must be 'withdrew'"
+    );
+
+    // topic[1] == contributor address
+    let expected_topic1: Val = contributor.clone().into_val(&env);
+    assert_eq!(
+        topics.get(1).unwrap(),
+        expected_topic1,
+        "withdraw_application: topic[1] must be contributor address"
+    );
+
+    // data == (org_id, issue_id)
+    let expected_data: Val = (org_id.clone(), issue_id).into_val(&env);
+    assert_eq!(
+        data,
+        expected_data,
+        "withdraw_application: data must be (org_id, issue_id)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: assign_issue emits assigned event with correct fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_assign_event_fields() {
+    let (env, client, admin) = setup();
+
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id: u32 = 99;
+
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    let before = env.events().all().len();
+
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+
+    let all = env.events().all();
+    let new_count = all.len() - before;
+    assert_eq!(new_count, 1, "expected exactly 1 event from assign_issue");
+
+    let (_, topics, data) = all.last().unwrap();
+
+    // topic[0] == symbol_short!("assigned")
+    let expected_topic0: Val = symbol_short!("assigned").into_val(&env);
+    assert_eq!(
+        topics.get(0).unwrap(),
+        expected_topic0,
+        "assign_issue: topic[0] must be 'assigned'"
+    );
+
+    // topic[1] == contributor address
+    let expected_topic1: Val = contributor.clone().into_val(&env);
+    assert_eq!(
+        topics.get(1).unwrap(),
+        expected_topic1,
+        "assign_issue: topic[1] must be contributor address"
+    );
+
+    // data == (maintainer, org_id, issue_id)
+    let expected_data: Val = (maintainer.clone(), org_id.clone(), issue_id).into_val(&env);
+    assert_eq!(
+        data,
+        expected_data,
+        "assign_issue: data must be (maintainer, org_id, issue_id)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 5: complete_assignment emits completed event with correct fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_complete_event_fields() {
+    let (env, client, admin) = setup();
+
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id: u32 = 7;
+
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    let before = env.events().all().len();
+
+    client.complete_assignment(&maintainer, &contributor, &org_id, &issue_id);
+
+    let all = env.events().all();
+    let new_count = all.len() - before;
+    assert_eq!(new_count, 1, "expected exactly 1 event from complete_assignment");
+
+    let (_, topics, data) = all.last().unwrap();
+
+    // topic[0] == symbol_short!("completed")
+    let expected_topic0: Val = symbol_short!("completed").into_val(&env);
+    assert_eq!(
+        topics.get(0).unwrap(),
+        expected_topic0,
+        "complete_assignment: topic[0] must be 'completed'"
+    );
+
+    // topic[1] == contributor address
+    let expected_topic1: Val = contributor.clone().into_val(&env);
+    assert_eq!(
+        topics.get(1).unwrap(),
+        expected_topic1,
+        "complete_assignment: topic[1] must be contributor address"
+    );
+
+    // data == (maintainer, org_id, issue_id)
+    let expected_data: Val = (maintainer.clone(), org_id.clone(), issue_id).into_val(&env);
+    assert_eq!(
+        data,
+        expected_data,
+        "complete_assignment: data must be (maintainer, org_id, issue_id)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: revoke_assignment emits revoked event with correct fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_revoke_event_fields() {
+    let (env, client, admin) = setup();
+
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id: u32 = 55;
+
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    let before = env.events().all().len();
+
+    client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
+
+    let all = env.events().all();
+    let new_count = all.len() - before;
+    assert_eq!(new_count, 1, "expected exactly 1 event from revoke_assignment");
+
+    let (_, topics, data) = all.last().unwrap();
+
+    // topic[0] == symbol_short!("revoked")
+    let expected_topic0: Val = symbol_short!("revoked").into_val(&env);
+    assert_eq!(
+        topics.get(0).unwrap(),
+        expected_topic0,
+        "revoke_assignment: topic[0] must be 'revoked'"
+    );
+
+    // topic[1] == contributor address
+    let expected_topic1: Val = contributor.clone().into_val(&env);
+    assert_eq!(
+        topics.get(1).unwrap(),
+        expected_topic1,
+        "revoke_assignment: topic[1] must be contributor address"
+    );
+
+    // data == (maintainer, org_id, issue_id)
+    let expected_data: Val = (maintainer.clone(), org_id.clone(), issue_id).into_val(&env);
+    assert_eq!(
+        data,
+        expected_data,
+        "revoke_assignment: data must be (maintainer, org_id, issue_id)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: error paths emit no events (duplicate application)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_no_event_on_duplicate_application() {
+    let (env, client, _admin) = setup();
+
+    let contributor = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id: u32 = 1;
+
+    // First application — succeeds and emits an event
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    let before = env.events().all().len();
+
+    // Second application — must panic with DuplicateApplication (error 8)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.apply_for_issue(&contributor, &org_id, &issue_id);
+    }));
     assert!(
         result.is_err(),
         "Second initialize must return an error (AlreadyInitialized)"
@@ -186,7 +421,13 @@ fn contract_initialized_event_not_emitted_for_different_admin_on_double_init() {
 
     client.initialize(&admin1);
 
-    let result = client.try_initialize(&admin2);
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    let before = env.events().all().len();
+
+    // Assign without prior application — must panic with ApplicationNotFound (error 9)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    }));
     assert!(
         result.is_err(),
         "Second initialize with a different admin must also fail"
@@ -276,24 +517,122 @@ fn contract_event_initialize_emits_workload_init() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn contract_event_register_maintainer_emits_workload_maint_reg() {
-    let t = EventsTestEnv::new();
-    let admin = Address::generate(&t.env);
-    let maintainer = Address::generate(&t.env);
-    let org = t.org("org1");
+fn test_withdraw_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id = 123u32;
+    client.initialize(&admin);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    let before = env.events().all().len();
+    client.withdraw_application(&contributor, &org_id, &issue_id);
+    assert_eq!(env.events().all().len() - before, 1);
+}
 
-    t.client.initialize(&admin);
-    t.client.register_maintainer(&admin, &maintainer, &org);
+#[test]
+fn test_assign_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id = 123u32;
+    client.initialize(&admin);
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    let before = env.events().all().len();
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    assert_eq!(env.events().all().len() - before, 1);
+}
 
-    let events = env.events().all();
-    let (_, last_topics, _): (_, Vec<Val>, Val) = events.last().unwrap();
+#[test]
+fn test_complete_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id = 123u32;
+    client.initialize(&admin);
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    let before = env.events().all().len();
+    client.complete_assignment(&maintainer, &contributor, &org_id, &issue_id);
+    assert_eq!(env.events().all().len() - before, 1);
+}
 
-    let last_topic0: soroban_sdk::Symbol =
-        last_topics.get(0).unwrap().try_into_val(env).unwrap();
+#[test]
+fn test_revoke_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id = 123u32;
+    client.initialize(&admin);
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    let before = env.events().all().len();
+    client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
+    assert_eq!(env.events().all().len() - before, 1);
+}
 
-    assert_eq!(
-        last_topic0,
-        symbol_short!("init"),
-        "The last event in the log after initialize must be the ContractInitialized event"
-    );
+#[test]
+fn test_register_maintainer_event_emitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    client.initialize(&admin);
+    let before = env.events().all().len();
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    assert_eq!(env.events().all().len() - before, 1);
+}
+
+#[test]
+fn test_only_one_event_per_function() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org-001");
+    let issue_id = 123u32;
+    client.initialize(&admin);
+
+    let b0 = env.events().all().len();
+    client.register_maintainer(&admin, &maintainer, &org_id);
+    assert_eq!(env.events().all().len() - b0, 1);
+
+    let b1 = env.events().all().len();
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    assert_eq!(env.events().all().len() - b1, 1);
+
+    let b2 = env.events().all().len();
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    assert_eq!(env.events().all().len() - b2, 1);
+
+    let b3 = env.events().all().len();
+    client.complete_assignment(&maintainer, &contributor, &org_id, &issue_id);
+    assert_eq!(env.events().all().len() - b3, 1);
 }

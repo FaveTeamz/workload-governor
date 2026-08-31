@@ -63,16 +63,25 @@ pub enum ContractError {
     /// Discriminant: `12`.
     CapOutOfRange = 12,
 
-    /// A storage counter is inconsistent with the actual assignment sentinels.
-    /// Returned by `revoke_assignment` when the counter is 0 but an assignment
-    /// sentinel exists, indicating storage corruption.
+    /// The org assignment counter is `0` but a live assignment sentinel was found,
+    /// or vice versa. Indicates storage corruption (e.g. from a bad migration).
+    /// Raised only inside `#[cfg(debug_assertions)]` blocks.
     /// Discriminant: `13`.
     CounterInconsistency = 13,
 
-    /// The requested per-org assignment cap is outside the permitted range `[1, 20]`.
-    /// Returned by `set_org_cap` when `new_cap` is 0 or > 20.
+    /// The supplied deadline ledger has already passed (i.e. `deadline <= env.ledger().sequence()`).
+    /// Returned by `assign_issue` when a non-`None` deadline is in the past.
     /// Discriminant: `14`.
-    InvalidOrgCap = 14,
+    DeadlineInPast = 14,
+
+    /// `expire_assignment` was called before the assignment deadline has passed.
+    /// Discriminant: `15`.
+    DeadlineNotPassed = 15,
+
+    /// The per-org assignment cap value is outside the permitted range `[ORG_CAP_MIN, ORG_CAP_MAX]`.
+    /// Returned by `set_org_cap` when `new_cap` is 0 or > 20.
+    /// Discriminant: `16`.
+    InvalidOrgCap = 16,
 
     /// The specified maintainer is not registered for the given organisation.
     /// Returned by `deregister_maintainer` when attempting to deregister a maintainer
@@ -80,17 +89,7 @@ pub enum ContractError {
     /// Discriminant: `17`.
     MaintainerNotFound = 17,
 
-    /// The org/global assignment counter is out of sync with the assignment sentinels.
-    /// This should never occur in normal operation; it indicates storage corruption.
-    /// Discriminant: `13`.
-    CounterInconsistency = 13,
-
-    /// The provided org cap value is outside the permitted range `[ORG_CAP_MIN, ORG_CAP_MAX]`.
-    /// Returned by `set_org_cap` when `new_cap` is 0 or > 20.
-    /// Discriminant: `14`.
-    InvalidOrgCap = 14,
-
-    /// The contract is currently paused. All state-changing operations are blocked.
-    /// Discriminant: `15`.
-    ContractPaused = 15,
+    /// `expire_assignment` was called for an assignment that has no deadline set.
+    /// Discriminant: `18`.
+    NoDeadlineSet = 18,
 }
