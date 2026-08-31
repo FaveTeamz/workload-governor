@@ -129,12 +129,22 @@ jobs:
       - name: Report WASM size
         run: |
           SIZE=$(wc -c < target/wasm32v1-none/release/workload_governor.optimized.wasm)
-          echo "Optimized WASM size: ${SIZE} bytes (limit 65536)"
+          echo "Optimized WASM size: ${SIZE} bytes"
           echo "### 📦 WASM Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build | Size |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Optimized | ${SIZE} bytes |" >> "$GITHUB_STEP_SUMMARY"
-          [ "$SIZE" -le 65536 ] || (echo "❌ WASM exceeds 64 KB limit" && exit 1)
+          echo "| Build | Size | Limit | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE" -le 20480 ]; then
+            STATUS="✅ under 20 KB target"
+          elif [ "$SIZE" -le 22528 ]; then
+            STATUS="⚠️ above 20 KB target but within 22 KB gate"
+          else
+            STATUS="❌ exceeds 22 KB gate"
+          fi
+          echo "| Optimized | ${SIZE} bytes | 22 528 bytes (22 KB) | ${STATUS} |" >> "$GITHUB_STEP_SUMMARY"
+          # Hard fail: Soroban network limit
+          [ "$SIZE" -le 65536 ] || (echo "❌ WASM exceeds 64 KB Soroban limit" && exit 1)
+          # Hard fail: mainnet deployment gate (22 KB)
+          [ "$SIZE" -le 22528 ] || (echo "❌ WASM exceeds 22 KB deployment gate (${SIZE} bytes). Target is < 20 KB. Reduce binary size before merging." && exit 1)
 
       - name: Upload optimized WASM artifact
         uses: actions/upload-artifact@v4

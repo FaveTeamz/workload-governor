@@ -75,10 +75,10 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum allowed per-org assignment cap (via `set_org_cap`).
+/// Minimum valid value for a per-org assignment cap (via `set_org_cap`).
 pub const ORG_CAP_MIN: u32 = 1;
 
-/// Maximum allowed per-org assignment cap (via `set_org_cap`).
+/// Maximum valid value for a per-org assignment cap (via `set_org_cap`).
 pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
