@@ -839,3 +839,116 @@ Build a transaction to call `revoke_assignment`.
 | `org_id` | string | Yes | Organisation ID |
 | `issue_id` | number | Yes | Issue ID |
 | `sequence` | string | Yes | Current sequence number |
+
+---
+
+### Org Statistics
+
+#### `GET /orgs/:org_id/stats`
+
+Returns aggregated activity statistics for an organisation over a rolling time window.
+
+**Auth:** Valid API key required (`Authorization: Bearer <key>`)
+
+**Path parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `org_id` | string | Registered organisation ID |
+
+**Query parameters**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `period` | string | No | `7d` | Rolling window — `7d`, `30d`, or `90d` |
+
+**Caching**
+
+Results are cached in Redis for **15 minutes**. The response includes an `X-Cache: HIT` or `X-Cache: MISS` header to indicate cache status.
+
+**Example request**
+```
+GET /orgs/stellar-oss/stats?period=30d
+Authorization: Bearer <api-key>
+```
+
+**Response `200`**
+```json
+{
+  "org_id": "stellar-oss",
+  "period": "30d",
+  "generated_at": "2026-08-28T16:00:00.000Z",
+  "summary": {
+    "total_applications": 142,
+    "total_assignments": 89,
+    "total_completions": 72,
+    "total_revocations": 5,
+    "unique_contributors": 38,
+    "avg_time_to_assignment_hours": 18.5,
+    "avg_time_to_completion_hours": 96.2
+  },
+  "daily": [
+    {
+      "date": "2026-07-30",
+      "applications": 6,
+      "assignments": 4,
+      "completions": 3,
+      "revocations": 0
+    },
+    {
+      "date": "2026-07-31",
+      "applications": 5,
+      "assignments": 3,
+      "completions": 2,
+      "revocations": 1
+    }
+  ]
+}
+```
+
+**Response `400`** — invalid period value
+```json
+{
+  "error": "bad_request",
+  "message": "Invalid period '14d'. Must be one of: 7d, 30d, 90d",
+  "code": "INVALID_REQUEST"
+}
+```
+
+**Response `401`** — missing or invalid API key
+```json
+{ "error": "invalid api key" }
+```
+
+**Response `404`** — org not registered
+```json
+{
+  "error": "not_found",
+  "message": "Org 'unknown-org' not found",
+  "code": "NOT_FOUND"
+}
+```
+
+**`summary` fields**
+
+| Field | Type | Description |
+|---|---|---|
+| `total_applications` | number | Applications received in the period |
+| `total_assignments` | number | Issues assigned in the period |
+| `total_completions` | number | Assignments completed in the period |
+| `total_revocations` | number | Assignments revoked in the period |
+| `unique_contributors` | number | Distinct contributor addresses active in the period |
+| `avg_time_to_assignment_hours` | number | Mean hours from application to assignment |
+| `avg_time_to_completion_hours` | number | Mean hours from assignment to completion |
+
+**`daily` array**
+
+One entry per calendar day in the requested period, oldest first. Each entry has:
+
+| Field | Type | Description |
+|---|---|---|
+| `date` | string | ISO date (`YYYY-MM-DD`) |
+| `applications` | number | Applications received on this day |
+| `assignments` | number | Issues assigned on this day |
+| `completions` | number | Assignments completed on this day |
+| `revocations` | number | Assignments revoked on this day |
