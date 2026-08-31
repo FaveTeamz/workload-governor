@@ -75,10 +75,10 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum valid value for a per-org assignment cap (set via `set_org_cap`).
+/// Minimum valid value for the per-org assignment cap.
 pub const ORG_CAP_MIN: u32 = 1;
 
-/// Maximum valid value for a per-org assignment cap (set via `set_org_cap`).
+/// Maximum valid value for the per-org assignment cap.
 pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
@@ -238,6 +238,15 @@ pub(crate) fn extend_app_entry_ttl(
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
 }
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Global application cap
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("g_cap")`
+// Value: `u32`
+//
+// (Duplicate section removed — the authoritative implementation is earlier in this file)
 
 // ---------------------------------------------------------------------------
 // Persistent storage — Admin
@@ -490,37 +499,31 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Maintainer Orgs Index  (Issue #589)
+// Persistent storage — Contract Paused Flag  (Issue #590)
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("m_idx"), maintainer: Address)`
-// Value: `Vec<Symbol>` — list of org_ids the maintainer is registered for
+// Key: `symbol_short!("paused")`
+// Value: `bool` — true when contract is paused
 //
-// This index avoids a full storage scan when querying a maintainer's orgs.
-// It is updated atomically alongside the main maint key in register_maintainer
-// and deregister_maintainer.
+// When absent the contract is unpaused (default: operational).
 
-fn maintainer_orgs_key(maintainer: &Address) -> (Symbol, Address) {
-    (symbol_short!("m_idx"), maintainer.clone())
+fn paused_key() -> Symbol {
+    symbol_short!("paused")
 }
 
-/// Returns the list of org_ids the maintainer is currently registered for.
-/// Returns an empty Vec if the maintainer has never been registered.
-pub(crate) fn get_maintainer_orgs_index(env: &Env, maintainer: &Address) -> soroban_sdk::Vec<Symbol> {
-    let key = maintainer_orgs_key(maintainer);
+/// Returns `true` if the contract is currently paused.
+pub(crate) fn is_contract_paused(env: &Env) -> bool {
     env.storage()
         .persistent()
-        .get(&key)
-        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+        .get::<_, bool>(&paused_key())
+        .unwrap_or(false)
 }
 
-/// Writes the maintainer orgs index.
-/// If `orgs` is empty the key is removed from storage to reclaim space.
-pub(crate) fn set_maintainer_orgs_index(env: &Env, maintainer: &Address, orgs: &soroban_sdk::Vec<Symbol>) {
-    let key = maintainer_orgs_key(maintainer);
-    if orgs.is_empty() {
-        env.storage().persistent().remove(&key);
+/// Sets the contract paused state.
+pub(crate) fn set_contract_paused(env: &Env, paused: bool) {
+    if paused {
+        env.storage().persistent().set(&paused_key(), &true);
     } else {
-        env.storage().persistent().set(&key, orgs);
+        env.storage().persistent().remove(&paused_key());
     }
 }

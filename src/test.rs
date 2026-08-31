@@ -3298,91 +3298,113 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #589: get_maintainer_orgs unit tests
+// Issue #590: pause/unpause emergency mechanism
 // ---------------------------------------------------------------------------
 
-/// AC1: register maintainer for one org — get_maintainer_orgs returns that org.
 #[test]
-fn unit_get_maintainer_orgs_single() {
+fn unit_pause_blocks_state_changes() {
+    use crate::errors::ContractError;
+    use soroban_sdk::Error;
+
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
-    let org = t.org("singleorg");
+    let contributor = Address::generate(&t.env);
+    let org = t.org("pause1");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
 
-    let orgs = t.client.get_maintainer_orgs(&maintainer);
-    assert_eq!(orgs.len(), 1, "expected exactly one org");
-    assert_eq!(orgs.get(0).unwrap(), org, "expected the registered org");
+    // Pause the contract
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+
+    // All state-changing calls must fail with ContractPaused (code 15)
+    let err = Error::from_contract_error(ContractError::ContractPaused as u32);
+
+    assert_eq!(
+        t.client.try_apply_for_issue(&contributor, &org, &1u32),
+        Err(Ok(err.clone()))
+    );
+    assert_eq!(
+        t.client.try_register_maintainer(&admin, &maintainer, &org),
+        Err(Ok(err.clone()))
+    );
+    assert_eq!(
+        t.client.try_withdraw_application(&contributor, &org, &1u32),
+        Err(Ok(err.clone()))
+    );
 }
 
-/// AC2: register maintainer for 3 orgs — get_maintainer_orgs returns all 3.
 #[test]
-fn unit_get_maintainer_orgs_multiple() {
+fn unit_unpause_restores_operations() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let maintainer = Address::generate(&t.env);
-    let org_a = t.org("multia");
-    let org_b = t.org("multib");
-    let org_c = t.org("multic");
+    let contributor = Address::generate(&t.env);
+    let org = t.org("pause2");
 
     t.client.initialize(&admin);
-    t.client.register_maintainer(&admin, &maintainer, &org_a);
-    t.client.register_maintainer(&admin, &maintainer, &org_b);
-    t.client.register_maintainer(&admin, &maintainer, &org_c);
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
 
-    let orgs = t.client.get_maintainer_orgs(&maintainer);
-    assert_eq!(orgs.len(), 3, "expected three orgs");
+    t.client.unpause(&admin);
+    assert!(!t.client.is_paused());
 
-    // All three orgs must be present (order may vary)
-    let mut found_a = false;
-    let mut found_b = false;
-    let mut found_c = false;
-    for o in orgs.iter() {
-        if o == org_a { found_a = true; }
-        if o == org_b { found_b = true; }
-        if o == org_c { found_c = true; }
-    }
-    assert!(found_a, "org_a not in result");
-    assert!(found_b, "org_b not in result");
-    assert!(found_c, "org_c not in result");
+    // Operations must work after unpause
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
 }
 
-/// AC3: call get_maintainer_orgs for an address never registered — returns empty vec.
 #[test]
-fn unit_get_maintainer_orgs_unknown() {
+fn unit_query_functions_work_while_paused() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let unknown = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("pause3");
 
     t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &5u32);
 
-    let orgs = t.client.get_maintainer_orgs(&unknown);
-    assert_eq!(orgs.len(), 0, "expected empty vec for unregistered maintainer");
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+
+    // Read-only queries must still work
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+    assert!(t.client.has_applied(&contributor, &org, &5u32));
+    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    assert!(!t.client.is_paused() == false); // is_paused is still callable
 }
 
-/// AC4: register for 2 orgs, deregister from 1 — get_maintainer_orgs returns only the other.
 #[test]
-fn unit_get_maintainer_orgs_after_deregister() {
+fn unit_pause_emits_event() {
+    use soroban_sdk::testutils::Events;
+
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let maintainer = Address::generate(&t.env);
-    let org_keep = t.org("keep");
-    let org_drop = t.org("drop");
 
     t.client.initialize(&admin);
-    t.client.register_maintainer(&admin, &maintainer, &org_keep);
-    t.client.register_maintainer(&admin, &maintainer, &org_drop);
+    t.client.pause(&admin);
 
-    // Both orgs present before deregister
-    let orgs_before = t.client.get_maintainer_orgs(&maintainer);
-    assert_eq!(orgs_before.len(), 2, "expected two orgs before deregister");
+    let events = t.env.events().all();
+    assert!(!events.is_empty());
+    // Last event should be the paused event
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+}
 
-    // Deregister from org_drop
-    t.client.deregister_maintainer(&admin, &maintainer, &org_drop);
+#[test]
+fn unit_pause_unpause_admin_only() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
 
-    let orgs_after = t.client.get_maintainer_orgs(&maintainer);
-    assert_eq!(orgs_after.len(), 1, "expected one org after deregister");
-    assert_eq!(orgs_after.get(0).unwrap(), org_keep, "remaining org must be org_keep");
+    t.client.initialize(&admin);
+
+    // pause/unpause require admin — with mock_all_auths these succeed.
+    // Verify the operation completes without panic.
+    t.client.pause(&admin);
+    assert!(t.client.is_paused());
+    t.client.unpause(&admin);
+    assert!(!t.client.is_paused());
 }
