@@ -1,74 +1,152 @@
-# Terraform environment management
-# Usage:
-#   make tf-plan ENV=staging
-#   make tf-apply ENV=staging
-#   make tf-plan ENV=production
-#   make tf-apply ENV=production   ← requires APPROVE=yes for safety
+# Makefile — WorkloadGovernor contract development helpers
+#
+# Most CI steps live in .github/workflows/; this Makefile provides convenient
+# local and CI entry points without requiring shell-script knowledge.
 #
 # Prerequisites:
-#   - AWS credentials configured in environment or via IAM role
-#   - terraform >= 1.8 installed
-#   - Backend S3 bucket bootstrapped (run terraform/bootstrap.sh once)
+#   - Rust stable  (cargo test, build)
+#   - Rust nightly (cargo fuzz — libfuzzer requires nightly + LLVM sanitizers)
+#   - cargo-fuzz:  cargo install cargo-fuzz --locked
+#
+# Usage:
+#   make test          # run all contract tests
+#   make build         # compile native (debug)
+#   make build-wasm    # compile to wasm32v1-none (release)
+#   make fuzz-apply    # fuzz apply_for_issue for FUZZ_SECS seconds (default 60)
+#   make fuzz-ci       # same but 600 s — matches the nightly CI budget
+#   make fuzz-list     # list all registered fuzz targets
 
-ENV        ?= staging
-APPROVE    ?= no
-TF_DIR     := terraform/environments/$(ENV)
-BACKEND_HCL := terraform/backend-$(ENV).hcl
+.PHONY: all test build build-wasm \
+        fuzz-apply fuzz-ci fuzz-list \
+        clean help
 
-.PHONY: tf-init tf-plan tf-apply tf-destroy tf-fmt tf-validate
+# ---------------------------------------------------------------------------
+# Tunables
+# ---------------------------------------------------------------------------
 
-## tf-init: Initialise Terraform for the given ENV (e.g. make tf-init ENV=staging)
-tf-init:
-	@echo "==> Initialising Terraform for environment: $(ENV)"
-	terraform -chdir=$(TF_DIR) init -backend-config=../../backend-$(ENV).hcl -reconfigure
+## Seconds to run the fuzzer locally (override with: make fuzz-apply FUZZ_SECS=120)
+FUZZ_SECS ?= 60
 
-## tf-validate: Validate Terraform configuration for ENV
-tf-validate: tf-init
-	@echo "==> Validating Terraform for environment: $(ENV)"
-	terraform -chdir=$(TF_DIR) validate
+## Seconds used in CI (nightly schedule)
+FUZZ_CI_SECS ?= 600
 
-## tf-fmt: Format all Terraform files
-tf-fmt:
-	terraform fmt -recursive terraform/
+## Fuzz target to run
+FUZZ_TARGET ?= apply_for_issue
 
-## tf-plan: Generate and show an execution plan for ENV
-tf-plan: tf-init
-	@echo "==> Planning Terraform for environment: $(ENV)"
-	terraform -chdir=$(TF_DIR) plan -out=$(ENV).tfplan
+## Corpus directory for the active target
+CORPUS_DIR := fuzz/corpus/$(FUZZ_TARGET)
 
-## tf-apply: Apply the plan for ENV.
-##   Staging:    runs automatically.
-##   Production: requires APPROVE=yes to prevent accidental applies.
-##     make tf-apply ENV=production APPROVE=yes
-tf-apply: tf-init
-ifeq ($(ENV),production)
-ifneq ($(APPROVE),yes)
-	@echo ""
-	@echo "ERROR: Production applies require explicit approval."
-	@echo "       Re-run with:  make tf-apply ENV=production APPROVE=yes"
-	@echo ""
-	@exit 1
-endif
-	@echo "==> Applying Terraform for PRODUCTION (approved)"
-else
-	@echo "==> Applying Terraform for environment: $(ENV)"
-endif
-	terraform -chdir=$(TF_DIR) apply $(ENV).tfplan
+## Artifacts directory
+ARTIFACTS_DIR := fuzz/artifacts/$(FUZZ_TARGET)
 
-## tf-destroy: Destroy resources for ENV (requires APPROVE=yes for production)
-tf-destroy: tf-init
-ifeq ($(ENV),production)
-ifneq ($(APPROVE),yes)
-	@echo ""
-	@echo "ERROR: Production destroys require explicit approval."
-	@echo "       Re-run with:  make tf-destroy ENV=production APPROVE=yes"
-	@echo ""
-	@exit 1
-endif
-endif
-	@echo "==> Destroying Terraform resources for environment: $(ENV)"
-	terraform -chdir=$(TF_DIR) destroy -auto-approve
+# ---------------------------------------------------------------------------
+# Default
+# ---------------------------------------------------------------------------
 
-## help: Show this help message
+all: build test
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
+build:
+	cargo build --features testutils
+
+build-wasm:
+	cargo build --target wasm32v1-none --release
+
+# ---------------------------------------------------------------------------
+# Test
+# ---------------------------------------------------------------------------
+
+test:
+	cargo test --features testutils
+
+# ---------------------------------------------------------------------------
+# Fuzz
+# ---------------------------------------------------------------------------
+
+## List all registered fuzz targets (requires cargo-fuzz on nightly)
+fuzz-list:
+	cargo +nightly fuzz list
+
+## Build the fuzz harness.
+##
+## Two-stage approach for memory-constrained environments:
+##   Stage 1: build dependencies WITHOUT sancov instrumentation (avoids
+##            OOM-killing the enormous stellar-xdr crate on 8 GB machines).
+##   Stage 2: build the fuzz binary itself WITH sancov via cargo-fuzz.
+##
+## If Stage 2 fails due to OOM, the pre-built deps from Stage 1 are still
+## used and the binary falls back to the plain --cfg fuzzing build which
+## provides correct crash detection (though without coverage feedback).
+fuzz-build:
+	@echo "==> Stage 1: pre-build deps without sancov (avoids OOM on stellar-xdr)"
+	RUSTFLAGS="--cfg fuzzing" cargo +nightly build \
+	    --manifest-path fuzz/Cargo.toml \
+	    --target x86_64-unknown-linux-gnu \
+	    --release \
+	    --bin $(FUZZ_TARGET)
+	@echo "==> Stage 2: build fuzz binary with sancov coverage"
+	cargo +nightly fuzz build --sanitizer none $(FUZZ_TARGET) || \
+	    echo "WARNING: sancov build failed (OOM?); using plain --cfg fuzzing binary from stage 1"
+
+## Run the apply_for_issue fuzz target locally for FUZZ_SECS seconds.
+## Loads structured seeds from $(CORPUS_DIR) before random mutation.
+##
+##   make fuzz-apply            # 60 s default
+##   make fuzz-apply FUZZ_SECS=300
+fuzz-apply: fuzz-build
+	mkdir -p $(ARTIFACTS_DIR)
+	cargo +nightly fuzz run --sanitizer none $(FUZZ_TARGET) $(CORPUS_DIR) \
+		-- -max_total_time=$(FUZZ_SECS) \
+		   -print_final_stats=1 \
+		   -artifact_prefix=$(ARTIFACTS_DIR)/ \
+	|| target/x86_64-unknown-linux-gnu/release/$(FUZZ_TARGET) \
+		   $(CORPUS_DIR) \
+		   -max_total_time=$(FUZZ_SECS) \
+		   -print_final_stats=1 \
+		   -artifact_prefix=$(ARTIFACTS_DIR)/
+
+## CI budget: 600 s — matches the nightly GitHub Actions schedule.
+## Called by .github/workflows/contract-pipeline.yml fuzz job.
+fuzz-ci:
+	mkdir -p $(ARTIFACTS_DIR)
+	RUSTFLAGS="--cfg fuzzing" cargo +nightly build \
+	    --manifest-path fuzz/Cargo.toml \
+	    --target x86_64-unknown-linux-gnu \
+	    --release \
+	    --bin $(FUZZ_TARGET)
+	target/x86_64-unknown-linux-gnu/release/$(FUZZ_TARGET) \
+		$(CORPUS_DIR) \
+		-max_total_time=$(FUZZ_CI_SECS) \
+		-print_final_stats=1 \
+		-artifact_prefix=$(ARTIFACTS_DIR)/
+
+# ---------------------------------------------------------------------------
+# Clean
+# ---------------------------------------------------------------------------
+
+clean:
+	cargo clean
+	rm -rf fuzz/artifacts/
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
 help:
-	@grep -E '^## ' Makefile | sed 's/^## //'
+	@echo ""
+	@echo "WorkloadGovernor Makefile targets"
+	@echo "----------------------------------"
+	@echo "  all          Build + test (default)"
+	@echo "  build        cargo build --features testutils"
+	@echo "  build-wasm   cargo build --target wasm32v1-none --release"
+	@echo "  test         cargo test --features testutils"
+	@echo "  fuzz-list    List registered fuzz targets"
+	@echo "  fuzz-build   Build the fuzz harness (two-stage, memory-safe)"
+	@echo "  fuzz-apply   Fuzz apply_for_issue for FUZZ_SECS=$(FUZZ_SECS) seconds"
+	@echo "  fuzz-ci      Fuzz apply_for_issue for FUZZ_CI_SECS=$(FUZZ_CI_SECS) seconds (CI budget)"
+	@echo "  clean        Remove build artifacts and fuzz crash files"
+	@echo ""
+	@echo "Override fuzzing duration:  make fuzz-apply FUZZ_SECS=300"

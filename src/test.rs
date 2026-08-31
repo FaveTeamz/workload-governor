@@ -1633,16 +1633,23 @@ mod error_cases {
     }
 
     /// Error 4 — `UnauthorizedMaintainer`: unregistered address tries to assign an issue.
+    ///
+    /// The org must exist (have a registered maintainer) so that the OrgNotFound guard
+    /// passes and the UnauthorizedMaintainer guard fires for `stranger`.
     #[test]
     fn err_4_unauthorized_maintainer() {
         let (client, env) = setup();
         let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
         let stranger = Address::generate(env);
         let contributor = Address::generate(env);
         let o = org(env, "x");
 
         client.initialize(&admin);
+        // Register a real maintainer so the org sentinel is written
+        client.register_maintainer(&admin, &maintainer, &o);
         client.apply_for_issue(&contributor, &o, &1u32);
+        // stranger is not the registered maintainer — expect UnauthorizedMaintainer (4)
         let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32);
         assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
@@ -1651,16 +1658,20 @@ mod error_cases {
     fn err_4_unauthorized_maintainer_cross_org() {
         let (client, env) = setup();
         let admin = Address::generate(env);
-        let maintainer = Address::generate(env);
+        let maintainer_a = Address::generate(env);
+        let maintainer_b = Address::generate(env);
         let contributor = Address::generate(env);
         let org_a = org(env, "org-a");
         let org_b = org(env, "org-b");
 
         client.initialize(&admin);
-        client.register_maintainer(&admin, &maintainer, &org_a);
+        // Register separate maintainers for each org so both orgs exist
+        client.register_maintainer(&admin, &maintainer_a, &org_a);
+        client.register_maintainer(&admin, &maintainer_b, &org_b);
         client.apply_for_issue(&contributor, &org_b, &1u32);
 
-        let result = client.try_assign_issue(&maintainer, &contributor, &org_b, &1u32);
+        // maintainer_a is registered for org_a, not org_b — expect UnauthorizedMaintainer (4)
+        let result = client.try_assign_issue(&maintainer_a, &contributor, &org_b, &1u32);
         assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
 
@@ -1797,6 +1808,145 @@ mod error_cases {
 
         let result = client.try_assign_issue(&maintainer, &contributor, &o, &1u32);
         assert_eq!(result, Err(Ok(ce(ContractError::AlreadyAssigned))));
+    }
+
+    // -----------------------------------------------------------------------
+    // Error 12 — OrgNotFound
+    //
+    // These tests verify the ordering guarantee: unknown org_id → OrgNotFound (12),
+    // not UnauthorizedMaintainer (4). The error_cases below cover every maintainer-
+    // gated function that performs the org check.
+    // -----------------------------------------------------------------------
+
+    /// assign_issue on an org that was never registered → OrgNotFound (not UnauthorizedMaintainer).
+    #[test]
+    fn err_12_org_not_found_assign_issue() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        // "ghost" is a Symbol that was never passed to register_maintainer
+        let ghost = org(env, "ghost");
+
+        client.initialize(&admin);
+        client.apply_for_issue(&contributor, &ghost, &1u32);
+
+        let result = client.try_assign_issue(&stranger, &contributor, &ghost, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::OrgNotFound))));
+    }
+
+    /// An existing org with a registered maintainer: a *different* caller gets
+    /// UnauthorizedMaintainer (4), not OrgNotFound (12).
+    #[test]
+    fn err_4_not_12_when_org_exists_but_caller_unregistered_assign_issue() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "known");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+        client.apply_for_issue(&contributor, &o, &1u32);
+
+        // stranger is not registered for "known", but the org does exist
+        let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    /// complete_assignment on an org that was never registered → OrgNotFound.
+    #[test]
+    fn err_12_org_not_found_complete_assignment() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let ghost = org(env, "ghost2");
+
+        client.initialize(&admin);
+
+        let result = client.try_complete_assignment(&stranger, &contributor, &ghost, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::OrgNotFound))));
+    }
+
+    /// complete_assignment on a known org by an unregistered caller → UnauthorizedMaintainer.
+    #[test]
+    fn err_4_not_12_when_org_exists_but_caller_unregistered_complete_assignment() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "known2");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+
+        let result = client.try_complete_assignment(&stranger, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    /// revoke_assignment on an org that was never registered → OrgNotFound.
+    #[test]
+    fn err_12_org_not_found_revoke_assignment() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let ghost = org(env, "ghost3");
+
+        client.initialize(&admin);
+
+        let result = client.try_revoke_assignment(&stranger, &contributor, &ghost, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::OrgNotFound))));
+    }
+
+    /// revoke_assignment on a known org by an unregistered caller → UnauthorizedMaintainer.
+    #[test]
+    fn err_4_not_12_when_org_exists_but_caller_unregistered_revoke_assignment() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let stranger = Address::generate(env);
+        let contributor = Address::generate(env);
+        let o = org(env, "known3");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+
+        let result = client.try_revoke_assignment(&stranger, &contributor, &o, &1u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
+    }
+
+    /// set_org_cap on an org that was never registered → OrgNotFound.
+    #[test]
+    fn err_12_org_not_found_set_org_cap() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let stranger = Address::generate(env);
+        let ghost = org(env, "ghost4");
+
+        client.initialize(&admin);
+
+        let result = client.try_set_org_cap(&stranger, &ghost, &5u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::OrgNotFound))));
+    }
+
+    /// set_org_cap on a known org by an unregistered caller → UnauthorizedMaintainer.
+    #[test]
+    fn err_4_not_12_when_org_exists_but_caller_unregistered_set_org_cap() {
+        let (client, env) = setup();
+        let admin = Address::generate(env);
+        let maintainer = Address::generate(env);
+        let stranger = Address::generate(env);
+        let o = org(env, "known4");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &o);
+
+        let result = client.try_set_org_cap(&stranger, &o, &5u32);
+        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
     }
 }
 
@@ -2710,7 +2860,11 @@ fn unit_check_consistency_large_batch_one_inconsistent() {
     let org = t.org("cc_mix");
 
     t.client.initialize(&admin);
-    t.client.register_maintainer(&admin, &maintainer, &org);
+    // Register no maintainer; the org "noauthr" was never initialized
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    // Must panic with OrgNotFound (code 12) — org was never registered
+    t.client.assign_issue(&stranger, &contributor, &org, &1u32);
+}
 
     let batch_size: u32 = 99;
 

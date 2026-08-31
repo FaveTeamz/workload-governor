@@ -54,11 +54,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
-| 12 | `CapOutOfRange` | `emergency_set_global_cap` called with `new_cap > 100` |
-| 13 | `CounterInconsistency` | Internal counter/sentinel mismatch (debug builds only) |
-| 14 | `InvalidOrgCap` | `set_org_cap` called with `new_cap` outside `[1, 20]` |
-| 15 | `NoPendingAdminTransfer` | `accept_admin` called with no active proposal |
-| 16 | `PendingAdminTransferExists` | Reserved for future use |
+| 12 | `OrgNotFound` | `org_id` was never registered via `register_maintainer` |
 | 17 | `MaintainerNotFound` | Maintainer not registered for the org (returned by `deregister_maintainer`) |
 
 ## Storage Design

@@ -58,9 +58,27 @@ pub enum ContractError {
     /// Discriminant: `11`.
     AlreadyAssigned = 11,
 
-    /// The org assignment cap value is out of the valid range [1, 20].
+    /// The referenced `org_id` has no registered maintainers and has never been
+    /// initialised via `register_maintainer` or `set_org_cap`. Raised by maintainer
+    /// functions before the `UnauthorizedMaintainer` check so callers can distinguish
+    /// "org doesn't exist" from "you're not authorised for this org".
     /// Discriminant: `12`.
-    CapOutOfRange = 12,
+    OrgNotFound = 12,
+
+    /// Detected a mismatch between the org assignment counter and the actual
+    /// set of assignment sentinels. Indicates storage corruption or a failed migration.
+    /// Discriminant: `13`.
+    CounterInconsistency = 13,
+
+    /// The requested global cap value is outside the permitted range `[0, 100]`.
+    /// Returned by `emergency_set_global_cap` and `set_global_cap` when `new_cap > 100`.
+    /// Discriminant: `14`.
+    CapOutOfRange = 14,
+
+    /// The org assignment cap supplied to `set_org_cap` is outside the permitted range
+    /// `[ORG_CAP_MIN, ORG_CAP_MAX]`.
+    /// Discriminant: `15`.
+    InvalidOrgCap = 15,
 
     /// Detected a mismatch between the org assignment counter and the actual
     /// assignment sentinel entries (storage corruption guard).
