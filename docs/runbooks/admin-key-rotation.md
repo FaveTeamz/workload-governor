@@ -1,26 +1,49 @@
 # Runbook: Admin Key Rotation
 
 Transfers admin authority from the current keypair to a new one using the
-`transfer_admin` contract function. **Both** the current and new admin must
-countersign the transaction.
+two-step `propose_admin` / `accept_admin` contract functions.
 
-Estimated time: 15–30 minutes for a prepared operator. The old admin key
-loses all privileges atomically in a single on-chain transaction.
+- **Step 1 (`propose_admin`)**: the current admin nominates a new admin address
+  and signs the transaction. The proposal is stored on-chain; the current admin
+  retains all privileges until Step 2 is complete.
+- **Step 2 (`accept_admin`)**: the new admin signs a separate transaction to
+  accept the proposal. On confirmation, the old admin loses all on-chain authority
+  atomically.
+
+Estimated time: 20–40 minutes for a prepared operator. The two-step design
+eliminates the race window of single-step rotation: the old key remains active
+until the new key explicitly proves ownership.
 
 ---
 
 ## Background
 
-The `transfer_admin` function (added in contract v0.2.0) atomically replaces
-the stored admin address. Its security properties are:
+The `propose_admin` / `accept_admin` functions (added in contract v0.3.0) implement
+a secure two-step admin transfer. Their security properties are:
 
-- **Dual authorisation**: both `current_admin` and `new_admin` must sign. A
-  compromised old key alone cannot transfer to an attacker address, and a
-  stolen new key alone cannot claim authority.
-- **Immediate effect**: on-chain confirmation makes the new admin active in the
-  next ledger. No cooldown or time-lock.
-- **Event emitted**: `AdminTransferred { old_admin, new_admin }` is published
-  so off-chain monitors can detect unexpected rotations.
+- **Dual authorisation**: the current admin must sign `propose_admin`; the new
+  admin must sign `accept_admin`. A compromised old key alone cannot complete a
+  transfer to an attacker address (Step 2 still requires the new key), and a
+  stolen new key alone cannot claim authority without a prior `propose_admin` from
+  the current admin.
+- **Old admin stays active**: the current admin retains full authority between
+  Steps 1 and 2, including the ability to overwrite the proposal by calling
+  `propose_admin` again with a corrected address.
+- **Atomic completion**: on-chain confirmation of `accept_admin` makes the new
+  admin active in the same ledger. There is no cooldown or time-lock.
+- **Events emitted**:
+  - `AdminTransferProposed { current_admin, new_admin }` on `propose_admin`
+  - `AdminTransferred { old_admin, new_admin }` on `accept_admin`
+
+---
+
+## Error Codes
+
+| Code | Variant | When raised |
+|------|---------|-------------|
+| 2 | `NotInitialized` | Called before `initialize` |
+| 3 | `UnauthorizedAdmin` | Wrong caller on `propose_admin`, or `new_admin` mismatch on `accept_admin` |
+| 15 | `NoPendingAdminTransfer` | `accept_admin` called with no active proposal |
 
 ---
 
@@ -70,7 +93,15 @@ stellar account show "$NEW_ADMIN_ADDRESS" --network "$NETWORK"
 # Expected: account exists with non-zero XLM balance
 ```
 
-### 3. Check for in-flight transactions
+### 3. Check for an existing pending proposal
+
+```bash
+# If a previous rotation attempt left a pending proposal, investigate before
+# proceeding. The pending admin key is stored at storage key "p_admin".
+# A new propose_admin call will overwrite any existing proposal.
+```
+
+### 4. Check for in-flight transactions
 
 Review recent activity on the contract and both accounts before proceeding.
 
@@ -103,52 +134,63 @@ curl "https://friendbot.stellar.org/?addr=$NEW_ADMIN_ADDRESS"
 # Mainnet: transfer a small XLM balance to cover fees (minimum 1 XLM)
 ```
 
-### Step 2 — Execute `transfer_admin` (dual-signature)
-
-The Stellar CLI signs with `--source`. Because both the old and new admin must
-authorise, use `--auth-with-source-account` for the second signer or prepare a
-pre-authorised envelope.
-
-**Option A — Sequential signing with `stellar tx`** (recommended for production):
-
-```bash
-# Build the transaction unsigned
-stellar tx new invoke \
-  --id "$CONTRACT_ID" \
-  --network "$NETWORK" \
-  -- transfer_admin \
-  --current_admin "$OLD_ADMIN_ADDRESS" \
-  --new_admin "$NEW_ADMIN_ADDRESS" \
-  | stellar tx sign --sign-with-key "$OLD_ADMIN_KEY" \
-  | stellar tx sign --sign-with-key "$NEW_ADMIN_KEY" \
-  | stellar tx send
-# Expected: transaction hash + null return value
-```
-
-**Option B — Single invocation (testnet / when both keys are on same machine)**:
+### Step 2 — Propose the transfer (current admin signs)
 
 ```bash
 stellar contract invoke \
   --id "$CONTRACT_ID" \
   --network "$NETWORK" \
   --source "$OLD_ADMIN_KEY" \
-  -- transfer_admin \
+  -- propose_admin \
   --current_admin "$OLD_ADMIN_ADDRESS" \
   --new_admin "$NEW_ADMIN_ADDRESS"
-# Both accounts are mocked in simulation; on mainnet use Option A.
+# Expected: null
+# Event emitted: AdminTransferProposed { current_admin, new_admin }
 ```
 
-> **Note:** In the Stellar CLI, `--source` signs as the fee-payer and also
-> provides the first signature. When invoking `transfer_admin`, the contract's
-> `new_admin.require_auth()` call will be satisfied by the CLI's auth simulation
-> if both addresses are available locally, or by a pre-authorised entry in the
-> transaction envelope. Use Option A for production to get an explicit second
-> signature from the incoming admin.
+Record the transaction hash. The proposal is now stored on-chain. The current
+admin retains all privileges.
 
-### Step 3 — Verify the new admin is active
+> **Note:** If you provided the wrong `new_admin` address, call `propose_admin`
+> again with the correct address. The previous proposal will be overwritten.
+
+### Step 3 — Verify the proposal is recorded
 
 ```bash
-# New admin registers a test maintainer (idempotent, safe to call)
+# Confirm the pending admin is stored by attempting an accept with a dummy address.
+# This should fail with NoPendingAdminTransfer (error 15) if no proposal exists,
+# or with UnauthorizedAdmin (error 3) if the proposal is present but the address
+# does not match — confirming the proposal was written.
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network "$NETWORK" \
+  -- accept_admin \
+  --new_admin "GDUMMYADDRESS000000000000000000000000000000000000000000000" 2>&1 || true
+# Expected: Error(Contract, #3) UnauthorizedAdmin  ← proposal exists
+# If you see: Error(Contract, #15) NoPendingAdminTransfer ← proposal missing, re-run Step 2
+```
+
+### Step 4 — Accept the transfer (new admin signs)
+
+This step must be performed by the operator holding the **new** admin key.
+
+```bash
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network "$NETWORK" \
+  --source "$NEW_ADMIN_KEY" \
+  -- accept_admin \
+  --new_admin "$NEW_ADMIN_ADDRESS"
+# Expected: null
+# Event emitted: AdminTransferred { old_admin, new_admin }
+```
+
+The new admin is now active. The old admin has no on-chain authority from this
+ledger forward.
+
+### Step 5 — Verify the new admin is active
+
+```bash
 stellar contract invoke \
   --id "$CONTRACT_ID" \
   --network "$NETWORK" \
@@ -160,7 +202,7 @@ stellar contract invoke \
 # Expected: null
 ```
 
-### Step 4 — Confirm the old admin is rejected
+### Step 6 — Confirm the old admin is rejected
 
 ```bash
 stellar contract invoke \
@@ -175,16 +217,16 @@ stellar contract invoke \
 # This error is CORRECT and confirms the rotation succeeded.
 ```
 
-### Step 5 — Rotate the secret in the secrets manager
+### Step 7 — Rotate the secret in the secrets manager
 
-Immediately after on-chain confirmation:
+Immediately after on-chain confirmation of Step 4:
 
 1. Store the new admin secret in your vault / AWS Secrets Manager.
 2. Revoke access to the old admin secret for all principals.
 3. Delete or archive the old admin secret (do not leave it accessible).
 4. Update any CI/CD pipelines that reference `CI_ADMIN_SECRET`.
 
-### Step 6 — Update the `.github/workflows/contract-ci.yml` secret reference
+### Step 8 — Update the `.github/workflows/contract-ci.yml` secret reference
 
 If the CI pipeline uses the admin key for testnet smoke tests:
 
@@ -201,6 +243,7 @@ After completing all steps, confirm:
 - [ ] `register_maintainer` succeeds with the new admin key.
 - [ ] `register_maintainer` fails with `UnauthorizedAdmin` using the old admin key.
 - [ ] `AdminTransferred` event is visible in the transaction explorer.
+- [ ] `AdminTransferProposed` event from Step 2 is also visible.
 - [ ] Old admin secret has been revoked in the secrets manager.
 - [ ] CI pipeline passes with the updated secret.
 - [ ] Change-management record is updated and closed.
@@ -209,16 +252,24 @@ After completing all steps, confirm:
 
 ## Rollback
 
-`transfer_admin` is **irreversible in itself** — once committed, the old admin
-has no on-chain authority. Rollback options:
+The two-step design provides a narrow recovery window:
 
-1. **If Step 2 failed before submission**: no on-chain change occurred. Retry
-   with the corrected parameters.
-2. **If the new admin key is lost immediately after transfer**: call
-   `transfer_admin` again from the new admin key to a recovery key (if you
-   hold the new admin key even briefly). This is why generating and securing
-   the new keypair before starting is a prerequisite.
-3. **No other rollback path exists without the new admin key.**
+1. **If Step 2 (`propose_admin`) failed before submission**: no on-chain change
+   occurred. Retry with the corrected parameters.
+2. **If Step 2 succeeded but Step 4 (`accept_admin`) has not been called yet**:
+   the old admin is still active. You can overwrite the proposal by calling
+   `propose_admin` again with a different `new_admin` address. This invalidates
+   the previous proposal.
+3. **If Step 4 succeeded**: the old admin has no authority. Rollback options:
+   - Call `propose_admin` from the **new** admin, then `accept_admin` from the
+     old admin keypair to reverse the transfer — but only if you still hold the
+     old admin private key.
+   - If the new admin key is lost immediately after Step 4, there is no on-chain
+     rollback path without the new admin key.
+
+> **Recovery tip**: Always generate and secure the new keypair _before_ starting
+> Step 2. Keeping the old keypair accessible until Step 4 is confirmed gives you
+> the overwrite option if anything goes wrong between Steps 2 and 4.
 
 ---
 
@@ -269,8 +320,9 @@ multiple parties. No single party ever holds the full key.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Error(Contract, #3) UnauthorizedAdmin` on `transfer_admin` | Old admin key not signing | Pass `--source "$OLD_ADMIN_KEY"` and confirm the address matches the stored admin |
+| `Error(Contract, #3) UnauthorizedAdmin` on `propose_admin` | Old admin key not signing | Pass `--source "$OLD_ADMIN_KEY"` and confirm the address matches the stored admin |
+| `Error(Contract, #3) UnauthorizedAdmin` on `accept_admin` | `--new_admin` does not match the pending proposal | Check the address used in `propose_admin`; re-run `propose_admin` if needed |
+| `Error(Contract, #15) NoPendingAdminTransfer` | `accept_admin` called before `propose_admin` | Run Step 2 (`propose_admin`) first |
 | `Error(Contract, #2) NotInitialized` | Contract was not initialised | Run `initialize` first |
-| `HostError: auth` or auth simulation failure on new admin | New admin did not countersign | Use Option A (explicit dual signing with `stellar tx sign`) |
 | `transaction failed: insufficient balance` | New admin account not funded | Fund the new account with Friendbot (testnet) or XLM transfer (mainnet) before proceeding |
-| Old admin still passes auth after Step 2 | Step 2 transaction is still pending / not confirmed | Wait for ledger confirmation, then re-run Step 4 |
+| Old admin still passes auth after Step 4 | Step 4 transaction is still pending / not confirmed | Wait for ledger confirmation, then re-run Step 6 |

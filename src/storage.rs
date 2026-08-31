@@ -75,6 +75,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
+/// Minimum allowed per-org assignment cap (via `set_org_cap`).
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum allowed per-org assignment cap (via `set_org_cap`).
+pub const ORG_CAP_MAX: u32 = 20;
+
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
 // ---------------------------------------------------------------------------
@@ -231,27 +237,6 @@ pub(crate) fn extend_app_entry_ttl(
     env.storage()
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
-}
-
-// ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,4 +422,37 @@ pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> u32 {
 pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Pending Admin Transfer
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("p_admin")`
+// Value: `Address`
+//
+// Stores the proposed new admin address set by `propose_admin`. Cleared on
+// `accept_admin` (transfer complete) or by a subsequent `propose_admin` call
+// from the current admin.
+
+fn pending_admin_key() -> Symbol {
+    symbol_short!("p_admin")
+}
+
+/// Returns the pending admin address if a transfer has been proposed, or `None`.
+pub(crate) fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().persistent().get(&pending_admin_key())
+}
+
+/// Stores the proposed new admin address.
+pub(crate) fn set_pending_admin(env: &Env, new_admin: &Address) {
+    env.storage()
+        .persistent()
+        .set(&pending_admin_key(), new_admin);
+}
+
+/// Removes the pending admin entry (called after `accept_admin` completes or
+/// if the proposal is superseded).
+pub(crate) fn remove_pending_admin(env: &Env) {
+    env.storage().persistent().remove(&pending_admin_key());
 }

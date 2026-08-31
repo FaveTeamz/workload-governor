@@ -39,7 +39,7 @@ grep "^BENCH" benchmarks.txt
 | `complete_assignment` | ~1,800 | ~1,200 | 4 | 3 | Removes persistent assignment + counter |
 | `revoke_assignment` | ~1,800 | ~1,200 | 4 | 3 | Identical cost to `complete_assignment` |
 | `extend_application_ttl` | ~1,500 | ~1,000 | 2 | 0 | TTL-only updates; no value writes |
-| `transfer_admin` | ~1,200 | ~800 | 1 | 2 | 1 persistent write + instance bump |
+| `propose_admin` + `accept_admin` | ~2,400 | ~1,600 | 2 | 4 | propose: 1 pending write; accept: admin overwrite + remove pending + instance bump |
 | `get_global_application_count` | ~400 | ~200 | 1 | 0 | Single temp read |
 | `get_org_assignment_count` | ~400 | ~200 | 1 | 0 | Single persistent read |
 | `has_applied` | ~400 | ~200 | 1 | 0 | Single temp read |
@@ -61,7 +61,7 @@ The test `bench_<function>` **panics and fails CI** if either dimension exceeds 
 | `complete_assignment` | 500,000 | 200,000 |
 | `revoke_assignment` | 500,000 | 200,000 |
 | `extend_application_ttl` | 400,000 | 150,000 |
-| `transfer_admin` | 400,000 | 150,000 |
+| `transfer_admin` | 800,000 | 300,000 |
 
 All thresholds are ≤ 0.6% of the 100,000,000 CPU instruction per-transaction limit.
 
@@ -92,7 +92,8 @@ each function:
 | `complete_assignment` | admin(P), maintainer(P), asgn(P), o_asgn(P) | asgn(P), o_asgn(P), instance(I) | P, I |
 | `revoke_assignment` | admin(P), maintainer(P), asgn(P), o_asgn(P) | asgn(P), o_asgn(P), instance(I) | P, I |
 | `extend_application_ttl` | app_entry(T), g_apps(T) | TTL only — no value write | T |
-| `transfer_admin` | admin(P) | admin(P), instance(I) | P, I |
+| `propose_admin` | admin(P) | p_admin(P), instance(I) | P, I |
+| `accept_admin` | admin(P), p_admin(P) | admin(P), p_admin(P), instance(I) | P, I |
 | `get_global_application_count` | g_apps(T) | — | T |
 | `get_org_assignment_count` | o_asgn(P) | — | P |
 | `has_applied` | app_entry(T) | — | T |

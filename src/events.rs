@@ -154,6 +154,21 @@ pub(crate) fn emit_admin_transferred(
     );
 }
 
+/// Emitted by `propose_admin` when the current admin nominates a new admin.
+///
+/// topics: `(symbol_short!("adm_prop"), current_admin)`
+/// data:   `new_admin`
+pub(crate) fn emit_admin_transfer_proposed(
+    env: &Env,
+    current_admin: &Address,
+    new_admin: &Address,
+) {
+    env.events().publish(
+        (symbol_short!("adm_prop"), current_admin.clone()),
+        new_admin.clone(),
+    );
+}
+
 /// Emitted by `deregister_maintainer`.
 ///
 /// topics: `(symbol_short!("maint_drg"), admin)`
