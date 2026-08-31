@@ -13,19 +13,7 @@ env:
   TASK_DEF_HISTORY_COUNT: 5
 
 jobs:
-  # ── Run DB migrations before deploying new code ──────────────────────────
-  migrate:
-    name: DB migrations (staging)
-    uses: ./.github/workflows/db-migration.yml
-    with:
-      environment: staging
-      image_tag: ${{ github.sha }}
-    secrets:
-      AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-
   deploy:
-    needs: [migrate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,7 +21,7 @@ jobs:
       id-token: write   # OIDC for AWS auth
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Build & push Docker image ────────────────────────────────────────
       - name: Log in to GHCR
@@ -195,7 +183,7 @@ jobs:
       # ── Slack notifications ───────────────────────────────────────────────
       - name: Notify Slack on success
         if: success()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {
@@ -206,7 +194,7 @@ jobs:
 
       - name: Notify Slack on failure / rollback
         if: failure()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {
