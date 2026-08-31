@@ -30,7 +30,7 @@ jobs:
         run: npx vitest run --config vitest.config.ts --coverage
 
       - name: Upload backend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/backend/lcov.info
@@ -62,7 +62,7 @@ jobs:
         run: npx vitest run --config frontend/vitest.config.ts --coverage
 
       - name: Upload frontend coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/frontend/lcov.info
@@ -107,7 +107,7 @@ jobs:
             --output-path coverage/contract/lcov.info
 
       - name: Upload contract coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/contract/lcov.info
