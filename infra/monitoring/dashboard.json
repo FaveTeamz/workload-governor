@@ -1,0 +1,229 @@
+{
+  "widgets": [
+    {
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "# WorkloadGovernor — Operational Dashboard\nRegion: **us-east-1** | Cluster: **workload-governor-production**"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 1,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "ECS CPU Utilisation (%)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["AWS/ECS", "CPUUtilization", "ClusterName", "workload-governor-production", "ServiceName", "workload-governor-production", {"label": "CPU %", "color": "#4a6de0"}]
+        ],
+        "annotations": {
+          "horizontal": [{"label": "Alert threshold", "value": 80, "color": "#ef4444"}]
+        },
+        "yAxis": {"left": {"min": 0, "max": 100}},
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 1,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "ECS Memory Utilisation (%)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["AWS/ECS", "MemoryUtilization", "ClusterName", "workload-governor-production", "ServiceName", "workload-governor-production", {"label": "Memory %", "color": "#6c8eff"}]
+        ],
+        "annotations": {
+          "horizontal": [{"label": "Alert threshold", "value": 85, "color": "#ef4444"}]
+        },
+        "yAxis": {"left": {"min": 0, "max": 100}},
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 1,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "ECS Running Task Count",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", "workload-governor-production", "ServiceName", "workload-governor-production", {"label": "Running Tasks", "color": "#22c55e"}]
+        ],
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 7,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "ALB Request Count",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/workload-governor-production/REPLACE_WITH_ACTUAL_SUFFIX", {"label": "Requests/min", "color": "#4a6de0"}]
+        ],
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 7,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "ALB 5xx Error Count",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "app/workload-governor-production/REPLACE_WITH_ACTUAL_SUFFIX", {"label": "5xx Errors", "color": "#ef4444"}],
+          ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "app/workload-governor-production/REPLACE_WITH_ACTUAL_SUFFIX", {"label": "Target 5xx", "color": "#f59e0b"}]
+        ],
+        "annotations": {
+          "horizontal": [{"label": "Alert threshold", "value": 10, "color": "#ef4444"}]
+        },
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 13,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "RDS Connection Count",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "workload-governor-production", {"label": "Connections", "color": "#818cf8"}]
+        ],
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 13,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "RDS Read Latency (ms)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["AWS/RDS", "ReadLatency", "DBInstanceIdentifier", "workload-governor-production", {"label": "Read Latency", "color": "#22c55e"}]
+        ],
+        "yAxis": {"left": {"min": 0}},
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 13,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "RDS Write Latency (ms)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["AWS/RDS", "WriteLatency", "DBInstanceIdentifier", "workload-governor-production", {"label": "Write Latency", "color": "#f59e0b"}]
+        ],
+        "yAxis": {"left": {"min": 0}},
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 19,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Contract Submissions (Application Metrics)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Sum",
+        "metrics": [
+          ["WorkloadGovernor", "ContractSubmissions", "Network", "testnet", {"label": "Testnet Submissions", "color": "#4a6de0"}],
+          ["WorkloadGovernor", "ContractSubmissions", "Network", "mainnet", {"label": "Mainnet Submissions", "color": "#22c55e"}]
+        ],
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 19,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Contract Errors (Application Metrics)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Sum",
+        "metrics": [
+          ["WorkloadGovernor", "ContractErrors", "ErrorCode", "GlobalCapReached", {"label": "Global Cap Reached", "color": "#ef4444"}],
+          ["WorkloadGovernor", "ContractErrors", "ErrorCode", "OrgCapReached", {"label": "Org Cap Reached", "color": "#f59e0b"}],
+          ["WorkloadGovernor", "ContractErrors", "ErrorCode", "UnauthorizedAdmin", {"label": "Unauthorized Admin", "color": "#b91c1c"}]
+        ],
+        "region": "us-east-1"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 25,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "title": "WAF Blocked Requests",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/WAFV2", "BlockedRequests", "WebACL", "workload-governor-waf", "Region", "us-east-1", "Rule", "ALL", {"label": "WAF Blocked Requests", "color": "#ef4444"}]
+        ],
+        "region": "us-east-1"
+      }
+    }
+  ]
+}
