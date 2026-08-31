@@ -354,6 +354,50 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /contributors/{address}/activity:
+    get:
+      operationId: getContributorActivity
+      tags: [contributors]
+      summary: Get contributor activity heatmap data
+      description: >
+        Returns daily counts of applications, assignments, completions, and withdrawals
+        grouped by week for a contributor over a configurable time period (30d, 90d, 365d).
+        Cached in Redis for 1 hour.
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Contributor Stellar address
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [30d, 90d, 365d]
+            default: 90d
+          description: Time period for activity history (30d, 90d, or 365d)
+      responses:
+        '200':
+          description: Contributor activity heatmap data
+          headers:
+            X-Cache:
+              description: HIT when served from Redis cache, MISS otherwise
+              schema:
+                type: string
+                enum: [HIT, MISS]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributorActivityResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -570,55 +614,68 @@ components:
           additionalProperties:
             type: integer
 
-    BulkRegisterIssuesRequest:
+    DailyActivity:
       type: object
-      required: [issue_ids]
+      required: [date, applications, assignments, completions, withdrawals, total]
       properties:
-        issue_ids:
-          type: array
-          items:
-            type: integer
-          minItems: 1
-          maxItems: 100
-          description: Array of issue IDs to register (1-100 items)
-          example: [1, 2, 3, 42, 99]
-
-    BulkRegistrationFailure:
-      type: object
-      required: [issueId, error]
-      properties:
-        issueId:
-          type: integer
-          description: Issue ID that failed to register
-          example: 42
-        error:
+        date:
           type: string
-          description: Error message explaining why registration failed
-          example: Issue already registered
-
-    BulkRegistrationReport:
-      type: object
-      required: [succeeded, failed, total, timestamp]
-      properties:
-        succeeded:
-          type: array
-          items:
-            type: integer
-          description: Array of successfully registered issue IDs
-          example: [1, 2, 3]
-        failed:
-          type: array
-          items:
-            $ref: '#/components/schemas/BulkRegistrationFailure'
-          description: Array of issues that failed to register with error details
+          format: date
+          example: '2026-06-01'
+        applications:
+          type: integer
+          example: 1
+        assignments:
+          type: integer
+          example: 0
+        completions:
+          type: integer
+          example: 0
+        withdrawals:
+          type: integer
+          example: 0
         total:
           type: integer
-          description: Total number of issues in the request
-          example: 5
-        timestamp:
+          example: 1
+
+    WeekActivity:
+      type: object
+      required: [week_start, days, total]
+      properties:
+        week_start:
           type: string
-          format: date-time
-          description: Time when the bulk registration was processed
+          format: date
+          example: '2026-06-01'
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyActivity'
+        total:
+          type: integer
+          example: 3
+
+    ContributorActivityResponse:
+      type: object
+      required: [address, period, total_activities, days, weeks]
+      properties:
+        address:
+          type: string
+          example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+        period:
+          type: string
+          enum: [30d, 90d, 365d]
+          example: 90d
+        total_activities:
+          type: integer
+          example: 12
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyActivity'
+        weeks:
+          type: array
+          items:
+            $ref: '#/components/schemas/WeekActivity'
 
     Error:
       type: object
