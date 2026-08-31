@@ -9,7 +9,8 @@ resource "aws_s3_bucket" "frontend" {
   bucket = local.name
 
   tags = {
-    purpose = "frontend-cdn"
+    Name    = local.name
+    Purpose = "frontend-cdn"
   }
 }
 
@@ -209,6 +210,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   tags = {
-    purpose = "frontend-cdn"
+    Name    = "${var.project} ${var.environment} frontend CDN"
+    Purpose = "frontend-cdn"
   }
 }

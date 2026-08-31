@@ -2,6 +2,8 @@
 
 A quick-start reference for contributors new to Stellar, Soroban, and Freighter.
 
+> For definitions of project-specific terms (footprint, TTL, invocation, WASM hash, etc.) see the [Glossary](docs/glossary.md#soroban-specific-terms).
+
 ---
 
 ## Stellar Network
@@ -22,10 +24,10 @@ A quick-start reference for contributors new to Stellar, Soroban, and Freighter.
 **Soroban** is Stellar's smart-contract platform, introduced in Protocol 20.
 
 - **WASM** – Contracts are compiled to WebAssembly (`wasm32v1-none` target). The WASM binary is uploaded to the network once and referenced by its hash. This contract is built with `stellar contract build`.
-- **Contract invocations** – Calling a contract function is a Stellar transaction operation (`InvokeContractOp`). Arguments are encoded as XDR `ScVal` types (addresses, symbols, integers, etc.).
+- **Contract invocations** – Calling a contract function is a Stellar transaction operation (`InvokeContractOp`). Arguments are encoded as XDR `ScVal` types (addresses, symbols, integers, etc.). See [Invocation](docs/glossary.md#soroban-specific-terms) in the glossary for details on simulation, footprints, and authorization envelopes.
 - **Resource fees** – Soroban adds a resource fee model on top of the base transaction fee. Resources are metered per invocation: CPU instructions, memory, ledger reads/writes, and event bytes. Unused resource budget is refunded. The `stellar contract invoke` CLI estimates fees automatically.
-- **Storage tiers** – Soroban has three storage tiers:
-  - **Temporary** – Cheap, expires after a configurable TTL (used for application entries and global counts in this contract).
+- **Storage tiers** – Soroban has three storage tiers (see [Temporary vs Persistent Storage](docs/glossary.md#soroban-specific-terms) in the glossary):
+  - **Temporary** – Cheap, expires after a configurable [TTL](docs/glossary.md#soroban-specific-terms) (used for application entries and global counts in this contract).
   - **Persistent** – More expensive, survives ledger archival via TTL extension (used for admin, maintainer, and assignment records).
   - **Instance** – Scoped to the contract instance; renewed with the instance TTL.
 
@@ -58,3 +60,5 @@ A quick-start reference for contributors new to Stellar, Soroban, and Freighter.
 | Horizon API | https://developers.stellar.org/docs/data/horizon |
 | Soroban RPC | https://developers.stellar.org/docs/data/rpc |
 | Testnet friendbot | https://friendbot.stellar.org |
+| WorkloadGovernor glossary | [docs/glossary.md](docs/glossary.md) |
+| Soroban storage design (this project) | [docs/storage-design.md](docs/storage-design.md) |

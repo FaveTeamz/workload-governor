@@ -1,230 +1,149 @@
-# Observability Guide
+# Observability
 
-This document covers the monitoring and observability setup for WorkloadGovernor — including ECS Container Insights, the CloudWatch dashboard, and alert thresholds.
-
----
-
-## Overview
-
-| Component | Tool | Location |
-|-----------|------|----------|
-| Container metrics (CPU, memory, tasks) | ECS Container Insights | `terraform/modules/compute/main.tf` |
-| Unified dashboard | CloudWatch Dashboard | `infra/monitoring/dashboard.tf` |
-| Dashboard JSON export | CloudWatch JSON | `infra/monitoring/dashboard.json` |
-| Application-level alarms | CloudWatch Alarms | `infra/monitoring/dashboard.tf` |
-| Log groups | CloudWatch Logs | `infra/logs_and_alarms.tf` |
+This document describes the distributed tracing setup, X-Ray service map, and operational runbooks for the WorkloadGovernor backend.
 
 ---
 
-## ECS Container Insights
+## Distributed Tracing — AWS X-Ray
 
-Container Insights is enabled on the ECS cluster via the `containerInsights` setting in Terraform:
+The backend uses [AWS X-Ray](https://aws.amazon.com/xray/) to trace every inbound request through all downstream service calls.
 
-```hcl
-resource "aws_ecs_cluster" "this" {
-  name = local.name
-  setting { name = "containerInsights"; value = "enabled" }
-}
+### Architecture
+
+```
+Browser / API client
+        │
+        ▼
+  ALB (trace header injected)
+        │
+        ▼
+  ECS Task — workload-governor-backend
+  ├── Express middleware: opens X-Ray segment per request
+  ├── tracedFetch("horizon-rpc") → Soroban RPC / Horizon
+  ├── tracedFetch("github-api")  → GitHub API
+  ├── tracedDbQuery()            → PostgreSQL (pg subsegment)
+  └── sends UDP segments to xray-daemon sidecar
+              │
+              ▼
+       xray-daemon sidecar (amazon/aws-xray-daemon:3.x)
+              │
+              ▼
+       AWS X-Ray service (PutTraceSegments)
 ```
 
-This enables the following enhanced metrics in the `ECS/ContainerInsights` namespace:
+### What is instrumented
 
-| Metric | Description |
-|--------|-------------|
-| `CPUUtilized` | CPU units consumed by tasks |
-| `MemoryUtilized` | Memory (MiB) consumed by tasks |
-| `RunningTaskCount` | Number of running tasks in the service |
-| `NetworkRxBytes` | Network bytes received |
-| `NetworkTxBytes` | Network bytes transmitted |
-| `StorageReadBytes` | Container storage read bytes |
-| `StorageWriteBytes` | Container storage write bytes |
+| Component | Implementation | Subsegment name |
+|---|---|---|
+| Inbound HTTP requests | `xrayMiddleware()` in `app.ts` | Root segment per request |
+| Horizon RPC calls | `tracedFetch("horizon-rpc", ...)` | `horizon-rpc` |
+| Soroban RPC calls | `tracedFetch("soroban-rpc", ...)` | `soroban-rpc` |
+| GitHub API calls | `tracedFetch("github-api", ...)` | `github-api` |
+| PostgreSQL queries | `tracedDbQuery(pool, sql, ...)` | `postgres` |
 
-Container Insights metrics are available in the CloudWatch console under **Metrics → ECS → ContainerInsights**.
+### SDK configuration
 
----
+`backend/src/tracing.ts` exports:
 
-## CloudWatch Dashboard
+- `xrayMiddleware()` — Express middleware; mount first in `app.ts`.
+- `tracedFetch(name, url, init?)` — drop-in replacement for `fetch` that wraps the call in an X-Ray subsegment.
+- `tracedDbQuery(pool, sql, values?)` — wraps `pg.Pool.query` with a `postgres` subsegment.
 
-The dashboard named **`workload-governor`** provides a unified view of all operational metrics.
+Set `XRAY_ENABLED=false` to disable tracing in local development and unit tests. The helpers become pass-through wrappers with zero overhead when disabled.
 
-### Dashboard widgets
+### Environment variables
 
-| Row | Widget | Metrics |
-|-----|--------|---------|
-| 0 | Title | — |
-| 1 | ECS CPU Utilisation | `AWS/ECS CPUUtilization` |
-| 1 | ECS Memory Utilisation | `AWS/ECS MemoryUtilization` |
-| 1 | ECS Running Task Count | `ECS/ContainerInsights RunningTaskCount` |
-| 2 | ALB Request Count | `AWS/ApplicationELB RequestCount` |
-| 2 | ALB 5xx Error Count | `AWS/ApplicationELB HTTPCode_ELB_5XX_Count` |
-| 3 | RDS Connection Count | `AWS/RDS DatabaseConnections` |
-| 3 | RDS Read Latency | `AWS/RDS ReadLatency` |
-| 3 | RDS Write Latency | `AWS/RDS WriteLatency` |
-| 4 | Contract Submissions | `WorkloadGovernor ContractSubmissions` (custom) |
-| 4 | Contract Errors | `WorkloadGovernor ContractErrors` (custom) |
-| 5 | WAF Blocked Requests | `AWS/WAFV2 BlockedRequests` |
-
-### Viewing the dashboard
-
-1. Open the AWS Console → **CloudWatch → Dashboards**.
-2. Select **workload-governor**.
-
-Or use the direct URL:
-```
-https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=workload-governor
-```
+| Variable | Default | Description |
+|---|---|---|
+| `XRAY_ENABLED` | `true` | Set to `false` to disable tracing |
+| `SERVICE_NAME` | `workload-governor-backend` | Service name shown in the X-Ray service map |
+| `AWS_XRAY_DAEMON_ADDRESS` | `127.0.0.1:2000` | Set automatically by ECS task definition |
 
 ---
 
-## Deploying with Terraform
+## X-Ray Service Map
 
-Apply the monitoring infrastructure from the `infra/monitoring/` directory:
+The service map is available in the [AWS X-Ray console](https://console.aws.amazon.com/xray/home#/service-map).
+
+After deploying and generating traffic:
+
+1. Open the X-Ray console → **Service map**.
+2. You should see nodes for:
+   - `workload-governor-backend` (the ECS service)
+   - `postgres` (RDS database)
+   - `horizon-rpc` (Horizon/Soroban RPC)
+   - `github-api` (GitHub REST API)
+3. Click any edge to see latency percentiles (p50, p95, p99) and error rates.
+
+> **Tip:** Select a 5-minute window during an active deploy to see the baseline latency of a cold-start task.
+
+---
+
+## Runbook: p99 Transaction Latency
+
+Use this CloudWatch Insights query to find the p99 latency for Soroban transaction submission over the last hour.
+
+**Log group:** `/ecs/workload-governor-<environment>`
+
+```
+fields @timestamp, @message
+| filter @message like "TTL extension batch confirmed" or @message like "Transaction"
+| parse @message '"hash":"*"' as hash
+| parse @message '"batchSize":*,' as batchSize
+| stats pct(@duration, 99) as p99_ms,
+        avg(@duration) as avg_ms,
+        count() as request_count
+| sort @timestamp desc
+| limit 100
+```
+
+To run this query:
+
+1. Open [CloudWatch Logs Insights](https://console.aws.amazon.com/cloudwatch/home#logsV2:logs-insights).
+2. Select log group `/ecs/workload-governor-production`.
+3. Set the time range to **Last 1 hour**.
+4. Paste the query above and choose **Run query**.
+
+### Latency SLOs
+
+| Operation | p50 target | p99 target |
+|---|---|---|
+| Soroban transaction submit | < 500 ms | < 5 s |
+| GitHub sync per repo | < 2 s | < 10 s |
+| PostgreSQL query (read) | < 20 ms | < 100 ms |
+| Health check endpoint | < 200 ms | < 500 ms |
+
+### Investigating a latency spike
+
+1. Open the X-Ray service map → identify the slow edge.
+2. Click the edge → **View traces** → sort by **Duration (desc)**.
+3. Open the slowest trace to see which subsegment (DB, Horizon, GitHub) is the bottleneck.
+4. Cross-reference with CloudWatch metrics for the suspected service:
+   - **RDS**: `DatabaseConnections`, `DBLoad`
+   - **Horizon/Soroban RPC**: `soroban_rpc` subsegment duration in X-Ray
+   - **GitHub API**: check rate-limit headers in application logs
+
+---
+
+## Local Development
+
+Tracing is disabled by default when running locally:
 
 ```bash
-cd infra/monitoring
-
-# First time — initialise the backend
-terraform init
-
-# Preview changes
-terraform plan \
-  -var="cluster_name=workload-governor-production" \
-  -var="alb_arn_suffix=app/workload-governor-production/ACTUAL_SUFFIX" \
-  -var="rds_instance_id=workload-governor-production"
-
-# Apply
-terraform apply \
-  -var="cluster_name=workload-governor-production" \
-  -var="alb_arn_suffix=app/workload-governor-production/ACTUAL_SUFFIX" \
-  -var="rds_instance_id=workload-governor-production"
+# .env (local)
+XRAY_ENABLED=false
 ```
 
-**Finding the ALB ARN suffix:** Run the following and copy the `LoadBalancerArn` suffix (the part after `loadbalancer/`):
+To test tracing locally with a real daemon:
 
 ```bash
-aws elbv2 describe-load-balancers \
-  --query "LoadBalancers[?contains(LoadBalancerName,'workload-governor')].[LoadBalancerName,LoadBalancerArn]" \
-  --output table
+# Pull and run the X-Ray daemon in a container
+docker run --rm -p 2000:2000/udp \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  amazon/aws-xray-daemon:3.x -o   # -o = local mode (no EC2 metadata required)
+
+# Then start the backend with tracing enabled
+XRAY_ENABLED=true AWS_XRAY_DAEMON_ADDRESS=127.0.0.1:2000 npm run dev
 ```
 
----
-
-## Importing the Dashboard in a New Environment
-
-Use the exported `infra/monitoring/dashboard.json` to create the dashboard without Terraform (e.g. in a new AWS account or a staging environment):
-
-### AWS CLI
-
-```bash
-# Replace us-east-1 with your target region
-aws cloudwatch put-dashboard \
-  --dashboard-name workload-governor \
-  --dashboard-body file://infra/monitoring/dashboard.json \
-  --region us-east-1
-```
-
-### Customising for a new environment
-
-Before importing, update the placeholder values in `dashboard.json`:
-
-| Placeholder | Replace with |
-|-------------|-------------|
-| `workload-governor-production` (ClusterName/ServiceName) | Your cluster/service name |
-| `app/workload-governor-production/REPLACE_WITH_ACTUAL_SUFFIX` | Your ALB ARN suffix |
-| `workload-governor-production` (DBInstanceIdentifier) | Your RDS instance ID |
-| `workload-governor-waf` | Your WAF ACL name |
-| `us-east-1` | Your AWS region |
-
-Use `sed` or `jq` for bulk replacement:
-
-```bash
-sed 's/workload-governor-production/workload-governor-staging/g' \
-  infra/monitoring/dashboard.json > /tmp/dashboard-staging.json
-
-aws cloudwatch put-dashboard \
-  --dashboard-name workload-governor-staging \
-  --dashboard-body file:///tmp/dashboard-staging.json \
-  --region us-east-1
-```
-
----
-
-## Alert Thresholds
-
-| Alarm | Threshold | Window | Action |
-|-------|-----------|--------|--------|
-| ECS CPU High | > 80% | 3 of 3 minutes | SNS → PagerDuty / Slack |
-| ECS Memory High | > 85% | 3 of 3 minutes | SNS → PagerDuty / Slack |
-| ALB 5xx High | > 10 errors/min | 2 of 2 minutes | SNS → PagerDuty / Slack |
-| ECS No Tasks | < 1 running task | 2 of 2 minutes | SNS → PagerDuty / Slack (breaching) |
-
-### Customising thresholds
-
-Thresholds are defined as Terraform variables in `infra/monitoring/dashboard.tf`. To override:
-
-```bash
-terraform apply \
-  -var="cluster_name=workload-governor-production" \
-  # ... other vars
-```
-
-Or add a `terraform.tfvars` file:
-
-```hcl
-cluster_name    = "workload-governor-production"
-rds_instance_id = "workload-governor-production"
-sns_alarm_arn   = "arn:aws:sns:us-east-1:123456789012:workload-governor-alerts"
-```
-
-### Connecting alarms to Slack
-
-1. Create an SNS topic and subscribe your Slack webhook (via AWS Chatbot or a Lambda forwarder).
-2. Set the `sns_alarm_arn` variable to the SNS topic ARN.
-3. Re-apply Terraform.
-
----
-
-## Application-Level Prometheus Metrics
-
-The backend emits custom CloudWatch metrics under the `WorkloadGovernor` namespace (related to issue #571). These are visible in the dashboard under the "Contract Submissions" and "Contract Errors" widgets.
-
-To emit metrics from the application:
-
-```typescript
-// Example: publishing a metric via AWS SDK v3
-import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
-
-const cw = new CloudWatchClient({ region: "us-east-1" });
-await cw.send(new PutMetricDataCommand({
-  Namespace: "WorkloadGovernor",
-  MetricData: [{
-    MetricName: "ContractSubmissions",
-    Dimensions: [{ Name: "Network", Value: "testnet" }],
-    Value: 1,
-    Unit: "Count",
-  }],
-}));
-```
-
----
-
-## Log Insights Queries
-
-The following Saved Queries are defined in `infra/logs_and_alarms.tf`:
-
-| Query | Description |
-|-------|-------------|
-| `{service}-error-rate` | 5-minute error buckets from application logs |
-| `{service}-slow-requests` | Requests over 1000ms |
-| `{service}-contract-submission-failures` | Contract submission failures |
-
-Access them via **CloudWatch → Logs Insights → Saved queries**.
-
----
-
-## Related Documents
-
-- [Architecture](architecture.md) — overall system design
-- [Contract upgrade runbook](runbooks/contract-upgrade.md) — deploying new WASM
-- [Incident response runbook](runbooks/incident-response.md) — handling production incidents
-- [Rollback runbook](rollback-runbook.md) — reverting deployments
+Segments appear in the [X-Ray console](https://console.aws.amazon.com/xray/home) within ~30 seconds.

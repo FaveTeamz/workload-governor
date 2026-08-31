@@ -7,8 +7,12 @@
  * Supported event types (matching src/events.rs emit helpers):
  *   applied, withdrew, assigned, completed, revoked, maintainer_registered
  *
- * Deduplication key: (tx_hash, event_index)  — ON CONFLICT DO NOTHING
- * Resume: on startup, reads the highest ledger already stored and continues from there.
+ * Deduplication key: (ledger_sequence, transaction_hash, event_index) —
+ *   INSERT … ON CONFLICT DO NOTHING prevents duplicate rows even after a
+ *   full-history replay caused by cursor loss (fixes issue #575).
+ *
+ * Resume: on startup, reads the highest ledger already stored and continues
+ *   from there, relying on the unique constraint to skip already-seen events.
  */
 
 import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
@@ -182,18 +186,9 @@ export class EventIndexer {
   private cursor: string | undefined;
   private isRunning = false;
 
-// ---------------------------------------------------------------------------
-// Event parsing helpers
-// ---------------------------------------------------------------------------
-const KNOWN_TOPICS = new Set(['applied', 'withdrawn', 'assigned', 'completed', 'revoked']);
-
-function safeBase64Decode(b64: string): string {
-  try {
-    return Buffer.from(b64, 'base64').toString('utf8');
-  } catch {
-    return b64;
+  constructor() {
+    this.server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
   }
-}
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -226,6 +221,10 @@ function safeBase64Decode(b64: string): string {
   /**
    * On restart, re-process from the last finalized ledger to handle reorgs.
    * Uses the highest ledger_seq stored in contract_events as the resume point.
+   *
+   * Because INSERT uses ON CONFLICT DO NOTHING, replaying events from the
+   * resume ledger is safe — already-indexed events are silently skipped.
+   * This prevents duplicates even if the cursor is lost (fixes issue #575).
    */
   private async initCursor(): Promise<void> {
     try {
@@ -365,8 +364,14 @@ function safeBase64Decode(b64: string): string {
 
   /**
    * Insert a contract event record.
-   * Uses (tx_hash, event_index) as the deduplication key — duplicate rows are
-   * silently skipped (ON CONFLICT DO NOTHING).
+   *
+   * Uses (ledger_seq, tx_hash, event_index) as the deduplication key.
+   * Duplicate rows are silently skipped (ON CONFLICT DO NOTHING).
+   *
+   * This is safe to call after a full-history replay caused by cursor loss:
+   * the unique constraint added in migration 2_event_deduplication.js
+   * prevents duplicates at the database level regardless of how many times
+   * the same event is re-submitted (fixes issue #575).
    *
    * @returns true if a new row was inserted, false if it was a duplicate.
    */
@@ -375,7 +380,7 @@ function safeBase64Decode(b64: string): string {
       `INSERT INTO contract_events
          (event_type, contributor, org_id, issue_id, tx_hash, event_index, ledger_seq, timestamp)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (tx_hash, event_index) DO NOTHING`,
+       ON CONFLICT (ledger_seq, tx_hash, event_index) DO NOTHING`,
       [
         record.event_type,
         record.contributor,
@@ -388,23 +393,28 @@ function safeBase64Decode(b64: string): string {
       ],
     );
 
-    const liveType = event.type === 'applied'
-      ? 'application_created'
-      : event.type === 'assigned'
-        ? 'assignment_created'
-        : 'cap_updated';
+    const inserted = (result as { rowCount?: number }).rowCount === 1;
 
-    publishLiveEvent({
-      type: liveType,
-      data: { eventType: event.type, orgId: event.orgId, issueId: event.issueId },
-    });
-  }
+    if (inserted) {
+      // Publish live update for real-time subscribers
+      const liveType =
+        record.event_type === 'applied'
+          ? 'application_created'
+          : record.event_type === 'assigned'
+            ? 'assignment_created'
+            : 'cap_updated';
 
-  stop(): void {
-    this.isRunning = false;
-    logger.info({ message: 'Event indexer stopped' });
-    // rowCount > 0 means a row was actually inserted
-    return (result as { rowCount?: number }).rowCount === 1;
+      publishLiveEvent({
+        type: liveType,
+        data: {
+          eventType: record.event_type,
+          orgId: record.org_id,
+          issueId: record.issue_id,
+        },
+      });
+    }
+
+    return inserted;
   }
 }
 
@@ -420,7 +430,7 @@ function sleep(ms: number): Promise<void> {
 // Module-level singleton helpers
 // ---------------------------------------------------------------------------
 
-let indexer: EventIndexer | null = null;
+let _indexer: EventIndexer | null = null;
 
 export function getEventIndexer(): EventIndexer {
   if (!_indexer) _indexer = new EventIndexer();

@@ -25,6 +25,8 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `register_maintainer(admin, maintainer, org_id)` | Admin | Authorize a maintainer for an org |
 | `deregister_maintainer(admin, maintainer, org_id)` | Admin | Revoke a maintainer's authorization for an org |
 | `upgrade(new_wasm_hash)` | Admin | Upgrade the contract WASM |
+| `propose_admin(current_admin, new_admin)` | Admin | Step 1: nominate a new admin address |
+| `accept_admin(new_admin)` | Pending admin | Step 2: accept the pending admin nomination |
 | `apply_for_issue(contributor, org_id, issue_id)` | Contributor | Submit a pending application |
 | `withdraw_application(contributor, org_id, issue_id)` | Contributor | Cancel a pending application |
 | `assign_issue(maintainer, contributor, org_id, issue_id)` | Maintainer | Convert application to assignment |
@@ -35,8 +37,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `get_org_assignment_count(contributor, org_id)` | Anyone | Query org assignment count |
 | `has_applied(contributor, org_id, issue_id)` | Anyone | Check if application exists |
 | `is_assigned(contributor, org_id, issue_id)` | Anyone | Check if assignment is active |
-| `check_consistency(pairs, issue_ids)` | Anyone | Return `(contributor, org_id)` pairs with counter inconsistency |
-| `check_consistency(pairs, issue_ids)` | Anyone | Return (contributor, org_id) pairs with counter inconsistency |
+| `get_contributor_snapshot(contributor, org_ids)` | Anyone | Atomic snapshot of global count + per-org assignment counts (≤10 orgs) |
 
 ## Error Codes
 
@@ -44,7 +45,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 |---|---|---|
 | 1 | `AlreadyInitialized` | `initialize` called twice |
 | 2 | `NotInitialized` | State-changing call before `initialize` |
-| 3 | `UnauthorizedAdmin` | Wrong admin credentials |
+| 3 | `UnauthorizedAdmin` | Wrong admin credentials, or `accept_admin` caller doesn't match pending admin |
 | 4 | `UnauthorizedMaintainer` | Maintainer not registered for org |
 | 5 | `UnauthorizedContributor` | Auth failure on contributor call |
 | 6 | `GlobalApplicationLimitReached` | Contributor has 15 pending applications |
@@ -53,7 +54,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
-| 17 | `MaintainerNotFound` | Maintainer not registered for the org (returned by `deregister_maintainer`) |
+| 12 | `SnapshotOrgLimitExceeded` | More than 10 org IDs passed to `get_contributor_snapshot` |
 
 ## Storage Design
 
@@ -61,23 +62,40 @@ This prevents a small group of faster developers from monopolizing open-source t
 |---|---|---|---|
 | Global App Count | Temporary (Wave TTL) | `("g_apps", contributor)` | `u32` |
 | App Entry | Temporary (Wave TTL) | `("app", contributor, org_id, issue_id)` | `bool` |
+| App Index | Temporary (Wave TTL) | `("app_idx", contributor)` | `Vec<(Symbol, u32)>` |
 | Admin | Persistent | `"admin"` | `Address` |
+| Pending Admin | Persistent | `"p_admin"` | `Address` |
 | Maintainer | Persistent | `("maint", maintainer, org_id)` | `bool` |
 | Org Assignment Count | Persistent | `("o_asgn", contributor, org_id)` | `u32` |
 | Assignment Entry | Persistent | `("asgn", org_id, issue_id, contributor)` | `bool` |
 | Org Assignment Cap | Persistent | `("o_cap", org_id)` | `u32` |
 
-All six key prefixes are distinct — zero key collision guarantee.
+All key prefixes are distinct — zero key collision guarantee.
 
 ## Documentation
 
 | Document | Description |
 |---|---|
+| [docs/contributor-guide.md](docs/contributor-guide.md) | Full contributor onboarding: prerequisites, local dev setup, test suites, apply→assign→complete workflow, fuzz testing, troubleshooting |
+| [docs/video-scripts/quickstart.md](docs/video-scripts/quickstart.md) | 10-minute developer quickstart video script and companion text guide |
 | [docs/admin-guide.md](docs/admin-guide.md) | Admin operational procedures: initialisation, maintainer onboarding/offboarding, upgrades |
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
 | [docs/error-reference.md](docs/error-reference.md) | All error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+| [docs/testing.md](docs/testing.md) | Testing guide — all test layers, how to run them, and CI pipeline map |
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Emergency admin key rotation procedure |
+
+## Architecture Decision Records
+
+Key design decisions are documented in [docs/adr/](docs/adr/).
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-001](docs/adr/ADR-001-soroban-over-evm.md) | Use Soroban (Stellar) Instead of an EVM-Compatible Chain | Accepted |
+| [ADR-002](docs/adr/ADR-002-global-cap-15.md) | Set the Global Pending Application Cap at 15 | Accepted |
+| [ADR-003](docs/adr/ADR-003-temporary-storage-applications.md) | Use Temporary Storage for Pending Applications | Accepted |
+| [ADR-004](docs/adr/ADR-004-postgresql-over-sqlite.md) | Use PostgreSQL Instead of SQLite for the Backend Database | Accepted |
+| [ADR-005](docs/adr/ADR-005-nextjs-frontend.md) | Use Next.js for the Frontend | Accepted |
 
 ## Operations
 
@@ -144,9 +162,11 @@ cargo +nightly fuzz build
 cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
 cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
 cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+cargo +nightly fuzz run fuzz_lifecycle  -- -max_total_time=600
 
 # Run with pre-seeded corpus
 cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
+cargo +nightly fuzz run fuzz_lifecycle fuzz/corpus/fuzz_lifecycle -- -max_total_time=600
 ```
 
 | Target | Description |
@@ -154,6 +174,9 @@ cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
 | `fuzz_apply` | Random `contributor`, `org_id`, `issue_id` → `apply_for_issue` |
 | `fuzz_assign` | Random inputs → `assign_issue`, `complete_assignment`, `revoke_assignment` |
 | `fuzz_batch_apply` | Vec of random `issue_id`s applied in batch, enforces ≤15 global cap |
+| `fuzz_withdraw` | apply → withdraw counter invariant; double-withdraw safety |
+| `fuzz_revoke` | apply → assign → revoke org-count invariant |
+| `fuzz_lifecycle` | Full lifecycle: apply → withdraw → assign → complete / revoke; three invariants checked after every step: `global_count ≤ 15`, `org_count ≤ cap`, applied and assigned are mutually exclusive |
 
 Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
 

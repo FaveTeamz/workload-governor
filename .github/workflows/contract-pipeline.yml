@@ -396,9 +396,21 @@ jobs:
 
       - name: Run fuzz targets (10 minutes each)
         run: |
+          # List all fuzz targets and run each for 600 seconds.
+          # --sanitizer none avoids full ASan instrumentation of the soroban
+          # dependency tree, which exceeds the memory budget of standard
+          # GitHub-hosted runners during the sancov-instrumented build.
+          # SanCov coverage instrumentation still guides mutation.
           for target in $(cargo fuzz list 2>/dev/null || echo ""); do
             echo "Fuzzing target: $target"
-            cargo fuzz run "$target" -- -max_total_time=600 || true
+            corpus="fuzz/corpus/$target"
+            if [ -d "$corpus" ]; then
+              cargo fuzz run --sanitizer none "$target" "$corpus" \
+                -- -max_total_time=600 -print_final_stats=1 || true
+            else
+              cargo fuzz run --sanitizer none "$target" \
+                -- -max_total_time=600 -print_final_stats=1 || true
+            fi
           done
         continue-on-error: true
 
