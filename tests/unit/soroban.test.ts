@@ -132,7 +132,23 @@ describe('SorobanService', () => {
   });
 
   describe('submitTransaction', () => {
-    it('returns success on PENDING then SUCCESS poll', async () => {
+    beforeEach(() => {
+      mockSimulate.mockResolvedValue({
+        minResourceFee: '50000',
+        transactionData: {
+          build: () => ({
+            resources: () => ({
+              instructions: () => 100000,
+              readBytes: () => 500,
+              writeBytes: () => 0,
+            }),
+          }),
+        },
+      });
+      jest.spyOn(SorobanRpc.Api, 'isSimulationError').mockReturnValue(false);
+    });
+
+    it('returns success and simulation details on PENDING then SUCCESS poll', async () => {
       mockSend.mockResolvedValueOnce({ hash: 'txhash', status: 'PENDING' });
       mockGetTx.mockResolvedValueOnce({ status: 'SUCCESS' });
 
@@ -140,6 +156,24 @@ describe('SorobanService', () => {
       const result = await service.submitTransaction(tx);
       expect(result.hash).toBe('txhash');
       expect(result.status).toBe('success');
+      expect(result.simulation).toBeDefined();
+      expect(result.simulation?.fee).toBe('50000');
+      expect(result.simulation?.instructions).toBe(100000);
+      expect(mockSimulate).toHaveBeenCalledWith(tx);
+      expect(mockSend).toHaveBeenCalled();
+    });
+
+    it('returns error and skips sendTransaction when pre-submission simulation fails', async () => {
+      mockSimulate.mockResolvedValueOnce({ error: 'Contract error: error code=6' });
+      jest.spyOn(SorobanRpc.Api, 'isSimulationError').mockReturnValueOnce(true);
+
+      const tx = service.buildApplyTx(CONTRIBUTOR, ORG, ISSUE, SEQ);
+      const result = await service.submitTransaction(tx);
+      expect(result.status).toBe('error');
+      expect(result.hash).toBe('');
+      expect(result.error?.code).toBe('InvalidIssueState');
+      expect(result.error?.details).toContain('Contract error code: 6');
+      expect(mockSend).not.toHaveBeenCalled();
     });
 
     it('returns error on FAILED transaction', async () => {
@@ -152,6 +186,7 @@ describe('SorobanService', () => {
       const tx = service.buildApplyTx(CONTRIBUTOR, ORG, ISSUE, SEQ);
       const result = await service.submitTransaction(tx);
       expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('NoAssignment');
     });
 
     it('returns error on thrown exception', async () => {
