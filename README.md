@@ -84,6 +84,7 @@ All six key prefixes are distinct — zero key collision guarantee.
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
 | [docs/error-reference.md](docs/error-reference.md) | All error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
+| [docs/testing.md](docs/testing.md) | Testing guide — all test layers, how to run them, and CI pipeline map |
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Emergency admin key rotation procedure |
 
 ## Operations
