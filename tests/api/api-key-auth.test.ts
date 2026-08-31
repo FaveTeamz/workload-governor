@@ -179,6 +179,46 @@ describe('POST /api/api-keys', () => {
   });
 });
 
+describe('POST /api/api-keys/:keyId/rotate', () => {
+  it('keeps the old key valid during the grace period and rejects it after expiry', async () => {
+    process.env.ADMIN_TOKEN = 'admin-secret';
+
+    const createRes = await request(app)
+      .post('/api/api-keys')
+      .set('Authorization', 'Bearer admin-secret')
+      .send({ label: 'rotating-key' });
+
+    expect(createRes.status).toBe(201);
+    const oldKey = createRes.body.key;
+    const keyId = createRes.body.id;
+
+    const rotateRes = await request(app)
+      .post(`/api/api-keys/${keyId}/rotate`)
+      .set('Authorization', 'Bearer admin-secret')
+      .send({ ttl_hours: 1 });
+
+    expect(rotateRes.status).toBe(200);
+    expect(rotateRes.body).toHaveProperty('key');
+    expect(rotateRes.body.key).not.toBe(oldKey);
+
+    const stillValidRes = await request(app)
+      .get('/api/issues')
+      .set('Authorization', `Bearer ${oldKey}`);
+    expect(stillValidRes.status).not.toBe(401);
+
+    await mockPool.query(
+      'UPDATE api_keys SET rotating_until = $1 WHERE id = $2',
+      [new Date(Date.now() - 60_000).toISOString(), keyId],
+    );
+
+    const expiredRes = await request(app)
+      .get('/api/issues')
+      .set('Authorization', `Bearer ${oldKey}`);
+    expect(expiredRes.status).toBe(401);
+    expect(expiredRes.body.error).toMatch(/invalid api key/i);
+  });
+});
+
 // ============================================================
 // Issue #370 — comprehensive API key auth middleware tests
 // Covers: missing key, malformed header, unknown hash, expired

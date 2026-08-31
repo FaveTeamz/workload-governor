@@ -178,12 +178,13 @@ export async function migrate(): Promise<void> {
     );
 
     CREATE TABLE IF NOT EXISTS api_keys (
-      id         SERIAL PRIMARY KEY,
-      key_hash   TEXT NOT NULL UNIQUE,
-      label      TEXT NOT NULL,
-      scopes     TEXT[] NOT NULL DEFAULT '{}',
-      expires_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id             SERIAL PRIMARY KEY,
+      key_hash       TEXT NOT NULL UNIQUE,
+      label          TEXT NOT NULL,
+      scopes         TEXT[] NOT NULL DEFAULT '{}',
+      expires_at     TIMESTAMPTZ,
+      rotating_until TIMESTAMPTZ,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS github_issue_labels (

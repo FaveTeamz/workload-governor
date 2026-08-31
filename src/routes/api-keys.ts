@@ -97,6 +97,82 @@ router.post('/', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // Requires: Authorization: Bearer <ADMIN_TOKEN>
 
+router.post('/:id/rotate', async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+
+  const id = parseInt(req.params['id'] ?? '', 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: 'invalid id' });
+    return;
+  }
+
+  const graceHours =
+    typeof req.body?.ttl_hours === 'number' && req.body.ttl_hours > 0
+      ? req.body.ttl_hours
+      : parseInt(process.env['API_KEY_ROTATION_GRACE_HOURS'] ?? '1', 10) || 1;
+
+  try {
+    const existing = await pool.query<{ id: number; label: string; key_hash: string; expires_at: Date | null }>(
+      'SELECT id, label, key_hash, expires_at FROM api_keys WHERE id = $1',
+      [id],
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: 'key not found' });
+      return;
+    }
+
+    const oldKey = existing.rows[0];
+    const newKey = randomBytes(32).toString('hex');
+    const newKeyHash = hashKey(newKey);
+    const rotatingUntil = new Date(Date.now() + graceHours * 60 * 60 * 1000);
+
+    let newKeyRow: { id: number; expires_at: Date | null } | undefined;
+    try {
+      const result = await pool.query<{ id: number; expires_at: Date | null }>(
+        `INSERT INTO api_keys (key_hash, label, scopes, expires_at, rotating_until)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, expires_at`,
+        [newKeyHash, `${oldKey.label}-rotated`, [], oldKey.expires_at ?? null, rotatingUntil],
+      );
+      newKeyRow = result.rows[0];
+    } catch {
+      const result = await pool.query<{ id: number; expires_at: Date | null }>(
+        `INSERT INTO api_keys (key_hash, label)
+         VALUES ($1, $2)
+         RETURNING id`,
+        [newKeyHash, `${oldKey.label}-rotated`],
+      );
+      newKeyRow = result.rows[0];
+    }
+
+    await pool.query(
+      'UPDATE api_keys SET rotating_until = $1 WHERE id = $2',
+      [rotatingUntil, id],
+    );
+
+    logger.info({
+      message: 'API key rotated',
+      old_id: id,
+      new_id: newKeyRow?.id,
+      label: oldKey.label,
+      grace_hours: graceHours,
+      rotating_until: rotatingUntil.toISOString(),
+    });
+
+    res.status(200).json({
+      id: newKeyRow?.id,
+      key: newKey,
+      old_key_id: id,
+      rotating_until: rotatingUntil.toISOString(),
+      expires_at: newKeyRow?.expires_at ? new Date(newKeyRow.expires_at).toISOString() : null,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal error';
+    res.status(500).json({ error: msg });
+  }
+});
+
 router.delete('/:id', async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
 
