@@ -58,68 +58,8 @@ pub enum ContractError {
     /// Discriminant: `11`.
     AlreadyAssigned = 11,
 
-    /// The referenced `org_id` has no registered maintainers and has never been
-    /// initialised via `register_maintainer` or `set_org_cap`. Raised by maintainer
-    /// functions before the `UnauthorizedMaintainer` check so callers can distinguish
-    /// "org doesn't exist" from "you're not authorised for this org".
+    /// More than [`crate::SNAPSHOT_ORG_LIMIT`] (10) org IDs were supplied to
+    /// `get_contributor_snapshot`.
     /// Discriminant: `12`.
-    OrgNotFound = 12,
-
-    /// Detected a mismatch between the org assignment counter and the actual
-    /// set of assignment sentinels. Indicates storage corruption or a failed migration.
-    /// Discriminant: `13`.
-    CounterInconsistency = 13,
-
-    /// The requested global cap value is outside the permitted range `[0, 100]`.
-    /// Returned by `emergency_set_global_cap` and `set_global_cap` when `new_cap > 100`.
-    /// Discriminant: `14`.
-    CapOutOfRange = 14,
-
-    /// The org assignment cap supplied to `set_org_cap` is outside the permitted range
-    /// `[ORG_CAP_MIN, ORG_CAP_MAX]`.
-    /// Discriminant: `15`.
-    InvalidOrgCap = 15,
-
-    /// Detected a mismatch between the org assignment counter and the actual
-    /// assignment sentinel entries (storage corruption guard).
-    /// Discriminant: `13`.
-    CounterInconsistency = 13,
-
-    /// The requested per-org assignment cap is outside the permitted range `[1, 20]`.
-    /// Returned by `set_org_cap` when `new_cap` is 0 or > 20.
-    /// Discriminant: `14`.
-    InvalidOrgCap = 14,
-
-    /// The specified maintainer is not registered for the given organisation.
-    /// Returned by `deregister_maintainer` when attempting to deregister a maintainer
-    /// that was never registered (or was already deregistered).
-    /// Discriminant: `17`.
-    MaintainerNotFound = 17,
-
-    /// A counter/sentinel inconsistency was detected in persistent storage.
-    ///
-    /// Fired by `revoke_assignment` and `complete_assignment` (and their debug
-    /// assertions in `assign_issue`) when the assignment sentinel exists but the
-    /// org assignment counter is unexpectedly zero (or vice-versa).  This indicates
-    /// a storage migration issue or a data-corruption event and should be treated
-    /// as a fatal internal error.
-    ///
-    /// Discriminant: `13`.
-    CounterInconsistency = 13,
-
-    /// A re-entrant call was detected: a state-mutating function was entered while
-    /// another state-mutating function on this contract was already executing.
-    ///
-    /// Under Soroban's single-threaded execution model this should never fire in
-    /// production.  It exists as a forward-looking guard for when cross-contract
-    /// calls are added, and as evidence that the contract explicitly defends against
-    /// re-entrancy at a protocol level.
-    ///
-    /// Discriminant: `14`.
-    ReentrancyDetected = 14,
-
-    /// The requested per-org assignment cap is outside the permitted range `[1, 20]`.
-    /// Returned by `set_org_cap` when `new_cap == 0 || new_cap > 20`.
-    /// Discriminant: `15`.
-    InvalidOrgCap = 15,
+    SnapshotOrgLimitExceeded = 12,
 }

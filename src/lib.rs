@@ -21,56 +21,32 @@ mod test;
 #[cfg(test)]
 extern crate std;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, panic_with_error, Address, BytesN, Env, Map, Symbol, Vec,
+};
 
 use crate::errors::ContractError;
 
-// ---------------------------------------------------------------------------
-// Re-entrancy guard macro
-//
-// Usage (inside a #[contractimpl] function body, before any state reads):
-//
-//   reentrancy_guard!(env);
-//
-// Effect:
-//   1. Reads the persistent "reentr" key.  If `true`, panics with
-//      `ContractError::ReentrancyDetected` (code 14).
-//   2. Sets the key to `true` (lock acquired).
-//   3. At the end of the macro's scope (via a drop guard), removes the key
-//      (lock released).
-//
-// The drop guard is constructed with `ScopeGuard::new`. Because Soroban
-// executes each invocation in a fresh host frame that discards all state on
-// panic, explicit cleanup on the failure path is not strictly required — a
-// panicked invocation never commits storage. The guard is still present for
-// correctness under normal execution.
-//
-// NOTE: Soroban's single-threaded, single-invocation execution model makes
-// classic re-entrancy impossible today.  This guard is a forward-looking
-// defence for future cross-contract calls and documents the security intent
-// explicitly in the on-chain code.
-// ---------------------------------------------------------------------------
+/// Maximum number of org IDs accepted by [`WorkloadGovernor::get_contributor_snapshot`].
+pub const SNAPSHOT_ORG_LIMIT: u32 = 10;
 
-/// Lightweight RAII wrapper that removes the re-entrancy lock when dropped.
-struct ReentrancyGuard<'a> {
-    env: &'a Env,
-}
-
-impl<'a> ReentrancyGuard<'a> {
-    /// Acquires the lock.  Panics with `ReentrancyDetected` if already held.
-    fn acquire(env: &'a Env) -> Self {
-        if storage::is_reentrancy_locked(env) {
-            panic_with_error!(env, ContractError::ReentrancyDetected);
-        }
-        storage::acquire_reentrancy_lock(env);
-        ReentrancyGuard { env }
-    }
-}
-
-impl<'a> Drop for ReentrancyGuard<'a> {
-    fn drop(&mut self) {
-        storage::release_reentrancy_lock(self.env);
-    }
+/// A point-in-time snapshot of a contributor's workload state.
+///
+/// Returned by [`WorkloadGovernor::get_contributor_snapshot`] in a single atomic call,
+/// eliminating the need for multiple sequential RPC calls that could observe inconsistent
+/// intermediate state.
+///
+/// # Fields
+/// * `global_application_count` — total pending applications across all organisations,
+///   equivalent to [`WorkloadGovernor::get_global_application_count`].
+/// * `org_assignments` — a map from org ID to active assignment count for each org ID
+///   supplied in the `org_ids` parameter.  Orgs with zero assignments are still present
+///   in the map with value `0`, so the caller can always expect an entry for every
+///   requested org.
+#[contracttype]
+pub struct ContributorSnapshot {
+    pub global_application_count: u32,
+    pub org_assignments: Map<Symbol, u32>,
 }
 
 #[contract]
@@ -846,6 +822,59 @@ impl WorkloadGovernor {
     // -----------------------------------------------------------------------
     // Read-only query functions — no storage mutations, no events
     // -----------------------------------------------------------------------
+
+    /// Returns a complete, atomic snapshot of a contributor's workload state.
+    ///
+    /// Collects the contributor's global pending-application count and per-org active
+    /// assignment counts in a single ledger read, eliminating the inconsistency window
+    /// that exists when making multiple separate RPC calls.
+    ///
+    /// # Who can call
+    /// Anyone — read-only, no authentication required.
+    ///
+    /// # Arguments
+    /// * `contributor` – Address to query.
+    /// * `org_ids`     – List of org symbols to include in `org_assignments`.
+    ///   At most [`SNAPSHOT_ORG_LIMIT`] (10) entries are allowed.
+    ///   Every requested org is present in the returned map, with value `0` for orgs
+    ///   where the contributor has no active assignments.
+    ///
+    /// # Returns
+    /// A [`ContributorSnapshot`] with:
+    /// * `global_application_count` – total pending applications (0 if none/expired).
+    /// * `org_assignments` – map from each requested org ID to its assignment count.
+    ///
+    /// # Errors
+    /// * [`ContractError::SnapshotOrgLimitExceeded`] — more than 10 org IDs supplied.
+    ///
+    /// # Examples
+    /// ```text
+    /// stellar contract invoke --id <CONTRACT_ID> \
+    ///   --network testnet \
+    ///   -- get_contributor_snapshot \
+    ///   --contributor <CONTRIBUTOR_ADDRESS> \
+    ///   --org_ids '["acme", "beta"]'
+    /// ```
+    pub fn get_contributor_snapshot(
+        env: Env,
+        contributor: Address,
+        org_ids: Vec<Symbol>,
+    ) -> ContributorSnapshot {
+        if org_ids.len() > SNAPSHOT_ORG_LIMIT {
+            panic_with_error!(env, ContractError::SnapshotOrgLimitExceeded);
+        }
+        let global_application_count =
+            storage::get_global_app_count(&env, &contributor);
+        let mut org_assignments: Map<Symbol, u32> = Map::new(&env);
+        for org_id in org_ids.iter() {
+            let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+            org_assignments.set(org_id, count);
+        }
+        ContributorSnapshot {
+            global_application_count,
+            org_assignments,
+        }
+    }
 
     /// Returns the contributor's current global pending-application count.
     ///

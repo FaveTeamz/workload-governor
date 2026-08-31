@@ -37,7 +37,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | `get_org_assignment_count(contributor, org_id)` | Anyone | Query org assignment count |
 | `has_applied(contributor, org_id, issue_id)` | Anyone | Check if application exists |
 | `is_assigned(contributor, org_id, issue_id)` | Anyone | Check if assignment is active |
-| `check_consistency(pairs, issue_ids)` | Anyone | Return `(contributor, org_id)` pairs with counter inconsistency |
+| `get_contributor_snapshot(contributor, org_ids)` | Anyone | Atomic snapshot of global count + per-org assignment counts (≤10 orgs) |
 
 ## Error Codes
 
@@ -54,8 +54,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
-| 12 | `OrgNotFound` | `org_id` was never registered via `register_maintainer` |
-| 17 | `MaintainerNotFound` | Maintainer not registered for the org (returned by `deregister_maintainer`) |
+| 12 | `SnapshotOrgLimitExceeded` | More than 10 org IDs passed to `get_contributor_snapshot` |
 
 ## Storage Design
 
