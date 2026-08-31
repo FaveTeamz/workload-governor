@@ -3,11 +3,11 @@ import { ActivityFeed } from "./ActivityFeed";
 import { ExportButton } from "./ExportButton";
 import { ContributorProfile } from "./ContributorProfile";
 
-const DEMO_ORGS = ["stellar-org", "meridian-dao"];
-const NETWORK = (import.meta.env.VITE_STELLAR_NETWORK ?? "testnet") as "testnet" | "mainnet";
+const DEMO_ADDRESS = "GBXXX1ABCDEFGHIJKLMNO12345";
 
 export function ActivityPage() {
-  const [selectedOrg, setSelectedOrg] = useState<string | undefined>(undefined);
+  const [params] = useSearchParams();
+  const address = params.get("address") ?? DEMO_ADDRESS;
 
   return (
     <div className="activity-page">
