@@ -29,11 +29,16 @@ terraform {
 provider "aws" {
   region = var.aws_region
 
+  # Cost allocation tags applied to every AWS resource managed by this provider.
+  # These tags must be activated as user-defined cost allocation tags in the
+  # AWS Billing console before they appear in Cost Explorer reports.
+  # See docs/cost-management.md for the manual activation step.
   default_tags {
     tags = {
-      project     = "workload-governor"
-      environment = terraform.workspace
-      managed_by  = "terraform"
+      Project     = "workload-governor"
+      Environment = terraform.workspace
+      Team        = "platform"
+      ManagedBy   = "terraform"
     }
   }
 }

@@ -24,7 +24,7 @@ Domain-specific terms used in the WorkloadGovernor codebase, documentation, and 
 ## Core Roles
 
 **Admin**
-The address that deployed and initialised the contract via `initialize(admin)`. The admin is the only party authorised to call `register_maintainer` and `upgrade`. Stored as a persistent entry under the key `"admin"`. After deployment, admin authority can be transferred via `transfer_admin`.
+The address that deployed and initialised the contract via `initialize(admin)`. The admin is the only party authorised to call `register_maintainer` and `upgrade`. Stored as a persistent entry under the key `"admin"`. After deployment, admin authority can be transferred via the two-step `propose_admin` / `accept_admin` flow.
 
 *Related: [Maintainer](#maintainer), [Contract ID](#contract-id)*
 

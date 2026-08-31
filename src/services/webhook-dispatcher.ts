@@ -51,14 +51,18 @@ export function signPayload(payload: string, secret: string): string {
 
 const MAX_ATTEMPTS = 3;
 
-/** Delay helper (exponential back-off: 1 s → 2 s → 4 s). */
+/** Delay helper (exponential back-off: 5 s → 30 s → 5 min). */
+const BACKOFF_DELAYS = [5_000, 30_000, 300_000];
+
 function delay(attemptNumber: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attemptNumber)));
+  const ms = BACKOFF_DELAYS[attemptNumber] ?? BACKOFF_DELAYS[BACKOFF_DELAYS.length - 1];
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
  * Attempt to deliver a payload to a single webhook endpoint.
- * Retries up to MAX_ATTEMPTS times with exponential back-off.
+ * Retries up to MAX_ATTEMPTS times with exponential back-off (5s, 30s, 5min).
+ * Logs each attempt with status code and response body.
  * On final failure, writes the payload to webhook_dead_letters.
  */
 export async function dispatchToWebhook(
@@ -71,6 +75,8 @@ export async function dispatchToWebhook(
   const signature = signPayload(body, secret);
 
   let lastError = '';
+  let lastStatusCode: number | null = null;
+  let lastResponseBody: string | null = null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
@@ -86,13 +92,32 @@ export async function dispatchToWebhook(
         signal: AbortSignal.timeout(10_000),
       });
 
+      // Log each attempt with status code and response body
+      let responseBody: string | null = null;
+      try {
+        responseBody = await response.text();
+      } catch {
+        // Ignore body read errors
+      }
+
+      console.log(
+        `[WebhookDispatcher] Attempt ${attempt + 1}/${MAX_ATTEMPTS} for webhook #${webhookId}: ` +
+        `status=${response.status} body=${responseBody?.substring(0, 200) ?? 'N/A'}`,
+      );
+
       if (response.ok) {
         return; // Success — done
       }
 
       lastError = `HTTP ${response.status} ${response.statusText}`;
+      lastStatusCode = response.status;
+      lastResponseBody = responseBody?.substring(0, 1000) ?? null;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+      console.log(
+        `[WebhookDispatcher] Attempt ${attempt + 1}/${MAX_ATTEMPTS} for webhook #${webhookId}: ` +
+        `error=${lastError}`,
+      );
     }
 
     // Back-off before next retry (skip after final attempt)
@@ -108,9 +133,9 @@ export async function dispatchToWebhook(
 
   try {
     await pool.query(
-      `INSERT INTO webhook_dead_letters (webhook_id, payload, last_error, attempts)
-       VALUES ($1, $2::jsonb, $3, $4)`,
-      [webhookId, body, lastError, MAX_ATTEMPTS],
+      `INSERT INTO webhook_dead_letters (webhook_id, payload, last_error, attempts, last_status_code, last_response_body)
+       VALUES ($1, $2::jsonb, $3, $4, $5, $6)`,
+      [webhookId, body, lastError, MAX_ATTEMPTS, lastStatusCode, lastResponseBody],
     );
   } catch (dbErr) {
     console.error('[WebhookDispatcher] Failed to write dead letter:', dbErr);

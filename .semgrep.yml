@@ -1,0 +1,112 @@
+# .semgrep.yml — Project-specific Semgrep configuration
+#
+# This file is passed to `semgrep ci --config .semgrep.yml` alongside the
+# shared rule packs (p/rust, p/typescript, p/nodejs).
+#
+# Sections:
+#   rules     — project-specific custom rules
+#   suppressions — known false positives with documented justification
+
+rules:
+  # ── Custom rule: Detect hardcoded secrets in TypeScript/JS ──────────────────
+  - id: no-hardcoded-secrets-ts
+    patterns:
+      - pattern: |
+          const $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)(secret|password|token|api_key|apikey|private_key|auth)
+      - metavariable-regex:
+          metavariable: $VAR
+          # Allow empty strings and obvious placeholders
+          regex-not: (?i)(example|placeholder|test|dummy|fake|your_)
+    message: >
+      Potential hardcoded secret in variable '$VAR'. Use environment variables
+      or AWS Secrets Manager instead.
+    languages: [typescript, javascript]
+    severity: ERROR
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.js"
+        - "**/*.spec.ts"
+        - "**/tests/**"
+        - "**/test/**"
+        - "**/__tests__/**"
+
+  # ── Custom rule: Detect console.log in production TypeScript ────────────────
+  - id: no-console-log-production
+    pattern: console.log(...)
+    message: >
+      Use the structured logger (pino/logger) instead of console.log in
+      production code. console.log bypasses log level filtering.
+    languages: [typescript, javascript]
+    severity: WARNING
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.js"
+        - "**/tests/**"
+        - "**/scripts/**"
+        - "frontend/**"
+
+  # ── Custom rule: Detect SQL string concatenation (injection risk) ────────────
+  - id: no-sql-string-concat
+    patterns:
+      - pattern: |
+          $POOL.query($QUERY + $VAR)
+      - pattern: |
+          $POOL.query(`...${$VAR}...`)
+    message: >
+      Potential SQL injection: user-controlled value concatenated into query string.
+      Use parameterized queries: pool.query('SELECT ...', [param]).
+    languages: [typescript, javascript]
+    severity: ERROR
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/tests/**"
+
+
+# ── Suppressions for known false positives ─────────────────────────────────────
+#
+# Format:
+#   <rule-id>: <file-or-glob>
+#     reason: <explanation>
+#     added:  <YYYY-MM-DD>
+#     ticket: <issue or PR reference>
+#
+# To suppress inline, add a comment on the finding line:
+#   // nosemgrep: <rule-id>
+#
+# Suppressions here apply path-level; inline nosemgrep takes precedence.
+
+suppressions:
+
+  # p/typescript detects `process.env.X || "default"` as a potential hardcoded
+  # secret when the default is an obviously safe development placeholder.
+  # The pattern fires on src/horizon.ts:
+  #   const HORIZON_URL = process.env.HORIZON_URL ?? "https://horizon-testnet.stellar.org"
+  # The testnet URL is a public, non-sensitive endpoint.
+  typescript.lang.security.audit.hardcoded-credentials:
+    - path: src/horizon.ts
+      reason: >
+        HORIZON_URL default is the public Stellar testnet URL, not a secret.
+        No credential is exposed.
+      added: "2026-08-29"
+      ticket: "#638"
+
+  # p/nodejs flags `new Redis(REDIS_URL)` as a potential SSRF vector.
+  # The REDIS_URL comes from an environment variable set via AWS Secrets Manager,
+  # never from user input.
+  javascript.lang.security.audit.ssrf:
+    - path: backend/src/health.ts
+      reason: >
+        Redis URL is sourced from process.env.REDIS_URL (Secrets Manager), not
+        user-controlled input. Not an SSRF vector.
+      added: "2026-08-29"
+      ticket: "#638"
+    - path: src/services/redis.ts
+      reason: Same as above — Redis URL is env-controlled, not user-controlled.
+      added: "2026-08-29"
+      ticket: "#638"

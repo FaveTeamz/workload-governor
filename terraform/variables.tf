@@ -31,3 +31,15 @@ variable "frontend_acm_certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "monthly_budget_threshold" {
+  description = "Monthly AWS cost budget threshold in USD. Alerts fire at 80% (forecasted) and 100% (actual)."
+  type        = number
+  default     = 200
+}
+
+variable "budget_alert_email" {
+  description = "Email address to subscribe to the cost-alert SNS topic. Leave empty to skip subscription."
+  type        = string
+  default     = ""
+}

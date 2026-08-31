@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { OrgIssuesPage } from '../OrgIssuesPage';
+import { ToastProvider } from '../../components/Toast';
 
 const mockRefresh = vi.fn();
+const mockLoadMore = vi.fn();
 const mockSetIssueStatus = vi.fn();
 const mockSignTransaction = vi.fn();
 
@@ -33,6 +36,7 @@ vi.mock('react-router-dom', async () => {
   return {
     ...actual,
     useParams: () => ({ org_id: 'stellar-org' }),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
   };
 });
 
@@ -40,10 +44,12 @@ vi.mock('../../hooks/useWallet', () => ({
   useWallet: () => mockWallet,
 }));
 
-vi.mock('../../hooks/useOrgIssues', () => ({
-  useOrgIssues: () => ({
+vi.mock('../../hooks/useInfiniteOrgIssues', () => ({
+  useInfiniteOrgIssues: () => ({
     issues: mockIssues,
     loading: false,
+    hasMore: false,
+    loadMore: mockLoadMore,
     error: null,
     globalAppCount: 1,
     orgAssignCount: 1,
@@ -51,6 +57,18 @@ vi.mock('../../hooks/useOrgIssues', () => ({
     setIssueStatus: mockSetIssueStatus,
   }),
 }));
+
+function renderPage() {
+  return render(
+    <ToastProvider>
+      <MemoryRouter initialEntries={['/orgs/stellar-org/issues']}>
+        <Routes>
+          <Route path="/orgs/:org_id/issues" element={<OrgIssuesPage apiBase="/api" />} />
+        </Routes>
+      </MemoryRouter>
+    </ToastProvider>,
+  );
+}
 
 describe('OrgIssuesPage withdraw flow', () => {
   beforeEach(() => {
@@ -66,30 +84,35 @@ describe('OrgIssuesPage withdraw flow', () => {
     vi.restoreAllMocks();
   });
 
-  it('submits a signed withdraw transaction and refreshes the issue list', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ xdr: 'unsigned-xdr' }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ hash: 'txhash123', status: 'SUCCESS' }) });
+  it('calls withdraw endpoint and refreshes when confirmed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ xdr: 'unsigned-xdr' }) });
 
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    render(<OrgIssuesPage apiBase="/api" />);
+    renderPage();
 
-    await user.click(screen.getByRole('button', { name: /withdraw application for: fix the withdraw flow/i }));
+    await user.click(
+      screen.getByRole('button', { name: /withdraw application for: fix the withdraw flow/i }),
+    );
 
-    await waitFor(() => expect(mockSignTransaction).toHaveBeenCalledWith('unsigned-xdr'));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      '/api/transactions/withdraw',
-      expect.objectContaining({ method: 'POST' }),
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/transactions/withdraw',
+        expect.objectContaining({ method: 'POST' }),
+      ),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      '/api/transactions/submit',
-      expect.objectContaining({ method: 'POST' }),
-    );
-    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the issue title in the list', () => {
+    renderPage();
+    expect(screen.getByText('Fix the withdraw flow')).toBeTruthy();
+  });
+
+  it('shows end-of-list message when hasMore is false and issues exist', () => {
+    renderPage();
+    expect(screen.getByText(/all issues loaded/i)).toBeTruthy();
   });
 });

@@ -6,16 +6,24 @@
  *
  * Starts:
  *   - Scheduler for TTL extension + GitHub sync (#311, #312)
+ *
+ * Tracing:
+ *   - AWS X-Ray segment opened per request via xrayMiddleware (#634)
  */
 
 import express from "express";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
+import { xrayMiddleware } from "./tracing.js";
 import logger from "./logger.js";
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
 const app = express();
+
+// X-Ray segment middleware — must be first so all downstream handlers inherit
+// the active segment context. No-op when XRAY_ENABLED=false.
+app.use(xrayMiddleware());
 
 app.use(express.json());
 

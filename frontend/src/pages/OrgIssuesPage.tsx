@@ -1,18 +1,31 @@
 /**
- * OrgIssuesPage — issue #199
+ * OrgIssuesPage — issue #199, #532
  *
  * Browse open issues for an org, with inline Apply/Withdraw actions that
  * invoke the WorkloadGovernor contract via Freighter wallet.
+ *
+ * Pagination: issues load in pages of 20 via IntersectionObserver infinite
+ * scroll. Skeleton cards are shown while the next page loads. A "no more
+ * issues" sentinel is displayed when all pages have been fetched.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
-import { useOrgIssues, type OrgIssue, type IssueStatus, type Difficulty } from '../hooks/useOrgIssues';
+import {
+  useInfiniteOrgIssues,
+  type OrgIssue,
+} from '../hooks/useInfiniteOrgIssues';
+import type { Difficulty } from '../hooks/useOrgIssues';
+import type { IssueStatus } from '../hooks/useOrgIssues';
 import { useToast } from '../components/Toast';
+import { IssueCardSkeleton } from '../components/SkeletonScreens';
 import './OrgIssuesPage.css';
 
 const GLOBAL_CAP = 15;
 const ORG_CAP = 4;
+
+/** Number of skeleton cards shown while the next page loads */
+const SKELETON_COUNT = 3;
 
 type SortOption = 'newest' | 'oldest' | 'most-applicants' | 'fewest-applicants';
 
@@ -22,6 +35,8 @@ const STATUS_LABEL: Record<IssueStatus, string> = {
   assigned: 'Assigned',
 };
 
+// ── IssueRow ──────────────────────────────────────────────────────────────────
+
 interface IssueRowProps {
   issue: OrgIssue;
   canApply: boolean;
@@ -30,11 +45,17 @@ interface IssueRowProps {
   onWithdraw: (issueId: string) => void;
   busy: boolean;
   txHash: string | null;
-  isRemoved: boolean;
-  onRemoved: () => void;
 }
 
-function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy, txHash }: IssueRowProps) {
+function IssueRow({
+  issue,
+  canApply,
+  capReachedReason,
+  onApply,
+  onWithdraw,
+  busy,
+  txHash,
+}: IssueRowProps) {
   const showApply = issue.status === 'open';
   const showWithdraw = issue.status === 'applied';
   const isDisabled = !canApply || busy;
@@ -46,9 +67,15 @@ function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy
         <h3 className="org-issue-row__title">{issue.title}</h3>
         <div className="org-issue-row__meta">
           <span className="org-issue-row__id">{issue.issue_id}</span>
-          {issue.reward_xlm && <span className="org-issue-row__reward">{issue.reward_xlm} XLM</span>}
-          {issue.labels?.length ? <span className="org-issue-row__labels">{issue.labels.join(', ')}</span> : null}
-          {issue.difficulty ? <span className="org-issue-row__chip">{issue.difficulty}</span> : null}
+          {issue.reward_xlm !== undefined && (
+            <span className="org-issue-row__reward">{issue.reward_xlm} XLM</span>
+          )}
+          {issue.labels?.length ? (
+            <span className="org-issue-row__labels">{issue.labels.join(', ')}</span>
+          ) : null}
+          {issue.difficulty ? (
+            <span className="org-issue-row__chip">{issue.difficulty}</span>
+          ) : null}
           <span className={`org-issue-row__chip org-issue-row__chip--${issue.status}`}>
             {STATUS_LABEL[issue.status]}
           </span>
@@ -105,13 +132,15 @@ function IssueRow({ issue, canApply, capReachedReason, onApply, onWithdraw, busy
           )}
         </div>
       </div>
-    </SlideOutRow>
+    </div>
   );
 }
 
 function SkeletonRow() {
   return <div className="org-issue-row org-issue-row--skeleton" aria-busy="true" />;
 }
+
+// ── OrgIssuesPage ─────────────────────────────────────────────────────────────
 
 interface OrgIssuesPageProps {
   apiBase?: string;
@@ -123,8 +152,17 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { add: addToast } = useToast();
 
-  const { issues, loading, error, globalAppCount, orgAssignCount, refresh, setIssueStatus } =
-    useOrgIssues(apiBase, org_id ?? '', wallet.publicKey ?? null);
+  const {
+    issues,
+    loading,
+    hasMore,
+    loadMore,
+    error,
+    globalAppCount,
+    orgAssignCount,
+    refresh,
+    setIssueStatus,
+  } = useInfiniteOrgIssues(apiBase, org_id ?? '', wallet.publicKey ?? null);
 
   const [busyIssue, setBusyIssue] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -133,9 +171,17 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   const [searchText, setSearchText] = useState(searchParams.get('search') ?? '');
   const [selectedLabels, setSelectedLabels] = useState<string[]>(searchParams.getAll('label'));
   const [selectedDifficulties, setSelectedDifficulties] = useState<Difficulty[]>(
-    searchParams.getAll('difficulty').filter((value): value is Difficulty => ['beginner', 'intermediate', 'advanced'].includes(value))
+    searchParams
+      .getAll('difficulty')
+      .filter((value): value is Difficulty =>
+        ['beginner', 'intermediate', 'advanced'].includes(value),
+      ),
   );
-  const [sort, setSort] = useState<SortOption>((searchParams.get('sort') as SortOption) ?? 'newest');
+  const [sort, setSort] = useState<SortOption>(
+    (searchParams.get('sort') as SortOption) ?? 'newest',
+  );
+
+  // ── Debounced search ──────────────────────────────────────────────────────
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearchText(searchInput), 300);
@@ -151,28 +197,65 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     setSearchParams(nextParams, { replace: true });
   }, [searchText, selectedLabels, selectedDifficulties, sort, setSearchParams]);
 
+  // ── IntersectionObserver sentinel for infinite scroll ────────────────────
+
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasMore && !loading) {
+          loadMore();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadMore]);
+
+  // ── Cap logic ─────────────────────────────────────────────────────────────
+
   const globalCapReached = globalAppCount >= GLOBAL_CAP;
   const orgCapReached = orgAssignCount >= ORG_CAP;
   const canApply = wallet.publicKey !== null && !globalCapReached && !orgCapReached;
+
+  let capReachedReason: string | null = null;
+  if (!wallet.publicKey) capReachedReason = 'Connect your wallet to apply.';
+  else if (globalCapReached)
+    capReachedReason = `Global limit reached: ${globalAppCount}/${GLOBAL_CAP} applications.`;
+  else if (orgCapReached)
+    capReachedReason = `Org limit reached: ${orgAssignCount}/${ORG_CAP} assignments.`;
+
+  // ── Filtering & sorting ───────────────────────────────────────────────────
 
   const availableLabels = useMemo(() => {
     return Array.from(new Set(issues.flatMap((issue) => issue.labels ?? []))).sort();
   }, [issues]);
 
   const activeFilterCount = useMemo(() => {
-    return Number(Boolean(searchText)) + selectedLabels.length + selectedDifficulties.length + Number(sort !== 'newest');
+    return (
+      Number(Boolean(searchText)) +
+      selectedLabels.length +
+      selectedDifficulties.length +
+      Number(sort !== 'newest')
+    );
   }, [searchText, selectedLabels.length, selectedDifficulties.length, sort]);
-
-  let capReachedReason: string | null = null;
-  if (!wallet.publicKey) capReachedReason = 'Connect your wallet to apply.';
-  else if (globalCapReached) capReachedReason = `Global limit reached: ${globalAppCount}/${GLOBAL_CAP} applications.`;
-  else if (orgCapReached) capReachedReason = `Org limit reached: ${orgAssignCount}/${ORG_CAP} assignments.`;
 
   const filteredIssues = useMemo(() => {
     const normalized = issues.filter((issue) => {
       const matchesSearch = issue.title.toLowerCase().includes(searchText.toLowerCase());
-      const matchesLabels = selectedLabels.length === 0 || (issue.labels ?? []).some((label) => selectedLabels.includes(label));
-      const matchesDifficulty = selectedDifficulties.length === 0 || (issue.difficulty ? selectedDifficulties.includes(issue.difficulty) : false);
+      const matchesLabels =
+        selectedLabels.length === 0 ||
+        (issue.labels ?? []).some((label) => selectedLabels.includes(label));
+      const matchesDifficulty =
+        selectedDifficulties.length === 0 ||
+        (issue.difficulty ? selectedDifficulties.includes(issue.difficulty) : false);
       return matchesSearch && matchesLabels && matchesDifficulty;
     });
 
@@ -191,6 +274,8 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     });
   }, [issues, searchText, selectedLabels, selectedDifficulties, sort]);
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   async function handleApply(issueId: string) {
     if (!wallet.publicKey) return;
     setBusyIssue(issueId);
@@ -199,16 +284,19 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     try {
       setIssueStatus(issueId, 'applied');
 
-      const res = await fetch(`${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contributor: wallet.publicKey }),
-      });
+      const res = await fetch(
+        `${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contributor: wallet.publicKey }),
+        },
+      );
       if (!res.ok) throw new Error(`Apply failed: ${res.status}`);
-      const data = await res.json() as { tx_hash?: string };
+      const data = (await res.json()) as { tx_hash?: string };
       if (data.tx_hash) setTxHash(data.tx_hash);
       const issue = issues.find((entry) => entry.issue_id === issueId);
-      addToast(issue ? `Applied for “${issue.title}”` : 'Applied for issue', 'success');
+      addToast(issue ? `Applied for "${issue.title}"` : 'Applied for issue', 'success');
     } catch (err) {
       setIssueStatus(issueId, 'open');
       addToast(err instanceof Error ? err.message : 'Apply failed', 'error');
@@ -219,7 +307,9 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   async function handleWithdraw(issueId: string) {
     if (!wallet.publicKey) return;
-    const confirmed = window.confirm('Withdraw this application? This will free one global cap slot.');
+    const confirmed = window.confirm(
+      'Withdraw this application? This will free one global cap slot.',
+    );
     if (!confirmed) return;
 
     setBusyIssue(issueId);
@@ -228,17 +318,19 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     try {
       setIssueStatus(issueId, 'open');
 
-      const txRes = await fetch(
-        `${apiBase}/transactions/withdraw`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contributor: wallet.publicKey, org_id: org_id, issue_id: Number(issueId), sequence: '0' }),
-        },
-      );
-      if (!res.ok) throw new Error(`Withdraw failed: ${res.status}`);
+      const txRes = await fetch(`${apiBase}/transactions/withdraw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contributor: wallet.publicKey,
+          org_id: org_id,
+          issue_id: Number(issueId),
+          sequence: '0',
+        }),
+      });
+      if (!txRes.ok) throw new Error(`Withdraw failed: ${txRes.status}`);
       const issue = issues.find((entry) => entry.issue_id === issueId);
-      addToast(issue ? `Withdrawn from “${issue.title}”` : 'Withdrawn from issue', 'info');
+      addToast(issue ? `Withdrawn from "${issue.title}"` : 'Withdrawn from issue', 'info');
     } catch (err) {
       setIssueStatus(issueId, 'applied');
       addToast(err instanceof Error ? err.message : 'Withdraw failed', 'error');
@@ -248,6 +340,8 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   }
 
   const showCapBanner = !loading && wallet.publicKey && (globalCapReached || orgCapReached);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <main className="org-issues-page" id="main-content" tabIndex={-1}>
@@ -290,6 +384,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
         </div>
       )}
 
+      {/* ── Filters ── */}
       <section className="org-issues-page__filters" aria-label="Issue filters">
         <div className="org-issues-page__filters-row">
           <input
@@ -306,7 +401,9 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
             onClick={() => setShowFilters((value) => !value)}
           >
             Filters
-            {activeFilterCount > 0 && <span className="org-issues-page__filter-badge">{activeFilterCount}</span>}
+            {activeFilterCount > 0 && (
+              <span className="org-issues-page__filter-badge">{activeFilterCount}</span>
+            )}
           </button>
         </div>
 
@@ -321,7 +418,9 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
                     checked={selectedLabels.includes(label)}
                     onChange={() => {
                       setSelectedLabels((current) =>
-                        current.includes(label) ? current.filter((value) => value !== label) : [...current, label]
+                        current.includes(label)
+                          ? current.filter((value) => value !== label)
+                          : [...current, label],
                       );
                     }}
                   />
@@ -341,7 +440,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
                       setSelectedDifficulties((current) =>
                         current.includes(difficulty)
                           ? current.filter((value) => value !== difficulty)
-                          : [...current, difficulty]
+                          : [...current, difficulty],
                       );
                     }}
                   />
@@ -377,11 +476,15 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
         )}
       </section>
 
+      {/* ── Issue list ── */}
       {loading && issues.length === 0 ? (
-        <div className="org-issues-page__list">
-          {[0, 1, 2].map((i) => <SkeletonRow key={i} />)}
+        /* Initial load: show full-page skeleton */
+        <div className="org-issues-page__list" aria-label="Loading issues" aria-busy="true">
+          {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+            <SkeletonRow key={i} />
+          ))}
         </div>
-      ) : filteredIssues.length === 0 ? (
+      ) : filteredIssues.length === 0 && !loading ? (
         <p className="org-issues-page__empty">No issues match the current filters.</p>
       ) : (
         <div className="org-issues-page__list">
@@ -395,23 +498,40 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
               onWithdraw={handleWithdraw}
               busy={busyIssue === issue.issue_id}
               txHash={busyIssue === issue.issue_id ? txHash : null}
-              isRemoved={removingIssues.includes(issue.issue_id)}
-              onRemoved={() => setRemovingIssues((prev) => prev.filter((id) => id !== issue.issue_id))}
             />
           ))}
+
+          {/* Skeleton cards shown while next page loads */}
+          {loading && (
+            <div
+              className="org-issues-page__page-skeletons"
+              aria-label="Loading more issues"
+              aria-busy="true"
+            >
+              {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+                <IssueCardSkeleton key={i} />
+              ))}
+            </div>
+          )}
+
+          {/* IntersectionObserver sentinel — invisible element at list bottom */}
+          {hasMore && !loading && (
+            <div
+              ref={sentinelRef}
+              className="org-issues-page__scroll-sentinel"
+              aria-hidden="true"
+              data-testid="scroll-sentinel"
+            />
+          )}
+
+          {/* End-of-list message once all pages are loaded */}
+          {!hasMore && issues.length > 0 && (
+            <p className="org-issues-page__end-of-list" role="status" aria-live="polite">
+              All issues loaded · {issues.length} total
+            </p>
+          )}
         </div>
       )}
-
-      {/* Withdraw confirmation modal */}
-      <WithdrawConfirmModal
-        target={withdraw.pendingTarget}
-        loading={withdraw.loading}
-        onConfirm={withdraw.handleConfirm}
-        onCancel={withdraw.handleCancel}
-      />
-
-      {/* Toast notifications */}
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </main>
   );
 }

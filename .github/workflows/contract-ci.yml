@@ -129,12 +129,22 @@ jobs:
       - name: Report WASM size
         run: |
           SIZE=$(wc -c < target/wasm32v1-none/release/workload_governor.optimized.wasm)
-          echo "Optimized WASM size: ${SIZE} bytes (limit 65536)"
+          echo "Optimized WASM size: ${SIZE} bytes"
           echo "### 📦 WASM Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build | Size |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Optimized | ${SIZE} bytes |" >> "$GITHUB_STEP_SUMMARY"
-          [ "$SIZE" -le 65536 ] || (echo "❌ WASM exceeds 64 KB limit" && exit 1)
+          echo "| Build | Size | Limit | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE" -le 20480 ]; then
+            STATUS="✅ under 20 KB target"
+          elif [ "$SIZE" -le 22528 ]; then
+            STATUS="⚠️ above 20 KB target but within 22 KB gate"
+          else
+            STATUS="❌ exceeds 22 KB gate"
+          fi
+          echo "| Optimized | ${SIZE} bytes | 22 528 bytes (22 KB) | ${STATUS} |" >> "$GITHUB_STEP_SUMMARY"
+          # Hard fail: Soroban network limit
+          [ "$SIZE" -le 65536 ] || (echo "❌ WASM exceeds 64 KB Soroban limit" && exit 1)
+          # Hard fail: mainnet deployment gate (22 KB)
+          [ "$SIZE" -le 22528 ] || (echo "❌ WASM exceeds 22 KB deployment gate (${SIZE} bytes). Target is < 20 KB. Reduce binary size before merging." && exit 1)
 
       - name: Upload optimized WASM artifact
         uses: actions/upload-artifact@v4
@@ -183,4 +193,72 @@ jobs:
           name: fuzz-artifacts-${{ github.run_id }}
           path: fuzz/artifacts/
           if-no-files-found: ignore
+          retention-days: 30
+
+  # ── 6. Dependency Audit (cargo audit + cargo deny) ───────────────────────
+  #
+  # Closes issue #605: supply-chain audit before mainnet deployment.
+  # Runs on every PR and push to main (not on the nightly fuzz schedule).
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo audit
+        run: |
+          echo "## 🔒 Dependency Vulnerability Audit" >> "$GITHUB_STEP_SUMMARY"
+          if cargo audit --json 2>&1 | tee audit-output.json; then
+            echo "✅ No vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ Vulnerabilities detected — see audit-output.json" >> "$GITHUB_STEP_SUMMARY"
+            cat audit-output.json
+            exit 1
+          fi
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-report-${{ github.run_id }}
+          path: audit-output.json
+          retention-days: 30
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Run cargo deny check
+        run: |
+          echo "## 🔍 License & Duplicate Dependency Check" >> "$GITHUB_STEP_SUMMARY"
+          if cargo deny check 2>&1 | tee deny-output.txt; then
+            echo "✅ All license and duplicate checks passed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ cargo deny found issues — see deny-output.txt" >> "$GITHUB_STEP_SUMMARY"
+            cat deny-output.txt
+            exit 1
+          fi
+
+      - name: Upload deny report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-deny-report-${{ github.run_id }}
+          path: deny-output.txt
           retention-days: 30
