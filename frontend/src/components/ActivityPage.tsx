@@ -1,12 +1,7 @@
-/**
- * ActivityPage — /profile/activity route, closes #651
- *
- * Shows a contributor's full chronological activity timeline.
- * Address is read from the `address` query-param; falls back to DEMO.
- */
-import { useSearchParams } from "react-router-dom";
-import { ActivityTimeline } from "./ActivityTimeline";
-import "./ActivityPage.css";
+import { useState } from "react";
+import { ActivityFeed } from "./ActivityFeed";
+import { ExportButton } from "./ExportButton";
+import { ContributorProfile } from "./ContributorProfile";
 
 const DEMO_ADDRESS = "GBXXX1ABCDEFGHIJKLMNO12345";
 
@@ -16,20 +11,39 @@ export function ActivityPage() {
 
   return (
     <div className="activity-page">
-      <nav className="activity-page__nav" aria-label="Breadcrumb">
-        <a href="/" className="activity-page__back">
-          ← Home
-        </a>
+      <nav className="activity-page__nav" aria-label="Activity breadcrumb">
+        <a href="#/" className="activity-page__back">← Home</a>
+        <ExportButton className="activity-page__export" />
       </nav>
 
-      <header className="activity-page__header">
-        <h1 className="activity-page__title">Activity Timeline</h1>
-        <p className="activity-page__subtitle">
-          Your complete application and assignment history, newest first.
-        </p>
-      </header>
+      <ContributorProfile
+        walletAddress="GBXXX1ABCDEFGHIJKLMNO12345"
+        completions={0}
+      >
+        <div className="activity-page__tabs" role="tablist" aria-label="Org filter">
+          <button
+            role="tab"
+            aria-selected={selectedOrg === undefined}
+            className={`af-filter-btn${selectedOrg === undefined ? " af-filter-btn--active" : ""}`}
+            onClick={() => setSelectedOrg(undefined)}
+          >
+            All
+          </button>
+          {DEMO_ORGS.map((org) => (
+            <button
+              key={org}
+              role="tab"
+              aria-selected={selectedOrg === org}
+              className={`af-filter-btn${selectedOrg === org ? " af-filter-btn--active" : ""}`}
+              onClick={() => setSelectedOrg(org)}
+            >
+              {org}
+            </button>
+          ))}
+        </div>
 
-      <ActivityTimeline address={address} apiBase="/api" />
+        <ActivityFeed apiBase="/api" orgId={selectedOrg} network={NETWORK} />
+      </ContributorProfile>
     </div>
   );
 }

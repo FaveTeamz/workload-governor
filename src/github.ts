@@ -67,6 +67,25 @@ export class GitHubService {
     return response;
   }
 
+  /**
+   * Verify that a GitHub organisation exists.
+   *
+   * @returns `true` when the org is found (HTTP 200/301/302), `false` when the
+   * org does not exist (HTTP 404), and throws for any other error.
+   */
+  async validateOrg(org: string): Promise<boolean> {
+    try {
+      await this.fetch(`/orgs/${encodeURIComponent(org)}`);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('404')) {
+        return false;
+      }
+      throw err;
+    }
+  }
+
   async fetchIssues(
     org: string,
     since?: string,

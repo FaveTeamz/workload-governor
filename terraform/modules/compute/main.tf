@@ -66,6 +66,9 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_ecs_cluster" "this" {
   name = local.name
+
+  # Container Insights enabled — collects CPU, memory, network, and storage
+  # metrics at the task and service level. Required for issue #640 dashboard.
   setting { name = "containerInsights"; value = "enabled" }
 }
 
@@ -99,6 +102,38 @@ resource "aws_iam_role_policy" "secrets" {
   })
 }
 
+# ── ECS task role (runtime permissions) ──────────────────────────────────────
+# Separate from the execution role — these permissions are available to the
+# application process inside the container.
+
+resource "aws_iam_role" "task" {
+  name = "${local.name}-task"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow"; Principal = { Service = "ecs-tasks.amazonaws.com" }; Action = "sts:AssumeRole" }]
+  })
+}
+
+# Allow the task to send X-Ray trace data to the daemon sidecar.
+resource "aws_iam_role_policy" "xray" {
+  role = aws_iam_role.task.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "AllowXRay"
+      Effect = "Allow"
+      Action = [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets",
+        "xray:GetSamplingStatisticSummaries"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
 resource "aws_ecs_task_definition" "this" {
   family                   = local.name
   network_mode             = "awsvpc"
@@ -106,26 +141,56 @@ resource "aws_ecs_task_definition" "this" {
   cpu                      = var.environment == "production" ? "1024" : "512"
   memory                   = var.environment == "production" ? "2048" : "1024"
   execution_role_arn       = aws_iam_role.task_exec.arn
+  task_role_arn            = aws_iam_role.task.arn
 
-  container_definitions = jsonencode([{
-    name  = var.project
-    image = "${var.image_repository}:${var.image_tag}"
-    portMappings = [{ containerPort = 3000 }]
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        awslogs-group         = aws_cloudwatch_log_group.ecs.name
-        awslogs-region        = data.aws_region.current.name
-        awslogs-stream-prefix = var.project
+  container_definitions = jsonencode([
+    # ── Application container ────────────────────────────────────────────────
+    {
+      name  = var.project
+      image = "${var.image_repository}:${var.image_tag}"
+      portMappings = [{ containerPort = 3000 }]
+      environment = [
+        { name = "XRAY_ENABLED",    value = "true" },
+        { name = "SERVICE_NAME",    value = var.project },
+        # X-Ray daemon listens on UDP 2000 in the same task network namespace
+        { name = "AWS_XRAY_DAEMON_ADDRESS", value = "127.0.0.1:2000" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = data.aws_region.current.name
+          awslogs-stream-prefix = var.project
+        }
+      }
+      secrets = [
+        { name = "DATABASE_URL", valueFrom = var.database_url_secret },
+        { name = "REDIS_URL",    valueFrom = var.redis_url_secret },
+        { name = "GITHUB_TOKEN", valueFrom = var.github_token_secret },
+        { name = "JWT_SECRET",   valueFrom = var.jwt_secret_arn }
+      ]
+    },
+    # ── AWS X-Ray daemon sidecar ─────────────────────────────────────────────
+    # Receives UDP trace segments from the app and forwards them to the
+    # X-Ray service in batches. Runs as a minimal sidecar — no port mappings
+    # exposed externally.
+    {
+      name      = "xray-daemon"
+      image     = "amazon/aws-xray-daemon:3.x"
+      essential = false
+      portMappings = [
+        { containerPort = 2000; protocol = "udp" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = data.aws_region.current.name
+          awslogs-stream-prefix = "xray-daemon"
+        }
       }
     }
-    secrets = [
-      { name = "DATABASE_URL", valueFrom = var.database_url_secret },
-      { name = "REDIS_URL",    valueFrom = var.redis_url_secret },
-      { name = "GITHUB_TOKEN", valueFrom = var.github_token_secret },
-      { name = "JWT_SECRET",   valueFrom = var.jwt_secret_arn }
-    ]
-  }])
+  ])
 }
 
 resource "aws_ecs_service" "this" {

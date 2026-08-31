@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { getCached, setCached } from '../cache';
-import { validateRequest } from '../middleware/validation';
-import { issueQuerySchema } from '../schemas/issues';
+import { validateQuery, validateBody } from '../middleware/validation';
+import { issueQuerySchema, bulkRegisterIssuesSchema, BulkRegisterIssuesInput } from '../schemas/issues';
 
 const router = Router();
 
@@ -32,7 +32,7 @@ interface IssuesResponse {
 
 router.get(
   '/',
-  validateRequest({ query: issueQuerySchema }),
+  validateQuery(issueQuerySchema),
   async (req: Request, res: Response) => {
     try {
       const { org_id, status, search, page = '1', limit = '10' } = req.query as IssuesListParams;
@@ -200,5 +200,101 @@ router.get('/:org_id/:issue_id', async (req: Request, res: Response) => {
     return res.status(500).json({ error: msg });
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /api/orgs/:orgId/issues/bulk — bulk register issues
+// Accepts an array of issue IDs, processes them in a transaction
+// Returns a report of succeeded/failed registrations
+// ---------------------------------------------------------------------------
+
+interface BulkRegistrationReport {
+  succeeded: number[];
+  failed: Array<{
+    issueId: number;
+    error: string;
+  }>;
+  total: number;
+  timestamp: string;
+}
+
+router.post(
+  '/:org_id/issues/bulk',
+  validateBody(bulkRegisterIssuesSchema),
+  async (req: Request, res: Response) => {
+    const { org_id } = req.params;
+    const { issue_ids } = req.body as BulkRegisterIssuesInput;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+
+      const succeeded: number[] = [];
+      const failed: Array<{ issueId: number; error: string }> = [];
+
+      for (const issueId of issue_ids) {
+        try {
+          // Check if issue already exists
+          const existingIssue = await client.query(
+            'SELECT id FROM issues WHERE org_id = $1 AND id = $2 LIMIT 1',
+            [org_id, issueId]
+          );
+
+          if (existingIssue.rows.length > 0) {
+            failed.push({
+              issueId,
+              error: 'Issue already registered',
+            });
+            continue;
+          }
+
+          // Register the issue
+          await client.query(
+            `INSERT INTO issues (org_id, id, title, status, created_at)
+             VALUES ($1, $2, $3, $4, NOW())`,
+            [org_id, issueId, `Issue #${issueId}`, 'open']
+          );
+
+          succeeded.push(issueId);
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+          failed.push({
+            issueId,
+            error: errorMsg,
+          });
+        }
+      }
+
+      // If any failures occurred, rollback everything
+      if (failed.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'Partial failure during bulk registration',
+          succeeded,
+          failed,
+          total: issue_ids.length,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // All succeeded, commit
+      await client.query('COMMIT');
+
+      const report: BulkRegistrationReport = {
+        succeeded,
+        failed,
+        total: issue_ids.length,
+        timestamp: new Date().toISOString(),
+      };
+
+      res.status(201).json(report);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      const msg = err instanceof Error ? err.message : 'internal server error';
+      res.status(500).json({ error: msg });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 export default router;

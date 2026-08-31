@@ -20,6 +20,7 @@ Contract call failed?
 ├─ Code 9  ApplicationNotFound     → Application expired or never existed?   → #error-9-applicationnotfound
 ├─ Code 10 AssignmentNotFound      → Assignment already removed?             → #error-10-assignmentnotfound
 ├─ Code 11 AlreadyAssigned         → Issue already has active assignment?    → #error-11-alreadyassigned
+├─ Code 12 OrgNotFound             → org_id was never registered?            → #error-12-orgnotfound
 └─ Code 13 CounterInconsistency    → Storage corruption / bad migration?     → #error-13-counterinconsistency
 ```
 
@@ -40,75 +41,9 @@ Contract call failed?
 | 9 | `ApplicationNotFound` | No pending application found for the given triple | The application may have expired (Wave TTL elapsed) or was never submitted. Re-apply with `apply_for_issue`. |
 | 10 | `AssignmentNotFound` | No active assignment found for the given `(org_id, issue_id, contributor)` triple | The assignment does not exist or was already removed. Verify the triple with `is_assigned` before calling. |
 | 11 | `AlreadyAssigned` | An active assignment already exists for this issue and contributor | Call `complete_assignment` or `revoke_assignment` to close the existing assignment before re-assigning. |
-| 13 | `CounterInconsistency` | The org assignment counter is `0` while the assignment entry still exists — storage was corrupted or manually zeroed by a migration script | Restore the counter to the correct value via a migration script, then retry. |
-
----
-
-## Errors by Contract Function
-
-| Function | Possible error codes |
-|---|---|
-| `initialize` | 1, 3 |
-| `register_maintainer` | 2, 3 |
-| `upgrade` | 2, 3 |
-| `apply_for_issue` | 2, 5, 6, 8 |
-| `withdraw_application` | 2, 5, 9 |
-| `assign_issue` | 2, 4, 9, 7, 11 |
-| `complete_assignment` | 2, 4, 10 |
-| `revoke_assignment` | 2, 4, 10, 13 |
-| `extend_application_ttl` | 9 |
-| `get_global_application_count` | — |
-| `get_org_assignment_count` | — |
-| `has_applied` | — |
-| `is_assigned` | — |
-
----
-
-## Detailed Error Descriptions
-
----
-
-### Error 1 — `AlreadyInitialized`
-
-**Description**
-
-The contract has already been successfully initialised. `initialize` stores the admin address as a persistent key; if that key is present when `initialize` is called again the contract panics immediately with this error. The second call is a no-op and leaves state unchanged.
-
-**Who Encounters This**
-
-- **Admin / deployment scripts** — only the deployer calls `initialize`. This error surfaces when a deployment script is run a second time against the same contract ID, or when a developer mistakenly redeploys to an existing contract address.
-
-**Root Cause**
-
-`initialize` checks whether the `"admin"` persistent storage key exists before writing. If it does, `AlreadyInitialized` is raised before any auth check, so even the wrong signer receives this error rather than `UnauthorizedAdmin`.
-
-**Example Scenario**
-
-A CI pipeline deploys the contract and immediately calls `initialize`. The pipeline is re-triggered without a fresh deployment, targeting the same contract ID:
-
-```
-# First run — succeeds
-stellar contract invoke --id CCHKV...3BPQ \
-  --network testnet --source admin-account \
-  -- initialize --admin GDXYZ...7MNP
-
-# Second run — fails
-stellar contract invoke --id CCHKV...3BPQ \
-  --network testnet --source admin-account \
-  -- initialize --admin GDXYZ...7MNP
-→ ContractError::AlreadyInitialized (1)
-```
-
-**Resolution Steps**
-
-1. Confirm the contract is already initialised by querying a read-only function:
-   ```
-   stellar contract invoke --id CCHKV...3BPQ --network testnet \
-     -- get_global_application_count --contributor GDXYZ...7MNP
-   ```
-   If this returns `0` (rather than panicking with `NotInitialized`), the contract is live and ready.
-2. Do **not** call `initialize` again on this contract ID.
-3. If you genuinely need a fresh deployment, deploy a new contract instance and call `initialize` on its new ID.
+| 12 | `OrgNotFound` | A maintainer function was called with an `org_id` that has never had a maintainer registered | Have the admin call `register_maintainer` for this `org_id` first. Verify you are using the correct org symbol. |
+| 13 | `CounterInconsistency` | The org assignment counter is `0` but live assignment sentinels were found for the pair — indicates storage corruption | Run `check_consistency` to identify affected pairs, then open an incident. Manual repair or a migration upgrade is required. |
+| 17 | `MaintainerNotFound` | `deregister_maintainer` was called for a `(maintainer, org_id)` pair that is not currently registered | Verify the maintainer is registered before deregistering. Check that the correct address and `org_id` are supplied. |
 
 ---
 
@@ -588,39 +523,78 @@ stellar contract invoke --id CCHKV...3BPQ \
 
 ---
 
-### Error 13 — `CounterInconsistency`
+### Error 12 — `OrgNotFound`
 
 **Description**
 
-The org assignment counter for a contributor is `0`, but a persistent assignment entry still exists for that contributor in the org. This state is physically impossible under normal contract operation and indicates storage was modified externally — typically by a migration script that zeroed counters without removing assignment entries, or by direct storage manipulation.
+A maintainer-only function (`assign_issue`, `complete_assignment`, `revoke_assignment`, `set_org_cap`) was called with an `org_id` that has never had a maintainer registered via `register_maintainer`. This error is raised **before** the `UnauthorizedMaintainer` check, so callers can distinguish between "the org doesn't exist" and "I am not authorised for this org".
+
+An org is considered registered once `register_maintainer` has been called for it at least once. The sentinel is never deleted — even if all maintainers are subsequently deregistered, the org remains registered and subsequent calls will fall through to `UnauthorizedMaintainer` rather than `OrgNotFound`.
 
 **Who Encounters This**
 
-- **Maintainers** — calling `revoke_assignment` after a bad migration.
-- **Operators** — during post-upgrade state reconciliation when a migration script had a bug.
+- **Maintainers** — when they supply an `org_id` that was never set up by the admin.
+- **Integrators** — when a typo in `org_id` references a non-existent organisation.
+- **Developers** — during local testing when `register_maintainer` was skipped.
 
 **Root Cause**
 
-`revoke_assignment` reads the org assignment counter after confirming the assignment entry exists. If the counter is `0` while the entry is present, the invariant `(entry exists) → (counter > 0)` is violated. Rather than performing unsigned integer underflow (which would saturate to a very large number), the contract panics with this error.
+The contract checks `storage::is_org_registered(&env, &org_id)` immediately after auth. If no `("org", org_id)` sentinel entry exists in persistent storage, this error fires. The sentinel is written automatically by `register_maintainer` on the first registration call for an org.
 
 **Example Scenario**
 
-A migration script zeroed all org counters for a batch of contributors but did not remove their assignment entries. A maintainer then tries to revoke Grace's assignment:
+A maintainer is registered for `rust_foundation` but accidentally uses `rust_foundaton` (typo) when calling `assign_issue`:
 
 ```
 stellar contract invoke --id CCHKV...3BPQ \
   --network testnet --source maintainer-account \
-  -- revoke_assignment \
+  -- assign_issue \
   --maintainer GMAIN...5678 \
-  --contributor GGRACE...0123 \
-  --org_id rust_foundation --issue_id 5
-→ ContractError::CounterInconsistency (13)
+  --contributor GBFZB...XK2Q \
+  --org_id rust_foundaton --issue_id 42
+→ ContractError::OrgNotFound (12)
 ```
 
 **Resolution Steps**
 
-1. Count the actual number of active assignment entries for the contributor in the affected org by querying `is_assigned` for each known issue, or by inspecting contract storage directly.
-2. Run a corrective migration that sets the `("o_asgn", contributor, org_id)` counter to the correct value (the number of existing assignment entries).
-3. After the counter is restored, retry `revoke_assignment`.
-4. See the [cap-emergency-increase runbook](runbooks/cap-emergency-increase.md) for guidance on safe storage mutations, and the [admin guide](admin-guide.md) for migration patterns.
-5. Audit the migration script that caused the inconsistency to prevent recurrence.
+1. Check the correct `org_id` symbol — org IDs are case-sensitive Soroban Symbols. A single character difference produces a different key.
+2. If the org is genuinely new, have the admin register a maintainer for it first:
+   ```
+   stellar contract invoke --id CCHKV...3BPQ \
+     --network testnet --source admin-account \
+     -- register_maintainer \
+     --admin GDXYZ...7MNP \
+     --maintainer GMAIN...5678 \
+     --org_id rust_foundation
+   ```
+3. After registration, retry the original maintainer call.
+4. If you expect the org to already exist and this error is unexpected, use `check_consistency` to confirm the contract state, or inspect storage for the `("org", org_id)` sentinel key.
+
+**Distinguishing OrgNotFound from UnauthorizedMaintainer**
+
+| Situation | Error returned |
+|---|---|
+| `org_id` was never passed to `register_maintainer` | `OrgNotFound` (12) |
+| `org_id` is known but the calling address is not a registered maintainer | `UnauthorizedMaintainer` (4) |
+
+---
+
+### Error 13 — `CounterInconsistency`
+
+| Function | Possible error codes |
+|---|---|
+| `initialize` | 1, 3 |
+| `register_maintainer` | 2, 3 |
+| `deregister_maintainer` | 2, 3, 17 |
+| `upgrade` | 2, 3 |
+| `apply_for_issue` | 2, 5, 6, 8 |
+| `withdraw_application` | 2, 5, 9 |
+| `assign_issue` | 2, 12, 4, 9, 7, 11 |
+| `complete_assignment` | 2, 12, 4, 10 |
+| `revoke_assignment` | 2, 12, 4, 10 |
+| `set_org_cap` | 2, 12, 4 |
+| `extend_application_ttl` | 9 |
+| `get_global_application_count` | — |
+| `get_org_assignment_count` | — |
+| `has_applied` | — |
+| `is_assigned` | — |

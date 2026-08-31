@@ -39,7 +39,47 @@ Capture the full transaction hash from the Stellar Explorer:
 - Open a GitHub issue tagged `incident` and link this runbook.
 - If P0: page on-call admin immediately.
 
-### 3. Freeze the contract (P0/P1 only)
+### 3. Pause or freeze the contract (P0/P1 only)
+
+#### Option A — Instant pause via `pause()` (recommended)
+
+The contract has a first-class `pause()` function that can be called instantly by the admin. It blocks all state-changing operations while keeping query functions accessible.
+
+```bash
+# Pause the contract immediately
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network testnet \
+  --source "$ADMIN_SECRET" \
+  -- pause \
+  --admin <ADMIN_ADDRESS>
+# Expected output: null
+# All state-changing calls will now return ContractPaused (error 15).
+
+# Verify the pause is active
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network testnet \
+  -- is_paused
+# Expected output: true
+
+# Resume normal operations once the fix is deployed:
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network testnet \
+  --source "$ADMIN_SECRET" \
+  -- unpause \
+  --admin <ADMIN_ADDRESS>
+```
+
+**Advantages over the WASM upgrade approach:**
+- Instant: no build/upload/upgrade cycle (saves 10–30 minutes)
+- Query functions remain accessible for diagnostics
+- Reversible without a WASM upgrade
+
+#### Option B — WASM upgrade freeze (fallback)
+
+Use this only if the admin key is unavailable or the `pause` function itself is buggy.
 
 Upload a "frozen" WASM that panics on every state-changing function with `NotInitialized` (error 2). This halts new state changes while preserving existing storage.
 

@@ -1,0 +1,94 @@
+name: SAST (Semgrep)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # Allow manual runs for ad-hoc scans
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF to GitHub Security tab
+
+jobs:
+  semgrep:
+    name: Semgrep SAST scan
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Run Semgrep with project rule packs ────────────────────────────────
+      # Rule packs:
+      #   p/rust       — Rust memory safety, unsafe usage, injection patterns
+      #   p/typescript — TS/JS injection, prototype pollution, XSS, etc.
+      #   p/nodejs     — Node.js-specific patterns (path traversal, SSRF, etc.)
+      #
+      # Exit codes:
+      #   0 — no findings
+      #   1 — findings with severity >= error (fails CI)
+      #   2 — findings with severity == warning only (we capture and report separately)
+      - name: Semgrep scan
+        id: scan
+        run: |
+          semgrep ci \
+            --config .semgrep.yml \
+            --config p/rust \
+            --config p/typescript \
+            --config p/nodejs \
+            --sarif-output semgrep.sarif \
+            --json-output semgrep.json \
+            --severity ERROR \
+            --no-suppress-errors \
+            --quiet || EXIT=$?
+
+          # Exit code 1 = error-level findings → fail CI
+          # Exit code 0 = clean
+          # Anything else = scan infrastructure error → also fail
+          echo "exit_code=${EXIT:-0}" >> "$GITHUB_OUTPUT"
+          exit ${EXIT:-0}
+        env:
+          # Authenticate to semgrep.dev for managed rules (optional)
+          # Set SEMGREP_APP_TOKEN in repository secrets to enable this.
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      # ── Upload SARIF to GitHub Security tab ────────────────────────────────
+      # Runs even if the scan step failed so findings always appear in the UI.
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      # ── Surface warning-level findings as annotations ──────────────────────
+      # Warning findings are reported to the PR but do not fail CI.
+      - name: Report warning-level findings
+        if: always()
+        run: |
+          if [[ ! -f semgrep.json ]]; then
+            echo "==> No JSON results file found — skipping warning report."
+            exit 0
+          fi
+
+          WARNINGS=$(python3 -c "
+          import json, sys
+          data = json.load(open('semgrep.json'))
+          results = data.get('results', [])
+          warnings = [r for r in results if r.get('extra', {}).get('severity', '').upper() == 'WARNING']
+          if warnings:
+              print(f'==> {len(warnings)} WARNING-level finding(s):')
+              for w in warnings:
+                  path = w.get('path', '?')
+                  line = w.get('start', {}).get('line', '?')
+                  msg  = w.get('extra', {}).get('message', '').split('\n')[0][:100]
+                  rule = w.get('check_id', '?')
+                  print(f'  [{rule}] {path}:{line} — {msg}')
+          else:
+              print('==> No WARNING-level findings.')
+          ")
+          echo "$WARNINGS"
