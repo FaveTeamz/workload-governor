@@ -178,6 +178,8 @@ export default function App() {
         networkMismatch={wallet.networkMismatch}
         onConnect={wallet.connect}
         onDisconnect={wallet.disconnect}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <Routes>
