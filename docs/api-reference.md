@@ -586,6 +586,8 @@ x-admin-token: <ADMIN_TOKEN>
 
 The token value must match the `ADMIN_TOKEN` environment variable on the server. Missing or incorrect tokens receive `401 Unauthorized`.
 
+For guidance on generating, storing, rotating, and revoking the admin token, see [docs/api-key-guide.md](api-key-guide.md).
+
 ---
 
 ### Health

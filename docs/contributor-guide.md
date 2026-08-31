@@ -461,8 +461,9 @@ stellar contract invoke --id "$CONTRACT_ID" --network testnet \
 Applications live in **temporary storage** (TTL ≈ 24 h). Assignments live in
 **persistent storage** (no expiry — only cleared by maintainer action).
 
-For a full explanation of the fairness invariants and threat model, see
-[docs/fairness-model.md](fairness-model.md).
+For a plain-English walkthrough with worked examples, see
+[docs/fairness-explainer.md](fairness-explainer.md). For the formal invariants
+and threat model, see [docs/fairness-model.md](fairness-model.md).
 
 ---
 
