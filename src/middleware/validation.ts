@@ -42,6 +42,7 @@ export function validateBody<S extends ZodSchema>(schema: S): RequestHandler {
     if (!result.success) {
       res.status(400).json({
         error: 'validation failed',
+        message: 'Request body validation failed',
         details: formatZodErrors(result.error),
       });
       return;
@@ -63,6 +64,7 @@ export function validateQuery<S extends ZodSchema>(schema: S): RequestHandler {
     if (!result.success) {
       res.status(400).json({
         error: 'validation failed',
+        message: 'Request query validation failed',
         details: formatZodErrors(result.error),
       });
       return;
@@ -117,6 +119,7 @@ export function validateRequest(schemas: ValidationSchemas): RequestHandler {
     if (allErrors.length > 0) {
       res.status(400).json({
         error: 'validation failed',
+        message: 'Request validation failed',
         details: allErrors,
       });
       return;

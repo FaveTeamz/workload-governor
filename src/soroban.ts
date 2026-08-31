@@ -55,6 +55,7 @@ export interface TransactionSubmissionResult {
   hash: string;
   status: 'success' | 'error';
   error?: SorobanContractError;
+  simulation?: ResourceEstimate;
 }
 
 export type SorobanErrorCode =
@@ -225,13 +226,69 @@ export class SorobanService {
     tx: Transaction,
   ): Promise<TransactionSubmissionResult> {
     try {
+      console.log('[Soroban] Simulating transaction before submission...');
+      const simResult = await this.server.simulateTransaction(tx);
+
+      if (SorobanRpc.Api.isSimulationError(simResult)) {
+        const contractError = this.parseContractError(simResult.error);
+        console.error('[Soroban] Simulation error before submission:', contractError);
+        return {
+          hash: '',
+          status: 'error',
+          error: contractError,
+        };
+      }
+
+      const sim = simResult as SorobanRpc.Api.SimulateTransactionSuccessResponse;
+      let simulation: ResourceEstimate | undefined;
+      try {
+        const resources = sim.transactionData?.build()?.resources();
+        simulation = {
+          fee: sim.minResourceFee ?? '100',
+          instructions: typeof resources?.instructions === 'function' ? resources.instructions() : 0,
+          readBytes: typeof resources?.readBytes === 'function' ? resources.readBytes() : 0,
+          writeBytes: typeof resources?.writeBytes === 'function' ? resources.writeBytes() : 0,
+        };
+      } catch {
+        simulation = {
+          fee: sim.minResourceFee ?? '100',
+          instructions: 0,
+          readBytes: 0,
+          writeBytes: 0,
+        };
+      }
+
+      let txToSend = tx;
+      try {
+        if (typeof (SorobanRpc as any).assembleTransaction === 'function') {
+          const assembled = (SorobanRpc as any).assembleTransaction(tx, simResult);
+          txToSend = typeof assembled?.build === 'function' ? assembled.build() : assembled;
+        }
+      } catch {
+        // Fall back to original transaction if assemble fails
+      }
+
       console.log('[Soroban] Submitting transaction...');
-      const result = await this.server.sendTransaction(tx);
+      const result = await this.server.sendTransaction(txToSend);
 
       console.log('[Soroban] Transaction submitted:', {
         hash: result.hash,
         status: result.status,
       });
+
+      if (result.status === 'ERROR') {
+        const errorMsg =
+          (result as any).errorResult?.toString() ||
+          (result as any).errorResultXdr ||
+          'Transaction submission rejected';
+        const error = this.parseContractError(errorMsg);
+        return {
+          hash: result.hash || '',
+          status: 'error',
+          error,
+          simulation,
+        };
+      }
 
       if (result.status === 'PENDING') {
         // Poll for transaction status
@@ -247,6 +304,7 @@ export class SorobanService {
             return {
               hash: result.hash,
               status: 'success',
+              simulation,
             };
           }
 
@@ -259,6 +317,7 @@ export class SorobanService {
               hash: result.hash,
               status: 'error',
               error,
+              simulation,
             };
           }
 
@@ -271,12 +330,14 @@ export class SorobanService {
         return {
           hash: result.hash,
           status: 'success', // Assume success if still pending after timeout
+          simulation,
         };
       }
 
       return {
         hash: result.hash,
         status: 'success',
+        simulation,
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

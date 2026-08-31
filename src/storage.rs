@@ -19,37 +19,45 @@
 //! |---|---------|--------|--------------|
 //! | 1 | `("g_apps", contributor)` | `"g_apps"` | `Address` |
 //! | 2 | `("app", contributor, org_id, issue_id)` | `"app"` | `Address`, `Symbol`, `u32` |
-//! | 3 | `"admin"` (scalar) | `"admin"` | — (singleton) |
-//! | 4 | `("maint", maintainer, org_id)` | `"maint"` | `Address`, `Symbol` |
-//! | 5 | `("o_asgn", contributor, org_id)` | `"o_asgn"` | `Address`, `Symbol` |
-//! | 6 | `("asgn", org_id, issue_id, contributor)` | `"asgn"` | `Symbol`, `u32`, `Address` |
-//! | 7 | `("o_cap", org_id)` | `"o_cap"` | `Symbol` |
+//! | 3 | `("app_idx", contributor)` | `"app_idx"` | `Address` |
+//! | 4 | `"admin"` (scalar) | `"admin"` | — (singleton) |
+//! | 5 | `("maint", maintainer, org_id)` | `"maint"` | `Address`, `Symbol` |
+//! | 6 | `("o_asgn", contributor, org_id)` | `"o_asgn"` | `Address`, `Symbol` |
+//! | 7 | `("asgn", org_id, issue_id, contributor)` | `"asgn"` | `Symbol`, `u32`, `Address` |
+//! | 8 | `("o_cap", org_id)` | `"o_cap"` | `Symbol` |
 //!
 //! Pairwise uniqueness argument:
-//! - **1 vs 2**: `"g_apps"` ≠ `"app"` — different prefix bytes.
-//! - **1 vs 3**: tuple ≠ scalar — different `ScVal` discriminants.
-//! - **1 vs 4**: `"g_apps"` ≠ `"maint"`.
-//! - **1 vs 5**: `"g_apps"` ≠ `"o_asgn"`.
-//! - **1 vs 6**: `"g_apps"` ≠ `"asgn"`.
-//! - **1 vs 7**: `"g_apps"` ≠ `"o_cap"`.
-//! - **2 vs 3**: tuple ≠ scalar.
-//! - **2 vs 4**: `"app"` ≠ `"maint"`.
-//! - **2 vs 5**: `"app"` ≠ `"o_asgn"`.
-//! - **2 vs 6**: `"app"` ≠ `"asgn"`.
-//! - **2 vs 7**: `"app"` ≠ `"o_cap"`.
-//! - **3 vs 4–7**: scalar `"admin"` ≠ any tuple.
-//! - **4 vs 5**: `"maint"` ≠ `"o_asgn"`.
-//! - **4 vs 6**: `"maint"` ≠ `"asgn"`.
-//! - **4 vs 7**: `"maint"` ≠ `"o_cap"`.
-//! - **5 vs 6**: `"o_asgn"` ≠ `"asgn"`.
-//! - **5 vs 7**: `"o_asgn"` ≠ `"o_cap"`.
-//! - **6 vs 7**: `"asgn"` ≠ `"o_cap"`.
+//! - **1 vs 2**: `"g_apps"` ≠ `"app"`.
+//! - **1 vs 3**: `"g_apps"` ≠ `"app_idx"`.
+//! - **1 vs 4**: tuple ≠ scalar — different `ScVal` discriminants.
+//! - **1 vs 5**: `"g_apps"` ≠ `"maint"`.
+//! - **1 vs 6**: `"g_apps"` ≠ `"o_asgn"`.
+//! - **1 vs 7**: `"g_apps"` ≠ `"asgn"`.
+//! - **1 vs 8**: `"g_apps"` ≠ `"o_cap"`.
+//! - **2 vs 3**: `"app"` ≠ `"app_idx"`.
+//! - **2 vs 4**: tuple ≠ scalar.
+//! - **2 vs 5**: `"app"` ≠ `"maint"`.
+//! - **2 vs 6**: `"app"` ≠ `"o_asgn"`.
+//! - **2 vs 7**: `"app"` ≠ `"asgn"`.
+//! - **2 vs 8**: `"app"` ≠ `"o_cap"`.
+//! - **3 vs 4**: tuple ≠ scalar.
+//! - **3 vs 5**: `"app_idx"` ≠ `"maint"`.
+//! - **3 vs 6**: `"app_idx"` ≠ `"o_asgn"`.
+//! - **3 vs 7**: `"app_idx"` ≠ `"asgn"`.
+//! - **3 vs 8**: `"app_idx"` ≠ `"o_cap"`.
+//! - **4 vs 5–8**: scalar `"admin"` ≠ any tuple.
+//! - **5 vs 6**: `"maint"` ≠ `"o_asgn"`.
+//! - **5 vs 7**: `"maint"` ≠ `"asgn"`.
+//! - **5 vs 8**: `"maint"` ≠ `"o_cap"`.
+//! - **6 vs 7**: `"o_asgn"` ≠ `"asgn"`.
+//! - **6 vs 8**: `"o_asgn"` ≠ `"o_cap"`.
+//! - **7 vs 8**: `"asgn"` ≠ `"o_cap"`.
 //!
 //! Within each pattern, uniqueness is guaranteed by the combination of caller-controlled
 //! `Address` values (validated by the host via `require_auth`) and the caller-supplied
 //! `org_id`/`issue_id` fields — making impersonation impossible at the auth layer.
 
-use soroban_sdk::{panic_with_error, Address, Env, Symbol, symbol_short};
+use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec, symbol_short};
 
 use crate::errors::ContractError;
 
@@ -74,6 +82,12 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// Default maximum number of active assignments a contributor may hold per org
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
+
+/// Minimum per-org assignment cap value accepted by `set_org_cap`.
+pub const ORG_CAP_MIN: u32 = 1;
+
+/// Maximum per-org assignment cap value accepted by `set_org_cap`.
+pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // Persistent storage — Global cap override
@@ -234,27 +248,6 @@ pub(crate) fn extend_app_entry_ttl(
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-
-fn global_cap_key() -> Symbol {
-    symbol_short!("g_cap")
-}
-
-/// Returns the configured global application cap, defaulting to `GLOBAL_APP_LIMIT`.
-pub(crate) fn get_global_cap(env: &Env) -> u32 {
-    env.storage().persistent().get(&global_cap_key()).unwrap_or(GLOBAL_APP_LIMIT)
-}
-
-/// Stores a new global application cap.
-pub(crate) fn set_global_cap(env: &Env, cap: u32) {
-    env.storage().persistent().set(&global_cap_key(), &cap);
-}
-
-// ---------------------------------------------------------------------------
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //
@@ -273,6 +266,41 @@ pub(crate) fn get_admin(env: &Env) -> Option<Address> {
 /// Writes the admin address to persistent storage.
 pub(crate) fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&admin_key(), admin);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Organisation Registration Sentinel
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("org"), org_id: Symbol)`
+// Value: `bool` (presence sentinel — always `true`)
+//
+// Written the first time any maintainer is registered for `org_id`.
+// Never deleted — it marks that the org was at minimum once initialised.
+// Callers should use `is_org_registered` to verify an org exists before
+// returning `OrgNotFound`.
+
+fn org_sentinel_key(org_id: &Symbol) -> (Symbol, Symbol) {
+    (symbol_short!("org"), org_id.clone())
+}
+
+/// Returns `true` if `org_id` has ever had a maintainer registered for it.
+///
+/// Used to distinguish `OrgNotFound` (org never initialised) from
+/// `UnauthorizedMaintainer` (org exists, but this caller is not registered).
+pub(crate) fn is_org_registered(env: &Env, org_id: &Symbol) -> bool {
+    let key = org_sentinel_key(org_id);
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&key)
+        .unwrap_or(false)
+}
+
+/// Marks `org_id` as registered. Idempotent — safe to call on every
+/// `register_maintainer` invocation.
+pub(crate) fn mark_org_registered(env: &Env, org_id: &Symbol) {
+    let key = org_sentinel_key(org_id);
+    env.storage().persistent().set(&key, &true);
 }
 
 // ---------------------------------------------------------------------------
@@ -296,15 +324,45 @@ pub(crate) fn is_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) ->
 }
 
 /// Registers `maintainer` for `org_id` (idempotent).
+///
+/// Also marks the org as registered via [`mark_org_registered`] so that subsequent
+/// calls can distinguish `OrgNotFound` from `UnauthorizedMaintainer`.
 pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
+    mark_org_registered(env, org_id);
     let key = maintainer_key(maintainer, org_id);
     env.storage().persistent().set(&key, &true);
 }
 
-/// Removes the maintainer registration for `(maintainer, org_id)`.
+/// Deregisters `maintainer` for `org_id` (idempotent — safe to call even if not registered).
 pub(crate) fn remove_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
     let key = maintainer_key(maintainer, org_id);
     env.storage().persistent().remove(&key);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Per-Org Assignment Cap
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("o_cap"), org_id: Symbol)`
+// Value: `u32`
+//
+// When absent the default `ORG_ASSIGNMENT_LIMIT` is used, making this
+// storage entry optional.
+
+fn org_cap_key(org_id: &Symbol) -> (Symbol, Symbol) {
+    (symbol_short!("o_cap"), org_id.clone())
+}
+
+/// Returns the configured per-org assignment cap, or `None` if not set (use default).
+pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> Option<u32> {
+    let key = org_cap_key(org_id);
+    env.storage().persistent().get(&key)
+}
+
+/// Writes the per-org assignment cap.
+pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
+    let key = org_cap_key(org_id);
+    env.storage().persistent().set(&key, &cap);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,4 +495,62 @@ pub(crate) fn get_org_cap(env: &Env, org_id: &Symbol) -> u32 {
 pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
     let key = org_cap_key(org_id);
     env.storage().persistent().set(&key, &cap);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Assignment Deadline  (Issue #604)
+// ---------------------------------------------------------------------------
+//
+// Key: `(symbol_short!("dead"), org_id: Symbol, issue_id: u32, contributor: Address)`
+// Value: `u32` (deadline ledger sequence number)
+//
+// Stores the optional deadline for an assignment. When absent, no deadline is
+// set and `expire_assignment` cannot be called for that assignment.
+// Prefix `"dead"` is distinct from all other prefixes — zero collision risk.
+
+fn assignment_deadline_key(
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) -> (Symbol, Symbol, u32, Address) {
+    (
+        symbol_short!("dead"),
+        org_id.clone(),
+        issue_id,
+        contributor.clone(),
+    )
+}
+
+/// Returns the deadline ledger for an assignment, or `None` if no deadline was set.
+pub(crate) fn get_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) -> Option<u32> {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().get::<_, u32>(&key)
+}
+
+/// Writes the deadline ledger for an assignment.
+pub(crate) fn set_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+    deadline: u32,
+) {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().set(&key, &deadline);
+}
+
+/// Removes the deadline entry for an assignment (called on complete/revoke/expire).
+pub(crate) fn remove_assignment_deadline(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) {
+    let key = assignment_deadline_key(org_id, issue_id, contributor);
+    env.storage().persistent().remove(&key);
 }

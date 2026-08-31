@@ -44,6 +44,7 @@
     "@vitest/browser-playwright": "^4.1.9",
     "@vitest/coverage-istanbul": "^4.1.9",
     "@vitest/coverage-v8": "^4.1.9",
+    "axe-core": "^4.10.3",
     "eslint-plugin-storybook": "^10.4.6",
     "jsdom": "^25.0.1",
     "oxlint": "^1.69.0",

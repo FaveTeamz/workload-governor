@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+# Workspace declaration — includes the fuzz crate so that both the contract
+# and the fuzz harness share a single Cargo.lock.  This prevents the fuzz
+# resolver from independently selecting newer (incompatible) transitive dep
+# versions (e.g. ed25519-dalek 3.x vs 2.x expected by soroban-env-host 22.x).
+#
+# cargo-fuzz recognises the workspace and operates correctly when the fuzz
+# sub-crate is a workspace member.
+[workspace]
+members = [".", "fuzz"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 doctest = false
@@ -23,6 +33,10 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 # Without lto + codegen-units=1 + panic=abort, the binary exceeds the 64KB
 # contract size limit enforced by the Stellar network.
 # Reference: https://developers.stellar.org/docs/build/smart-contracts/getting-started/hello-world
+#
+# Note: panic = "abort" is defined in .cargo/config.toml under
+# [target.wasm32v1-none] so it only applies to WASM builds.  Native builds
+# (tests, fuzz) use the default panic = "unwind".
 # ---------------------------------------------------------------------------
 [profile.release]
 opt-level = "z"
@@ -30,7 +44,6 @@ overflow-checks = true
 debug = 0
 strip = "symbols"
 debug-assertions = false
-panic = "abort"
 codegen-units = 1
 lto = true
 

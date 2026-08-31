@@ -6,7 +6,12 @@ import { verifySignature, parseAuthHeader } from '../signature';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { logger } from '../logger';
 import { validateBody } from '../middleware/validation';
-import { registerMaintainerBodySchema, RegisterMaintainerBody } from '../schemas/admin';
+import {
+  registerMaintainerBodySchema,
+  RegisterMaintainerBody,
+  deregisterMaintainerBodySchema,
+  DeregisterMaintainerBody,
+} from '../schemas/admin';
 import { registerOrgSchema } from '../schemas/orgs';
 
 const router = Router();
@@ -91,6 +96,72 @@ router.post(
   },
 );
 
+// DELETE /api/admin/maintainers
+// Body: { maintainer_address, org_id, sequence? }
+// Builds an unsigned deregister_maintainer transaction XDR for the admin to sign.
+// Returns 404 with error code 17 if the maintainer is not registered for the org.
+router.delete(
+  '/maintainers',
+  signatureAuthMiddleware,
+  validateBody(deregisterMaintainerBodySchema),
+  async (req: Request, res: Response) => {
+    const adminReq = req as Request & { adminAddress: string };
+    const { maintainer_address, org_id, sequence } = req.body as DeregisterMaintainerBody;
+
+    try {
+      const account = adminReq.adminAddress;
+
+      // Fetch sequence from the RPC when not supplied by the caller
+      const seq = sequence ?? (await soroban.getAccountSequence(account));
+
+      const args = [
+        new Address(maintainer_address).toScVal(),
+        nativeToScVal(org_id, { type: 'symbol' }),
+      ];
+
+      const tx = soroban.buildRawTransaction(
+        account,
+        seq,
+        'deregister_maintainer',
+        args,
+      );
+
+      logger.info({
+        correlationId: adminReq.correlationId,
+        message: 'deregister_maintainer XDR built',
+        maintainer_address,
+        org_id,
+        admin: account,
+      });
+
+      res.status(200).json({
+        xdr: tx.toXDR(),
+        message: 'Sign this transaction with your admin key and submit to /broadcast',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'internal error';
+
+      // Surface MaintainerNotFound (code 17) as a 404 so the client can
+      // distinguish "already-deregistered" from generic 400/500 errors.
+      if (msg.includes('MaintainerNotFound') || msg.includes('error code=17')) {
+        res.status(404).json({
+          error: 'MaintainerNotFound',
+          code: 17,
+          message: `Maintainer ${maintainer_address} is not registered for org ${org_id}`,
+        });
+        return;
+      }
+
+      logger.error({
+        correlationId: adminReq.correlationId,
+        error: msg,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      res.status(400).json({ error: msg });
+    }
+  },
+);
+
 // POST /api/admin/orgs
 // Body: { github_org: string, org_id: string, maintainers: string[], org_cap?: number }
 // 1. Validates github_org exists via the GitHub API (422 if not found)
@@ -148,8 +219,8 @@ router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response
 
   // ── Step 3: Insert the org record ────────────────────────────────────────
   await pool.query(
-    `INSERT INTO orgs (org_id, github_org, org_cap, created_at)
-     VALUES ($1, $2, $3, NOW())`,
+    `INSERT INTO orgs (org_id, github_org, org_cap)
+     VALUES ($1, $2, $3)`,
     [org_id, github_org, org_cap],
   );
 
@@ -206,6 +277,169 @@ router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response
     org_cap,
     message: 'Organisation registered successfully',
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/consistency — View contributors with counter inconsistencies
+// Requires admin authentication.
+// Results are cached for 5 minutes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let consistencyCache: { data: unknown; timestamp: number } | null = null;
+const CONSISTENCY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+router.get('/consistency', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress: string };
+
+  try {
+    // Check cache
+    if (consistencyCache && Date.now() - consistencyCache.timestamp < CONSISTENCY_CACHE_TTL_MS) {
+      res.json(consistencyCache.data);
+      return;
+    }
+
+    // Query all known contributors from the database
+    const contributors = await pool.query<{
+      contributor: string;
+      org_id: string;
+      application_count: string;
+      assignment_count: string;
+    }>(
+      `SELECT a.contributor, a.org_id,
+              COUNT(DISTINCT a.issue_id) as application_count,
+              (SELECT COUNT(*) FROM assignments as2 WHERE as2.contributor = a.contributor AND as2.org_id = a.org_id) as assignment_count
+       FROM applications a
+       GROUP BY a.contributor, a.org_id`,
+    );
+
+    const inconsistent: Array<{
+      contributor: string;
+      org_id: string;
+      application_count: number;
+      assignment_count: number;
+    }> = [];
+
+    // Check each (contributor, org_id) pair for consistency
+    for (const row of contributors.rows) {
+      const appCount = parseInt(row.application_count, 10);
+      const asgCount = parseInt(row.assignment_count, 10);
+
+      // Check if the contributor has assignments without applications (inconsistent)
+      // or if there are other known inconsistencies
+      if (asgCount > appCount) {
+        inconsistent.push({
+          contributor: row.contributor,
+          org_id: row.org_id,
+          application_count: appCount,
+          assignment_count: asgCount,
+        });
+      }
+    }
+
+    const result = {
+      inconsistent_pairs: inconsistent,
+      checked_at: new Date().toISOString(),
+      total_checked: contributors.rows.length,
+      total_inconsistent: inconsistent.length,
+    };
+
+    // Cache the result
+    consistencyCache = { data: result, timestamp: Date.now() };
+
+    logger.info({
+      correlationId: adminReq.correlationId,
+      message: 'Consistency check completed',
+      totalChecked: contributors.rows.length,
+      totalInconsistent: inconsistent.length,
+    });
+
+    res.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal error';
+    logger.error({
+      correlationId: adminReq.correlationId,
+      error: msg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/consistency/remediate — Trigger remediation for inconsistencies
+// Requires admin authentication.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.post('/consistency/remediate', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress: string };
+
+  try {
+    // Invalidate cache so next GET reflects fresh state
+    consistencyCache = null;
+
+    // Find inconsistent pairs
+    const contributors = await pool.query<{
+      contributor: string;
+      org_id: string;
+      application_count: string;
+      assignment_count: string;
+    }>(
+      `SELECT a.contributor, a.org_id,
+              COUNT(DISTINCT a.issue_id) as application_count,
+              (SELECT COUNT(*) FROM assignments as2 WHERE as2.contributor = a.contributor AND as2.org_id = a.org_id) as assignment_count
+       FROM applications a
+       GROUP BY a.contributor, a.org_id`,
+    );
+
+    const remediated: Array<{
+      contributor: string;
+      org_id: string;
+      action: string;
+    }> = [];
+
+    for (const row of contributors.rows) {
+      const appCount = parseInt(row.application_count, 10);
+      const asgCount = parseInt(row.assignment_count, 10);
+
+      if (asgCount > appCount) {
+        // Remediation: log the inconsistency for manual review
+        // In a real scenario, this might call the Soroban contract to
+        // reconcile counters. For now, we record the remediation attempt.
+        await pool.query(
+          `INSERT INTO audit_log (timestamp, actor, org_id, operation, request_id, outcome, method, path, status_code)
+           VALUES (NOW(), $1, $2, 'consistency_remediate', $3, 'success', 'POST', '/api/admin/consistency/remediate', 200)`,
+          [adminReq.adminAddress, row.org_id, adminReq.correlationId],
+        );
+
+        remediated.push({
+          contributor: row.contributor,
+          org_id: row.org_id,
+          action: 'logged_for_review',
+        });
+      }
+    }
+
+    logger.info({
+      correlationId: adminReq.correlationId,
+      message: 'Consistency remediation completed',
+      remediatedCount: remediated.length,
+      admin: adminReq.adminAddress,
+    });
+
+    res.json({
+      remediated,
+      total_remediated: remediated.length,
+      message: `${remediated.length} inconsistent pairs logged for review`,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal error';
+    logger.error({
+      correlationId: adminReq.correlationId,
+      error: msg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    res.status(500).json({ error: msg });
+  }
 });
 
 export default router;
