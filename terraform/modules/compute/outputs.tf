@@ -5,12 +5,12 @@ output "alb_http_listener_arn" { value = aws_lb_listener.http.arn }
 output "ecs_cluster_name"     { value = aws_ecs_cluster.this.name }
 output "ecs_service_name"     { value = aws_ecs_service.this.name }
 
-# WAF
-output "waf_web_acl_arn" {
-  description = "ARN of the WAF WebACL associated with the ALB"
-  value       = aws_wafv2_web_acl.this.arn
+# Migration runner
+output "migration_task_def_arn" {
+  description = "ARN of the migration ECS task definition"
+  value       = aws_ecs_task_definition.migration.arn
 }
-output "waf_web_acl_id" {
-  description = "ID of the WAF WebACL"
-  value       = aws_wafv2_web_acl.this.id
+output "migration_security_group_id" {
+  description = "Security group ID for the migration runner task"
+  value       = aws_security_group.migration.id
 }

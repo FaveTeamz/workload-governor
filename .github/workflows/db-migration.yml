@@ -1,0 +1,176 @@
+name: DB Migration
+
+# Reusable workflow — called from staging-deploy.yml before the ECS service update.
+# Can also be triggered manually for emergency migration runs.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (staging | production)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Container image tag to run migrations with'
+        required: true
+        type: string
+    secrets:
+      AWS_DEPLOY_ROLE_ARN:
+        required: true
+      AWS_REGION:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+      image_tag:
+        description: 'Image tag (Git SHA or semver)'
+        required: true
+        type: string
+
+env:
+  PROJECT: workload-governor
+
+jobs:
+  migrate:
+    name: Run DB migrations (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ── Resolve migration infrastructure from SSM ──────────────────────
+      - name: Resolve migration parameters from SSM
+        id: params
+        run: |
+          ENV="${{ inputs.environment }}"
+          PREFIX="/${PROJECT}/${ENV}"
+
+          CLUSTER="${PROJECT}-${ENV}"
+          echo "cluster=${CLUSTER}" >> "$GITHUB_OUTPUT"
+
+          TASK_DEF=$(aws ssm get-parameter \
+            --name "${PREFIX}/migration-task-def-arn" \
+            --query "Parameter.Value" --output text)
+          echo "task_def=${TASK_DEF}" >> "$GITHUB_OUTPUT"
+
+          SUBNET=$(aws ssm get-parameter \
+            --name "${PREFIX}/migration-subnet-id" \
+            --query "Parameter.Value" --output text)
+          echo "subnet=${SUBNET}" >> "$GITHUB_OUTPUT"
+
+          SG=$(aws ssm get-parameter \
+            --name "${PREFIX}/migration-sg-id" \
+            --query "Parameter.Value" --output text)
+          echo "sg=${SG}" >> "$GITHUB_OUTPUT"
+
+          echo "==> Migration task def : ${TASK_DEF}"
+          echo "==> Cluster            : ${CLUSTER}"
+          echo "==> Subnet             : ${SUBNET}"
+          echo "==> Security group     : ${SG}"
+
+      # ── Run the migration task ─────────────────────────────────────────
+      - name: Run migration ECS task
+        id: run-task
+        run: |
+          TASK_DEF="${{ steps.params.outputs.task_def }}"
+          CLUSTER="${{ steps.params.outputs.cluster }}"
+          SUBNET="${{ steps.params.outputs.subnet }}"
+          SG="${{ steps.params.outputs.sg }}"
+
+          echo "==> Starting migration task..."
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration \
+              "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --query "tasks[0].taskArn" \
+            --output text)
+
+          echo "task_arn=${TASK_ARN}" >> "$GITHUB_OUTPUT"
+          echo "==> Migration task ARN: ${TASK_ARN}"
+
+      # ── Wait for the migration task to complete ────────────────────────
+      - name: Wait for migration task to complete
+        id: wait
+        run: |
+          CLUSTER="${{ steps.params.outputs.cluster }}"
+          TASK_ARN="${{ steps.run-task.outputs.task_arn }}"
+
+          echo "==> Waiting for migration task to stop (up to 10 minutes)..."
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN"
+          echo "==> Migration task stopped."
+
+      # ── Check migration task exit code ─────────────────────────────────
+      - name: Verify migration succeeded
+        run: |
+          CLUSTER="${{ steps.params.outputs.cluster }}"
+          TASK_ARN="${{ steps.run-task.outputs.task_arn }}"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query "tasks[0].containers[0].exitCode" \
+            --output text)
+
+          STOP_REASON=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query "tasks[0].stoppedReason" \
+            --output text)
+
+          echo "==> Migration exit code : ${EXIT_CODE}"
+          echo "==> Stop reason         : ${STOP_REASON}"
+
+          if [[ "$EXIT_CODE" != "0" ]]; then
+            echo "ERROR: Migration task exited with code ${EXIT_CODE}. Stop reason: ${STOP_REASON}" >&2
+            echo ""
+            echo "Fetch migration logs with:"
+            echo "  aws logs tail /ecs/${PROJECT}-${{ inputs.environment }}-migration --since 30m"
+            exit 1
+          fi
+          echo "==> Migrations applied successfully."
+
+      # ── Verify migration status via health endpoint ────────────────────
+      # This step is advisory — it checks the /api/health endpoint if a
+      # STAGING_URL or PRODUCTION_URL secret is set. Skipped if not configured.
+      - name: Verify migration status via health endpoint
+        continue-on-error: true
+        env:
+          BASE_URL: ${{ inputs.environment == 'production' && secrets.PRODUCTION_URL || secrets.STAGING_URL }}
+        run: |
+          if [[ -z "$BASE_URL" ]]; then
+            echo "==> BASE_URL not set — skipping health check."
+            exit 0
+          fi
+
+          echo "==> Checking ${BASE_URL}/api/health for DB health..."
+          for i in 1 2 3; do
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+              --max-time 15 "${BASE_URL}/api/health" || true)
+            if [[ "$HTTP" == "200" ]]; then
+              echo "==> /api/health returned 200 ✓"
+              exit 0
+            fi
+            echo "    Attempt $i: HTTP ${HTTP} — retrying in 5s..."
+            sleep 5
+          done
+          echo "WARNING: /api/health did not return 200 after 3 attempts (got ${HTTP})."
+          echo "         Deployment will continue — investigate if this is unexpected."
