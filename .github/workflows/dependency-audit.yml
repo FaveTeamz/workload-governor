@@ -414,7 +414,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Comment audit summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const rustResult    = `${{ needs.audit-rust.outputs.result }}`;
