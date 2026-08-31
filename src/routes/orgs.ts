@@ -1,4 +1,7 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { pool } from '../db';
+import { logger } from '../logger';
 import { validateBody } from '../middleware/validation';
 import { orgApplyBodySchema, OrgApplyBody } from '../schemas/orgs';
 import { getCache, setCache } from '../services/redis';
@@ -9,6 +12,46 @@ const router = Router();
 // Known orgs for stub implementation
 // ---------------------------------------------------------------------------
 const KNOWN_ORGS = ['stellar-oss', 'org_stellar_001'];
+const ORG_CAP_DEFAULT = 4;
+const orgCapOverrides = new Map<string, number>();
+const orgCapSchema = z.object({
+  cap: z.number().int('cap must be an integer').min(1, 'cap must be at least 1').max(20, 'cap must be at most 20'),
+});
+
+function requireAdmin(req: Request, res: Response): boolean {
+  const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
+  if (!token || token !== process.env['ADMIN_TOKEN']) {
+    res.status(401).json({ error: 'unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+async function auditOrgCapChange(req: Request, orgId: string, cap: number, outcome: 'success' | 'error') {
+  try {
+    await pool.query(
+      `INSERT INTO audit_log (timestamp, actor, org_id, operation, request_id, outcome, method, path, status_code)
+       VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        req.headers['authorization'] ?? req.ip ?? 'unknown',
+        orgId,
+        'set_org_cap',
+        (req as Request & { correlationId?: string }).correlationId ?? null,
+        outcome,
+        'PUT',
+        `/orgs/${orgId}/cap`,
+        200,
+      ],
+    );
+  } catch (err) {
+    logger.warn({
+      message: 'Failed to write org cap audit entry',
+      org_id: orgId,
+      cap,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Stats cache TTL: 15 minutes (900 seconds)
@@ -46,6 +89,51 @@ router.get('/orgs', (_req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // GET /orgs/:orgId/issues — list open issues for an org
 // ---------------------------------------------------------------------------
+router.get('/orgs/:orgId/cap', (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  if (!isKnownOrg(orgId)) {
+    res.status(404).json({ error: 'not_found', message: `Org '${orgId}' not found`, code: 'NOT_FOUND' });
+    return;
+  }
+
+  const cap = orgCapOverrides.get(orgId) ?? ORG_CAP_DEFAULT;
+  res.json({ org_id: orgId, cap });
+});
+
+router.put('/orgs/:orgId/cap', async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  if (!isKnownOrg(orgId)) {
+    res.status(404).json({ error: 'not_found', message: `Org '${orgId}' not found`, code: 'NOT_FOUND' });
+    return;
+  }
+
+  if (!requireAdmin(req, res)) {
+    return;
+  }
+
+  const parsed = orgCapSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'validation failed',
+      details: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const { cap } = parsed.data;
+  orgCapOverrides.set(orgId, cap);
+  await auditOrgCapChange(req, orgId, cap, 'success');
+
+  logger.info({
+    message: 'Org cap updated',
+    org_id: orgId,
+    cap,
+    actor: req.headers['authorization'] ?? req.ip ?? 'unknown',
+  });
+
+  res.json({ org_id: orgId, cap });
+});
+
 router.get('/orgs/:orgId/issues', (req: Request, res: Response) => {
   const { orgId } = req.params;
   if (!isKnownOrg(orgId)) {

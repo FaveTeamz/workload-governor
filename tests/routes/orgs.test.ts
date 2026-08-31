@@ -229,3 +229,50 @@ describe('GET /orgs/:orgId/stats', () => {
     expect(res.body).toHaveProperty('code', 'NOT_FOUND');
   });
 });
+
+describe('GET /orgs/:orgId/cap', () => {
+  it('returns the current cap value for a known org', async () => {
+    const res = await request(app)
+      .get('/orgs/stellar-oss/cap')
+      .set(AUTH_HEADER);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('org_id', 'stellar-oss');
+    expect(res.body).toHaveProperty('cap');
+    expect(res.body.cap).toBeGreaterThanOrEqual(1);
+    expect(res.body.cap).toBeLessThanOrEqual(20);
+  });
+});
+
+describe('PUT /orgs/:orgId/cap', () => {
+  it('sets the cap when admin token is provided', async () => {
+    const res = await request(app)
+      .put('/orgs/stellar-oss/cap')
+      .set('Authorization', 'Bearer test-admin-token')
+      .send({ cap: 12 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('org_id', 'stellar-oss');
+    expect(res.body).toHaveProperty('cap', 12);
+  });
+
+  it('rejects out-of-range cap values', async () => {
+    const res = await request(app)
+      .put('/orgs/stellar-oss/cap')
+      .set('Authorization', 'Bearer test-admin-token')
+      .send({ cap: 0 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error', 'validation failed');
+  });
+
+  it('requires admin authorization', async () => {
+    const res = await request(app)
+      .put('/orgs/stellar-oss/cap')
+      .set(AUTH_HEADER)
+      .send({ cap: 10 });
+
+    expect(res.status).toBe(401);
+    expect(res.body).toHaveProperty('error', 'unauthorized');
+  });
+});

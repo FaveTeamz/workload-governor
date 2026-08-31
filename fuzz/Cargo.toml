@@ -1,7 +1,6 @@
 [package]
 name = "workload-governor-fuzz"
-version = "0.0.0"
-publish = false
+version = "0.1.0"
 edition = "2021"
 
 [package.metadata]
@@ -27,6 +26,12 @@ ed25519-dalek = "=2.2.0"
 [[bin]]
 name = "apply_for_issue"
 path = "fuzz_targets/apply_for_issue.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_batch_apply"
+path = "fuzz_targets/fuzz_batch_apply.rs"
 test = false
 doc = false
 
