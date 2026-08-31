@@ -68,6 +68,14 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
   `--color-warning-600: #ca8a04`. All fixes applied at token level — no component overrides.
 
 ### Added
+- **#607 Comprehensive contributor onboarding guide**: Expanded `docs/contributor-guide.md`
+  with full prerequisites (Rust, Node.js, Stellar CLI, Docker versions), 5-minute local
+  dev setup, all test suite commands, the complete apply → assign → complete workflow with
+  CLI examples, TTL extension guidance, 10-item troubleshooting section covering the top
+  reported local setup errors, fuzz testing quick-start (cross-linked to README), corpus
+  generation, and a complete worked testnet example. Updated `CONTRIBUTING.md` to
+  cross-link to the contributor guide and document the release process, semver convention,
+  API spec validation, and frontend development rules.
 - Inline Rustdoc comments for every `pub fn` in the contract source (#68).
 - `.env.example` files for backend and frontend packages (#70).
 - This `CHANGELOG.md` and the release process documentation (#71).

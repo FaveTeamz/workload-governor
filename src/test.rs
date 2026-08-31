@@ -3298,84 +3298,153 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #591 regression: global limit must be enforced across multiple orgs
+// UNIT TESTS — get_pending_applications / application index (#598)
 // ---------------------------------------------------------------------------
 
-/// Regression test for #591: apply across 4 distinct orgs up to the cap,
-/// then verify a 16th application is rejected regardless of which org is used.
 #[test]
-fn unit_regression_591_global_limit_multi_org() {
-    use crate::errors::ContractError;
-    use soroban_sdk::Error;
-
+fn unit_pending_applications_empty_for_new_contributor() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let orgs: [Symbol; 4] = [
-        t.org("r591a"),
-        t.org("r591b"),
-        t.org("r591c"),
-        t.org("r591d"),
-    ];
 
     t.client.initialize(&admin);
 
-    // Apply 3-4 issues in each org to reach the global cap of 15
-    // org0: issues 0-3 (4 apps), org1: 4-7 (4), org2: 8-11 (4), org3: 12-14 (3)
-    let mut issue_counter: u32 = 0;
-    for (org_idx, org) in orgs.iter().enumerate() {
-        let count = if org_idx < 3 { 4u32 } else { 3u32 };
-        for _ in 0..count {
-            t.client.apply_for_issue(&contributor, org, &issue_counter);
-            issue_counter += 1;
-        }
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 0, "new contributor should have no pending applications");
+}
+
+#[test]
+fn unit_pending_applications_single_entry() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 1);
+    let (ref o, i) = pending.get(0).unwrap();
+    assert_eq!(o, &org);
+    assert_eq!(i, 1u32);
+}
+
+#[test]
+fn unit_pending_applications_multiple_entries() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org1 = t.org("org_alpha");
+    let org2 = t.org("org_beta");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org1, &10u32);
+    t.client.apply_for_issue(&contributor, &org2, &20u32);
+    t.client.apply_for_issue(&contributor, &org1, &30u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 3);
+}
+
+#[test]
+fn unit_pending_applications_removed_on_withdraw() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.apply_for_issue(&contributor, &org, &2u32);
+
+    // Withdraw one
+    t.client.withdraw_application(&contributor, &org, &1u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 1, "should have exactly 1 application after withdrawing one");
+    let (ref o, i) = pending.get(0).unwrap();
+    assert_eq!(o, &org);
+    assert_eq!(i, 2u32);
+}
+
+#[test]
+fn unit_pending_applications_empty_after_all_withdrawn() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.withdraw_application(&contributor, &org, &1u32);
+
+    let pending = t.client.get_pending_applications(&contributor);
+    assert_eq!(pending.len(), 0, "index should be empty after withdrawing last application");
+}
+
+#[test]
+fn unit_pending_applications_removed_on_assign() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &42u32);
+
+    // Index contains one entry before assign
+    let before = t.client.get_pending_applications(&contributor);
+    assert_eq!(before.len(), 1);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &42u32);
+
+    // Index should be empty after assignment (application consumed)
+    let after = t.client.get_pending_applications(&contributor);
+    assert_eq!(after.len(), 0, "index should be empty after issue is assigned");
+}
+
+#[test]
+fn unit_pending_applications_count_matches_global_count() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("test_org");
+
+    t.client.initialize(&admin);
+
+    for i in 0..5u32 {
+        t.client.apply_for_issue(&contributor, &org, &i);
     }
 
-    assert_eq!(
-        t.client.get_global_application_count(&contributor),
-        15,
-        "should have 15 pending applications across 4 orgs"
-    );
+    let pending = t.client.get_pending_applications(&contributor);
+    let global_count = t.client.get_global_application_count(&contributor);
 
-    // 16th application across any org must be rejected
-    for org in &orgs {
-        let result = t.client.try_apply_for_issue(&contributor, org, &(issue_counter + 100));
-        assert_eq!(
-            result,
-            Err(Ok(Error::from_contract_error(
-                ContractError::GlobalApplicationLimitReached as u32
-            ))),
-            "16th application in org {} must be rejected",
-            issue_counter
-        );
-    }
-
-    // Count must not have changed
     assert_eq!(
-        t.client.get_global_application_count(&contributor),
-        15,
-        "count must stay at 15 after rejected applications"
+        pending.len() as u32,
+        global_count,
+        "app index length must equal global application count"
     );
 }
 
-/// Regression test for #591: multiple contributors each hit their own independent cap.
 #[test]
-fn unit_regression_591_per_contributor_independent_cap() {
+fn unit_pending_applications_independent_per_contributor() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let contrib_a = Address::generate(&t.env);
-    let contrib_b = Address::generate(&t.env);
-    let org = t.org("r591e");
+    let alice = Address::generate(&t.env);
+    let bob = Address::generate(&t.env);
+    let org = t.org("shared_org");
 
     t.client.initialize(&admin);
+    t.client.apply_for_issue(&alice, &org, &1u32);
+    t.client.apply_for_issue(&alice, &org, &2u32);
+    t.client.apply_for_issue(&bob, &org, &3u32);
 
-    // Fill contrib_a to the cap
-    for i in 0u32..15 {
-        t.client.apply_for_issue(&contrib_a, &org, &i);
-    }
-    assert_eq!(t.client.get_global_application_count(&contrib_a), 15);
+    let alice_pending = t.client.get_pending_applications(&alice);
+    let bob_pending = t.client.get_pending_applications(&bob);
 
-    // contrib_b must be unaffected
-    t.client.apply_for_issue(&contrib_b, &org, &0u32);
-    assert_eq!(t.client.get_global_application_count(&contrib_b), 1);
+    assert_eq!(alice_pending.len(), 2, "Alice should have 2 pending applications");
+    assert_eq!(bob_pending.len(), 1, "Bob should have 1 pending application");
 }

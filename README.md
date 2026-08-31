@@ -62,6 +62,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 |---|---|---|---|
 | Global App Count | Temporary (Wave TTL) | `("g_apps", contributor)` | `u32` |
 | App Entry | Temporary (Wave TTL) | `("app", contributor, org_id, issue_id)` | `bool` |
+| App Index | Temporary (Wave TTL) | `("app_idx", contributor)` | `Vec<(Symbol, u32)>` |
 | Admin | Persistent | `"admin"` | `Address` |
 | Pending Admin | Persistent | `"p_admin"` | `Address` |
 | Maintainer | Persistent | `("maint", maintainer, org_id)` | `bool` |
@@ -69,18 +70,32 @@ This prevents a small group of faster developers from monopolizing open-source t
 | Assignment Entry | Persistent | `("asgn", org_id, issue_id, contributor)` | `bool` |
 | Org Assignment Cap | Persistent | `("o_cap", org_id)` | `u32` |
 
-All six key prefixes are distinct — zero key collision guarantee.
+All key prefixes are distinct — zero key collision guarantee.
 
 ## Documentation
 
 | Document | Description |
 |---|---|
+| [docs/contributor-guide.md](docs/contributor-guide.md) | Full contributor onboarding: prerequisites, local dev setup, test suites, apply→assign→complete workflow, fuzz testing, troubleshooting |
+| [docs/video-scripts/quickstart.md](docs/video-scripts/quickstart.md) | 10-minute developer quickstart video script and companion text guide |
 | [docs/admin-guide.md](docs/admin-guide.md) | Admin operational procedures: initialisation, maintainer onboarding/offboarding, upgrades |
 | [docs/storage-design.md](docs/storage-design.md) | Storage key patterns, TTL semantics, and collision-free proof |
 | [docs/error-reference.md](docs/error-reference.md) | All error codes with causes, resolutions, and example scenarios |
 | [docs/api-reference.md](docs/api-reference.md) | Complete REST API reference with request/response examples |
 | [docs/testing.md](docs/testing.md) | Testing guide — all test layers, how to run them, and CI pipeline map |
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Emergency admin key rotation procedure |
+
+## Architecture Decision Records
+
+Key design decisions are documented in [docs/adr/](docs/adr/).
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-001](docs/adr/ADR-001-soroban-over-evm.md) | Use Soroban (Stellar) Instead of an EVM-Compatible Chain | Accepted |
+| [ADR-002](docs/adr/ADR-002-global-cap-15.md) | Set the Global Pending Application Cap at 15 | Accepted |
+| [ADR-003](docs/adr/ADR-003-temporary-storage-applications.md) | Use Temporary Storage for Pending Applications | Accepted |
+| [ADR-004](docs/adr/ADR-004-postgresql-over-sqlite.md) | Use PostgreSQL Instead of SQLite for the Backend Database | Accepted |
+| [ADR-005](docs/adr/ADR-005-nextjs-frontend.md) | Use Next.js for the Frontend | Accepted |
 
 ## Operations
 

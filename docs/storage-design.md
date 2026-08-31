@@ -58,7 +58,32 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 3 — Admin Address
+### 3 — Application Index
+
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address)` |
+| Prefix | `"app_idx"` |
+| Value | `Vec<(Symbol, u32)>` |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
+
+**Purpose:** Maintains an enumerable list of all `(org_id, issue_id)` pairs for which a contributor has a pending application. Enables the `get_pending_applications` query to return a complete list without requiring an off-chain event index.
+
+The index is updated atomically with the per-issue application entry on every `apply_for_issue`, `withdraw_application`, and `assign_issue` call. It shares the same TTL as the per-issue entries and is extended by `extend_application_ttl` — the three temporary entries for a contributor always expire together.
+
+**Example key:**
+```
+("app_idx", GBFZB...XK2Q)
+```
+
+**Example value:** `[("stellar-org", 42), ("rust_libs", 7)]`
+
+When the contributor's last application is withdrawn or assigned, the index entry is removed entirely rather than left as an empty Vec.
+
+---
+
+### 4 — Admin Address
 
 | Field | Value |
 |---|---|
@@ -78,7 +103,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 4 — Maintainer Registration
+### 5 — Maintainer Registration
 
 | Field | Value |
 |---|---|
@@ -98,7 +123,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 5 — Org Assignment Count
+### 6 — Org Assignment Count
 
 | Field | Value |
 |---|---|
@@ -118,7 +143,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 6 — Active Assignment Entry
+### 7 — Active Assignment Entry
 
 | Field | Value |
 |---|---|
@@ -138,7 +163,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 7 — Per-Org Assignment Cap
+### 8 — Per-Org Assignment Cap
 
 | Field | Value |
 |---|---|
@@ -274,17 +299,18 @@ Refer to `docs/runbooks/incident-response.md` for the full remediation playbook.
 
 ## Key Collision Proof
 
-All seven prefixes are distinct `symbol_short!` values:
+All eight prefixes are distinct `symbol_short!` values:
 
 | # | Prefix | Rust literal |
 |---|---|---|
 | 1 | `g_apps` | `symbol_short!("g_apps")` |
 | 2 | `app` | `symbol_short!("app")` |
-| 3 | `admin` | `symbol_short!("admin")` |
-| 4 | `maint` | `symbol_short!("maint")` |
-| 5 | `o_asgn` | `symbol_short!("o_asgn")` |
-| 6 | `asgn` | `symbol_short!("asgn")` |
-| 7 | `o_cap` | `symbol_short!("o_cap")` |
+| 3 | `app_idx` | `symbol_short!("app_idx")` |
+| 4 | `admin` | `symbol_short!("admin")` |
+| 5 | `maint` | `symbol_short!("maint")` |
+| 6 | `o_asgn` | `symbol_short!("o_asgn")` |
+| 7 | `asgn` | `symbol_short!("asgn")` |
+| 8 | `o_cap` | `symbol_short!("o_cap")` |
 
 ### Formal Argument
 
@@ -296,31 +322,38 @@ Soroban serialises every storage key as a `ScVal`. Tuple keys become `ScVal::Vec
 
 *Cross-pattern collision is impossible* because every key begins with a unique prefix byte sequence. A `ScVal::Vec` whose first element is `symbol_short!("x")` cannot equal one whose first element is `symbol_short!("y")` when `"x" ≠ "y"`. A `ScVal::Vec` cannot equal `ScVal::Symbol` because the XDR discriminant byte differs.
 
-Exhaustive check of all C(7, 2) = **21 pairs**:
+Exhaustive check of all C(8, 2) = **28 pairs**:
 
 | Pair | Why no collision |
 |------|-----------------|
 | 1 vs 2 | `"g_apps"` ≠ `"app"` |
-| 1 vs 3 | Vec ≠ Symbol (different `ScVal` variant) |
-| 1 vs 4 | `"g_apps"` ≠ `"maint"` |
-| 1 vs 5 | `"g_apps"` ≠ `"o_asgn"` |
-| 1 vs 6 | `"g_apps"` ≠ `"asgn"` |
-| 1 vs 7 | `"g_apps"` ≠ `"o_cap"` |
-| 2 vs 3 | Vec ≠ Symbol |
-| 2 vs 4 | `"app"` ≠ `"maint"` |
-| 2 vs 5 | `"app"` ≠ `"o_asgn"` |
-| 2 vs 6 | `"app"` ≠ `"asgn"` |
-| 2 vs 7 | `"app"` ≠ `"o_cap"` |
-| 3 vs 4 | Symbol ≠ Vec |
-| 3 vs 5 | Symbol ≠ Vec |
-| 3 vs 6 | Symbol ≠ Vec |
-| 3 vs 7 | Symbol ≠ Vec |
-| 4 vs 5 | `"maint"` ≠ `"o_asgn"` |
-| 4 vs 6 | `"maint"` ≠ `"asgn"` |
-| 4 vs 7 | `"maint"` ≠ `"o_cap"` |
-| 5 vs 6 | `"o_asgn"` ≠ `"asgn"` |
-| 5 vs 7 | `"o_asgn"` ≠ `"o_cap"` |
-| 6 vs 7 | `"asgn"` ≠ `"o_cap"` |
+| 1 vs 3 | `"g_apps"` ≠ `"app_idx"` |
+| 1 vs 4 | Vec ≠ Symbol (different `ScVal` variant) |
+| 1 vs 5 | `"g_apps"` ≠ `"maint"` |
+| 1 vs 6 | `"g_apps"` ≠ `"o_asgn"` |
+| 1 vs 7 | `"g_apps"` ≠ `"asgn"` |
+| 1 vs 8 | `"g_apps"` ≠ `"o_cap"` |
+| 2 vs 3 | `"app"` ≠ `"app_idx"` |
+| 2 vs 4 | Vec ≠ Symbol |
+| 2 vs 5 | `"app"` ≠ `"maint"` |
+| 2 vs 6 | `"app"` ≠ `"o_asgn"` |
+| 2 vs 7 | `"app"` ≠ `"asgn"` |
+| 2 vs 8 | `"app"` ≠ `"o_cap"` |
+| 3 vs 4 | Vec ≠ Symbol |
+| 3 vs 5 | `"app_idx"` ≠ `"maint"` |
+| 3 vs 6 | `"app_idx"` ≠ `"o_asgn"` |
+| 3 vs 7 | `"app_idx"` ≠ `"asgn"` |
+| 3 vs 8 | `"app_idx"` ≠ `"o_cap"` |
+| 4 vs 5 | Symbol ≠ Vec |
+| 4 vs 6 | Symbol ≠ Vec |
+| 4 vs 7 | Symbol ≠ Vec |
+| 4 vs 8 | Symbol ≠ Vec |
+| 5 vs 6 | `"maint"` ≠ `"o_asgn"` |
+| 5 vs 7 | `"maint"` ≠ `"asgn"` |
+| 5 vs 8 | `"maint"` ≠ `"o_cap"` |
+| 6 vs 7 | `"o_asgn"` ≠ `"asgn"` |
+| 6 vs 8 | `"o_asgn"` ≠ `"o_cap"` |
+| 7 vs 8 | `"asgn"` ≠ `"o_cap"` |
 
 *Within-pattern collision is impossible* because the remaining tuple fields uniquely identify the logical record. `Address` values are validated by the host via `require_auth`, preventing impersonation. Distinct logical records within the same category differ in at least one of `(contributor, org_id, issue_id)`. ∎
 

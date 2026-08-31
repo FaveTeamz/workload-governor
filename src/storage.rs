@@ -19,37 +19,45 @@
 //! |---|---------|--------|--------------|
 //! | 1 | `("g_apps", contributor)` | `"g_apps"` | `Address` |
 //! | 2 | `("app", contributor, org_id, issue_id)` | `"app"` | `Address`, `Symbol`, `u32` |
-//! | 3 | `"admin"` (scalar) | `"admin"` | — (singleton) |
-//! | 4 | `("maint", maintainer, org_id)` | `"maint"` | `Address`, `Symbol` |
-//! | 5 | `("o_asgn", contributor, org_id)` | `"o_asgn"` | `Address`, `Symbol` |
-//! | 6 | `("asgn", org_id, issue_id, contributor)` | `"asgn"` | `Symbol`, `u32`, `Address` |
-//! | 7 | `("o_cap", org_id)` | `"o_cap"` | `Symbol` |
+//! | 3 | `("app_idx", contributor)` | `"app_idx"` | `Address` |
+//! | 4 | `"admin"` (scalar) | `"admin"` | — (singleton) |
+//! | 5 | `("maint", maintainer, org_id)` | `"maint"` | `Address`, `Symbol` |
+//! | 6 | `("o_asgn", contributor, org_id)` | `"o_asgn"` | `Address`, `Symbol` |
+//! | 7 | `("asgn", org_id, issue_id, contributor)` | `"asgn"` | `Symbol`, `u32`, `Address` |
+//! | 8 | `("o_cap", org_id)` | `"o_cap"` | `Symbol` |
 //!
 //! Pairwise uniqueness argument:
-//! - **1 vs 2**: `"g_apps"` ≠ `"app"` — different prefix bytes.
-//! - **1 vs 3**: tuple ≠ scalar — different `ScVal` discriminants.
-//! - **1 vs 4**: `"g_apps"` ≠ `"maint"`.
-//! - **1 vs 5**: `"g_apps"` ≠ `"o_asgn"`.
-//! - **1 vs 6**: `"g_apps"` ≠ `"asgn"`.
-//! - **1 vs 7**: `"g_apps"` ≠ `"o_cap"`.
-//! - **2 vs 3**: tuple ≠ scalar.
-//! - **2 vs 4**: `"app"` ≠ `"maint"`.
-//! - **2 vs 5**: `"app"` ≠ `"o_asgn"`.
-//! - **2 vs 6**: `"app"` ≠ `"asgn"`.
-//! - **2 vs 7**: `"app"` ≠ `"o_cap"`.
-//! - **3 vs 4–7**: scalar `"admin"` ≠ any tuple.
-//! - **4 vs 5**: `"maint"` ≠ `"o_asgn"`.
-//! - **4 vs 6**: `"maint"` ≠ `"asgn"`.
-//! - **4 vs 7**: `"maint"` ≠ `"o_cap"`.
-//! - **5 vs 6**: `"o_asgn"` ≠ `"asgn"`.
-//! - **5 vs 7**: `"o_asgn"` ≠ `"o_cap"`.
-//! - **6 vs 7**: `"asgn"` ≠ `"o_cap"`.
+//! - **1 vs 2**: `"g_apps"` ≠ `"app"`.
+//! - **1 vs 3**: `"g_apps"` ≠ `"app_idx"`.
+//! - **1 vs 4**: tuple ≠ scalar — different `ScVal` discriminants.
+//! - **1 vs 5**: `"g_apps"` ≠ `"maint"`.
+//! - **1 vs 6**: `"g_apps"` ≠ `"o_asgn"`.
+//! - **1 vs 7**: `"g_apps"` ≠ `"asgn"`.
+//! - **1 vs 8**: `"g_apps"` ≠ `"o_cap"`.
+//! - **2 vs 3**: `"app"` ≠ `"app_idx"`.
+//! - **2 vs 4**: tuple ≠ scalar.
+//! - **2 vs 5**: `"app"` ≠ `"maint"`.
+//! - **2 vs 6**: `"app"` ≠ `"o_asgn"`.
+//! - **2 vs 7**: `"app"` ≠ `"asgn"`.
+//! - **2 vs 8**: `"app"` ≠ `"o_cap"`.
+//! - **3 vs 4**: tuple ≠ scalar.
+//! - **3 vs 5**: `"app_idx"` ≠ `"maint"`.
+//! - **3 vs 6**: `"app_idx"` ≠ `"o_asgn"`.
+//! - **3 vs 7**: `"app_idx"` ≠ `"asgn"`.
+//! - **3 vs 8**: `"app_idx"` ≠ `"o_cap"`.
+//! - **4 vs 5–8**: scalar `"admin"` ≠ any tuple.
+//! - **5 vs 6**: `"maint"` ≠ `"o_asgn"`.
+//! - **5 vs 7**: `"maint"` ≠ `"asgn"`.
+//! - **5 vs 8**: `"maint"` ≠ `"o_cap"`.
+//! - **6 vs 7**: `"o_asgn"` ≠ `"asgn"`.
+//! - **6 vs 8**: `"o_asgn"` ≠ `"o_cap"`.
+//! - **7 vs 8**: `"asgn"` ≠ `"o_cap"`.
 //!
 //! Within each pattern, uniqueness is guaranteed by the combination of caller-controlled
 //! `Address` values (validated by the host via `require_auth`) and the caller-supplied
 //! `org_id`/`issue_id` fields — making impersonation impossible at the auth layer.
 
-use soroban_sdk::{panic_with_error, Address, Env, Symbol, symbol_short};
+use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec, symbol_short};
 
 use crate::errors::ContractError;
 
@@ -75,9 +83,10 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum valid per-org assignment cap configurable via `set_org_cap`.
+/// Minimum value for a per-org assignment cap set via `set_org_cap`.
 pub const ORG_CAP_MIN: u32 = 1;
-/// Maximum valid per-org assignment cap configurable via `set_org_cap`.
+
+/// Maximum value for a per-org assignment cap set via `set_org_cap`.
 pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
@@ -489,31 +498,92 @@ pub(crate) fn set_org_cap(env: &Env, org_id: &Symbol, cap: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage — Contract Paused Flag  (Issue #590)
+// Temporary storage — Application Index  (Issue #598)
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("paused")`
-// Value: `bool` — true when contract is paused
+// Key:   `(symbol_short!("app_idx"), contributor: Address)`
+// Value: `Vec<(Symbol, u32)>` — list of `(org_id, issue_id)` pairs
+// Tier:  Temporary (same TTL as per-issue application entries)
 //
-// When absent the contract is unpaused (default: operational).
+// Maintains an enumerable index of all pending applications for a contributor.
+// Updated atomically with the per-issue application sentinel on every
+// `apply_for_issue` and `withdraw_application` call.
+//
+// Prefix "app_idx" is distinct from all existing prefixes:
+//   "app", "g_apps", "admin", "maint", "o_asgn", "asgn", "o_cap", "g_cap".
 
-fn paused_key() -> Symbol {
-    symbol_short!("paused")
+fn app_index_key(contributor: &Address) -> (Symbol, Address) {
+    (symbol_short!("app_idx"), contributor.clone())
 }
 
-/// Returns `true` if the contract is currently paused.
-pub(crate) fn is_contract_paused(env: &Env) -> bool {
+/// Returns the contributor's current list of pending (org_id, issue_id) pairs.
+///
+/// Returns an empty `Vec` if no index entry exists (contributor has no applications,
+/// or all applications have expired).
+pub(crate) fn get_app_index(env: &Env, contributor: &Address) -> Vec<(Symbol, u32)> {
+    let key = app_index_key(contributor);
     env.storage()
-        .persistent()
-        .get::<_, bool>(&paused_key())
-        .unwrap_or(false)
+        .temporary()
+        .get::<_, Vec<(Symbol, u32)>>(&key)
+        .unwrap_or_else(|| Vec::new(env))
 }
 
-/// Sets the contract paused state.
-pub(crate) fn set_contract_paused(env: &Env, paused: bool) {
-    if paused {
-        env.storage().persistent().set(&paused_key(), &true);
+/// Writes the contributor's application index.
+pub(crate) fn set_app_index(env: &Env, contributor: &Address, index: &Vec<(Symbol, u32)>) {
+    let key = app_index_key(contributor);
+    env.storage().temporary().set(&key, index);
+}
+
+/// Removes the contributor's application index entry (called when the list becomes empty).
+pub(crate) fn remove_app_index(env: &Env, contributor: &Address) {
+    let key = app_index_key(contributor);
+    env.storage().temporary().remove(&key);
+}
+
+/// Extends the TTL of the contributor's application index entry.
+pub(crate) fn extend_app_index_ttl(env: &Env, contributor: &Address) {
+    let key = app_index_key(contributor);
+    env.storage()
+        .temporary()
+        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+}
+
+/// Adds `(org_id, issue_id)` to the contributor's application index.
+///
+/// The index uses the same TTL as application entries so both expire together.
+pub(crate) fn index_add_application(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+    issue_id: u32,
+) {
+    let mut index = get_app_index(env, contributor);
+    index.push_back((org_id.clone(), issue_id));
+    set_app_index(env, contributor, &index);
+    extend_app_index_ttl(env, contributor);
+}
+
+/// Removes `(org_id, issue_id)` from the contributor's application index.
+///
+/// Removes the index entry entirely when the list becomes empty.
+pub(crate) fn index_remove_application(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+    issue_id: u32,
+) {
+    let old = get_app_index(env, contributor);
+    let mut new_index: Vec<(Symbol, u32)> = Vec::new(env);
+    for pair in old.iter() {
+        let (ref o, i) = pair;
+        if !(o == org_id && i == issue_id) {
+            new_index.push_back(pair);
+        }
+    }
+    if new_index.is_empty() {
+        remove_app_index(env, contributor);
     } else {
-        env.storage().persistent().remove(&paused_key());
+        set_app_index(env, contributor, &new_index);
+        extend_app_index_ttl(env, contributor);
     }
 }
