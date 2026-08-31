@@ -236,3 +236,11 @@ export default function App() {
     </ToastProvider>
   );
 }
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppShell />
+    </ToastProvider>
+  );
+}
