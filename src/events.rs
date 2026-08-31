@@ -229,34 +229,17 @@ pub(crate) fn emit_org_cap_updated(
     env.events().publish(topics, data);
 }
 
-/// Emitted by `set_org_cap`.
+/// Emitted by `set_org_cap` when a maintainer updates the per-org assignment cap.
 ///
-/// topics: `(symbol_short!("org_cap"), org_id)`
+/// topics: `(symbol_short!("ocap_upd"), org_id)`
 /// data:   `(old_cap, new_cap)`
-pub(crate) fn emit_org_cap_updated(env: &Env, org_id: &Symbol, old_cap: u32, new_cap: u32) {
-    let topics = (symbol_short!("org_cap"), org_id.clone());
+pub(crate) fn emit_org_cap_updated(
+    env: &Env,
+    org_id: &Symbol,
+    old_cap: u32,
+    new_cap: u32,
+) {
+    let topics = (symbol_short!("ocap_upd"), org_id.clone());
     let data = (old_cap, new_cap);
     env.events().publish(topics, data);
-}
-
-/// Emitted by `pause()`.
-///
-/// topics: `(symbol_short!("paused"), admin)`
-/// data:   `admin`
-pub(crate) fn emit_contract_paused(env: &Env, admin: &Address) {
-    env.events().publish(
-        (symbol_short!("paused"), admin.clone()),
-        admin.clone(),
-    );
-}
-
-/// Emitted by `unpause()`.
-///
-/// topics: `(symbol_short!("unpaused"), admin)`
-/// data:   `admin`
-pub(crate) fn emit_contract_unpaused(env: &Env, admin: &Address) {
-    env.events().publish(
-        (symbol_short!("unpaused"), admin.clone()),
-        admin.clone(),
-    );
 }

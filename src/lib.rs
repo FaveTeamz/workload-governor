@@ -252,40 +252,29 @@ impl WorkloadGovernor {
 
     /// Transfers admin authority to a new address (admin-only).
     ///
-    /// After a successful call, `new_admin` becomes the stored admin and `old_admin`
-    /// can no longer call any admin-gated functions.  The operation is atomic — either
-    /// both the storage update and the event are committed, or neither is.
+    /// Replaces the stored admin address with `new_admin`. The old admin can no
+    /// longer call admin-gated functions after this call returns.
     ///
     /// # Who can call
-    /// The stored admin address only.
+    /// The current stored admin address only.
     ///
     /// # Arguments
-    /// * `old_admin` – Must match the stored admin address (auth enforced).
-    /// * `new_admin` – Address that will become the new admin.
+    /// * `admin`     – Current admin address (auth enforced).
+    /// * `new_admin` – Address to grant admin authority to.
     ///
     /// # Returns
     /// `()` on success.
     ///
     /// # Errors
-    /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
+    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
     /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <admin-account> \
-    ///   -- transfer_admin \
-    ///   --old_admin <OLD_ADMIN_ADDRESS> \
-    ///   --new_admin <NEW_ADMIN_ADDRESS>
-    /// ```
-    pub fn transfer_admin(env: Env, old_admin: Address, new_admin: Address) {
-        let _guard = ReentrancyGuard::acquire(&env);
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
         storage::set_admin(&env, &new_admin);
         storage::bump_instance(&env);
-        events::emit_admin_transferred(&env, &old_admin, &new_admin);
+        events::emit_admin_transferred(&env, &admin, &new_admin);
     }
 
     /// Sets the global application cap via the normal (non-emergency) operator path.

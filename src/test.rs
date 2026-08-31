@@ -3298,113 +3298,84 @@ proptest! {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #590: pause/unpause emergency mechanism
+// Issue #591 regression: global limit must be enforced across multiple orgs
 // ---------------------------------------------------------------------------
 
+/// Regression test for #591: apply across 4 distinct orgs up to the cap,
+/// then verify a 16th application is rejected regardless of which org is used.
 #[test]
-fn unit_pause_blocks_state_changes() {
+fn unit_regression_591_global_limit_multi_org() {
     use crate::errors::ContractError;
     use soroban_sdk::Error;
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("pause1");
+    let orgs: [Symbol; 4] = [
+        t.org("r591a"),
+        t.org("r591b"),
+        t.org("r591c"),
+        t.org("r591d"),
+    ];
 
     t.client.initialize(&admin);
-    t.client.register_maintainer(&admin, &maintainer, &org);
 
-    // Pause the contract
-    t.client.pause(&admin);
-    assert!(t.client.is_paused());
-
-    // All state-changing calls must fail with ContractPaused (code 15)
-    let err = Error::from_contract_error(ContractError::ContractPaused as u32);
+    // Apply 3-4 issues in each org to reach the global cap of 15
+    // org0: issues 0-3 (4 apps), org1: 4-7 (4), org2: 8-11 (4), org3: 12-14 (3)
+    let mut issue_counter: u32 = 0;
+    for (org_idx, org) in orgs.iter().enumerate() {
+        let count = if org_idx < 3 { 4u32 } else { 3u32 };
+        for _ in 0..count {
+            t.client.apply_for_issue(&contributor, org, &issue_counter);
+            issue_counter += 1;
+        }
+    }
 
     assert_eq!(
-        t.client.try_apply_for_issue(&contributor, &org, &1u32),
-        Err(Ok(err.clone()))
+        t.client.get_global_application_count(&contributor),
+        15,
+        "should have 15 pending applications across 4 orgs"
     );
+
+    // 16th application across any org must be rejected
+    for org in &orgs {
+        let result = t.client.try_apply_for_issue(&contributor, org, &(issue_counter + 100));
+        assert_eq!(
+            result,
+            Err(Ok(Error::from_contract_error(
+                ContractError::GlobalApplicationLimitReached as u32
+            ))),
+            "16th application in org {} must be rejected",
+            issue_counter
+        );
+    }
+
+    // Count must not have changed
     assert_eq!(
-        t.client.try_register_maintainer(&admin, &maintainer, &org),
-        Err(Ok(err.clone()))
-    );
-    assert_eq!(
-        t.client.try_withdraw_application(&contributor, &org, &1u32),
-        Err(Ok(err.clone()))
+        t.client.get_global_application_count(&contributor),
+        15,
+        "count must stay at 15 after rejected applications"
     );
 }
 
+/// Regression test for #591: multiple contributors each hit their own independent cap.
 #[test]
-fn unit_unpause_restores_operations() {
+fn unit_regression_591_per_contributor_independent_cap() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
-    let contributor = Address::generate(&t.env);
-    let org = t.org("pause2");
-
-    t.client.initialize(&admin);
-    t.client.pause(&admin);
-    assert!(t.client.is_paused());
-
-    t.client.unpause(&admin);
-    assert!(!t.client.is_paused());
-
-    // Operations must work after unpause
-    t.client.apply_for_issue(&contributor, &org, &1u32);
-    assert!(t.client.has_applied(&contributor, &org, &1u32));
-}
-
-#[test]
-fn unit_query_functions_work_while_paused() {
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-    let contributor = Address::generate(&t.env);
-    let org = t.org("pause3");
-
-    t.client.initialize(&admin);
-    t.client.apply_for_issue(&contributor, &org, &5u32);
-
-    t.client.pause(&admin);
-    assert!(t.client.is_paused());
-
-    // Read-only queries must still work
-    assert_eq!(t.client.get_global_application_count(&contributor), 1);
-    assert!(t.client.has_applied(&contributor, &org, &5u32));
-    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
-    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
-    assert!(!t.client.is_paused() == false); // is_paused is still callable
-}
-
-#[test]
-fn unit_pause_emits_event() {
-    use soroban_sdk::testutils::Events;
-
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-
-    t.client.initialize(&admin);
-    t.client.pause(&admin);
-
-    let events = t.env.events().all();
-    assert!(!events.is_empty());
-    // Last event should be the paused event
-    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
-        events.last().unwrap();
-    assert_eq!(topics.len(), 2);
-}
-
-#[test]
-fn unit_pause_unpause_admin_only() {
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
+    let contrib_a = Address::generate(&t.env);
+    let contrib_b = Address::generate(&t.env);
+    let org = t.org("r591e");
 
     t.client.initialize(&admin);
 
-    // pause/unpause require admin — with mock_all_auths these succeed.
-    // Verify the operation completes without panic.
-    t.client.pause(&admin);
-    assert!(t.client.is_paused());
-    t.client.unpause(&admin);
-    assert!(!t.client.is_paused());
+    // Fill contrib_a to the cap
+    for i in 0u32..15 {
+        t.client.apply_for_issue(&contrib_a, &org, &i);
+    }
+    assert_eq!(t.client.get_global_application_count(&contrib_a), 15);
+
+    // contrib_b must be unaffected
+    t.client.apply_for_issue(&contrib_b, &org, &0u32);
+    assert_eq!(t.client.get_global_application_count(&contrib_b), 1);
 }

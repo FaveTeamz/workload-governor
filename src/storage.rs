@@ -75,10 +75,9 @@ pub const GLOBAL_APP_LIMIT: u32 = 15;
 /// when no per-org cap has been configured via `set_org_cap`.
 pub const ORG_ASSIGNMENT_LIMIT: u32 = 4;
 
-/// Minimum valid value for the per-org assignment cap.
+/// Minimum valid per-org assignment cap configurable via `set_org_cap`.
 pub const ORG_CAP_MIN: u32 = 1;
-
-/// Maximum valid value for the per-org assignment cap.
+/// Maximum valid per-org assignment cap configurable via `set_org_cap`.
 pub const ORG_CAP_MAX: u32 = 20;
 
 // ---------------------------------------------------------------------------
@@ -238,15 +237,6 @@ pub(crate) fn extend_app_entry_ttl(
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
 }
-
-// ---------------------------------------------------------------------------
-// Persistent storage — Global application cap
-// ---------------------------------------------------------------------------
-//
-// Key: `symbol_short!("g_cap")`
-// Value: `u32`
-//
-// (Duplicate section removed — the authoritative implementation is earlier in this file)
 
 // ---------------------------------------------------------------------------
 // Persistent storage — Admin
