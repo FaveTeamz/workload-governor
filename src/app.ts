@@ -10,6 +10,7 @@ import transactionsRouter from './routes/transactions';
 import webhooksRouter from './routes/webhooks';
 import eventsRouter from './routes/events';
 import orgsRouter from './routes/orgs';
+import verifyXdrRouter from './routes/verify-xdr';
 import { globalLimiter, walletLimiter } from './middleware/rate-limit';
 import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
@@ -57,6 +58,7 @@ export function createApp(): express.Application {
   app.use('/api/transactions', walletLimiter, transactionsRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api', orgsRouter);
+  app.use('/api', verifyXdrRouter);
   app.use('/webhooks', webhooksRouter);
 
   // Malformed JSON body — Express JSON parser raises SyntaxError with status 400
