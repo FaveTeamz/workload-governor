@@ -52,7 +52,7 @@ fuzz_target!(|data: &[u8]| {
 
     // Attempt assign — may fail with ApplicationNotFound, OrgAssignmentLimitReached, etc.
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
     }));
 
     // Attempt complete / revoke on whatever state results

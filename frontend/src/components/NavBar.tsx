@@ -7,6 +7,7 @@
  *   🔴 disconnected — no publicKey and not connecting
  */
 import { useState } from "react";
+import type { Theme } from "../hooks/useTheme";
 
 // ── WalletStatusDot ───────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ export interface NavBarProps {
   connecting?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  theme?: Theme;
+  onToggleTheme?: () => void;
 }
 
 export function NavBar({
@@ -79,11 +82,25 @@ export function NavBar({
 
   const walletStatus = resolveWalletStatus(walletAddress, connecting);
 
+  const isDark = theme === "dark";
+  const themeLabel = isDark ? "Switch to light mode" : "Switch to dark mode";
+  const themeIcon = isDark ? "☀️" : "🌙";
+
   return (
     <nav className="navbar" role="navigation" aria-label="Main navigation">
       <a className="navbar__brand" href="#/" aria-label="WorkloadGovernor home">
         <span aria-hidden="true">⚙</span> WorkloadGovernor
       </a>
+
+      <button
+        className="navbar__theme-toggle"
+        aria-label={themeLabel}
+        title={themeLabel}
+        onClick={onToggleTheme}
+        type="button"
+      >
+        <span className="navbar__theme-icon" aria-hidden="true">{themeIcon}</span>
+      </button>
 
       <button
         className="navbar__hamburger"

@@ -354,6 +354,115 @@ describe("GET /api/contributors/:address/counts", () => {
 });
 
 // ===========================================================================
+// GET /api/contributors/:address/activity (heatmap endpoint — #576)
+// ===========================================================================
+
+const DailyActivitySchema = z.object({
+  date: z.string(),
+  applications: z.number(),
+  assignments: z.number(),
+  completions: z.number(),
+  withdrawals: z.number(),
+  total: z.number(),
+});
+
+const WeekActivitySchema = z.object({
+  week_start: z.string(),
+  days: z.array(DailyActivitySchema),
+  total: z.number(),
+});
+
+const ActivityHeatmapSchema = z.object({
+  address: z.string(),
+  period: z.enum(["30d", "90d", "365d"]),
+  total_activities: z.number(),
+  days: z.array(DailyActivitySchema),
+  weeks: z.array(WeekActivitySchema),
+});
+
+describe("GET /api/contributors/:address/activity", () => {
+  it("TC-1: 200 with default 90d period and weekly grouping", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/activity`,
+    );
+
+    expect(res.status).toBe(200);
+    const parsed = ActivityHeatmapSchema.safeParse(res.body);
+    expect(parsed.success).toBe(true);
+
+    const data = parsed.data!;
+    expect(data.period).toBe("90d");
+    expect(data.days.length).toBe(90);
+    expect(data.weeks.length).toBe(Math.ceil(90 / 7));
+    expect(data.total_activities).toBeGreaterThan(0);
+  });
+
+  it("TC-2: supports period=30d and returns 30 daily counts", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/activity?period=30d`,
+    );
+
+    expect(res.status).toBe(200);
+    const parsed = ActivityHeatmapSchema.safeParse(res.body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.period).toBe("30d");
+    expect(parsed.data!.days.length).toBe(30);
+    expect(parsed.data!.weeks.length).toBe(Math.ceil(30 / 7));
+  });
+
+  it("TC-3: supports period=365d and returns 365 daily counts", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/activity?period=365d`,
+    );
+
+    expect(res.status).toBe(200);
+    const parsed = ActivityHeatmapSchema.safeParse(res.body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.period).toBe("365d");
+    expect(parsed.data!.days.length).toBe(365);
+    expect(parsed.data!.weeks.length).toBe(Math.ceil(365 / 7));
+  });
+
+  it("TC-4: returns 400 for invalid period parameter", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/activity?period=7d`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(res.body.error).toMatch(/invalid period/i);
+  });
+
+  it("TC-5: returns 400 for invalid Stellar address format", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${INVALID_ADDR}/activity`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(res.body.error).toMatch(/invalid stellar address/i);
+  });
+
+  it("TC-6: weekly counts sum up the daily activities correctly", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/activity?period=90d`,
+    );
+
+    expect(res.status).toBe(200);
+    const { days, weeks, total_activities } = res.body;
+
+    let calculatedTotal = 0;
+    for (const week of weeks) {
+      const weekSum = week.days.reduce((acc: number, d: { total: number }) => acc + d.total, 0);
+      expect(week.total).toBe(weekSum);
+      calculatedTotal += week.total;
+    }
+
+    expect(total_activities).toBe(calculatedTotal);
+  });
+});
+
+// ===========================================================================
 // Cross-endpoint: isolated test DB
 // ===========================================================================
 

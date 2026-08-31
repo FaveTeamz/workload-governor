@@ -1,0 +1,405 @@
+name: Contract Deploy — Testnet & Mainnet
+
+# Dedicated deployment pipeline for WorkloadGovernor.
+# Triggers on every merge to main and supports manual runs via workflow_dispatch.
+# Sequence: build → optimize → deploy/upgrade testnet → smoke test → notify → (manual gate) → mainnet
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deployment target"
+        required: true
+        default: "testnet"
+        type: choice
+        options:
+          - testnet
+          - mainnet
+
+concurrency:
+  group: contract-deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel an in-flight deploy
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 1 — Build WASM
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  build-wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      - name: Build WASM
+        run: cargo build --target wasm32v1-none --release
+
+      - name: Upload unoptimized WASM
+        uses: actions/upload-artifact@v4
+        with:
+          name: workload-governor-wasm-unoptimized
+          path: target/wasm32v1-none/release/workload_governor.wasm
+          retention-days: 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 2 — Optimize WASM
+# ─────────────────────────────────────────────────────────────────────────────
+  optimize-wasm:
+    name: Optimize WASM
+    runs-on: ubuntu-latest
+    needs: build-wasm
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Download unoptimized WASM
+        uses: actions/download-artifact@v8
+        with:
+          name: workload-governor-wasm-unoptimized
+          path: target/wasm32v1-none/release/
+
+      - name: Optimize WASM
+        run: |
+          stellar contract optimize \
+            --wasm target/wasm32v1-none/release/workload_governor.wasm \
+            --wasm-out target/wasm32v1-none/release/workload_governor.optimized.wasm
+
+      - name: Report WASM sizes
+        run: |
+          RAW=$(wc -c < target/wasm32v1-none/release/workload_governor.wasm)
+          OPT=$(wc -c < target/wasm32v1-none/release/workload_governor.optimized.wasm)
+          echo "### WASM Size Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ----- | ---- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Unoptimized | $(( RAW / 1024 )) KB |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Optimized   | $(( OPT / 1024 )) KB |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload optimized WASM
+        uses: actions/upload-artifact@v4
+        with:
+          name: workload-governor-wasm-optimized
+          path: target/wasm32v1-none/release/workload_governor.optimized.wasm
+          retention-days: 90
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 3 — Deploy to Testnet + Smoke Test
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-testnet:
+    name: Deploy → Testnet
+    runs-on: ubuntu-latest
+    needs: optimize-wasm
+    environment: testnet
+    # Run on push to main OR when manually targeting testnet
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testnet')
+    outputs:
+      contract_id: ${{ steps.deploy.outputs.contract_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Download optimized WASM
+        uses: actions/download-artifact@v8
+        with:
+          name: workload-governor-wasm-optimized
+          path: wasm/
+
+      - name: Import CI admin key
+        env:
+          TESTNET_ADMIN_SECRET: ${{ secrets.TESTNET_ADMIN_SECRET }}
+        run: stellar keys add ci-admin --secret-key "$TESTNET_ADMIN_SECRET"
+
+      - name: Fund CI key via Friendbot
+        run: |
+          ADDR=$(stellar keys address ci-admin)
+          echo "Funding $ADDR on testnet…"
+          curl -sf "https://friendbot.stellar.org?addr=${ADDR}" > /dev/null \
+            || echo "Friendbot funding skipped (key may already be funded)"
+
+      - name: Deploy or upgrade contract
+        id: deploy
+        env:
+          TESTNET_CONTRACT_ID: ${{ secrets.TESTNET_CONTRACT_ID }}
+        run: |
+          set -euo pipefail
+          NETWORK="testnet"
+
+          if [[ -n "${TESTNET_CONTRACT_ID:-}" ]]; then
+            echo "Existing contract detected — uploading WASM and calling upgrade…"
+            NEW_HASH=$(stellar contract upload \
+              --wasm wasm/workload_governor.optimized.wasm \
+              --network "$NETWORK" \
+              --source ci-admin)
+            echo "Uploaded WASM hash: $NEW_HASH"
+
+            stellar contract invoke \
+              --id "$TESTNET_CONTRACT_ID" \
+              --network "$NETWORK" \
+              --source ci-admin \
+              -- upgrade \
+              --new_wasm_hash "$NEW_HASH"
+
+            CONTRACT_ID="$TESTNET_CONTRACT_ID"
+            echo "action=upgraded" >> "$GITHUB_OUTPUT"
+          else
+            echo "No existing contract — deploying fresh…"
+            CONTRACT_ID=$(stellar contract deploy \
+              --wasm wasm/workload_governor.optimized.wasm \
+              --network "$NETWORK" \
+              --source ci-admin)
+
+            # Initialize the new contract
+            ADMIN_ADDR=$(stellar keys address ci-admin)
+            stellar contract invoke \
+              --id "$CONTRACT_ID" \
+              --network "$NETWORK" \
+              --source ci-admin \
+              -- initialize \
+              --admin "$ADMIN_ADDR"
+
+            echo "action=deployed" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "contract_id=${CONTRACT_ID}" >> "$GITHUB_OUTPUT"
+
+          echo "### 🚀 Testnet Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Key | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ----- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Network | testnet |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Action | ${action:-deployed} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test — get_global_application_count
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+        run: |
+          set -euo pipefail
+          echo "Running targeted smoke test on testnet…"
+          TEST_ADDR=$(stellar keys address ci-admin)
+          RESULT=$(stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --network testnet \
+            --source ci-admin \
+            -- get_global_application_count \
+            --contributor "$TEST_ADDR")
+          echo "get_global_application_count($TEST_ADDR) = $RESULT"
+          # Result must be a valid non-negative integer
+          [[ "$RESULT" =~ ^[0-9]+$ ]] || { echo "ERROR: unexpected result '$RESULT'"; exit 1; }
+          echo "Smoke test passed ✓"
+
+      - name: Full smoke test suite
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+          CI_KEY: ci-admin
+          NETWORK: testnet
+        run: bash tests/smoke/testnet-smoke.sh
+
+      - name: Notify Slack — success
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "✅ *WorkloadGovernor* testnet deploy succeeded",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "✅ *WorkloadGovernor — Testnet Deploy Succeeded*\n• Contract: `${{ steps.deploy.outputs.contract_id }}`\n• Commit: `${{ github.sha }}`\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+                  }
+                }
+              ]
+            }' || echo "Slack notification skipped (no webhook configured)"
+
+      - name: Notify Slack — failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "❌ *WorkloadGovernor* testnet deploy FAILED",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ *WorkloadGovernor — Testnet Deploy FAILED*\n• Commit: `${{ github.sha }}`\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+                  }
+                }
+              ]
+            }' || echo "Slack notification skipped (no webhook configured)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 4 — Deploy to Mainnet (requires manual approval via GitHub environment)
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-mainnet:
+    name: Deploy → Mainnet
+    runs-on: ubuntu-latest
+    needs: deploy-testnet
+    # environment: mainnet must be configured in repo settings with required reviewers
+    # to provide the manual approval gate.
+    environment: mainnet
+    # Only run when manually dispatching with target=mainnet
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.target == 'mainnet'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Download optimized WASM
+        uses: actions/download-artifact@v8
+        with:
+          name: workload-governor-wasm-optimized
+          path: wasm/
+
+      - name: Import mainnet admin key
+        env:
+          MAINNET_ADMIN_SECRET: ${{ secrets.MAINNET_ADMIN_SECRET }}
+        run: stellar keys add mainnet-admin --secret-key "$MAINNET_ADMIN_SECRET"
+
+      - name: Deploy or upgrade contract on mainnet
+        id: mainnet-deploy
+        env:
+          MAINNET_CONTRACT_ID: ${{ secrets.MAINNET_CONTRACT_ID }}
+        run: |
+          set -euo pipefail
+          NETWORK="mainnet"
+
+          if [[ -n "${MAINNET_CONTRACT_ID:-}" ]]; then
+            echo "Upgrading existing mainnet contract…"
+            NEW_HASH=$(stellar contract upload \
+              --wasm wasm/workload_governor.optimized.wasm \
+              --network "$NETWORK" \
+              --source mainnet-admin)
+            echo "Uploaded WASM hash: $NEW_HASH"
+
+            stellar contract invoke \
+              --id "$MAINNET_CONTRACT_ID" \
+              --network "$NETWORK" \
+              --source mainnet-admin \
+              -- upgrade \
+              --new_wasm_hash "$NEW_HASH"
+
+            CONTRACT_ID="$MAINNET_CONTRACT_ID"
+          else
+            echo "Deploying fresh contract to mainnet…"
+            CONTRACT_ID=$(stellar contract deploy \
+              --wasm wasm/workload_governor.optimized.wasm \
+              --network "$NETWORK" \
+              --source mainnet-admin)
+
+            ADMIN_ADDR=$(stellar keys address mainnet-admin)
+            stellar contract invoke \
+              --id "$CONTRACT_ID" \
+              --network "$NETWORK" \
+              --source mainnet-admin \
+              -- initialize \
+              --admin "$ADMIN_ADDR"
+          fi
+
+          echo "contract_id=${CONTRACT_ID}" >> "$GITHUB_OUTPUT"
+          echo "### 🌐 Mainnet Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Key | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ----- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Network | mainnet |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify mainnet deployment
+        env:
+          CONTRACT_ID: ${{ steps.mainnet-deploy.outputs.contract_id }}
+        run: |
+          ADMIN_ADDR=$(stellar keys address mainnet-admin)
+          RESULT=$(stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --network mainnet \
+            --source mainnet-admin \
+            -- get_global_application_count \
+            --contributor "$ADMIN_ADDR")
+          echo "Verification: get_global_application_count = $RESULT"
+          [[ "$RESULT" =~ ^[0-9]+$ ]] || { echo "ERROR: verification failed"; exit 1; }
+
+      - name: Notify Slack — mainnet success
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🌐✅ *WorkloadGovernor* MAINNET deploy succeeded",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🌐✅ *WorkloadGovernor — Mainnet Deploy Succeeded*\n• Contract: `${{ steps.mainnet-deploy.outputs.contract_id }}`\n• Commit: `${{ github.sha }}`\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+                  }
+                }
+              ]
+            }' || echo "Slack notification skipped"
+
+      - name: Notify Slack — mainnet failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🌐❌ *WorkloadGovernor* MAINNET deploy FAILED — URGENT",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🌐❌ *WorkloadGovernor — Mainnet Deploy FAILED*\n• Commit: `${{ github.sha }}`\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\n\n*Immediate action required. Check rollback runbook.*"
+                  }
+                }
+              ]
+            }' || echo "Slack notification skipped"

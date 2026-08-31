@@ -190,4 +190,152 @@ describe('Issues API', () => {
       expect(response.body.data).toHaveProperty('available');
     });
   });
+
+  describe('POST /api/:org_id/issues/bulk', () => {
+    const testOrgId = 'test-org-bulk';
+
+    beforeEach(async () => {
+      // Clean up before each test
+      await request(app).post('/api/setup').send({ org_id: testOrgId });
+    });
+
+    afterEach(async () => {
+      // Clean up after each test
+      await request(app).post('/api/teardown').send({ org_id: testOrgId });
+    });
+
+    it('should successfully register multiple issues', async () => {
+      const issueIds = [1, 2, 3, 4, 5];
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: issueIds });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty('succeeded');
+      expect(response.body).toHaveProperty('failed');
+      expect(response.body).toHaveProperty('total', 5);
+      expect(response.body).toHaveProperty('timestamp');
+      expect(response.body.succeeded).toEqual(issueIds);
+      expect(response.body.failed).toEqual([]);
+    });
+
+    it('should handle duplicate issue IDs with rollback', async () => {
+      // First, register issue 1
+      const firstResponse = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1] });
+
+      expect(firstResponse.status).toBe(201);
+      expect(firstResponse.body.succeeded).toEqual([1]);
+
+      // Try to register [1, 2, 3] - issue 1 is duplicate
+      const secondResponse = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1, 2, 3] });
+
+      expect(secondResponse.status).toBe(409);
+      expect(secondResponse.body).toHaveProperty('error');
+      expect(secondResponse.body.failed.length).toBeGreaterThan(0);
+      expect(secondResponse.body.failed[0].issueId).toBe(1);
+      // Verify all-or-nothing: issues 2 and 3 should not be registered
+      expect(secondResponse.body.succeeded).toEqual([]);
+    });
+
+    it('should reject batch size exceeding 100', async () => {
+      const issueIds = Array.from({ length: 101 }, (_, i) => i + 1);
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: issueIds });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toMatch(/100/);
+    });
+
+    it('should reject empty issue_ids array', async () => {
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [] });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('should reject non-integer issue IDs', async () => {
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: ['not-a-number', 2, 3] });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('should reject negative issue IDs', async () => {
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [-1, 0, 1] });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('should handle partial failures gracefully', async () => {
+      // Register some issues first
+      await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1, 3, 5] });
+
+      // Try to register a batch with some duplicates
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1, 2, 3, 4, 5] });
+
+      expect(response.status).toBe(409);
+      expect(response.body.failed.length).toBeGreaterThan(0);
+      // Verify all-or-nothing semantics: no new issues should be registered
+      expect(response.body.succeeded).toEqual([]);
+    });
+
+    it('should return timestamp in ISO format', async () => {
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1, 2] });
+
+      expect(response.status).toBe(201);
+      expect(response.body.timestamp).toBeDefined();
+      // Verify it's a valid ISO string
+      expect(() => new Date(response.body.timestamp)).not.toThrow();
+      expect(new Date(response.body.timestamp).getTime()).toBeGreaterThan(0);
+    });
+
+    it('should handle max batch size (100 issues)', async () => {
+      const issueIds = Array.from({ length: 100 }, (_, i) => i + 1);
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: issueIds });
+
+      expect(response.status).toBe(201);
+      expect(response.body.total).toBe(100);
+      expect(response.body.succeeded.length).toBe(100);
+      expect(response.body.failed).toEqual([]);
+    });
+
+    it('should provide detailed error messages for failures', async () => {
+      // Register issue 1 first
+      await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1] });
+
+      // Try to register batch with duplicate
+      const response = await request(app)
+        .post(`/api/${testOrgId}/issues/bulk`)
+        .send({ issue_ids: [1, 2] });
+
+      expect(response.status).toBe(409);
+      expect(response.body.failed[0]).toHaveProperty('issueId');
+      expect(response.body.failed[0]).toHaveProperty('error');
+      expect(typeof response.body.failed[0].error).toBe('string');
+      expect(response.body.failed[0].error.length).toBeGreaterThan(0);
+    });
+  });
 });

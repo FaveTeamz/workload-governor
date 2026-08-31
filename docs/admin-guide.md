@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Workload Governor contract manages issue assignments and applications for contributors. This guide covers administration tasks including TTL (Time-To-Live) management.
+The Workload Governor contract manages issue assignments and applications for contributors. This guide covers administration tasks including TTL (Time-To-Live) management, admin modes, and error handling.
+
+---
 
 ## TTL Management
 
@@ -23,18 +25,10 @@ TTL (Time-To-Live) is the duration that a storage entry remains valid on the Ste
 | `ASSIGNMENT_TTL` | 30 days | Default TTL for assignments |
 | `EXTENDED_ASSIGNMENT_TTL` | 90 days | Extended TTL when manually extended |
 
-## Functions
+### Functions
 
-### extend_assignment_ttl
+#### extend_assignment_ttl
 
 Extends the TTL of an assignment entry and related counters.
 
 **Function Signature:**
-let (ttl, remaining) = WorkloadGovernor::get_assignment_ttl_status(
-    env,
-    contributor_address,
-    org_id,
-    issue_id,
-)?;
-
-println!("TTL: {} seconds, Remaining: {} seconds", ttl, remaining);

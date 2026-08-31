@@ -33,7 +33,7 @@ jobs:
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Build frontend ────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
@@ -180,7 +180,7 @@ jobs:
       # ── Slack notifications ───────────────────────────────────────────────
       - name: Notify Slack on success
         if: success()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {
@@ -191,7 +191,7 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {

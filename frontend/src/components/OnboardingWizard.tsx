@@ -63,7 +63,7 @@ const STEPS: Step[] = [
     illustration: "📊",
     title: "Understanding the Cap System",
     content:
-      "You may hold at most 15 pending applications across all orgs and 4 active assignments per org at once. This ensures everyone gets a fair shot. Caps reset as applications resolve.",
+      "You may hold at most 15 pending applications across all orgs and 4 active assignments per org at once. This ensures everyone gets a fair shot. Caps reset as applications resolve. Read the Contributor FAQ for answers to common cap-related questions.",
   },
   {
     illustration: "🚀",
@@ -81,6 +81,20 @@ const STEPS: Step[] = [
 interface Props {
   /** Called after wizard is completed or permanently skipped */
   onComplete?: () => void;
+  /** Called when the user clicks Connect Wallet in step 1 */
+  onConnectWallet?: () => void;
+  /** Whether a wallet is already connected (controls step 1 UI) */
+  walletConnected?: boolean;
+  /**
+   * Bypass localStorage gate and show wizard immediately.
+   * Used by Storybook stories and integration tests.
+   */
+  forceVisible?: boolean;
+  /**
+   * Start on a specific step index (0-based).
+   * Used by Storybook stories.
+   */
+  initialStep?: number;
 }
 
 export function OnboardingWizard({ onComplete }: Props) {
@@ -163,7 +177,7 @@ export function OnboardingWizard({ onComplete }: Props) {
     // Focus trap
     if (e.key === "Tab") {
       const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button, a, [tabindex="0"]'
+        'button:not([disabled]), a[href], input, [tabindex="0"]'
       );
       if (!focusable || focusable.length === 0) return;
       const first = focusable[0];
@@ -286,7 +300,7 @@ export function OnboardingWizard({ onComplete }: Props) {
 
           {/* Next / Finish */}
           <button
-            ref={firstFocusRef}
+            ref={primaryBtnRef}
             className="btn btn-primary"
             onClick={next}
             disabled={stepPhase !== "idle"}
@@ -311,7 +325,7 @@ export function OnboardingWizard({ onComplete }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -328,7 +342,19 @@ export function GetStartedButton() {
     () => !!localStorage.getItem(STORAGE_KEY)
   );
 
-  if (!dismissed) return null;
+interface ReplayButtonProps {
+  label?: string;
+  className?: string;
+}
+
+export function ReplayOnboardingButton({
+  label = "Replay Onboarding",
+  className = "",
+}: ReplayButtonProps) {
+  function replay() {
+    localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    window.location.reload();
+  }
 
   function handleClick() {
     localStorage.removeItem(STORAGE_KEY);
@@ -343,7 +369,15 @@ export function GetStartedButton() {
       onClick={handleClick}
       aria-label="Reopen onboarding wizard"
     >
-      Get Started
+      {label}
     </button>
   );
+}
+
+/**
+ * @deprecated Use ReplayOnboardingButton instead.
+ * Kept for backward compatibility with existing App.tsx import.
+ */
+export function GetStartedButton() {
+  return <ReplayOnboardingButton label="Get Started" />;
 }

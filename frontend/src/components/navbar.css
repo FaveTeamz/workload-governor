@@ -1,0 +1,457 @@
+/*
+ * navbar.css — Styles for the WorkloadGovernor NavBar component.
+ *
+ * Breakpoints:
+ *   mobile  < 768px  (hamburger menu)
+ *   desktop ≥ 768px  (full horizontal bar)
+ *
+ * Focus management:
+ *   All interactive elements get a visible :focus-visible ring.
+ *   :focus (without keyboard) is suppressed via :focus:not(:focus-visible).
+ */
+
+/* ── Reset / tokens ── */
+:root {
+  --navbar-height: 56px;
+  --navbar-bg: #0f172a;
+  --navbar-text: #f1f5f9;
+  --navbar-text-muted: #94a3b8;
+  --navbar-border: #1e293b;
+  --navbar-hover-bg: #1e293b;
+  --navbar-active-bg: #334155;
+
+  --cap-green: #22c55e;
+  --cap-green-bg: #14532d;
+  --cap-yellow: #eab308;
+  --cap-yellow-bg: #713f12;
+  --cap-red: #ef4444;
+  --cap-red-bg: #7f1d1d;
+
+  --focus-ring: 0 0 0 2px #3b82f6;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --z-dropdown: 100;
+  --z-overlay: 200;
+}
+
+/* ── Base navbar ── */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--navbar-height);
+  padding: 0 1rem;
+  background: var(--navbar-bg);
+  border-bottom: 1px solid var(--navbar-border);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-overlay);
+  gap: 1rem;
+}
+
+/* ── Brand ── */
+.navbar__brand {
+  flex-shrink: 0;
+}
+
+.navbar__logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--navbar-text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.navbar__logo:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.navbar__brand-name {
+  white-space: nowrap;
+}
+
+/* ── Nav links (desktop inline, mobile vertical) ── */
+.navbar__links {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.navbar__link {
+  color: var(--navbar-text-muted);
+  text-decoration: none;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  transition: color 0.15s, background 0.15s;
+}
+
+.navbar__link:hover {
+  color: var(--navbar-text);
+  background: var(--navbar-hover-bg);
+}
+
+.navbar__link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ── Org Switcher ── */
+.navbar__org-switcher {
+  position: relative;
+}
+
+.navbar__org-button {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: var(--navbar-hover-bg);
+  color: var(--navbar-text);
+  border: 1px solid var(--navbar-border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.navbar__org-button:hover {
+  background: var(--navbar-active-bg);
+}
+
+.navbar__org-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.navbar__org-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  background: #1e293b;
+  border: 1px solid var(--navbar-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: var(--z-dropdown);
+  overflow: hidden;
+}
+
+.navbar__org-search-wrap {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--navbar-border);
+}
+
+.navbar__org-search {
+  width: 100%;
+  background: var(--navbar-bg);
+  border: 1px solid var(--navbar-border);
+  border-radius: var(--radius-sm);
+  color: var(--navbar-text);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8125rem;
+  box-sizing: border-box;
+}
+
+.navbar__org-search:focus {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.navbar__org-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.navbar__org-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--navbar-text-muted);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.navbar__org-item:hover,
+.navbar__org-item:focus-visible {
+  background: var(--navbar-hover-bg);
+  color: var(--navbar-text);
+  outline: none;
+}
+
+.navbar__org-item--active {
+  color: var(--navbar-text);
+  font-weight: 600;
+}
+
+.navbar__org-empty {
+  padding: 0.5rem 0.75rem;
+  color: var(--navbar-text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+/* ── Wallet area ── */
+.navbar__wallet {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.navbar__address {
+  font-family: monospace;
+  font-size: 0.8125rem;
+  color: var(--navbar-text-muted);
+}
+
+/* ── Buttons ── */
+.navbar__btn {
+  padding: 0.35rem 0.875rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.navbar__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.navbar__btn--primary {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.navbar__btn--primary:hover {
+  background: #2563eb;
+}
+
+.navbar__btn--secondary {
+  background: transparent;
+  color: var(--navbar-text-muted);
+  border-color: var(--navbar-border);
+}
+
+.navbar__btn--secondary:hover {
+  color: var(--navbar-text);
+  background: var(--navbar-hover-bg);
+}
+
+/* ── Action cluster (right side) ── */
+.navbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ── Cap Status Chip ── */
+.navbar__cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.navbar__cap-chip--green {
+  color: var(--cap-green);
+  background: var(--cap-green-bg);
+}
+
+.navbar__cap-chip--yellow {
+  color: var(--cap-yellow);
+  background: var(--cap-yellow-bg);
+}
+
+.navbar__cap-chip--red {
+  color: var(--cap-red);
+  background: var(--cap-red-bg);
+}
+
+/* ── Notification Bell ── */
+.navbar__bell {
+  position: relative;
+  background: transparent;
+  border: none;
+  color: var(--navbar-text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navbar__bell:hover {
+  color: var(--navbar-text);
+  background: var(--navbar-hover-bg);
+}
+
+.navbar__bell:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.navbar__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--cap-red);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ── Language selector in navbar ── */
+.navbar__lang-selector {
+  display: flex;
+  align-items: center;
+}
+
+.navbar__lang-selector .language-selector__label {
+  display: none; /* icon-only mode in navbar */
+}
+
+.navbar__lang-selector .language-selector__select {
+  background: var(--navbar-hover-bg);
+  color: var(--navbar-text-muted);
+  border: 1px solid var(--navbar-border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.navbar__lang-selector .language-selector__select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ── Hamburger (mobile only) ── */
+.navbar__hamburger {
+  display: none; /* hidden on desktop */
+  flex-direction: column;
+  justify-content: space-between;
+  width: 24px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.navbar__hamburger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.navbar__hamburger-bar {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: var(--navbar-text);
+  border-radius: 1px;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+/* ── Mobile breakpoint ── */
+@media (max-width: 767px) {
+  .navbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 0.5rem 1rem;
+  }
+
+  /* Show hamburger */
+  .navbar__hamburger {
+    display: flex;
+  }
+
+  /* Hide nav links by default on mobile */
+  .navbar__links {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 0;
+    border-top: 1px solid var(--navbar-border);
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Show when open */
+  .navbar__links--open {
+    display: flex;
+  }
+
+  .navbar__link {
+    padding: 0.75rem 0.5rem;
+    border-radius: 0;
+    border-bottom: 1px solid var(--navbar-border);
+  }
+
+  .navbar__org-switcher {
+    width: 100%;
+  }
+
+  .navbar__org-button {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .navbar__org-dropdown {
+    position: static;
+    box-shadow: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .navbar__wallet {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.5rem;
+    width: 100%;
+  }
+
+  .navbar__btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Actions bar stays in the header row */
+  .navbar__actions {
+    order: -1; /* place before the growing links area */
+  }
+}
