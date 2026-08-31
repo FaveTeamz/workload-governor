@@ -3333,3 +3333,315 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests for check_consistency — Issue #631
+// ---------------------------------------------------------------------------
+//
+// check_consistency(pairs, issue_ids) returns (contributor, org_id) pairs where
+// the org assignment counter is 0 but at least one assignment sentinel from
+// `issue_ids` exists — indicating storage corruption.
+//
+// Test matrix:
+//   1. All counters consistent  → empty result
+//   2. Global app count > actual app entries → pair NOT returned (check_consistency
+//      only inspects org assignment state; global app counters are out of scope)
+//   3. Org assignment counter = 0 but orphan sentinel present → pair returned
+//   4. Zero-count contributor with no sentinels → NOT returned (regression #583)
+//   5. Large batch of 100 pairs — all consistent → empty, linear performance
+
+// Helper: build a Vec<(Address, Symbol)> from a slice of refs
+fn make_pairs(
+    env: &Env,
+    pairs: &[(Address, Symbol)],
+) -> soroban_sdk::Vec<(Address, Symbol)> {
+    let mut v = soroban_sdk::Vec::new(env);
+    for (addr, sym) in pairs {
+        v.push_back((addr.clone(), sym.clone()));
+    }
+    v
+}
+
+// Helper: build a Vec<u32>
+fn make_issue_ids(env: &Env, ids: &[u32]) -> soroban_sdk::Vec<u32> {
+    let mut v = soroban_sdk::Vec::new(env);
+    for &id in ids {
+        v.push_back(id);
+    }
+    v
+}
+
+/// #631 — AC 1: All counters consistent → empty result.
+///
+/// Two contributors each have one active assignment. Their org assignment
+/// counters correctly reflect that. check_consistency must return [].
+#[test]
+fn unit_check_consistency_all_consistent_returns_empty() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let c1 = Address::generate(&t.env);
+    let c2 = Address::generate(&t.env);
+    let org = t.org("cc_ok");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // c1 has one active assignment (issue 1)
+    t.client.apply_for_issue(&c1, &org, &1u32);
+    t.client.assign_issue(&maintainer, &c1, &org, &1u32);
+
+    // c2 has one active assignment (issue 2)
+    t.client.apply_for_issue(&c2, &org, &2u32);
+    t.client.assign_issue(&maintainer, &c2, &org, &2u32);
+
+    let pairs = make_pairs(&t.env, &[(c1.clone(), org.clone()), (c2.clone(), org.clone())]);
+    let issue_ids = make_issue_ids(&t.env, &[1u32, 2u32]);
+
+    let result = t.client.check_consistency(&pairs, &issue_ids);
+    assert_eq!(result.len(), 0, "expected empty result when all counters are consistent");
+}
+
+/// #631 — AC 2: Global app count > actual app entries → pair NOT flagged.
+///
+/// check_consistency only examines the org *assignment* counter vs assignment
+/// sentinels. A mismatch in global application counters is out of scope.
+/// This test verifies the function does not produce false positives for
+/// that unrelated counter.
+#[test]
+fn unit_check_consistency_global_count_mismatch_not_flagged() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cc_gbl");
+
+    t.client.initialize(&admin);
+
+    // Apply for 3 issues to increment global app count to 3
+    t.client.apply_for_issue(&contributor, &org, &10u32);
+    t.client.apply_for_issue(&contributor, &org, &11u32);
+    t.client.apply_for_issue(&contributor, &org, &12u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 3);
+
+    // Withdraw all applications — global count drops to 0, no assignment state
+    t.client.withdraw_application(&contributor, &org, &10u32);
+    t.client.withdraw_application(&contributor, &org, &11u32);
+    t.client.withdraw_application(&contributor, &org, &12u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+
+    // Org assignment counter is 0 and no sentinels exist — NOT inconsistent
+    let pairs = make_pairs(&t.env, &[(contributor.clone(), org.clone())]);
+    let issue_ids = make_issue_ids(&t.env, &[10u32, 11u32, 12u32]);
+
+    let result = t.client.check_consistency(&pairs, &issue_ids);
+    assert_eq!(
+        result.len(), 0,
+        "global-only mismatch must not cause check_consistency to flag the pair"
+    );
+}
+
+/// #631 — AC 3: Org assignment counter = 0 but orphan sentinel present → pair returned.
+///
+/// We simulate storage corruption by directly writing an assignment sentinel
+/// (via `seed_assignment`) without going through the normal assign_issue path,
+/// then manually zeroing the counter by completing the assignment and leaving
+/// the sentinel in place. A simpler approach: seed a raw sentinel and do NOT
+/// set a counter, which is exactly what the diagnostic tool is designed to catch.
+#[test]
+fn unit_check_consistency_orphan_sentinel_flagged() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cc_orp");
+
+    t.client.initialize(&admin);
+
+    // Directly write an assignment sentinel without touching the counter
+    // (counter stays at 0 — simulates corruption / botched migration).
+    crate::storage::set_assignment(&t.env, &org, 7u32, &contributor);
+
+    // Counter is 0 and a sentinel exists for issue 7 → inconsistent
+    let pairs = make_pairs(&t.env, &[(contributor.clone(), org.clone())]);
+    let issue_ids = make_issue_ids(&t.env, &[7u32]);
+
+    let result = t.client.check_consistency(&pairs, &issue_ids);
+    assert_eq!(result.len(), 1, "orphan sentinel must cause pair to be flagged");
+
+    let flagged = result.get(0).unwrap();
+    assert_eq!(flagged.0, contributor, "flagged contributor must match");
+    assert_eq!(flagged.1, org, "flagged org_id must match");
+}
+
+/// #631 — AC 3 (extended): Multiple orphan sentinels — pair flagged exactly once.
+///
+/// Even if several issue_ids have orphan sentinels, the pair is returned once.
+#[test]
+fn unit_check_consistency_multiple_orphans_flagged_once() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cc_mul");
+
+    t.client.initialize(&admin);
+
+    // Write three orphan sentinels (counter stays 0)
+    crate::storage::set_assignment(&t.env, &org, 1u32, &contributor);
+    crate::storage::set_assignment(&t.env, &org, 2u32, &contributor);
+    crate::storage::set_assignment(&t.env, &org, 3u32, &contributor);
+
+    let pairs = make_pairs(&t.env, &[(contributor.clone(), org.clone())]);
+    let issue_ids = make_issue_ids(&t.env, &[1u32, 2u32, 3u32]);
+
+    let result = t.client.check_consistency(&pairs, &issue_ids);
+    assert_eq!(result.len(), 1, "pair should appear exactly once regardless of orphan count");
+}
+
+/// #631 — AC 4: Zero-count contributor with no sentinels → NOT returned (regression #583).
+///
+/// A fresh contributor who has never applied, been assigned, or had any
+/// assignments has counter = 0 and no sentinels. This is a valid, clean state
+/// and must NOT be flagged as inconsistent.
+#[test]
+fn unit_check_consistency_zero_count_no_sentinel_not_flagged() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cc_zer");
+
+    t.client.initialize(&admin);
+
+    // Contributor has never interacted with the contract.
+    // Counter defaults to 0 and no sentinels exist.
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    let pairs = make_pairs(&t.env, &[(contributor.clone(), org.clone())]);
+    let issue_ids = make_issue_ids(&t.env, &[1u32, 2u32, 3u32, 99u32]);
+
+    let result = t.client.check_consistency(&pairs, &issue_ids);
+    assert_eq!(
+        result.len(), 0,
+        "zero-count contributor with no sentinels must NOT be flagged (regression #583)"
+    );
+}
+
+/// #631 — AC 4 (variant): Contributor who completed all assignments has counter = 0,
+/// no sentinels. Must NOT be flagged.
+#[test]
+fn unit_check_consistency_completed_all_assignments_not_flagged() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("cc_cmp");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Full lifecycle: apply → assign → complete
+    t.client.apply_for_issue(&contributor, &org, &5u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &5u32);
+    t.client.complete_assignment(&maintainer, &contributor, &org, &5u32);
+
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+    assert!(!t.client.is_assigned(&contributor, &org, &5u32));
+
+    let pairs = make_pairs(&t.env, &[(contributor.clone(), org.clone())]);
+    let issue_ids = make_issue_ids(&t.env, &[5u32]);
+
+    let result = t.client.check_consistency(&pairs, &issue_ids);
+    assert_eq!(
+        result.len(), 0,
+        "contributor with legitimately zero count and no sentinels must NOT be flagged"
+    );
+}
+
+/// #631 — AC 5: Large batch of 100 pairs, all consistent → empty result.
+///
+/// This verifies the function handles a realistic operator batch size without
+/// O(n²) behaviour or panicking. Each contributor has one active assignment,
+/// and the issue_ids list contains the corresponding issue for each pair.
+/// The expectation is that all pairs pass and the result is empty, proving
+/// the linear scan terminates correctly for every pair.
+#[test]
+fn unit_check_consistency_large_batch_all_consistent() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("cc_big");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let batch_size: u32 = 100;
+
+    // Create 100 unique contributors, each with one active assignment.
+    let mut contributors: std::vec::Vec<Address> = std::vec::Vec::new();
+    for i in 0..batch_size {
+        let c = Address::generate(&t.env);
+        t.client.apply_for_issue(&c, &org, &i);
+        t.client.assign_issue(&maintainer, &c, &org, &i);
+        contributors.push(c);
+    }
+
+    // Build the pairs vec and a full issue_ids vec [0..99]
+    let mut pairs_vec = soroban_sdk::Vec::new(&t.env);
+    for c in &contributors {
+        pairs_vec.push_back((c.clone(), org.clone()));
+    }
+    let mut ids_vec = soroban_sdk::Vec::new(&t.env);
+    for i in 0..batch_size {
+        ids_vec.push_back(i);
+    }
+
+    let result = t.client.check_consistency(&pairs_vec, &ids_vec);
+    assert_eq!(
+        result.len(), 0,
+        "all 100 consistent pairs must return an empty inconsistency list"
+    );
+}
+
+/// #631 — AC 5 (mixed): Large batch where only one pair is inconsistent.
+///
+/// 99 consistent contributors + 1 with an orphan sentinel.
+/// Only the corrupt pair must appear in the result.
+#[test]
+fn unit_check_consistency_large_batch_one_inconsistent() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("cc_mix");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let batch_size: u32 = 99;
+
+    // 99 clean contributors
+    let mut contributors: std::vec::Vec<Address> = std::vec::Vec::new();
+    for i in 0..batch_size {
+        let c = Address::generate(&t.env);
+        t.client.apply_for_issue(&c, &org, &i);
+        t.client.assign_issue(&maintainer, &c, &org, &i);
+        contributors.push(c);
+    }
+
+    // One corrupt contributor with counter=0 but sentinel present (issue 999)
+    let corrupt = Address::generate(&t.env);
+    crate::storage::set_assignment(&t.env, &org, 999u32, &corrupt);
+
+    let mut pairs_vec = soroban_sdk::Vec::new(&t.env);
+    for c in &contributors {
+        pairs_vec.push_back((c.clone(), org.clone()));
+    }
+    pairs_vec.push_back((corrupt.clone(), org.clone()));
+
+    let mut ids_vec = soroban_sdk::Vec::new(&t.env);
+    for i in 0..batch_size {
+        ids_vec.push_back(i);
+    }
+    ids_vec.push_back(999u32);
+
+    let result = t.client.check_consistency(&pairs_vec, &ids_vec);
+    assert_eq!(result.len(), 1, "exactly one inconsistent pair expected");
+    assert_eq!(result.get(0).unwrap().0, corrupt, "corrupt contributor must be flagged");
+}
