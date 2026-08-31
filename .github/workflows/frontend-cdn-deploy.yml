@@ -33,7 +33,7 @@ jobs:
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Build frontend ────────────────────────────────────────────────────
       - uses: actions/setup-node@v4

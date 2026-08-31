@@ -33,7 +33,7 @@ jobs:
       id-token: write   # OIDC for AWS auth
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Build & push Docker image ────────────────────────────────────────
       - name: Log in to GHCR

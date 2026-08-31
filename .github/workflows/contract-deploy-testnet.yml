@@ -34,7 +34,7 @@ jobs:
     name: Build WASM
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-wasm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -129,7 +129,7 @@ jobs:
     outputs:
       contract_id: ${{ steps.deploy.outputs.contract_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli --features opt
@@ -286,7 +286,7 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.target == 'mainnet'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli --features opt
