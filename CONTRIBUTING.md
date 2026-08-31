@@ -1,66 +1,13 @@
 # Contributing to WorkloadGovernor
 
-<<<<<<< HEAD
-Thank you for contributing to WorkloadGovernor! This guide explains how to set up
-your development environment, run tests, and keep the API spec in sync with the
-implementation.
-=======
-Thank you for helping improve WorkloadGovernor! This guide covers everything
-you need to know to contribute effectively.
->>>>>>> upstream/main
+Thank you for contributing to WorkloadGovernor! This guide covers everything you
+need to know to contribute effectively — whether you are working on the Soroban
+smart contract, the Node.js backend, or the Next.js frontend.
 
 ---
 
 ## Table of Contents
 
-<<<<<<< HEAD
-1. [Prerequisites](#prerequisites)
-2. [Development Setup](#development-setup)
-3. [Environment Variables](#environment-variables)
-4. [Running the API Server](#running-the-api-server)
-5. [Running Tests](#running-tests)
-6. [API Spec Validation](#api-spec-validation)
-7. [Frontend Development](#frontend-development)
-8. [Code Style](#code-style)
-9. [Pull Request Process](#pull-request-process)
-
----
-
-## Prerequisites
-
-| Tool | Minimum Version | Purpose |
-|------|----------------|---------|
-| Node.js | 20.x | Backend runtime |
-| npm | 10.x | Package manager |
-| PostgreSQL | 16.x | Primary database |
-| Redis | 7.x | Event queue / cache |
-| Docker | 24.x | Local services via docker-compose |
-| Rust + Cargo | 1.78+ | Smart contract (optional for API dev) |
-
----
-
-## Development Setup
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/FaveTeamz/workload-governor.git
-cd workload-governor
-
-# 2. Install Node.js dependencies
-npm ci
-
-# 3. Copy example env file and fill in values
-cp .env.example .env
-
-# 4. Start local PostgreSQL and Redis via Docker
-docker compose up -d postgres redis
-
-# 5. Apply database migrations (when they exist)
-# npm run db:migrate
-
-# 6. Build TypeScript
-npm run build
-=======
 1. [Getting Started](#getting-started)
 2. [Reporting Bugs](#reporting-bugs)
 3. [Proposing Features](#proposing-features)
@@ -71,9 +18,14 @@ npm run build
 8. [Changelog Requirements](#changelog-requirements)
 9. [Versioning Convention (Semver)](#versioning-convention-semver)
 10. [Release Process](#release-process)
-11. [Code Style](#code-style)
-12. [Testing](#testing)
-13. [Code of Conduct](#code-of-conduct)
+11. [Prerequisites](#prerequisites)
+12. [Development Setup](#development-setup)
+13. [Environment Variables](#environment-variables)
+14. [Running Tests](#running-tests)
+15. [Fuzz Testing](#fuzz-testing)
+16. [API Spec Validation](#api-spec-validation)
+17. [Frontend Development](#frontend-development)
+18. [Code Style](#code-style)
 
 ---
 
@@ -94,7 +46,6 @@ cargo install --locked stellar-cli
 # 4. Verify everything builds and tests pass
 cargo build --target wasm32v1-none --release
 cargo test --features testutils
->>>>>>> upstream/main
 ```
 
 If you prefer to interact with the deployed contract directly via CLI rather than
@@ -103,129 +54,6 @@ for a complete CLI workflow walkthrough — no frontend required.
 
 ---
 
-<<<<<<< HEAD
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `PORT` | `3001` | API server port |
-| `NODE_ENV` | `development` | Node environment |
-| `LOG_LEVEL` | `info` | Pino log level |
-
-See `.env.example` for the full list.
-
----
-
-## Running the API Server
-
-```bash
-# Development mode (ts-node, auto-reload)
-npm run dev
-
-# Production mode (compiled JS)
-npm run build && node dist/index.js
-```
-
-The server starts on `http://localhost:3001` by default.
-
----
-
-## Running Tests
-
-```bash
-# All backend unit tests
-npm test
-
-# Type-checking only (no emit)
-npm run typecheck
-
-# Lint
-npm run lint
-
-# Frontend Playwright tests
-cd frontend
-npx playwright test
-```
-
----
-
-## API Spec Validation
-
-The `openapi.yaml` file is the **source of truth** for the REST API contract.
-Every route defined in `src/routes/` **must** have a matching entry in `openapi.yaml`.
-The CI job will fail if:
-
-- A route exists in `src/routes/` but is missing from the spec
-- The spec defines a path/method with a different request/response shape than the
-  implementation returns
-
-### Running validation locally
-
-Make sure the server is running on port 3001, then:
-
-```bash
-# Start the server in one terminal
-npm run build && node dist/index.js
-
-# In another terminal, run Dredd against the live server
-npm run validate:api
-```
-
-Dredd will call every endpoint defined in `openapi.yaml`, validate the responses,
-and exit non-zero if any check fails.
-
-### When you add a new route
-
-1. Add the route handler in `src/routes/<resource>.ts`
-2. Register it in `src/index.ts`
-3. Add the path, operation, request/response schemas to `openapi.yaml`
-4. Run `npm run validate:api` locally to confirm the new endpoint passes
-5. Update or add relevant unit tests in `tests/`
-
-If you skip step 3, the CI `openapi-validate` job will fail on your PR.
-
-### CI behaviour
-
-The `openapi-validate` workflow (`.github/workflows/openapi-validate.yml`) runs on
-every PR that touches `src/routes/**` or `openapi.yaml`. It:
-
-1. Spins up PostgreSQL and Redis service containers
-2. Builds the TypeScript project
-3. Seeds minimal test data
-4. Starts the API server
-5. Runs `npm run validate:api` (Dredd) against the live server
-6. Fails the PR if any endpoint check does not pass
-
----
-
-## Frontend Development
-
-```bash
-cd frontend
-npm ci
-npm run dev       # Next.js dev server on http://localhost:3000
-npm test          # Playwright responsive tests
-npm run lint      # ESLint
-npm run typecheck # TypeScript type-check
-```
-
-### Responsive design rules
-
-- Navigation hamburger menu at `< 768px`
-- Issue card grid: 1-column `< 640px`, 2-column `< 1024px`, 3-column `>= 1024px`
-- TxConfirmModal renders as a bottom sheet on mobile
-- EventHistoryTable renders as card list on mobile
-- All touch targets ≥ 44×44 px (WCAG 2.5.5)
-
-### Empty state illustrations
-
-SVG files live in `frontend/public/illustrations/`. Each must be:
-- Under 5 KB
-- Use `currentColor` for strokes/fills (dark mode compatible)
-- Accompanied by an `EmptyState` component variant
-=======
 ## Reporting Bugs
 
 Open an issue using the **Bug Report** template (`.github/ISSUE_TEMPLATE/bug_report.md`).
@@ -344,8 +172,7 @@ MAJOR.MINOR.PATCH
 > **Important:** Because WorkloadGovernor is a Soroban smart contract, any change
 > that alters the ABI (function names, parameter types, return types, error codes)
 > is a **MAJOR** version bump — even if it seems minor from a traditional software
-> perspective. Deployed contracts cannot change their address, so clients depend on
-> strict ABI stability.
+> perspective.
 
 ---
 
@@ -381,7 +208,7 @@ diff links at the bottom of `CHANGELOG.md`:
 version = "X.Y.Z"
 ```
 
-Run `cargo build --target wasm32v1-none --release` to confirm the build still passes.
+Run `cargo build --target wasm32v1-none --release` to confirm the build passes.
 
 ### 4. Open a PR and merge
 
@@ -407,50 +234,69 @@ git push upstream vX.Y.Z
     --wasm target/wasm32v1-none/release/workload_governor.wasm
   ```
   Attach `target/wasm32v1-none/release/workload_governor.optimized.wasm`.
->>>>>>> upstream/main
 
 ---
 
-## Code Style
+## Prerequisites
 
-<<<<<<< HEAD
-- **TypeScript strict mode** is enabled — no `any` without justification
-- **ESLint** must pass with zero warnings (`npm run lint`)
-- **Formatting**: follow the existing project style (2-space indent, single quotes)
-- **Imports**: use named exports for utilities, default exports for route/component files
-- **Logging**: use structured pino logging; include `org_id` on every event log line
-- **Error handling**: never swallow errors silently — log with context and re-throw or return
-
----
-
-## Pull Request Process
-
-1. Branch naming: `feat/<issue-number>-short-description` or `fix/<issue-number>-short-description`
-2. Keep PRs focused — one issue per PR where possible
-3. All CI checks must pass: lint, typecheck, test, build, openapi-validate (when applicable)
-4. Add or update tests for every new feature or bug fix
-5. Update `openapi.yaml` if you add or change any route (see [API Spec Validation](#api-spec-validation))
-6. Request at least one reviewer from the FaveTeamz team
-7. Squash commits before merging to keep `main` history clean
+| Tool | Minimum Version | Purpose |
+|------|----------------|---------|
+| Rust (stable) | 1.78 | Smart contract + tests |
+| Rust (nightly) | latest | Fuzz targets |
+| stellar-cli | 21.0 | Contract invocation |
+| Node.js | 20.x | Backend runtime |
+| npm | 10.x | Package manager |
+| PostgreSQL | 16.x | Primary database |
+| Redis | 7.x | Event queue / cache |
+| Docker | 24.x | Local services via docker-compose |
 
 ---
 
-## License
-
-Apache-2.0 — see [LICENSE](LICENSE) for details.
-=======
-- Run `cargo fmt` before committing.
-- Run `cargo clippy --features testutils -- -D warnings` and fix all warnings.
-- Every new `pub fn` must have a Rustdoc comment following the style in `src/lib.rs`
-  (sections: summary, `# Who can call`, `# Arguments`, `# Returns`, `# Errors`,
-  `# Examples` for user-facing functions).
-
----
-
-## Testing
+## Development Setup
 
 ```bash
-# All tests
+# 1. Clone the repository
+git clone https://github.com/FaveTeamz/workload-governor.git
+cd workload-governor
+
+# 2. Install Node.js dependencies
+npm ci
+
+# 3. Copy example env file and fill in values
+cp .env.example .env
+
+# 4. Start local PostgreSQL and Redis via Docker
+docker compose up -d postgres redis
+
+# 5. Build TypeScript
+npm run build
+
+# 6. Build the Rust contract
+cargo build --target wasm32v1-none --release
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | — | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
+| `PORT` | `3001` | API server port |
+| `NODE_ENV` | `development` | Node environment |
+| `LOG_LEVEL` | `info` | Pino log level |
+
+See `.env.example` for the full list.
+
+---
+
+## Running Tests
+
+### Contract tests (Rust)
+
+```bash
+# All unit + property-based tests
 cargo test --features testutils
 
 # Property-based tests only
@@ -459,43 +305,148 @@ cargo test --features testutils prop_
 # Unit tests only
 cargo test --features testutils unit_
 
-# Check docs build cleanly
+# Check Rustdoc builds cleanly
 cargo doc --no-deps
 ```
 
-### Frontend unit tests (Vitest)
+### Backend tests (Node.js)
 
 ```bash
-# Run all frontend unit tests once
+# All backend unit tests
+npm test
+
+# Type-checking only (no emit)
+npm run typecheck
+
+# Lint
+npm run lint
+```
+
+### Frontend tests
+
+```bash
+cd frontend
+
+# Vitest unit tests
 npm run test:unit
+npm run test:unit:watch       # watch mode
+npm run test:unit:coverage    # with coverage
 
-# Run in watch mode during development
-npm run test:unit:watch
+# Playwright end-to-end tests
+npx playwright test
 
-# Run with coverage report
-npm run test:unit:coverage
-```
-
-### React component snapshot tests
-
-Snapshot files live in `tests/unit/__snapshots__/`. They are committed to
-version control so CI catches unintended visual regressions.
-
-**When you intentionally change a component's rendered output**, update the
-snapshots and commit the new `.snap` file alongside your code change:
-
-```bash
-# Update all snapshots
+# When you intentionally change a component, update snapshots
 npx vitest run --update-snapshots
-
-# Update snapshots for a single file
-npx vitest run tests/unit/snapshots.test.tsx --update-snapshots
 ```
-
-CI will fail if any snapshot differs from the committed version. Always review
-`git diff tests/unit/__snapshots__/` before committing updated snapshots.
 
 All PRs must pass CI. New functionality requires new tests.
+
+---
+
+## Fuzz Testing
+
+Fuzz targets live in `fuzz/fuzz_targets/` and require a nightly Rust toolchain
+plus `cargo-fuzz`. See [README.md](README.md#fuzz-testing) for the complete
+reference.
+
+```bash
+# Install requirements (one time)
+rustup install nightly
+cargo install cargo-fuzz --locked
+
+# Build all fuzz targets
+cargo +nightly fuzz build
+
+# Run a target for 10 minutes
+cargo +nightly fuzz run fuzz_apply      -- -max_total_time=600
+cargo +nightly fuzz run fuzz_assign     -- -max_total_time=600
+cargo +nightly fuzz run fuzz_batch_apply -- -max_total_time=600
+
+# Run with pre-seeded corpus
+cargo +nightly fuzz run fuzz_apply fuzz/corpus/fuzz_apply -- -max_total_time=600
+```
+
+| Target | Description |
+|--------|-------------|
+| `fuzz_apply` | Random contributor/org/issue inputs → `apply_for_issue` |
+| `fuzz_assign` | Random inputs → `assign_issue`, `complete_assignment`, `revoke_assignment` |
+| `fuzz_batch_apply` | Vec of random issue IDs applied in batch; verifies the ≤15 global cap |
+
+**Interpreting crashes:** A crash that triggers a `panic_with_error!` is expected
+behaviour for invalid inputs (e.g. applying over the cap). Only panics that do
+**not** correspond to a defined `ContractError` variant are real bugs.
+
+### Corpus generation
+
+```bash
+python3 scripts/generate-corpus.py          # writes to fuzz/corpus/
+python3 scripts/generate-corpus.py --corpus-dir /tmp/fresh-corpus
+```
+
+---
+
+## API Spec Validation
+
+The `openapi.yaml` file is the **source of truth** for the REST API contract.
+Every route defined in `src/routes/` **must** have a matching entry in `openapi.yaml`.
+
+```bash
+# Start the server
+npm run build && node dist/index.js
+
+# In another terminal
+npm run validate:api
+```
+
+When you add a new route:
+
+1. Add the route handler in `src/routes/<resource>.ts`
+2. Register it in `src/index.ts`
+3. Add the path, operation, request/response schemas to `openapi.yaml`
+4. Run `npm run validate:api` locally to confirm the new endpoint passes
+5. Add or update tests in `tests/`
+
+---
+
+## Frontend Development
+
+```bash
+cd frontend
+npm ci
+npm run dev       # Next.js dev server at http://localhost:3000
+npm test          # Playwright responsive tests
+npm run lint      # ESLint
+npm run typecheck # TypeScript type-check
+```
+
+### Responsive design rules
+
+- Navigation hamburger menu at `< 768px`
+- Issue card grid: 1-column `< 640px`, 2-column `< 1024px`, 3-column `>= 1024px`
+- TxConfirmModal renders as a bottom sheet on mobile
+- EventHistoryTable renders as card list on mobile
+- All touch targets ≥ 44×44 px (WCAG 2.5.5)
+
+---
+
+## Code Style
+
+### Rust (contract)
+
+- Run `cargo fmt` before committing.
+- Run `cargo clippy --features testutils -- -D warnings` and fix all warnings.
+- Every new `pub fn` must have a Rustdoc comment following the style in `src/lib.rs`
+  (sections: summary, `# Who can call`, `# Arguments`, `# Returns`, `# Errors`,
+  `# Examples` for user-facing functions).
+
+### TypeScript (backend + frontend)
+
+- **TypeScript strict mode** is enabled — no `any` without justification.
+- **ESLint** must pass with zero warnings (`npm run lint`).
+- **Formatting**: 2-space indent, single quotes, follow existing project style.
+- **Imports**: named exports for utilities, default exports for route/component files.
+- **Logging**: use structured pino logging; include `org_id` on every event log line.
+- **Error handling**: never swallow errors silently — log with context and re-throw or return.
 
 ---
 
@@ -505,4 +456,9 @@ This project follows the
 [Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 By participating you agree to uphold its standards. Report unacceptable
 behaviour to the maintainers via a private GitHub message.
->>>>>>> upstream/main
+
+---
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE) for details.

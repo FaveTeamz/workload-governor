@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -49,7 +49,7 @@ jobs:
 
       # Notify Slack that rollback has been requested
       - name: Notify Slack — rollback initiated
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {
@@ -87,7 +87,7 @@ jobs:
       # notification step (e.g., checkout failure, AWS auth failure).
       - name: Notify Slack — workflow failure (safety net)
         if: failure()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {

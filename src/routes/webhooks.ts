@@ -309,4 +309,36 @@ router.delete('/org/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /webhooks/org/:webhookId/deliveries — delivery status (issue #565)
+// ---------------------------------------------------------------------------
+
+router.get('/org/:webhookId/deliveries', async (req: Request, res: Response) => {
+  const webhookId = parseInt(req.params.webhookId, 10);
+
+  if (isNaN(webhookId) || webhookId <= 0) {
+    return res.status(400).json({ error: 'invalid webhook id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, webhook_id, payload, last_error, attempts, created_at
+       FROM webhook_dead_letters
+       WHERE webhook_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [webhookId],
+    );
+
+    return res.json({
+      webhook_id: webhookId,
+      deliveries: result.rows,
+      total: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Database error fetching delivery status:', error);
+    return res.status(500).json({ error: 'database error' });
+  }
+});
+
 export default router;

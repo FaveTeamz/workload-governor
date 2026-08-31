@@ -1,109 +1,70 @@
-//! Event definitions and emit helpers for WorkloadGovernor contract.
+//! Event emission helpers for WorkloadGovernor.
 //!
-//! This module defines all events emitted by the contract for
-//! off-chain indexing and monitoring.
+//! Each function wraps a single `env.events().publish(topics, data)` call.
+//! Topics are a 2-tuple `(event_name: Symbol, primary_actor: Address)`.
+//! Data is a value-tuple whose field order matches the requirements exactly.
 
-use soroban_sdk::{contractevent, symbol_short, Env, Address, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, Symbol};
 
-/// All events emitted by the WorkloadGovernor contract
-#[contractevent]
-pub enum WorkloadGovernorEvent {
-    /// Emitted when a contributor applies for an issue
-    Applied {
-        contributor: Address,
-        org_id: Symbol,
-        issue_id: u32,
-    },
-    /// Emitted when a contributor withdraws their application
-    Withdrew {
-        contributor: Address,
-        org_id: Symbol,
-        issue_id: u32,
-    },
-    /// Emitted when a maintainer assigns an issue to a contributor
-    Assigned {
-        contributor: Address,
-        maintainer: Address,
-        org_id: Symbol,
-        issue_id: u32,
-    },
-    /// Emitted when a contributor completes an assignment
-    Completed {
-        contributor: Address,
-        maintainer: Address,
-        org_id: Symbol,
-        issue_id: u32,
-    },
-    /// Emitted when a maintainer revokes an assignment
-    Revoked {
-        contributor: Address,
-        maintainer: Address,
-        org_id: Symbol,
-        issue_id: u32,
-    },
-    /// Emitted when a new maintainer is registered
-    MaintainerRegistered {
-        maintainer: Address,
-        org_id: Symbol,
-    },
-    /// Emitted when admin authority is transferred to a new address
-    AdminTransferred {
-        old_admin: Address,
-        new_admin: Address,
-    },
-}
-
-// ---------------------------------------------------------------------------
-// Emit helper functions
-//
-// These wrap the env.events().publish() calls so that lib.rs can call
-// a named function per event type rather than constructing topic/data
-// tuples directly.
-// ---------------------------------------------------------------------------
-
+/// Emitted by `initialize`.
+///
+/// topics: `(symbol_short!("init"), admin)`
+/// data:   `(admin,)`
 pub(crate) fn emit_initialized(env: &Env, admin: &Address) {
-    env.events().publish(
-        (symbol_short!("init"), admin.clone()),
-        admin.clone(),
-    );
+    let topics = (symbol_short!("init"), admin.clone());
+    let data = (admin.clone(),);
+    env.events().publish(topics, data);
 }
 
+/// Emitted by `register_maintainer`.
+///
+/// topics: `(symbol_short!("maint_reg"), admin)`
+/// data:   `(maintainer, org_id)`
 pub(crate) fn emit_maintainer_registered(
     env: &Env,
-    _admin: &Address,
+    admin: &Address,
     maintainer: &Address,
     org_id: &Symbol,
 ) {
-    env.events().publish(
-        (symbol_short!("maint_reg"), maintainer.clone()),
-        org_id.clone(),
-    );
+    let topics = (symbol_short!("maint_reg"), admin.clone());
+    let data = (maintainer.clone(), org_id.clone());
+    env.events().publish(topics, data);
 }
 
+/// Emitted by `apply_for_issue`.
+///
+/// topics: `(symbol_short!("app_sub"), contributor)`
+/// data:   `(contributor, org_id, issue_id)`
 pub(crate) fn emit_application_submitted(
     env: &Env,
     contributor: &Address,
     org_id: &Symbol,
     issue_id: u32,
 ) {
-    env.events().publish(
-        (symbol_short!("applied"), contributor.clone()),
-        (org_id.clone(), issue_id),
-    );
+    let topics = (symbol_short!("app_sub"), contributor.clone());
+    let data = (contributor.clone(), org_id.clone(), issue_id);
+    env.events().publish(topics, data);
 }
 
+/// Emitted by `withdraw_application`.
+///
+/// topics: `(symbol_short!("app_wdw"), contributor)`
+/// data:   `(contributor, org_id, issue_id)`
 pub(crate) fn emit_application_withdrawn(
     env: &Env,
     contributor: &Address,
     org_id: &Symbol,
     issue_id: u32,
 ) {
-    env.events().publish(
-        (symbol_short!("withdrew"), contributor.clone()),
-        (org_id.clone(), issue_id),
-    );
+    let topics = (symbol_short!("app_wdw"), contributor.clone());
+    let data = (contributor.clone(), org_id.clone(), issue_id);
+    env.events().publish(topics, data);
 }
 
+/// Emitted by `assign_issue`.
+///
+/// topics: `(symbol_short!("assigned"), maintainer)`
+/// data:   `(maintainer, contributor, org_id, issue_id)`
 pub(crate) fn emit_issue_assigned(
     env: &Env,
     maintainer: &Address,
@@ -111,12 +72,15 @@ pub(crate) fn emit_issue_assigned(
     org_id: &Symbol,
     issue_id: u32,
 ) {
-    env.events().publish(
-        (symbol_short!("assigned"), contributor.clone()),
-        (maintainer.clone(), org_id.clone(), issue_id),
-    );
+    let topics = (symbol_short!("assigned"), maintainer.clone());
+    let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
+    env.events().publish(topics, data);
 }
 
+/// Emitted by `complete_assignment`.
+///
+/// topics: `(symbol_short!("completed"), maintainer)`
+/// data:   `(maintainer, contributor, org_id, issue_id)`
 pub(crate) fn emit_assignment_completed(
     env: &Env,
     maintainer: &Address,
@@ -124,12 +88,15 @@ pub(crate) fn emit_assignment_completed(
     org_id: &Symbol,
     issue_id: u32,
 ) {
-    env.events().publish(
-        (symbol_short!("completed"), contributor.clone()),
-        (maintainer.clone(), org_id.clone(), issue_id),
-    );
+    let topics = (symbol_short!("completed"), maintainer.clone());
+    let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
+    env.events().publish(topics, data);
 }
 
+/// Emitted by `revoke_assignment`.
+///
+/// topics: `(symbol_short!("revoked"), maintainer)`
+/// data:   `(maintainer, contributor, org_id, issue_id)`
 pub(crate) fn emit_assignment_revoked(
     env: &Env,
     maintainer: &Address,
@@ -137,62 +104,79 @@ pub(crate) fn emit_assignment_revoked(
     org_id: &Symbol,
     issue_id: u32,
 ) {
-    env.events().publish(
-        (symbol_short!("revoked"), contributor.clone()),
-        (maintainer.clone(), org_id.clone(), issue_id),
-    );
-}
-
-pub(crate) fn emit_admin_transferred(
-    env: &Env,
-    old_admin: &Address,
-    new_admin: &Address,
-) {
-    env.events().publish(
-        (symbol_short!("adm_xfer"), old_admin.clone()),
-        new_admin.clone(),
-    );
-}
-
-/// Emitted by `deregister_maintainer`.
-///
-/// topics: `(symbol_short!("maint_drg"), admin)`
-/// data:   `(maintainer, org_id)`
-pub(crate) fn emit_maintainer_deregistered(
-    env: &Env,
-    admin: &Address,
-    maintainer: &Address,
-    org_id: &Symbol,
-) {
-    let topics = (symbol_short!("maint_drg"), admin.clone());
-    let data = (maintainer.clone(), org_id.clone());
+    let topics = (symbol_short!("revoked"), maintainer.clone());
+    let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
 
-/// Emitted by `set_global_cap` when the operator updates the cap via the normal path.
+// ---------------------------------------------------------------------------
+// #602 — Migration event
+// ---------------------------------------------------------------------------
+
+/// Emitted by `migrate_v1_to_v2` upon successful completion.
 ///
-/// topics: `(symbol_short!("cap_upd"), admin)`
-/// data:   `(admin, new_cap)`
-pub(crate) fn emit_global_cap_updated(env: &Env, admin: &Address, new_cap: u32) {
-    let topics = (symbol_short!("cap_upd"), admin.clone());
-    let data = (admin.clone(), new_cap);
+/// topics: `(symbol_short!("mig_done"), admin)`
+/// data:   `(entries_migrated: u32,)`
+pub(crate) fn emit_migration_completed(env: &Env, admin: &Address, entries_migrated: u32) {
+    let topics = (symbol_short!("mig_done"), admin.clone());
+    let data = (entries_migrated,);
     env.events().publish(topics, data);
 }
 
-/// Emitted by `emergency_set_global_cap`.
+// ---------------------------------------------------------------------------
+// #603 — Multi-sig admin event
+// ---------------------------------------------------------------------------
+
+/// Emitted by `set_admin_threshold`.
 ///
-/// Intentionally distinct from any `GlobalCapUpdated` event so that monitors
-/// and event indexers can unambiguously identify emergency cap changes.
+/// topics: `(symbol_short!("ms_set"), admin)`
+/// data:   `(threshold: u32, signer_count: u32)`
+pub(crate) fn emit_admin_threshold_set(env: &Env, admin: &Address, threshold: u32, signer_count: u32) {
+    let topics = (symbol_short!("ms_set"), admin.clone());
+    let data = (threshold, signer_count);
+    env.events().publish(topics, data);
+}
+
+// ---------------------------------------------------------------------------
+// #600 — Governance proposal events
+// ---------------------------------------------------------------------------
+
+/// Emitted by `propose_cap_change`.
 ///
-/// topics: `(symbol_short!("emrg_cap"), admin)`
-/// data:   `(old_cap, new_cap)`
-pub(crate) fn emit_emergency_cap_updated(
+/// topics: `(symbol_short!("cap_prop"), proposer)`
+/// data:   `(proposal_id: u32, new_global_cap: u32)`
+pub(crate) fn emit_cap_proposed(
     env: &Env,
-    admin: &Address,
-    old_cap: u32,
-    new_cap: u32,
+    proposer: &Address,
+    proposal_id: u32,
+    new_global_cap: u32,
 ) {
-    let topics = (symbol_short!("emrg_cap"), admin.clone());
-    let data = (old_cap, new_cap);
+    let topics = (symbol_short!("cap_prop"), proposer.clone());
+    let data = (proposal_id, new_global_cap);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `vote_cap_change`.
+///
+/// topics: `(symbol_short!("cap_vote"), voter)`
+/// data:   `(proposal_id: u32, approve: bool)`
+pub(crate) fn emit_cap_voted(env: &Env, voter: &Address, proposal_id: u32, approve: bool) {
+    let topics = (symbol_short!("cap_vote"), voter.clone());
+    let data = (proposal_id, approve);
+    env.events().publish(topics, data);
+}
+
+/// Emitted by `execute_cap_change` upon successful execution.
+///
+/// topics: `(symbol_short!("cap_exec"), executor)`
+/// data:   `(proposal_id: u32, new_global_cap: u32)`
+pub(crate) fn emit_cap_changed(
+    env: &Env,
+    executor: &Address,
+    proposal_id: u32,
+    new_global_cap: u32,
+) {
+    let topics = (symbol_short!("cap_exec"), executor.clone());
+    let data = (proposal_id, new_global_cap);
     env.events().publish(topics, data);
 }

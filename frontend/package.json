@@ -18,7 +18,7 @@
   "dependencies": {
     "i18next": "^26.3.6",
     "i18next-browser-languagedetector": "^8.2.1",
-    "next": "14.2.5",
+    "next": "16.3.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-i18next": "^17.0.11",
@@ -44,6 +44,7 @@
     "@vitest/browser-playwright": "^4.1.9",
     "@vitest/coverage-istanbul": "^4.1.9",
     "@vitest/coverage-v8": "^4.1.9",
+    "axe-core": "^4.10.3",
     "eslint-plugin-storybook": "^10.4.6",
     "jsdom": "^25.0.1",
     "oxlint": "^1.69.0",

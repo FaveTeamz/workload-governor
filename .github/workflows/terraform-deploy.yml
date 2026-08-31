@@ -1,0 +1,166 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+
+jobs:
+  # ── Plan for both environments on every PR/push ──────────────────────────
+  plan-staging:
+    name: Plan (staging)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init (staging)
+        working-directory: terraform/environments/staging
+        run: terraform init -backend-config=../../backend-staging.hcl -reconfigure
+
+      - name: Terraform validate
+        working-directory: terraform/environments/staging
+        run: terraform validate
+
+      - name: Terraform plan (staging)
+        working-directory: terraform/environments/staging
+        run: terraform plan -no-color -out=staging.tfplan
+        env:
+          TF_VAR_image_repository: ghcr.io/${{ github.repository }}
+          TF_VAR_image_tag: ${{ github.sha }}
+
+  plan-production:
+    name: Plan (production)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init (production)
+        working-directory: terraform/environments/production
+        run: terraform init -backend-config=../../backend-production.hcl -reconfigure
+
+      - name: Terraform validate
+        working-directory: terraform/environments/production
+        run: terraform validate
+
+      - name: Terraform plan (production)
+        working-directory: terraform/environments/production
+        run: terraform plan -no-color -out=production.tfplan
+        env:
+          TF_VAR_image_repository: ghcr.io/${{ github.repository }}
+          TF_VAR_image_tag: ${{ github.sha }}
+
+  # ── Auto-apply staging on push to main ───────────────────────────────────
+  apply-staging:
+    name: Apply (staging)
+    runs-on: ubuntu-latest
+    needs: [plan-staging]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init (staging)
+        working-directory: terraform/environments/staging
+        run: terraform init -backend-config=../../backend-staging.hcl -reconfigure
+
+      - name: Terraform apply (staging)
+        working-directory: terraform/environments/staging
+        run: terraform apply -auto-approve
+        env:
+          TF_VAR_image_repository: ghcr.io/${{ github.repository }}
+          TF_VAR_image_tag: ${{ github.sha }}
+
+  # ── Production apply requires manual approval ─────────────────────────────
+  # Configure a GitHub Environment named "production" with a required reviewer
+  # to gate this job behind a human approval step.
+  apply-production:
+    name: Apply (production) — manual approval required
+    runs-on: ubuntu-latest
+    needs: [plan-production, apply-staging]
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production   # ← GitHub Environment with required reviewers
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init (production)
+        working-directory: terraform/environments/production
+        run: terraform init -backend-config=../../backend-production.hcl -reconfigure
+
+      - name: Terraform apply (production)
+        working-directory: terraform/environments/production
+        run: terraform apply -auto-approve
+        env:
+          TF_VAR_image_repository: ghcr.io/${{ github.repository }}
+          TF_VAR_image_tag: ${{ github.sha }}

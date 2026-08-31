@@ -1,0 +1,107 @@
+name: Contract E2E
+
+# Runs the full contributor-lifecycle E2E test against a local Stellar
+# Quickstart node and the backend server.
+#
+# Trigger conditions:
+#   - Every push to main
+#   - Every PR targeting main
+#   - Manual trigger via workflow_dispatch
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: contract-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contributor-lifecycle:
+    name: Contributor lifecycle E2E
+    runs-on: ubuntu-latest
+
+    services:
+      # Local Redis instance used by the backend for caching
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      PORT: 3001
+      BACKEND_URL: http://localhost:3001
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql://test:test@localhost:5432/testdb
+      E2E_API_KEY: test-token
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Start the backend in the background; the health check in the
+      # contributor-lifecycle spec will confirm it is ready.
+      - name: Start backend server
+        run: |
+          npm run dev &
+          echo "Backend PID: $!"
+        env:
+          NODE_ENV: development
+
+      # Wait up to 30 s for the health endpoint to respond
+      - name: Wait for backend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+              echo "Backend is ready after ${i}s"
+              break
+            fi
+            echo "Waiting for backend... (${i}s)"
+            sleep 1
+          done
+          curl -sf http://localhost:3001/health || (echo "Backend did not start" && exit 1)
+
+      - name: Run contributor lifecycle E2E tests
+        run: npx playwright test tests/e2e/contributor-lifecycle.spec.ts --reporter=list
+        env:
+          CI: 'true'
+          BACKEND_URL: http://localhost:3001
+          E2E_API_KEY: test-token
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-e2e-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-e2e-screenshots
+          path: test-results/
+          retention-days: 7

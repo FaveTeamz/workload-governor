@@ -1,0 +1,67 @@
+# cargo-deny configuration for WorkloadGovernor
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# All targets we build for
+targets = [
+  { triple = "wasm32-unknown-unknown" },
+  { triple = "x86_64-unknown-linux-gnu" },
+]
+
+# ---------------------------------------------------------------------------
+# Vulnerability advisories
+# ---------------------------------------------------------------------------
+[advisories]
+# Path to the local advisory database (fetched automatically by cargo-deny)
+version = 2
+# Fail the build on any unignored vulnerability
+deny = ["unmaintained", "unsound", "yanked"]
+# Advisory database update interval
+notice = "warn"
+
+# ---------------------------------------------------------------------------
+# License policy
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+# Allow only permissive and copyleft-compatible licences used by soroban-sdk
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "CC0-1.0",
+]
+# Fail on any crate whose licence is not in the allow list above
+deny = []
+# Warn (rather than deny) on crates whose licence is unclear
+copyleft = "warn"
+allow-osi-fsf-free = "neither"
+default = "deny"
+confidence-threshold = 0.8
+
+# ---------------------------------------------------------------------------
+# Duplicate crate detection
+# ---------------------------------------------------------------------------
+[bans]
+# Fail when the same crate appears at two incompatible major versions
+multiple-versions = "warn"
+# Always reject known problematic crates
+deny = []
+# Allow duplicate versions that are known to coexist in the soroban ecosystem
+skip = []
+skip-tree = []
+
+# ---------------------------------------------------------------------------
+# Source restrictions
+# ---------------------------------------------------------------------------
+[sources]
+# Only allow crates from crates.io and the official soroban git repositories
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

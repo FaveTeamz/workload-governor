@@ -93,9 +93,31 @@ export function useToast() {
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
+const VARIANT_META: Record<
+  ToastVariant,
+  { iconName: "check-circle" | "error" | "warning" | "info"; ariaRole: "alert" | "status" }
+> = {
+  success: { iconName: "check-circle", ariaRole: "status" },
+  error:   { iconName: "error",        ariaRole: "alert"  },
+  warning: { iconName: "warning",      ariaRole: "status" },
+  info:    { iconName: "info",         ariaRole: "status" },
+};
+
+function ToastItem({
+  toast,
+  onRemove,
+}: {
+  toast: Toast;
+  onRemove: (id: number) => void;
+}) {
+  const { iconName, ariaRole } = VARIANT_META[toast.variant];
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " " || e.key === "Escape") {
+      e.preventDefault();
+      onRemove(toast.id);
+    }
+  }
 
   const liveRole = toast.type === "error" ? "alert" : "status";
   const liveValue = toast.type === "error" ? "assertive" : "polite";
@@ -114,12 +136,12 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) =
       )}
       <span>{toast.message}</span>
       <button
-        className="toast-close"
+        className="toast__close"
         onClick={() => onRemove(toast.id)}
         aria-label="Dismiss notification"
         type="button"
       >
-        ✕
+        <Icon name="close" size="xs" />
       </button>
     </div>
   );
