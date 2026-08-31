@@ -81,3 +81,39 @@ jobs:
 
       - name: Verify build artifact is importable
         run: node -e "require('./dist/index.js'); console.log('artifact OK')"
+
+  notify-on-failure:
+    name: Slack — CI failed
+    needs: [ci]
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.ci.result == 'failure'
+    uses: ./.github/workflows/notify-slack.yml
+    secrets: inherit
+    with:
+      workflow_name: "Backend CI"
+      status: "failure"
+      commit_sha: ${{ github.sha }}
+      actor: ${{ github.actor }}
+      commit_message: ${{ github.event.head_commit.message }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  notify-on-restored:
+    name: Slack — CI restored
+    needs: [ci]
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.ci.result == 'success'
+    uses: ./.github/workflows/notify-slack.yml
+    secrets: inherit
+    with:
+      workflow_name: "Backend CI"
+      status: "success"
+      commit_sha: ${{ github.sha }}
+      actor: ${{ github.actor }}
+      commit_message: ${{ github.event.head_commit.message }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -1,112 +1,76 @@
-# CI/CD Pipeline
+# CI/CD Guide
 
-This document describes the Continuous Integration and Continuous Deployment (CI/CD) workflows for the WorkloadGovernor project.
+This document covers the GitHub Actions CI setup, Slack integration, and deployment workflows.
 
----
+## CI Workflows
 
-## Frontend CI — `.github/workflows/frontend.yml`
-
-### Purpose
-
-Catches build failures, lint errors, type errors, test regressions, and Storybook breakage before any PR can be merged to `main`.
-
-### Trigger
-
-| Event | Branches |
-|---|---|
-| `pull_request` | targeting `main` |
-| `push` | `main` |
-
-### Jobs
-
-#### `build` — Lint → Test → Build
-
-Runs steps in fail-fast order: lint and type-check execute first so style errors surface quickly without waiting for slower test and build steps.
-
-| Step | Command | Purpose |
+| Workflow | File | Triggers |
 |---|---|---|
-| Install dependencies | `npm ci` | Reproducible install from `package-lock.json` |
-| Lint | `npm run lint` | oxlint + Next.js ESLint rules |
-| Type-check | `npm run typecheck` | `tsc --noEmit` — catches TS errors without emitting files |
-| Unit tests | `npm test -- --watchAll=false` | Vitest unit suite (non-interactive, CI-safe flag) |
-| Build | `npm run build` | Next.js production build |
+| Backend CI | `ci.yml` | Push and PR to `main` |
+| Frontend CI | `frontend-ci.yml` | Push and PR to `main` |
+| Contract CI | `contract-ci.yml` | Push and PR to `main` |
+| Backend Integration | `backend-integration.yml` | Push and PR to `main` |
+| Staging Deploy | `staging-deploy.yml` | Push to `main` |
 
-#### `storybook` — Build Storybook
+## Slack Notifications
 
-Runs in parallel with the `build` job. Builds the static Storybook site and uploads it as a GitHub Actions artifact named `storybook-static` for PR preview.
+CI failures on `main` are announced in Slack automatically. The reusable workflow is in `.github/workflows/notify-slack.yml`.
 
-| Step | Command | Purpose |
-|---|---|---|
-| Install dependencies | `npm ci` | Reproducible install |
-| Build Storybook | `npm run build-storybook` | Produces `frontend/storybook-static/` |
-| Upload artifact | `actions/upload-artifact@v4` | 7-day retention, downloadable from the Actions run summary |
+### What triggers a notification
 
-### Dependency Caching
+- **Failure**: Any of the three main CI jobs (`Backend CI`, `Frontend CI`, `Contract CI`) fails on a direct push to `main`.
+- **Restored**: The same CI job passes again on `main` after a previous failure.
+- **No notification on PRs**: Notifications are intentionally suppressed on pull request runs to reduce noise. Only merges to `main` trigger alerts.
 
-`node_modules` is cached via `actions/cache@v4` keyed on the SHA-256 hash of `frontend/package-lock.json`. Both jobs share the same cache key so the cache is populated once and reused.
+### Message format
 
+**Failure message** (red):
 ```
-key:   frontend-node-<os>-<hash of package-lock.json>
-restore-keys:
-  frontend-node-<os>-
-```
-
-An exact cache hit skips `npm ci` I/O entirely. A partial hit restores the closest prior cache and `npm ci` installs only the delta.
-
-### Fail-fast ordering
-
-```
-Lint ──► Type-check ──► Tests ──► Build
+❌ *Backend CI* failed on `main`
+Commit:  abc1234  (link to run)
+Author:  github-username
+Message: fix: correct TTL calculation
 ```
 
-Each step only runs if the preceding step passes. This surfaces the cheapest failures first.
-
-### Storybook artifact preview
-
-After the Storybook job completes, navigate to the Actions run → **Artifacts** → `storybook-static`. Download and unzip the archive, then open `index.html` locally to browse the component library as it would appear post-merge.
-
-Artifacts are retained for **7 days**.
-
----
-
-## Other Workflows
-
-| Workflow | File | Purpose |
-|---|---|---|
-| Contract CI | `.github/workflows/contract-ci.yml` | Rust build, unit tests, property tests, WASM optimisation |
-| Contract Pipeline | `.github/workflows/contract-pipeline.yml` | Full deploy pipeline (testnet / mainnet) |
-| Coverage | `.github/workflows/coverage.yml` | Uploads coverage reports to Codecov |
-| Staging Deploy | `.github/workflows/staging-deploy.yml` | ECS rolling deploy to staging on merge to `main` |
-| Dependency Audit | `.github/workflows/dependency-audit.yml` | npm audit + cargo audit on schedule |
-| Chromatic | `.github/workflows/chromatic.yml` | Visual regression testing via Chromatic |
-| Fuzz Weekly | `.github/workflows/fuzz-weekly.yml` | Scheduled 10-minute fuzz runs for each target |
-| Backend Integration | `.github/workflows/backend-integration.yml` | Node.js backend integration tests |
-| Benchmark Regression | `.github/workflows/benchmark-regression.yml` | Contract CPU/memory regression guard |
-
----
-
-## Local validation
-
-Before pushing, you can reproduce every CI step locally:
-
-```bash
-cd frontend
-
-# Install
-npm ci
-
-# Lint
-npm run lint
-
-# Type-check
-npm run typecheck
-
-# Unit tests (non-watch)
-npm test -- --watchAll=false
-
-# Build
-npm run build
-
-# Storybook
-npm run build-storybook
+**Restored message** (green):
 ```
+✅ *Backend CI* is green again on `main`
+```
+
+### Setting up the webhook
+
+1. Go to your Slack workspace → **Apps** → **Incoming WebHooks** → **Add to Slack**.
+2. Choose the channel that should receive CI alerts (e.g., `#ci-alerts`).
+3. Copy the **Webhook URL**.
+4. In the GitHub repository go to **Settings → Secrets and variables → Actions**.
+5. Create a new repository secret named `SLACK_WEBHOOK_URL` and paste the webhook URL as its value.
+
+Once the secret is set, the next push to `main` that results in a CI failure will send a notification to the configured channel.
+
+If the `SLACK_WEBHOOK_URL` secret is absent or empty, the notification step is skipped silently — no workflow failure is introduced.
+
+### Disabling notifications
+
+Remove or clear the `SLACK_WEBHOOK_URL` secret in the repository settings. All notification steps check for the secret before running.
+
+## Deployment
+
+See [`docs/deployment-runbook.md`](deployment-runbook.md) for full staging and production deployment instructions.
+
+### Staging
+
+The `staging-deploy.yml` workflow deploys automatically to the staging environment on every push to `main`.
+
+### Production
+
+Production deployments are manual. Follow the runbook in `docs/deployment-runbook.md`.
+
+## Contract Deployment
+
+The `contract-ci.yml` workflow:
+1. Builds the WASM binary.
+2. Runs all Rust unit and property-based tests.
+3. Runs mutation testing (`cargo-mutants`).
+4. On push to `main`: optimizes the WASM and deploys to the Stellar testnet, then runs the CI smoke tests.
+
+See [`docs/deployment-runbook.md`](deployment-runbook.md) for mainnet deployment steps.
