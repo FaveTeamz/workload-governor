@@ -28,3 +28,13 @@ output "frontend_s3_bucket" {
   description = "S3 bucket name for frontend static assets"
   value       = module.cdn.s3_bucket_name
 }
+
+output "cost_alerts_sns_topic_arn" {
+  description = "SNS topic ARN for cost budget alerts. Subscribe an email or Slack webhook here."
+  value       = aws_sns_topic.cost_alerts.arn
+}
+
+output "monthly_budget_name" {
+  description = "Name of the AWS Budgets monthly cost budget"
+  value       = aws_budgets_budget.monthly.name
+}
