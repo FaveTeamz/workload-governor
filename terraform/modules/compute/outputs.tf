@@ -4,3 +4,13 @@ output "alb_target_group_arn" { value = aws_lb_target_group.this.arn }
 output "alb_http_listener_arn" { value = aws_lb_listener.http.arn }
 output "ecs_cluster_name"     { value = aws_ecs_cluster.this.name }
 output "ecs_service_name"     { value = aws_ecs_service.this.name }
+
+# WAF
+output "waf_web_acl_arn" {
+  description = "ARN of the WAF WebACL associated with the ALB"
+  value       = aws_wafv2_web_acl.this.arn
+}
+output "waf_web_acl_id" {
+  description = "ID of the WAF WebACL"
+  value       = aws_wafv2_web_acl.this.id
+}
