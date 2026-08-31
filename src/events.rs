@@ -211,3 +211,13 @@ pub(crate) fn emit_emergency_cap_updated(
     let data = (old_cap, new_cap);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_org_cap`.
+///
+/// topics: `(symbol_short!("o_cap_set"), admin)`
+/// data:   `(org_id, cap)`
+pub(crate) fn emit_org_cap_set(env: &Env, admin: &Address, org_id: &Symbol, cap: u32) {
+    let topics = (symbol_short!("o_cap_set"), admin.clone());
+    let data = (org_id.clone(), cap);
+    env.events().publish(topics, data);
+}

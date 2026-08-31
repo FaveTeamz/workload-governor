@@ -847,6 +847,11 @@ impl WorkloadGovernor {
         storage::get_org_assignment_count(&env, &contributor, &org_id)
     }
 
+    /// Returns the configured assignment cap for an organisation.
+    pub fn get_org_cap(env: Env, org_id: Symbol) -> u32 {
+        storage::get_org_cap(&env, &org_id).unwrap_or(storage::ORG_ASSIGNMENT_LIMIT)
+    }
+
     /// Returns `true` if the contributor has a pending application for the given issue.
     ///
     /// # Who can call
