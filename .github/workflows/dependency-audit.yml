@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload Rust SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: cargo-audit.sarif
           category: cargo-audit
@@ -246,7 +246,7 @@ jobs:
 
       - name: Upload Backend npm SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: npm-audit-backend.sarif
           category: npm-audit-backend
@@ -322,7 +322,7 @@ jobs:
 
       - name: Upload Frontend npm SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: npm-audit-frontend.sarif
           category: npm-audit-frontend
@@ -397,7 +397,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-docker
