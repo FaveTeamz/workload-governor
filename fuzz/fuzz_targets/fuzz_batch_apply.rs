@@ -1,59 +1,57 @@
-//! Fuzz target: batch apply — a Vec of random issue_ids applied in sequence.
-//!
-//! Simulates the batch_apply pattern (once the batch PR lands) by calling
-//! `apply_for_issue` in a loop with a fuzz-derived list of issue IDs.
-//!
-//! Key paths exercised:
-//! - Global application limit (stops at 15).
-//! - Duplicate application detection.
-//! - Counter wrap-around edge cases across many distinct issues.
-
 #![no_main]
-
 use libfuzzer_sys::fuzz_target;
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
-use workload_governor::{WorkloadGovernor, WorkloadGovernorClient};
+use soroban_sdk::{Env, Address, Symbol, Vec};
+use workload_governor::{WorkloadGovernor, Organization, ApplicationError};
 
-fuzz_target!(|data: &[u8]| {
-    if data.len() < 2 {
-        return;
-    }
-
+fuzz_target!(|data: (Vec<u32>, u8)| {
+    let (issue_ids, cap) = data;
+    
+    // Limit cap to 0-30
+    let cap = cap % 30;
+    
     let env = Env::default();
-    env.mock_all_auths();
+    let contributor = Address::random(&env);
+    let org_id = Symbol::from_str(&env, "fuzz_org");
 
-    let contract_id = env.register_contract(None, WorkloadGovernor);
-    let client = WorkloadGovernorClient::new(&env, &contract_id);
+    // Initialize organization
+    let org_key = WorkloadGovernor::org_key(org_id.clone());
+    let org = Organization {
+        name: org_id.clone(),
+        issue_count: 50,
+        total_applications: 0,
+    };
+    env.storage().set(&org_key, &org);
 
-    let admin = Address::generate(&env);
-    let contributor = Address::generate(&env);
-    let org = Symbol::new(&env, "fuzzorg");
-
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.initialize(&admin);
-    }));
-
-    // Treat input as a stream of u16 issue IDs
-    let issue_ids: Vec<u32> = data
-        .chunks(2)
-        .take(20) // cap at 20 to keep run fast
-        .map(|c| {
-            let lo = c[0] as u32;
-            let hi = if c.len() > 1 { c[1] as u32 } else { 0 };
-            (hi << 8) | lo
-        })
-        .filter(|id| *id > 0) // issue_id must be > 0
-        .collect();
-
-    for issue_id in issue_ids {
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.apply_for_issue(&contributor, &org, &issue_id);
-        }));
+    // Initialize issues (up to 50)
+    let mut valid_issue_ids = Vec::new(&env);
+    for id in issue_ids.iter() {
+        let issue_id = id % 50; // Keep within 0-49
+        let issue_key = WorkloadGovernor::issue_key(org_id.clone(), issue_id);
+        env.storage().set(&issue_key, &true);
+        valid_issue_ids.push_back(issue_id);
     }
 
-    // Verify the global count is within bounds (must never exceed GLOBAL_APP_LIMIT = 15)
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let count = client.get_global_application_count(&contributor);
-        assert!(count <= 15, "global count {count} exceeded hard limit of 15");
-    }));
+    // Fuzz the batch_apply function
+    let result = WorkloadGovernor::batch_apply(
+        env.clone(),
+        contributor.clone(),
+        org_id,
+        valid_issue_ids,
+    );
+
+    // Verify the result
+    if let Ok(applied) = result {
+        // Applied should not exceed 15 (global cap)
+        assert!(applied.len() <= 15);
+        
+        // Applied should not exceed input size
+        assert!(applied.len() <= valid_issue_ids.len());
+        
+        // All applied IDs should be unique
+        let mut unique_check = Vec::new(&env);
+        for id in applied.iter() {
+            assert!(!unique_check.contains(&id));
+            unique_check.push_back(id);
+        }
+    }
 });
