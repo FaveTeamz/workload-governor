@@ -10,6 +10,8 @@
  *
  *   2. GitHub sync    — every 15 minutes
  *      Full-sync all registered org repos via github.ts.
+ *      If Horizon endpoint is unreachable, error is logged and scheduler
+ *      continues. After 3 consecutive failures, an alert is triggered.
  */
 
 import cron from "node-cron";
@@ -31,6 +33,14 @@ const TTL_EXTEND_THRESHOLD_LEDGERS = APP_TTL_LEDGERS; // extend when within 1 fu
 
 /** Max number of TTL extensions per Soroban transaction. */
 const BATCH_SIZE = 10;
+
+/** Maximum consecutive failures before alerting. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+// ─── Failure tracking ─────────────────────────────────────────────────────────
+
+let consecutiveGitHubSyncFailures = 0;
+let consecutiveTtlExtensionFailures = 0;
 
 // ─── TTL extension job ────────────────────────────────────────────────────────
 
@@ -85,58 +95,82 @@ function chunk<T>(arr: T[], size: number): T[][] {
  * - Submits them in batches of BATCH_SIZE to the Soroban contract.
  * - Logs a summary at the end.
  * - Per-batch failures are logged and the run continues.
+ * - Tracks consecutive failures and alerts after MAX_CONSECUTIVE_FAILURES.
  */
 export async function runTtlExtensionJob(): Promise<void> {
   const jobStart = Date.now();
   logger.info("TTL extension job started");
 
-  let applications: ApplicationRef[];
   try {
-    applications = await loadExpiringApplications();
-  } catch (err) {
-    logger.error({ err }, "TTL extension job: failed to load expiring applications");
-    return;
-  }
-
-  if (applications.length === 0) {
-    logger.info("TTL extension job: no expiring applications found");
-    return;
-  }
-
-  logger.info({ count: applications.length }, "TTL extension job: extending entries");
-
-  const batches = chunk(applications, BATCH_SIZE);
-  let extendedCount = 0;
-  let failedCount   = 0;
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]!;
+    let applications: ApplicationRef[];
     try {
-      await extendApplicationTtlBatch(batch);
-      extendedCount += batch.length;
-      logger.debug(
-        { batchIndex: i + 1, batchTotal: batches.length, batchSize: batch.length },
-        "TTL batch submitted",
-      );
+      applications = await loadExpiringApplications();
     } catch (err) {
-      failedCount += batch.length;
-      // Log and continue — do NOT abort the entire run
+      consecutiveTtlExtensionFailures++;
       logger.error(
-        { err, batchIndex: i + 1, batchSize: batch.length },
-        "TTL extension batch failed — continuing to next batch",
+        { err, consecutiveFailures: consecutiveTtlExtensionFailures },
+        "TTL extension job: failed to load expiring applications"
       );
-    }
-  }
 
-  const durationMs = Date.now() - jobStart;
-  logger.info(
-    {
-      extended:  extendedCount,
-      failed:    failedCount,
-      durationMs,
-    },
-    "TTL extension job complete",
-  );
+      if (consecutiveTtlExtensionFailures >= MAX_CONSECUTIVE_FAILURES) {
+        logger.error(
+          { consecutiveFailures: consecutiveTtlExtensionFailures, threshold: MAX_CONSECUTIVE_FAILURES },
+          "TTL extension job: ALERT - max consecutive failures reached"
+        );
+      }
+      return;
+    }
+
+    // Success: reset consecutive failure counter
+    consecutiveTtlExtensionFailures = 0;
+
+    if (applications.length === 0) {
+      logger.info("TTL extension job: no expiring applications found");
+      return;
+    }
+
+    logger.info({ count: applications.length }, "TTL extension job: extending entries");
+
+    const batches = chunk(applications, BATCH_SIZE);
+    let extendedCount = 0;
+    let failedCount   = 0;
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]!;
+      try {
+        await extendApplicationTtlBatch(batch);
+        extendedCount += batch.length;
+        logger.debug(
+          { batchIndex: i + 1, batchTotal: batches.length, batchSize: batch.length },
+          "TTL batch submitted",
+        );
+      } catch (err) {
+        failedCount += batch.length;
+        // Log and continue — do NOT abort the entire run
+        logger.error(
+          { err, batchIndex: i + 1, batchSize: batch.length },
+          "TTL extension batch failed — continuing to next batch",
+        );
+      }
+    }
+
+    const durationMs = Date.now() - jobStart;
+    logger.info(
+      {
+        extended:  extendedCount,
+        failed:    failedCount,
+        durationMs,
+      },
+      "TTL extension job complete",
+    );
+  } catch (err) {
+    // Catch any unexpected errors and log them without crashing
+    consecutiveTtlExtensionFailures++;
+    logger.error(
+      { err, consecutiveFailures: consecutiveTtlExtensionFailures },
+      "TTL extension job: unexpected error"
+    );
+  }
 }
 
 // ─── GitHub sync job ─────────────────────────────────────────────────────────
@@ -144,7 +178,11 @@ export async function runTtlExtensionJob(): Promise<void> {
 /**
  * Run one GitHub sync cycle.
  * Delegates to runFullSync() in github.ts.
- * Errors are caught and logged — the scheduler itself never crashes.
+ * 
+ * Error handling:
+ * - Errors are caught and logged — the scheduler itself never crashes.
+ * - Consecutive failures are tracked; alert triggered after MAX_CONSECUTIVE_FAILURES.
+ * - On success, consecutive failure counter is reset.
  */
 export async function runGitHubSyncJob(): Promise<void> {
   logger.info("GitHub sync job started");
@@ -153,12 +191,27 @@ export async function runGitHubSyncJob(): Promise<void> {
     const results = await runFullSync();
     const totalUpserted = results.reduce((s, r) => s + r.upserted, 0);
     const totalClosed   = results.reduce((s, r) => s + r.closed,   0);
+    
+    // Success: reset consecutive failure counter
+    consecutiveGitHubSyncFailures = 0;
+    
     logger.info(
       { repos: results.length, totalUpserted, totalClosed, durationMs: Date.now() - start },
       "GitHub sync job complete",
     );
   } catch (err) {
-    logger.error({ err, durationMs: Date.now() - start }, "GitHub sync job failed");
+    consecutiveGitHubSyncFailures++;
+    logger.error(
+      { err, durationMs: Date.now() - start, consecutiveFailures: consecutiveGitHubSyncFailures },
+      "GitHub sync job failed",
+    );
+
+    if (consecutiveGitHubSyncFailures >= MAX_CONSECUTIVE_FAILURES) {
+      logger.error(
+        { consecutiveFailures: consecutiveGitHubSyncFailures, threshold: MAX_CONSECUTIVE_FAILURES },
+        "GitHub sync job: ALERT - max consecutive failures reached"
+      );
+    }
   }
 }
 
