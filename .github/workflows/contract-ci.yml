@@ -88,7 +88,7 @@ jobs:
 
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/workload_governor.wasm
@@ -147,7 +147,7 @@ jobs:
           [ "$SIZE" -le 22528 ] || (echo "❌ WASM exceeds 22 KB deployment gate (${SIZE} bytes). Target is < 20 KB. Reduce binary size before merging." && exit 1)
 
       - name: Upload optimized WASM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
@@ -188,7 +188,7 @@ jobs:
 
       - name: Upload fuzz artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts-${{ github.run_id }}
           path: fuzz/artifacts/
@@ -235,7 +235,7 @@ jobs:
 
       - name: Upload audit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cargo-audit-report-${{ github.run_id }}
           path: audit-output.json
@@ -257,7 +257,7 @@ jobs:
 
       - name: Upload deny report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cargo-deny-report-${{ github.run_id }}
           path: deny-output.txt

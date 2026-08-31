@@ -53,7 +53,7 @@ jobs:
         run: cargo build --target wasm32v1-none --release
 
       - name: Upload unoptimized WASM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/workload_governor.wasm
@@ -108,7 +108,7 @@ jobs:
           echo "| Optimized   | $(( OPT / 1024 )) KB |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload optimized WASM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
