@@ -494,6 +494,7 @@ components:
           example: Fix memory leak in sync service
         description:
           type: string
+          nullable: true
         status:
           type: string
           enum: [open, assigned, completed]
@@ -686,4 +687,4 @@ components:
         message:
           type: string
         code:
-          type: integer
+          type: string

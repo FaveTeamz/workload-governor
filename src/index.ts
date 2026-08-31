@@ -33,7 +33,7 @@ export function createApp(): express.Application {
   // Routes
   app.use('/', healthRouter);
   app.use('/', orgsRouter);
-  app.use('/', contributorsRouter);
+  app.use('/contributors', contributorsRouter);
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

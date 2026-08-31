@@ -6,8 +6,34 @@ on:
       - 'src/routes/**'
       - 'openapi.yaml'
       - 'dredd-hooks.js'
+      - 'tests/contract/**'
 
 jobs:
+  # ── Job 1: express-openapi-validator response-shape contract tests ──────────
+  contract-tests:
+    name: OpenAPI response-shape contract tests
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run OpenAPI contract tests
+        run: npm run test:contract
+
+  # ── Job 2: Dredd live-server validation (existing) ──────────────────────────
   validate-api:
     name: Validate OpenAPI spec against live server
     runs-on: ubuntu-latest
