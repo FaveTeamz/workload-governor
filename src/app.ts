@@ -18,6 +18,7 @@ import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
 import { auditMiddleware } from './middleware/audit';
+import { metricsMiddleware, metricsHandler } from './metrics';
 
 async function getSorobanHealth() {
   const rpcUrl = process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
@@ -65,6 +66,9 @@ export function createApp(): express.Application {
   app.use(express.static('public'));
   app.use(correlationIdMiddleware);
 
+  // Metrics middleware — record HTTP request metrics
+  app.use(metricsMiddleware());
+
   // Rate limiting middleware
   app.use(globalLimiter);
   app.use(apiKeyAuth);
@@ -73,6 +77,9 @@ export function createApp(): express.Application {
   app.use(auditMiddleware);
 
   setupSwagger(app);
+
+  // Metrics endpoint — returns Prometheus text format metrics
+  app.get('/metrics', metricsHandler);
 
   app.get('/health', async (_req: Request, res: Response) => {
     const soroban = await getSorobanHealth();
