@@ -185,6 +185,50 @@ describe("runTtlExtensionJob", () => {
     );
   });
 
+  // ── Consecutive failure tracking ──────────────────────────────────────────
+
+  it("tracks consecutive failures and triggers alert after 3 failures", async () => {
+    mockQuery.mockRejectedValue(new Error("DB connection failed"));
+
+    // First failure
+    await runTtlExtensionJob();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveFailures: 1 }),
+      expect.anything(),
+    );
+
+    // Second failure
+    await runTtlExtensionJob();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveFailures: 2 }),
+      expect.anything(),
+    );
+
+    // Third failure - should trigger alert
+    await runTtlExtensionJob();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveFailures: 3, threshold: 3 }),
+      expect.stringContaining("ALERT - max consecutive failures reached"),
+    );
+  });
+
+  it("resets consecutive failure counter on success", async () => {
+    const apps = makeApp(5);
+    mockQuery.mockResolvedValueOnce({ rows: apps, rowCount: apps.length });
+
+    await runTtlExtensionJob();
+
+    // After success, counter should be reset (consecutive failures = 0)
+    // Next failure should start at 1 again
+    mockQuery.mockRejectedValueOnce(new Error("Connection failed"));
+    await runTtlExtensionJob();
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveFailures: 1 }),
+      expect.anything(),
+    );
+  });
+
   // ── Logs summary ─────────────────────────────────────────────────────────
 
   it("logs the number of extended entries on success", async () => {
@@ -227,5 +271,64 @@ describe("scheduler cron expressions", () => {
   it("GitHub sync cron '0,15,30,45 * * * *' fires every 15 minutes", () => {
     const expr = "0,15,30,45 * * * *";
     expect(expr).toMatch(/^0,15,30,45 \* \* \* \*$/);
+  });
+});
+
+// ─── GitHub sync error handling ───────────────────────────────────────────────
+
+describe("runGitHubSyncJob error handling", () => {
+  const mockRunFullSync = vi.hoisted(() => vi.fn());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRunFullSync.mockResolvedValue([]);
+  });
+
+  it("logs error when GitHub sync fails", async () => {
+    const { runGitHubSyncJob } = await import("../src/scheduler.js");
+    mockRunFullSync.mockRejectedValueOnce(new Error("Horizon endpoint unreachable"));
+
+    await runGitHubSyncJob();
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error), consecutiveFailures: 1 }),
+      expect.stringContaining("GitHub sync job failed"),
+    );
+  });
+
+  it("tracks consecutive GitHub sync failures and triggers alert", async () => {
+    const { runGitHubSyncJob } = await import("../src/scheduler.js");
+    mockRunFullSync.mockRejectedValue(new Error("Network timeout"));
+
+    // Three consecutive failures
+    for (let i = 1; i <= 3; i++) {
+      await runGitHubSyncJob();
+    }
+
+    // Third failure should trigger alert
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ consecutiveFailures: 3, threshold: 3 }),
+      expect.stringContaining("ALERT - max consecutive failures reached"),
+    );
+  });
+
+  it("resets consecutive failure counter on GitHub sync success", async () => {
+    const { runGitHubSyncJob } = await import("../src/scheduler.js");
+    
+    // Simulate failure then success then failure
+    mockRunFullSync.mockRejectedValueOnce(new Error("Error"));
+    await runGitHubSyncJob();
+    
+    mockRunFullSync.mockResolvedValueOnce([{ upserted: 5, closed: 2, repo: "test" }]);
+    await runGitHubSyncJob();
+    
+    mockRunFullSync.mockRejectedValueOnce(new Error("Error again"));
+    await runGitHubSyncJob();
+
+    // After reset, should show consecutiveFailures: 1
+    expect(mockLogger.error).toHaveBeenLastCalledWith(
+      expect.objectContaining({ consecutiveFailures: 1 }),
+      expect.anything(),
+    );
   });
 });
