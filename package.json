@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "migrate:up": "node-pg-migrate up --migrations-dir migrations --migrations-table pgmigrations",
     "migrate:down": "node-pg-migrate down --migrations-dir migrations --migrations-table pgmigrations",
+    "backfill": "ts-node src/scripts/backfill-events.ts",
     "test": "jest --runInBand --forceExit",
     "test:contract": "jest --runInBand --forceExit --selectProjects contract",
     "test:unit": "vitest run",
@@ -37,6 +38,7 @@
     "pg": "8.12.0",
     "pino": "9.3.2",
     "pino-http": "10.2.0",
+    "prom-client": "15.1.0",
     "swagger-ui-express": "5.0.1",
     "uuid": "10.0.0",
     "yaml": "2.5.0",
@@ -62,6 +64,7 @@
     "supertest": "7.0.0",
     "ts-jest": "29.2.3",
     "ts-node": "10.9.2",
-    "typescript": "5.5.4"
+    "typescript": "5.5.4",
+    "vitest": "^4.1.9"
   }
 }
