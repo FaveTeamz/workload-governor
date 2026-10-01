@@ -55,7 +55,7 @@ jobs:
 
       # ── Publish to Chromatic ────────────────────────────────────
       - name: Publish to Chromatic
-        uses: chromaui/action@v11
+        uses: chromaui/action@v18
         with:
           # CHROMATIC_PROJECT_TOKEN must be set in repo Settings → Secrets
           # (Settings → Secrets and variables → Actions → New repository secret)
