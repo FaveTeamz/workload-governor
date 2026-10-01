@@ -30,7 +30,7 @@
     "@stellar/freighter-api": "^6.0.1",
     "@storybook/addon-a11y": "^10.4.6",
     "@storybook/addon-docs": "^10.4.6",
-    "@storybook/addon-mcp": "^0.6.0",
+    "@storybook/addon-mcp": "^10.6.0",
     "@storybook/addon-vitest": "^10.4.6",
     "@storybook/react-vite": "^10.4.6",
     "@testing-library/dom": "^10.4.1",
