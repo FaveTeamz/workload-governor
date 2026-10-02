@@ -82,6 +82,20 @@ describe('TxConfirmModal', () => {
     expect(screen.getByText('0.00001 XLM')).toBeTruthy();
   });
 
+  it('shows the operation and named parameters', () => {
+    const details: TxDetails = {
+      ...defaultDetails,
+      operation: 'apply_for_issue',
+      parameters: { org_id: 'stellar-org', issue_id: 42 },
+    };
+    const modal = makeModal({ state: { status: 'confirming', details } });
+    render(<TxConfirmModal modal={modal} />);
+    expect(screen.getByText('apply_for_issue')).toBeTruthy();
+    expect(screen.getByText('org_id')).toBeTruthy();
+    expect(screen.getByText('stellar-org')).toBeTruthy();
+    expect(screen.getByText('42')).toBeTruthy();
+  });
+
   it('shows network badge from details.network', () => {
     const modal = makeModal({
       state: { status: 'confirming', details: defaultDetails },

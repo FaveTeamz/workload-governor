@@ -3,6 +3,8 @@ import { useState, useCallback } from 'react';
 
 export interface TxDetails {
   action: string;
+  operation?: string;
+  parameters?: Record<string, string | number | boolean>;
   target: string;
   fee: string;
   network: string;

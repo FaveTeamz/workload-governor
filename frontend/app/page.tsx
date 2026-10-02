@@ -5,6 +5,7 @@ import IssueCardGrid from '@/components/IssueCard';
 import EventHistoryTable from '@/components/EventHistoryTable';
 import EmptyState from '@/components/EmptyState';
 import TxConfirmModal from '@/components/TxConfirmModal';
+import { useTxModal } from '@/hooks/useTxModal';
 import { useState } from 'react';
 
 // Sample data — in production these come from the API
@@ -20,18 +21,32 @@ const sampleEvents = [
 ];
 
 export default function DashboardPage() {
-  const [modalOpen, setModalOpen] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<string | null>(null);
+  const txModal = useTxModal();
 
   const handleApply = (issueId: string) => {
+    const issue = sampleIssues.find((item) => item.id === issueId);
+    if (!issue) return;
     setSelectedIssue(issueId);
-    setModalOpen(true);
+    void txModal.confirm({
+      action: `Apply for ${issue.title}`,
+      operation: 'apply_for_issue',
+      parameters: { org_id: issue.org, issue_id: issue.id },
+      target: `Organization ${issue.org} / Issue ${issue.id}`,
+      fee: 'Unavailable in this demo',
+      network: 'testnet',
+      confirmLabel: 'Confirm application',
+    }).then(() => {
+      txModal.setLoading();
+      handleConfirm();
+    }).catch(() => {
+      setSelectedIssue(null);
+    });
   };
 
   const handleConfirm = () => {
-    // In production: submit application transaction
-    setModalOpen(false);
     setSelectedIssue(null);
+    txModal.close();
   };
 
   return (
@@ -82,13 +97,7 @@ export default function DashboardPage() {
       </main>
 
       {/* Transaction Confirmation Modal */}
-      <TxConfirmModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onConfirm={handleConfirm}
-        title="Apply for Issue"
-        description={`You are about to apply for issue ${selectedIssue ?? ''}. This will submit a transaction to the Stellar network.`}
-      />
+      <TxConfirmModal modal={txModal} />
     </div>
   );
 }

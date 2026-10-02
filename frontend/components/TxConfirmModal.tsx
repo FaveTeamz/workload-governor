@@ -7,7 +7,7 @@ const FOCUSABLE =
   'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 interface Props {
-  modal: UseTxModal & { _resolve: () => void; _reject: () => void };
+  modal: UseTxModal;
 }
 
 /** Plain-language icon for the action type */
@@ -25,10 +25,7 @@ function actionIcon(action: string, destructive?: boolean): string {
 export default function TxConfirmModal({ modal }: Props) {
   const { state, _resolve, _reject, close } = modal;
   const dialogRef      = useRef<HTMLDivElement>(null);
-  const sheetRef       = useRef<HTMLDivElement>(null);
   const previousFocus  = useRef<HTMLElement | null>(null);
-  const touchStartY    = useRef<number | null>(null);
-  const touchCurrentY  = useRef<number | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const isOpen    = state.status !== "idle";
@@ -54,7 +51,7 @@ export default function TxConfirmModal({ modal }: Props) {
       }
       document.body.style.overflow = "hidden";
       requestAnimationFrame(() => {
-        const first = (dialogRef.current ?? sheetRef.current)?.querySelectorAll<HTMLElement>(FOCUSABLE)[0];
+        const first = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)[0];
         first?.focus();
       });
     } else {
@@ -104,35 +101,15 @@ export default function TxConfirmModal({ modal }: Props) {
     }
   }
 
-  // Prevent body scroll while modal is open
-  useEffect(() => {
-    document.body.style.overflow = isOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [isOpen]);
-
-  // ── Swipe-to-dismiss handlers ─────────────────────────────────────────────
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    touchStartY.current = e.touches[0]?.clientY ?? null;
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    if (touchStartY.current === null) return;
-    const delta = (e.touches[0]?.clientY ?? 0) - touchStartY.current;
-    touchCurrentY.current = delta;
-
-    // Only translate downward (no negative values)
-    if (sheetRef.current && delta > 0) {
-      sheetRef.current.style.transform = `translateY(${delta}px)`;
-    }
-  }, []);
+  if (!isOpen) return null;
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
         aria-hidden="true"
         className="txmodal-backdrop"
+        data-testid="txmodal-backdrop"
         onClick={() => { if (!isLoading) _reject(); }}
       />
 
@@ -141,13 +118,14 @@ export default function TxConfirmModal({ modal }: Props) {
         Mobile: bottom sheet (full width, rounded top corners, fixed to bottom)
       */}
       <div
-        ref={sheetRef}
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="txmodal-title"
         aria-describedby="txmodal-subtitle"
         onKeyDown={trapFocus}
         className={`txmodal${destructive ? " txmodal--destructive" : ""}`}
+        data-testid="txmodal-dialog"
       >
         {/* ── Hero ────────────────────────────────────────────── */}
         <div className="txmodal__hero">
@@ -167,6 +145,27 @@ export default function TxConfirmModal({ modal }: Props) {
         {/* ── Secondary info grid ──────────────────────────────── */}
         {details && (
           <dl className="txmodal__info">
+            {details.operation && (
+              <div className="txmodal__info-item">
+                <dt className="txmodal__info-label">Operation</dt>
+                <dd className="txmodal__info-value">{details.operation}</dd>
+              </div>
+            )}
+            {details.parameters && Object.keys(details.parameters).length > 0 && (
+              <div className="txmodal__info-item txmodal__info-item--wide">
+                <dt className="txmodal__info-label">Parameters</dt>
+                <dd className="txmodal__info-value">
+                  <dl className="txmodal__parameters">
+                    {Object.entries(details.parameters).map(([name, value]) => (
+                      <div className="txmodal__parameter" key={name}>
+                        <dt>{name}</dt>
+                        <dd>{String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </dd>
+              </div>
+            )}
             <div className="txmodal__info-item">
               <dt className="txmodal__info-label">Target</dt>
               <dd className="txmodal__info-value">{details.target}</dd>
@@ -200,6 +199,7 @@ export default function TxConfirmModal({ modal }: Props) {
             <button
               type="button"
               className="txmodal__details-toggle"
+              data-testid="txmodal-xdr-toggle"
               aria-expanded={detailsOpen}
               aria-controls="txmodal-xdr"
               onClick={() => setDetailsOpen((v) => !v)}
@@ -214,7 +214,7 @@ export default function TxConfirmModal({ modal }: Props) {
             </button>
             {detailsOpen && (
               <div id="txmodal-xdr" className="txmodal__details-body">
-                <pre className="txmodal__xdr">{details.xdr}</pre>
+                <pre className="txmodal__xdr" data-testid="txmodal-xdr-content">{details.xdr}</pre>
               </div>
             )}
           </div>
@@ -234,6 +234,7 @@ export default function TxConfirmModal({ modal }: Props) {
               <button
                 type="button"
                 className="txmodal__btn-secondary"
+                data-testid="txmodal-cancel"
                 onClick={close}
               >
                 Dismiss
@@ -259,6 +260,7 @@ export default function TxConfirmModal({ modal }: Props) {
               <button
                 type="button"
                 className={`txmodal__btn-primary${destructive ? " txmodal__btn-primary--destructive" : ""}`}
+                data-testid="txmodal-confirm"
                 onClick={_resolve}
                 disabled={isLoading}
                 aria-busy={isLoading}
