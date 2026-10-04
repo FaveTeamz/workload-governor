@@ -4,6 +4,10 @@ import { useState, useCallback } from "react";
 export interface TxDetails {
   /** Short plain-English action label, e.g. "Apply for issue #42 in stellar-org" */
   action: string;
+  /** Soroban contract operation being submitted, e.g. "apply_for_issue". */
+  operation?: string;
+  /** Named operation arguments displayed for review. */
+  parameters?: Record<string, string | number | boolean>;
   /** Canonical target string shown in the secondary section */
   target: string;   // e.g. "org: stellar-org / issue: #42"
   /** Estimated fee, e.g. "0.00001 XLM" */
@@ -46,6 +50,9 @@ export interface UseTxModal {
   setError: (message: string) => void;
   /** Reset back to idle (close the modal). */
   close: () => void;
+  /** Internal controls used by the confirmation component. */
+  _resolve: () => void;
+  _reject: () => void;
 }
 
 export function useTxModal(): UseTxModal {
@@ -96,8 +103,5 @@ export function useTxModal(): UseTxModal {
     close();
   }, [resolver, close]);
 
-  return { state, confirm, setLoading, setError, close, _resolve, _reject } as UseTxModal & {
-    _resolve: () => void;
-    _reject: () => void;
-  };
+  return { state, confirm, setLoading, setError, close, _resolve, _reject };
 }
