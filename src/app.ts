@@ -20,11 +20,35 @@ import { setupSwagger } from './swagger';
 export function createApp(): express.Application {
   const app = express();
 
-  // Security middleware
-  app.use(helmet());
+  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',');
+
+  // Security middleware — strict CSP, HSTS with preload, deny framing (issue #1098)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", ...corsOrigins],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: null,
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  }));
 
   // CORS middleware
-  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',');
   app.use(cors({
     origin: corsOrigins,
     credentials: true,
