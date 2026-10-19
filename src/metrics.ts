@@ -83,6 +83,12 @@ export const dbPoolIdle = new Gauge({
   },
 });
 
+export const sorobanMinApplicationTtlLedgers = new Gauge({
+  name: "soroban_min_application_ttl_ledgers",
+  help: "Minimum remaining application entry TTL in ledgers",
+  registers: [register],
+});
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 /**

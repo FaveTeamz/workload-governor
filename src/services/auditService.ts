@@ -40,6 +40,31 @@ export async function recordAuditEvent(entry: AuditEntry): Promise<void> {
         entry.metadata ? JSON.stringify(entry.metadata) : null,
       ],
     );
+
+    logger.info({
+      ecs: { version: '8.11.0' },
+      event: {
+        action: entry.event_type,
+        category: 'audit',
+        created: new Date().toISOString(),
+      },
+      user: {
+        name: entry.actor,
+      },
+      client: {
+        ip: entry.ip_address ?? null,
+      },
+      service: {
+        name: 'workload-governor-backend',
+      },
+      audit: {
+        resource: entry.resource ?? null,
+        previous_value: entry.previous_value,
+        new_value: entry.new_value,
+        metadata: entry.metadata,
+      },
+      message: `Audit event recorded: ${entry.event_type} by ${entry.actor}`,
+    });
   } catch (err) {
     logger.error({
       message: 'Failed to write audit log entry',
