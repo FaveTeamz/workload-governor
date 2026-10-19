@@ -47,6 +47,22 @@ export function getPool(): Pool {
       console.error('[db] Unexpected error on idle DB client:', err.message, err.stack);
     });
 
+    // Pool event telemetry for active gauges
+    const notifyPoolGauges = () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { updatePgPoolGauges } = require('./metrics');
+        updatePgPoolGauges();
+      } catch {
+        // Ignore if metrics module not yet initialized
+      }
+    };
+
+    _pool.on('connect', notifyPoolGauges);
+    _pool.on('acquire', notifyPoolGauges);
+    _pool.on('release', notifyPoolGauges);
+    _pool.on('remove', notifyPoolGauges);
+
     // Optionally log new connections in non-production environments for
     // visibility into pool churn during development/staging.
     if (process.env['NODE_ENV'] !== 'production') {

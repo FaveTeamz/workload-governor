@@ -37,6 +37,28 @@ export const globalLimiter = rateLimit({
   },
 });
 
+export const verifyXdrLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many requests to /verify-xdr from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => getClientIp(req),
+  handler: (req: Request, res: Response) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rateLimitInfo = (req as any).rateLimit;
+    const retryAfter =
+      rateLimitInfo?.resetTime && typeof rateLimitInfo.resetTime === 'number'
+        ? Math.ceil((rateLimitInfo.resetTime - Date.now()) / 1000)
+        : 60;
+    res.set('Retry-After', String(retryAfter));
+    res.status(429).json({
+      error: 'too many requests',
+      retryAfter,
+    });
+  },
+});
+
 const walletLimitStore: Map<
   string,
   { count: number; resetTime: number }

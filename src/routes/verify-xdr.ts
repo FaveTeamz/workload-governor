@@ -11,8 +11,10 @@ import { Router, Request, Response } from 'express';
 import { TransactionBuilder, Networks, Transaction, FeeBumpTransaction } from '@stellar/stellar-sdk';
 import { validateRequest } from '../middleware/validation';
 import { verifyXdrSchema } from '../schemas/verify-xdr';
+import { verifyXdrLimiter } from '../middleware/rate-limit';
 
 const router = Router();
+const MAX_XDR_BYTES = 64 * 1024;
 
 const NETWORK_PASSPHRASES: Record<string, string> = {
   testnet: Networks.TESTNET,
@@ -21,6 +23,19 @@ const NETWORK_PASSPHRASES: Record<string, string> = {
 
 router.post(
   '/',
+  verifyXdrLimiter,
+  (req: Request, res: Response, next) => {
+    if (
+      typeof req.body?.xdr === 'string' &&
+      (req.body.xdr.length > MAX_XDR_BYTES || Buffer.byteLength(req.body.xdr, 'utf8') > MAX_XDR_BYTES)
+    ) {
+      return res.status(413).json({
+        error: 'payload_too_large',
+        message: `Payload exceeds maximum allowed size of ${MAX_XDR_BYTES} bytes`,
+      });
+    }
+    next();
+  },
   validateRequest({ body: verifyXdrSchema }),
   (req: Request, res: Response) => {
     const { xdr, network } = req.body as { xdr: string; network?: string };

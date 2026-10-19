@@ -83,6 +83,39 @@ export const dbPoolIdle = new Gauge({
   },
 });
 
+export const pgPoolTotalConnections = new Gauge({
+  name: "pg_pool_total_connections",
+  help: "Total connections in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.totalCount);
+  },
+});
+
+export const pgPoolIdleConnections = new Gauge({
+  name: "pg_pool_idle_connections",
+  help: "Idle connections in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.idleCount);
+  },
+});
+
+export const pgPoolWaitingRequests = new Gauge({
+  name: "pg_pool_waiting_requests",
+  help: "Queued waiting requests in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.waitingCount);
+  },
+});
+
+export function updatePgPoolGauges(): void {
+  pgPoolTotalConnections.set(pool.totalCount);
+  pgPoolIdleConnections.set(pool.idleCount);
+  pgPoolWaitingRequests.set(pool.waitingCount);
+}
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 /**
