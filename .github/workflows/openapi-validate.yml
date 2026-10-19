@@ -10,6 +10,10 @@ on:
       - 'dredd-hooks.js'
       - 'tests/contract/**'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Job 0: openapi.yaml ↔ docs/api-reference.md sync check ──────────────────
   docs-sync:
