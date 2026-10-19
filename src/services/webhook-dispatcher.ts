@@ -16,6 +16,7 @@
 import crypto from 'crypto';
 import { pool } from '../db';
 import redis from './redis';
+import { webhookDeliveriesTotal, webhookDeliveryFailuresTotal } from '../metrics';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -146,6 +147,7 @@ export async function dispatchToWebhook(
       );
 
       if (response.ok) {
+        webhookDeliveriesTotal.labels(payload.org_id, payload.event).inc();
         return; // Success — done
       }
 
@@ -172,6 +174,8 @@ export async function dispatchToWebhook(
   console.error(
     `[WebhookDispatcher] All ${MAX_ATTEMPTS} attempts failed for webhook #${webhookId} → ${url}: ${lastError}`,
   );
+
+  webhookDeliveryFailuresTotal.labels(payload.org_id, payload.event).inc();
 
   const dlqEntry: DlqEntry = {
     webhook_id: webhookId,

@@ -3,6 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { Request, Response, NextFunction } from 'express';
 
 const logger = pino({
+  redact: {
+    paths: ['req.headers.authorization', 'req.headers.cookie', 'body.secret'],
+    censor: '[REDACTED]',
+  },
   transport: {
     target: 'pino/file',
   },

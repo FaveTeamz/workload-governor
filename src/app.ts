@@ -20,6 +20,18 @@ import { setupSwagger } from './swagger';
 export function createApp(): express.Application {
   const app = express();
 
+  // Enforce HTTPS-only transport and HSTS headers in production environment
+  if (process.env.NODE_ENV === 'production') {
+    app.use((req: Request, res: Response, next) => {
+      const proto = req.headers['x-forwarded-proto'];
+      if (proto && proto !== 'https') {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+      }
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+      next();
+    });
+  }
+
   // Security middleware
   app.use(helmet());
 
