@@ -21,7 +21,30 @@ export function createApp(): express.Application {
   const app = express();
 
   // Security middleware
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'", 'https:'],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+        },
+      },
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+      },
+      frameguard: {
+        action: 'deny',
+      },
+    }),
+  );
 
   // CORS middleware
   const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',');

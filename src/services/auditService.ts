@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { pool } from '../db';
 import { logger } from '../logger';
 
@@ -17,6 +18,48 @@ export interface AuditEntry {
   new_value?: unknown;
   metadata?: Record<string, unknown>;
   created_at?: string;
+  prev_hash?: string;
+  entry_hash?: string;
+}
+
+export function computeAuditHash(entry: {
+  prev_hash: string;
+  event_type: string;
+  actor: string;
+  resource?: string;
+  previous_value?: unknown;
+  new_value?: unknown;
+  timestamp: string;
+}): string {
+  const content = `${entry.prev_hash}|${entry.event_type}|${entry.actor}|${entry.resource ?? ''}|${JSON.stringify(entry.previous_value ?? null)}|${JSON.stringify(entry.new_value ?? null)}|${entry.timestamp}`;
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+export async function verifyAuditLogChain(entries?: AuditEntry[]): Promise<{ valid: boolean; brokenAtId?: number }> {
+  try {
+    const logs = entries ?? (await pool.query('SELECT * FROM audit_logs ORDER BY id ASC')).rows as AuditEntry[];
+    let prevHash = 'GENESIS_HASH';
+    for (const log of logs) {
+      const timestamp = log.created_at ?? '';
+      const expectedHash = computeAuditHash({
+        prev_hash: log.prev_hash || prevHash,
+        event_type: log.event_type,
+        actor: log.actor,
+        resource: log.resource,
+        previous_value: log.previous_value,
+        new_value: log.new_value,
+        timestamp,
+      });
+      if (log.entry_hash && log.entry_hash !== expectedHash) {
+        return { valid: false, brokenAtId: log.id };
+      }
+      prevHash = log.entry_hash ?? expectedHash;
+    }
+    return { valid: true };
+  } catch (err) {
+    logger.error({ message: 'Audit chain verification failed', error: String(err) });
+    return { valid: false };
+  }
 }
 
 /**
