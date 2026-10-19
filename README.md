@@ -111,14 +111,17 @@ Step-by-step operator runbooks for production scenarios:
 
 ## Building
 
+Requires Rust stable with `wasm32v1-none` target and Stellar CLI (Soroban SDK v22+ compatible):
+
 ```bash
 # Install the Stellar CLI and wasm32v1-none target
 rustup target add wasm32v1-none
+cargo install --locked stellar-cli
 
-# Build the WASM
+# Build the WASM contract
 stellar contract build
 
-# Or manually
+# Or manually via cargo
 cargo build --target wasm32v1-none --release
 
 # Optimize (required before mainnet deployment)
