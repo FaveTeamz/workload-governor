@@ -43,6 +43,7 @@ resource "aws_db_instance" "this" {
   skip_final_snapshot    = var.environment != "production"
   deletion_protection    = var.environment == "production"
   storage_encrypted      = true
+  kms_key_id             = var.kms_key_id
 
   tags = { Name = local.name }
 }
