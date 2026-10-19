@@ -422,6 +422,290 @@ paths:
               schema:
                 type: string
 
+  /orgs:
+    get:
+      summary: List organizations
+      operationId: listOrgs
+      tags:
+        - Organizations
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /orgs/{orgId}/cap:
+    get:
+      summary: Get organization cap
+      operationId: getOrgCap
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Organization cap
+    put:
+      summary: Update organization cap
+      operationId: updateOrgCap
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cap updated
+
+  /orgs/{orgId}/issues:
+    get:
+      summary: List issues for organization
+      operationId: listOrgIssues
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of issues
+    post:
+      summary: Create issue for organization
+      operationId: createOrgIssue
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Issue created
+
+  /orgs/{orgId}/applications:
+    get:
+      summary: List applications for organization
+      operationId: listOrgApplications
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of applications
+
+  /orgs/{orgId}/issues/{issueId}/apply:
+    post:
+      summary: Apply for issue
+      operationId: applyForOrgIssue
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application submitted
+    delete:
+      summary: Withdraw application for issue
+      operationId: withdrawOrgApplication
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application withdrawn
+
+  /orgs/{orgId}/assignments:
+    get:
+      summary: List assignments for organization
+      operationId: listOrgAssignments
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of assignments
+
+  /orgs/{orgId}/events:
+    get:
+      summary: List events for organization
+      operationId: listOrgEvents
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of events
+
+  /contributors/{address}/stats:
+    get:
+      summary: Get contributor statistics
+      operationId: getContributorStats
+      tags:
+        - Contributors
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contributor stats
+
+  /contributors/{address}/summary:
+    get:
+      summary: Get contributor summary
+      operationId: getContributorSummary
+      tags:
+        - Contributors
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contributor summary
+
+  /audit:
+    get:
+      summary: Get system audit logs
+      operationId: getSystemAudit
+      tags:
+        - Audit
+      responses:
+        '200':
+          description: Audit logs
+
+  /admin/consistency:
+    get:
+      summary: Check admin consistency
+      operationId: getAdminConsistency
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: Consistency status
+
+  /admin/consistency/remediate:
+    post:
+      summary: Remediate consistency issues
+      operationId: remediateAdminConsistency
+      tags:
+        - Admin
+      responses:
+        '200':
+          description: Remediation result
+
+  /verify-xdr:
+    post:
+      summary: Verify signed XDR transaction
+      operationId: postVerifyXdr
+      tags:
+        - Transactions
+      responses:
+        '200':
+          description: Verification result
+
+  /api/contributors/{address}/applications:
+    get:
+      summary: List contributor applications
+      operationId: listContributorApplications
+      tags:
+        - Contributors
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of applications
+
+  /api/contributors/{address}/assignments:
+    get:
+      summary: List contributor assignments
+      operationId: listContributorAssignments
+      tags:
+        - Contributors
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of assignments
+
+  /orgs/{org_id}/stats:
+    get:
+      summary: Get organization statistics
+      operationId: getOrgStats
+      tags:
+        - Organizations
+      parameters:
+        - name: org_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Organization statistics
+
 components:
   schemas:
     Issue:

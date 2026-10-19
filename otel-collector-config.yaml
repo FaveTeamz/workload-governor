@@ -10,6 +10,25 @@ processors:
   batch:
     timeout: 1s
     send_batch_size: 1024
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 10000
+    expected_new_traces_per_sec: 1000
+    policies:
+      [
+        {
+          name: error-policy,
+          type: status_code,
+          status_code: { status_codes: [ERROR] }
+        },
+        {
+          name: probabilistic-policy,
+          type: probabilistic,
+          probabilistic: { sampling_percentage: 5.0 }
+        }
+      ]
+  probabilistic_sampler:
+    sampling_percentage: 5.0
 
 exporters:
   debug:
@@ -19,5 +38,5 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [tail_sampling, batch]
       exporters: [debug]

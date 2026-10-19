@@ -1392,3 +1392,121 @@ One entry per calendar day in the requested period, oldest first. Each entry has
 | `assignments` | number | Issues assigned on this day |
 | `completions` | number | Assignments completed on this day |
 | `revocations` | number | Assignments revoked on this day |
+
+---
+
+### Contributors
+
+#### `GET /api/contributors`
+
+List registered contributors.
+
+**Response `200`**
+```json
+[
+  {
+    "address": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+    "name": "Alex",
+    "reputation": 100,
+    "created_at": "2026-01-01T00:00:00Z"
+  }
+]
+```
+
+---
+
+### Events
+
+#### `GET /api/events`
+
+List contract events with pagination and filtering.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `org_id` | string | — | Filter by organization ID |
+| `event_type` | string | — | Filter by event type (`applied`, `withdrawn`, `assigned`, `completed`, `revoked`) |
+| `limit` | integer | `50` | Maximum entries to return |
+| `offset` | integer | `0` | Number of entries to skip |
+
+**Response `200`**
+```json
+{
+  "events": [],
+  "pagination": {
+    "total": 0,
+    "limit": 50,
+    "offset": 0,
+    "has_more": false
+  }
+}
+```
+
+---
+
+### Leaderboard
+
+#### `GET /api/v1/leaderboard`
+
+Contributor leaderboard ranked by completed assignments.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `timeframe` | string | `all` | Time window (`week`, `month`, `all`) |
+| `limit` | integer | `20` | Max entries to return |
+| `offset` | integer | `0` | Offset entries |
+
+**Response `200`**
+```json
+{
+  "timeframe": "all",
+  "leaderboard": [],
+  "updated_at": "2026-10-19T00:00:00Z"
+}
+```
+
+---
+
+### Audit Logs
+
+#### `GET /api/v1/audit/logs`
+
+Retrieve paginated audit log entries tracking administrative and security events.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `event_type` | string | — | Filter by event type (`cap_update`, `maintainer_register`, `api_key_created`, `api_key_revoked`) |
+| `actor` | string | — | Filter by admin address or actor |
+| `limit` | integer | `50` | Maximum entries to return |
+| `offset` | integer | `0` | Number of entries to skip |
+
+**Response `200`**
+```json
+{
+  "logs": [],
+  "pagination": {
+    "total": 0,
+    "limit": 50,
+    "offset": 0,
+    "has_more": false
+  }
+}
+```
+
+---
+
+### System & Documentation
+
+#### `GET /docs`
+
+Interactive Swagger UI documentation page.
+
+**Response `200`** — Returns HTML documentation page.
+
