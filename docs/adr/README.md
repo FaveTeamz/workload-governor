@@ -30,6 +30,8 @@ Use [ADR-TEMPLATE.md](ADR-TEMPLATE.md) when writing a new ADR.
 | [ADR-004](ADR-004-postgresql-over-sqlite.md) | Use PostgreSQL Instead of SQLite for the Backend Database | Accepted | 2024-02-01 |
 | [ADR-005](ADR-005-nextjs-frontend.md) | Use Next.js for the Frontend | Accepted | 2024-02-05 |
 | [ADR-006](ADR-006-two-step-admin-transfer.md) | Use a Two-Step Propose/Accept Pattern for Admin Transfer | Accepted | 2026-08-30 |
+| [ADR-008](ADR-008-multisig-governance.md) | Multi-signature Threshold Governance for Emergency Cap Modifications | Accepted | 2026-09-28 |
+| [ADR-009](ADR-009-indexer-event-deduplication.md) | Composite Unique Constraint and Checkpoint Table for Event Indexer Deduplication | Accepted | 2026-10-20 |
 
 ## Adding a new ADR
 
