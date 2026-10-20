@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  isConnected as freighterIsConnected,
+  getAddress as freighterGetAddress,
+  getNetwork as freighterGetNetwork,
+} from "@stellar/freighter-api";
 
 const STORAGE_KEY = "wg_wallet_pubkey";
+const EXPECTED_NETWORK = "TESTNET";
 
 /** Message type sent by the Freighter browser extension. */
 interface FreighterMessage {
@@ -13,17 +19,15 @@ export interface WalletState {
   publicKey: string | null;
   error: string | null;
   connecting: boolean;
+  /** True when the Freighter extension is installed and responding. */
+  isInstalled: boolean;
+  /** True when the wallet is connected to a different network than expected. */
+  networkMismatch: boolean;
 }
 
 export interface UseWallet extends WalletState {
   connect: () => Promise<void>;
   disconnect: () => void;
-}
-
-// Thin wrapper so we can mock in tests
-function getFreighter() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (globalThis as any).__freighter_api__ ?? null;
 }
 
 export function useWallet(): UseWallet {
@@ -32,6 +36,8 @@ export function useWallet(): UseWallet {
   );
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [networkMismatch, setNetworkMismatch] = useState(false);
 
   // Re-hydrate from storage on mount (covers page-reload scenario)
   useEffect(() => {
@@ -39,62 +45,77 @@ export function useWallet(): UseWallet {
     if (stored && !publicKey) setPublicKey(stored);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for wallet extension messages (e.g. account-changed events).
-  // FIX #545: the cleanup function returns removeEventListener so the
-  // listener is detached when the component unmounts, preventing accumulation
-  // of stale callbacks across mount/unmount cycles.
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      const data = event.data as FreighterMessage | null;
-      if (!data || typeof data !== "object") return;
+  // Memoized handler for Freighter extension messages (account/network changes).
+  // Using useCallback ensures the function identity is stable across renders so
+  // the listener is never re-attached unnecessarily — fixes the infinite re-render
+  // loop on network change (issue #1047).
+  const handleMessage = useCallback((event: MessageEvent) => {
+    const data = event.data as FreighterMessage | null;
+    if (!data || typeof data !== "object") return;
 
-      if (data.type === "FREIGHTER_ACCOUNT_CHANGED") {
-        const newKey: string | null = data.detail?.publicKey ?? null;
-        if (newKey) {
-          localStorage.setItem(STORAGE_KEY, newKey);
-          setPublicKey(newKey);
-        } else {
-          // Extension signalled a disconnect
-          localStorage.removeItem(STORAGE_KEY);
-          setPublicKey(null);
-        }
-      }
-
-      if (data.type === "FREIGHTER_DISCONNECTED") {
+    if (data.type === "FREIGHTER_ACCOUNT_CHANGED") {
+      const newKey: string | null = data.detail?.publicKey ?? null;
+      if (newKey) {
+        localStorage.setItem(STORAGE_KEY, newKey);
+        setPublicKey(newKey);
+      } else {
         localStorage.removeItem(STORAGE_KEY);
         setPublicKey(null);
-        setError(null);
       }
     }
 
-    window.addEventListener("message", handleMessage);
+    if (data.type === "FREIGHTER_NETWORK_CHANGED") {
+      const network: string | undefined = data.detail?.network;
+      if (network) {
+        setNetworkMismatch(network.toUpperCase() !== EXPECTED_NETWORK);
+      }
+    }
 
-    // Cleanup: remove the listener when the component unmounts or the effect
-    // re-runs so listeners never accumulate.
+    if (data.type === "FREIGHTER_DISCONNECTED") {
+      localStorage.removeItem(STORAGE_KEY);
+      setPublicKey(null);
+      setError(null);
+      setNetworkMismatch(false);
+    }
+  }, []); // stable: no external state deps; state setters are guaranteed stable
+
+  // Attach the memoized handler once. The cleanup function properly removes the
+  // exact same function reference so listeners never accumulate across re-renders.
+  useEffect(() => {
+    window.addEventListener("message", handleMessage);
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, []); // runs once; setPublicKey / setError are stable dispatch functions
+  }, [handleMessage]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
     setError(null);
     try {
-      const freighter = getFreighter();
-      if (!freighter) {
+      const { isConnected, error: connErr } = await freighterIsConnected();
+      if (!isConnected || connErr) {
+        setIsInstalled(false);
         setError("Freighter extension not found. Please install it.");
         return;
       }
-      const { isConnected } = await freighter.isConnected();
-      if (!isConnected) {
-        setError("Freighter extension not found. Please install it.");
-        return;
-      }
-      const { address, error: addrErr } = await freighter.getAddress();
+      setIsInstalled(true);
+
+      const { address, error: addrErr } = await freighterGetAddress();
       if (addrErr) {
         setError(addrErr);
         return;
       }
+
+      // Check network after a successful address fetch
+      try {
+        const { network } = await freighterGetNetwork();
+        setNetworkMismatch(
+          (network ?? "").toUpperCase() !== EXPECTED_NETWORK
+        );
+      } catch {
+        // Non-fatal: network check failure should not block connection
+      }
+
       localStorage.setItem(STORAGE_KEY, address);
       setPublicKey(address);
     } catch (e) {
@@ -108,7 +129,16 @@ export function useWallet(): UseWallet {
     localStorage.removeItem(STORAGE_KEY);
     setPublicKey(null);
     setError(null);
+    setNetworkMismatch(false);
   }, []);
 
-  return { publicKey, error, connecting, connect, disconnect };
+  return {
+    publicKey,
+    error,
+    connecting,
+    isInstalled,
+    networkMismatch,
+    connect,
+    disconnect,
+  };
 }
