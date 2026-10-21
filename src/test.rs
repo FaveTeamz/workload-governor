@@ -877,6 +877,55 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Property #1010: Global application count invariant
+proptest! {
+    #[test]
+    fn prop_global_application_count_matches_pending_apps(
+        operations in prop::collection::vec((0u8..3, 0u8..2, 1u32..17), 0..100)
+    ) {
+        let t = TestEnv::new();
+        let admin = Address::generate(&t.env);
+        let maintainer = Address::generate(&t.env);
+        let contributor = Address::generate(&t.env);
+        let orgs = [t.org("org_a"), t.org("org_b")];
+
+        t.client.initialize(&admin);
+        for org in &orgs {
+            t.client.register_maintainer(&admin, &maintainer, org);
+        }
+
+        for (operation, org_index, issue_id) in operations {
+            let org = &orgs[org_index as usize];
+            let is_pending = t.client.has_applied(&contributor, org, &issue_id);
+
+            match operation {
+                0 if !is_pending && t.client.get_global_application_count(&contributor) < 15 => {
+                    t.client.apply_for_issue(&contributor, org, &issue_id);
+                }
+                1 if is_pending => {
+                    t.client.withdraw_application(&contributor, org, &issue_id);
+                }
+                2 if is_pending && t.client.get_org_assignment_count(&contributor, org) < 4 => {
+                    t.client.assign_issue(&maintainer, &contributor, org, &issue_id);
+                }
+                _ => {}
+            }
+
+            let active_application_count = orgs
+                .iter()
+                .flat_map(|org| (1u32..17).map(move |id| (org, id)))
+                .filter(|(org, id)| t.client.has_applied(&contributor, org, id))
+                .count() as u32;
+
+            prop_assert_eq!(
+                t.client.get_global_application_count(&contributor),
+                active_application_count,
+                "global application count diverged after operation {operation}"
+            );
+        }
+    }
+}
+
 // Feature: workload-governor, Property 6: Application Round-Trip
 proptest! {
     #[test]
