@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/FaveTeamz/workload-governor/blob/main/docs/schemas/contract-events.json",
+  "title": "WorkloadGovernor Contract Events",
+  "description": "JSON Schema for all events emitted by the WorkloadGovernor Soroban smart contract. After decoding from XDR via scValToNative, each event matches one of these definitions.",
+  "type": "object",
+  "required": ["topics", "data"],
+  "properties": {
+    "topics": {
+      "type": "array",
+      "description": "Decoded topics tuple: [eventName, primaryActor]",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": [
+        {
+          "type": "string",
+          "description": "Event name symbol (e.g. 'init', 'app_sub')",
+          "enum": [
+            "init",
+            "maint_reg",
+            "app_sub",
+            "app_wdw",
+            "assigned",
+            "completed",
+            "revoked"
+          ]
+        },
+        {
+          "type": "string",
+          "description": "Primary actor Stellar address (G... format, 56 chars)",
+          "pattern": "^G[A-Z2-7]{55}$"
+        }
+      ]
+    },
+    "data": {
+      "type": "array",
+      "description": "Decoded data payload. Shape depends on event name (see oneOf below)."
+    }
+  },
+  "oneOf": [
+    {
+      "title": "init — Contract Initialized",
+      "description": "Emitted by initialize(admin). Topics[0]='init', Topics[1]=admin. Data contains only admin.",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "init" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (admin)",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": [
+            {
+              "type": "string",
+              "description": "admin — Address of the stored contract administrator",
+              "pattern": "^G[A-Z2-7]{55}$"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "maint_reg — Maintainer Registered",
+      "description": "Emitted by register_maintainer(admin, maintainer, org_id). Topics[0]='maint_reg', Topics[1]=admin. Data: (maintainer, org_id).",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "maint_reg" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (maintainer, org_id)",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": [
+            {
+              "type": "string",
+              "description": "maintainer — Address being granted maintainer privileges",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "org_id — Symbol identifying the organization (max 32 chars, alphanumeric + underscore)",
+              "maxLength": 32
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "app_sub — Application Submitted",
+      "description": "Emitted by apply_for_issue(contributor, org_id, issue_id). Topics[0]='app_sub', Topics[1]=contributor. Data: (contributor, org_id, issue_id).",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "app_sub" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (contributor, org_id, issue_id)",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": [
+            {
+              "type": "string",
+              "description": "contributor — Address of the applying contributor",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "org_id — Symbol identifying the organization",
+              "maxLength": 32
+            },
+            {
+              "type": "integer",
+              "description": "issue_id — Numeric identifier of the applied-to issue",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "app_wdw — Application Withdrawn",
+      "description": "Emitted by withdraw_application(contributor, org_id, issue_id). Topics[0]='app_wdw', Topics[1]=contributor. Data: (contributor, org_id, issue_id).",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "app_wdw" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (contributor, org_id, issue_id)",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": [
+            {
+              "type": "string",
+              "description": "contributor — Address of the contributor who withdrew",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "org_id — Symbol identifying the organization",
+              "maxLength": 32
+            },
+            {
+              "type": "integer",
+              "description": "issue_id — Numeric identifier of the withdrawn issue",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "assigned — Issue Assigned",
+      "description": "Emitted by assign_issue(maintainer, contributor, org_id, issue_id). Topics[0]='assigned', Topics[1]=maintainer. Data: (maintainer, contributor, org_id, issue_id).",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "assigned" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (maintainer, contributor, org_id, issue_id)",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": [
+            {
+              "type": "string",
+              "description": "maintainer — Address of the maintainer who created the assignment",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "contributor — Address of the contributor assigned to the issue",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "org_id — Symbol identifying the organization",
+              "maxLength": 32
+            },
+            {
+              "type": "integer",
+              "description": "issue_id — Numeric identifier of the assigned issue",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "completed — Assignment Completed",
+      "description": "Emitted by complete_assignment(maintainer, contributor, org_id, issue_id). Topics[0]='completed', Topics[1]=maintainer. Data: (maintainer, contributor, org_id, issue_id).",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "completed" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (maintainer, contributor, org_id, issue_id)",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": [
+            {
+              "type": "string",
+              "description": "maintainer — Address of the maintainer who confirmed completion",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "contributor — Address of the contributor who completed the work",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "org_id — Symbol identifying the organization",
+              "maxLength": 32
+            },
+            {
+              "type": "integer",
+              "description": "issue_id — Numeric identifier of the completed issue",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "revoked — Assignment Revoked",
+      "description": "Emitted by revoke_assignment(maintainer, contributor, org_id, issue_id). Topics[0]='revoked', Topics[1]=maintainer. Data: (maintainer, contributor, org_id, issue_id).",
+      "properties": {
+        "topics": {
+          "items": [
+            { "const": "revoked" },
+            { "type": "string", "pattern": "^G[A-Z2-7]{55}$" }
+          ]
+        },
+        "data": {
+          "type": "array",
+          "description": "Tuple: (maintainer, contributor, org_id, issue_id)",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": [
+            {
+              "type": "string",
+              "description": "maintainer — Address of the maintainer who revoked the assignment",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "contributor — Address of the contributor whose assignment was revoked",
+              "pattern": "^G[A-Z2-7]{55}$"
+            },
+            {
+              "type": "string",
+              "description": "org_id — Symbol identifying the organization",
+              "maxLength": 32
+            },
+            {
+              "type": "integer",
+              "description": "issue_id — Numeric identifier of the revoked issue",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -5,10 +5,24 @@
  * parses them into typed DB records, and persists them with deduplication.
  *
  * Supported event types (matching src/events.rs emit helpers):
- *   applied, withdrew, assigned, completed, revoked, maintainer_registered
+ *   applied, withdrew, assigned, completed, revoked, maint_reg
  *
- * Deduplication key: (tx_hash, event_index)  — ON CONFLICT DO NOTHING
- * Resume: on startup, reads the highest ledger already stored and continues from there.
+ * ## 3-element topic schema (#829 SC-004)
+ *
+ * All contract events now emit a standardised 3-element topic tuple:
+ *   topics[0]  Symbol("WG")          — contract namespace discriminant
+ *   topics[1]  Symbol(<event_name>)  — operation identifier
+ *   topics[2]  Address               — primary entity (contributor or admin)
+ *
+ * The indexer filters on topics[0] == "WG" to efficiently locate WorkloadGovernor
+ * events without wildcard scans, and reads the event type from topics[1].
+ *
+ * Deduplication key: (ledger_sequence, transaction_hash, event_index) —
+ *   INSERT … ON CONFLICT DO NOTHING prevents duplicate rows even after a
+ *   full-history replay caused by cursor loss (fixes issue #575).
+ *
+ * Resume: on startup, reads the highest ledger already stored and continues
+ *   from there, relying on the unique constraint to skip already-seen events.
  */
 
 import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
@@ -40,7 +54,7 @@ export type ContractEventType =
   | 'assigned'
   | 'completed'
   | 'revoked'
-  | 'maintainer_registered';
+  | 'maint_reg';
 
 /**
  * Normalized DB record for a single contract event.
@@ -75,12 +89,23 @@ function decodeScVal(xdrBase64: string): unknown {
 }
 
 /**
- * Extract the symbol string from a Soroban ScVal topic (first topic slot).
- * The event type is emitted as a Symbol in slot[0].
+ * Validate that topics[0] == "WG" (the contract namespace discriminant).
+ * Returns false for any event that does not belong to WorkloadGovernor.
+ * (#829 SC-004: structured 3-topic schema)
+ */
+function isWorkloadGovernorEvent(topics: string[]): boolean {
+  if (topics.length < 3) return false;
+  const val = decodeScVal(topics[0]);
+  return val === 'WG';
+}
+
+/**
+ * Extract the event type symbol from topics[1].
+ * With the 3-topic schema: topics[0]="WG", topics[1]=event_name, topics[2]=entity.
  */
 function extractEventType(topics: string[]): ContractEventType | null {
-  if (topics.length === 0) return null;
-  const val = decodeScVal(topics[0]);
+  if (topics.length < 3) return null;
+  const val = decodeScVal(topics[1]);
   if (typeof val !== 'string') return null;
   const known: ContractEventType[] = [
     'applied',
@@ -88,18 +113,19 @@ function extractEventType(topics: string[]): ContractEventType | null {
     'assigned',
     'completed',
     'revoked',
-    'maintainer_registered',
+    'maint_reg',
   ];
   return known.includes(val as ContractEventType) ? (val as ContractEventType) : null;
 }
 
 /**
- * Extract the contributor address from a Soroban ScVal topic (second topic slot).
- * For all 5 state-change events the contributor is in topics[1].
+ * Extract the primary entity address from topics[2].
+ * With the 3-topic schema the primary entity (contributor or admin) is always
+ * in the third slot, making indexer topic-filter queries unambiguous.
  */
 function extractContributorFromTopic(topics: string[]): string | null {
-  if (topics.length < 2) return null;
-  const val = decodeScVal(topics[1]);
+  if (topics.length < 3) return null;
+  const val = decodeScVal(topics[2]);
   if (typeof val === 'string') return val;
   return null;
 }
@@ -107,13 +133,13 @@ function extractContributorFromTopic(topics: string[]): string | null {
 /**
  * Parse the data value tuple emitted with each event.
  *
- * Event data layouts (from src/events.rs):
+ * Event data layouts (from src/events.rs — 3-topic schema):
  *   applied    → data = (org_id: Symbol, issue_id: u32)
  *   withdrew   → data = (org_id: Symbol, issue_id: u32)
  *   assigned   → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
  *   completed  → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
  *   revoked    → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   maintainer_registered → data = org_id: Symbol (scalar, not tuple)
+ *   maint_reg  → data = (admin: Address, org_id: Symbol)
  */
 interface ParsedData {
   org_id: string | null;
@@ -123,10 +149,14 @@ interface ParsedData {
 function parseEventData(dataXdr: string, eventType: ContractEventType): ParsedData {
   const raw = decodeScVal(dataXdr);
 
-  if (eventType === 'maintainer_registered') {
-    // data is a plain Symbol
+  if (eventType === 'maint_reg') {
+    // data = (admin: Address, org_id: Symbol)
+    if (!Array.isArray(raw)) {
+      return { org_id: null, issue_id: null };
+    }
+    const [, orgId] = raw as [unknown, unknown];
     return {
-      org_id: typeof raw === 'string' ? raw : null,
+      org_id: typeof orgId === 'string' ? orgId : null,
       issue_id: null,
     };
   }
@@ -182,18 +212,9 @@ export class EventIndexer {
   private cursor: string | undefined;
   private isRunning = false;
 
-// ---------------------------------------------------------------------------
-// Event parsing helpers
-// ---------------------------------------------------------------------------
-const KNOWN_TOPICS = new Set(['applied', 'withdrawn', 'assigned', 'completed', 'revoked']);
-
-function safeBase64Decode(b64: string): string {
-  try {
-    return Buffer.from(b64, 'base64').toString('utf8');
-  } catch {
-    return b64;
+  constructor() {
+    this.server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
   }
-}
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -226,6 +247,10 @@ function safeBase64Decode(b64: string): string {
   /**
    * On restart, re-process from the last finalized ledger to handle reorgs.
    * Uses the highest ledger_seq stored in contract_events as the resume point.
+   *
+   * Because INSERT uses ON CONFLICT DO NOTHING, replaying events from the
+   * resume ledger is safe — already-indexed events are silently skipped.
+   * This prevents duplicates even if the cursor is lost (fixes issue #575).
    */
   private async initCursor(): Promise<void> {
     try {
@@ -326,11 +351,18 @@ function safeBase64Decode(b64: string): string {
       const topics = raw.topic?.map((t) => t.xdr) ?? [];
       const dataXdr = raw.value?.xdr ?? '';
 
+      // #829 SC-004: reject events that do not carry the WG namespace discriminant
+      // in topics[0].  This prevents false positives from other contracts sharing
+      // the same RPC stream.
+      if (!isWorkloadGovernorEvent(topics)) return null;
+
       const eventType = extractEventType(topics);
       if (!eventType) return null;
 
+      // Primary entity is always topics[2] in the 3-topic schema.
+      // maintainer_registered events have an admin in topics[2] but no contributor.
       const contributor =
-        eventType === 'maintainer_registered'
+        eventType === 'maint_reg'
           ? null
           : extractContributorFromTopic(topics);
 
@@ -365,8 +397,14 @@ function safeBase64Decode(b64: string): string {
 
   /**
    * Insert a contract event record.
-   * Uses (tx_hash, event_index) as the deduplication key — duplicate rows are
-   * silently skipped (ON CONFLICT DO NOTHING).
+   *
+   * Uses (ledger_seq, tx_hash, event_index) as the deduplication key.
+   * Duplicate rows are silently skipped (ON CONFLICT DO NOTHING).
+   *
+   * This is safe to call after a full-history replay caused by cursor loss:
+   * the unique constraint added in migration 2_event_deduplication.js
+   * prevents duplicates at the database level regardless of how many times
+   * the same event is re-submitted (fixes issue #575).
    *
    * @returns true if a new row was inserted, false if it was a duplicate.
    */
@@ -375,7 +413,7 @@ function safeBase64Decode(b64: string): string {
       `INSERT INTO contract_events
          (event_type, contributor, org_id, issue_id, tx_hash, event_index, ledger_seq, timestamp)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (tx_hash, event_index) DO NOTHING`,
+       ON CONFLICT (ledger_seq, tx_hash, event_index) DO NOTHING`,
       [
         record.event_type,
         record.contributor,
@@ -388,23 +426,28 @@ function safeBase64Decode(b64: string): string {
       ],
     );
 
-    const liveType = event.type === 'applied'
-      ? 'application_created'
-      : event.type === 'assigned'
-        ? 'assignment_created'
-        : 'cap_updated';
+    const inserted = (result as { rowCount?: number }).rowCount === 1;
 
-    publishLiveEvent({
-      type: liveType,
-      data: { eventType: event.type, orgId: event.orgId, issueId: event.issueId },
-    });
-  }
+    if (inserted) {
+      // Publish live update for real-time subscribers
+      const liveType =
+        record.event_type === 'applied'
+          ? 'application_created'
+          : record.event_type === 'assigned'
+            ? 'assignment_created'
+            : 'cap_updated';
 
-  stop(): void {
-    this.isRunning = false;
-    logger.info({ message: 'Event indexer stopped' });
-    // rowCount > 0 means a row was actually inserted
-    return (result as { rowCount?: number }).rowCount === 1;
+      publishLiveEvent({
+        type: liveType,
+        data: {
+          eventType: record.event_type,
+          orgId: record.org_id,
+          issueId: record.issue_id,
+        },
+      });
+    }
+
+    return inserted;
   }
 }
 
@@ -420,7 +463,7 @@ function sleep(ms: number): Promise<void> {
 // Module-level singleton helpers
 // ---------------------------------------------------------------------------
 
-let indexer: EventIndexer | null = null;
+let _indexer: EventIndexer | null = null;
 
 export function getEventIndexer(): EventIndexer {
   if (!_indexer) _indexer = new EventIndexer();

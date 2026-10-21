@@ -140,6 +140,23 @@ services:
       - workload-governor-network
     restart: unless-stopped
 
+  # ── OpenTelemetry Collector (issue #850) ──────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: workload-governor-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+    networks:
+      - workload-governor-network
+    restart: unless-stopped
+
+
   # Test runner service — used by:
   #   docker compose up --abort-on-container-exit test
   # Runs the full Jest integration test suite against real Postgres + Redis.

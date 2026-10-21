@@ -183,3 +183,55 @@
   --shadow:    0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -1px rgba(0,0,0,.06);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.08), 0 4px 6px -2px rgba(0,0,0,.04);
 }
+
+/* =============================================================
+   High-Contrast Mode Overrides (WCAG AAA >= 7:1) — closes #857
+   Applied when user enables increased contrast in OS/browser.
+   ============================================================= */
+@media (prefers-contrast: more) {
+  :root {
+    --color-bg:           #000000;
+    --color-surface:      #0d1117;
+    --color-border:       #ffffff;
+    --color-text:         #ffffff;
+    --color-muted:        #f1f5f9;
+    --color-primary:      #93c5fd;
+    --color-primary-dark: #bfdbfe;
+    --color-focus:        #facc15;
+    --color-complete:     #4ade80;
+    --color-revoke:       #f87171;
+    --wg-color-bg:        #000000;
+    --wg-color-surface:   #0d1117;
+    --wg-color-border:    #ffffff;
+    --wg-color-text:      #ffffff;
+    --wg-color-muted:     #f1f5f9;
+    --wg-color-primary:   #93c5fd;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --color-bg:           #ffffff;
+      --color-surface:      #ffffff;
+      --color-border:       #000000;
+      --color-text:         #000000;
+      --color-muted:        #0f172a;
+      --color-primary:      #1d4ed8;
+      --color-primary-dark: #1e3a8a;
+      --color-focus:        #000000;
+      --color-complete:     #15803d;
+      --color-revoke:       #b91c1c;
+      --wg-color-bg:        #ffffff;
+      --wg-color-surface:   #ffffff;
+      --wg-color-border:    #000000;
+      --wg-color-text:      #000000;
+      --wg-color-muted:     #0f172a;
+      --wg-color-primary:   #1d4ed8;
+    }
+  }
+
+  .badge,
+  [class*="badge"] {
+    border: 2px solid currentColor !important;
+    font-weight: 700 !important;
+  }
+}

@@ -1,0 +1,39 @@
+/* ActivityPage layout — #651 */
+
+.activity-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+}
+
+.activity-page__nav {
+  margin-bottom: var(--space-6);
+}
+
+.activity-page__back {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.activity-page__back:hover {
+  color: var(--color-primary);
+}
+
+.activity-page__header {
+  margin-bottom: var(--space-8);
+}
+
+.activity-page__title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text);
+  margin-bottom: var(--space-2);
+}
+
+.activity-page__subtitle {
+  font-size: var(--text-base);
+  color: var(--color-muted);
+}

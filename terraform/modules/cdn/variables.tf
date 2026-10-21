@@ -19,3 +19,15 @@ variable "acm_certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "waf_enabled" {
+  description = "Attach an AWS WAF WebACL to the CloudFront distribution. Includes an IP rate-limiting rule and the AWS Common Rule Set."
+  type        = bool
+  default     = true
+}
+
+variable "waf_rate_limit" {
+  description = "Maximum number of requests a single IP address may send within a 5-minute window before being blocked by the WAF rate-limiting rule."
+  type        = number
+  default     = 2000
+}

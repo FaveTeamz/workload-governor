@@ -131,6 +131,12 @@ curl -sf "https://<prod-domain>/health" | jq .
 Use this **only** when data is corrupted or lost. ECS rollback alone is
 sufficient for pure application bugs.
 
+> **Migration rollback:** If the problem is a bad schema migration rather than
+> data corruption, follow the dedicated runbook:
+> [docs/runbooks/db-rollback.md](runbooks/db-rollback.md). It covers
+> identifying the failing migration, taking a pre-rollback snapshot, running
+> `npm run migrate:down`, and verifying schema integrity before redeploying.
+
 ### 3a. Restore from pre-deploy snapshot (fastest — ~5 min)
 
 The CD pipeline creates a snapshot via `infra/rds-snapshot.sh` before every

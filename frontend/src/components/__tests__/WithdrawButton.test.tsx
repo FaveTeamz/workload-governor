@@ -193,6 +193,37 @@ describe("WithdrawButton", () => {
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
   });
 
+  it("disables the trigger and confirmation controls while withdrawal is pending", async () => {
+    let resolveWithdrawal!: () => void;
+    const client = {
+      withdraw_application: vi.fn().mockImplementation(
+        () => new Promise<void>((resolve) => {
+          resolveWithdrawal = resolve;
+        })
+      ),
+    };
+    render(
+      <WithdrawButton
+        contributor={CONTRIBUTOR}
+        orgId="stellar-org"
+        issueId={1}
+        contractClient={client}
+      />
+    );
+
+    await userEvent.click(screen.getByTestId("withdraw-trigger"));
+    await userEvent.click(screen.getByTestId("withdraw-confirm"));
+
+    expect(screen.getByTestId("withdraw-trigger")).toBeDisabled();
+    expect(screen.getByTestId("withdraw-trigger")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("withdraw-trigger")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("withdraw-cancel")).toBeDisabled();
+    expect(screen.getByTestId("withdraw-confirm")).toBeDisabled();
+
+    resolveWithdrawal();
+    await waitFor(() => expect(screen.queryByTestId("withdraw-trigger")).not.toBeInTheDocument());
+  });
+
   it("renders nothing (withdrawn) after successful withdrawal", async () => {
     const client = {
       withdraw_application: vi.fn().mockResolvedValue(undefined),
@@ -236,5 +267,6 @@ describe("WithdrawButton", () => {
       expect(screen.getByTestId("withdraw-error")).toBeInTheDocument()
     );
     expect(screen.getByTestId("withdraw-trigger")).toBeInTheDocument();
+    expect(screen.getByTestId("withdraw-trigger")).toBeEnabled();
   });
 });

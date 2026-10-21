@@ -19,8 +19,21 @@
   to   { opacity: 0; transform: translateX(-100%); max-height: 0; overflow: hidden; }
 }
 
+/* #551 — Safari-safe slide-out: uses transform + opacity only.
+   No max-height means no continuous layout recalculation on Safari. */
+@keyframes slideOutRow {
+  from { opacity: 1; transform: translateX(0) scaleY(1); }
+  to   { opacity: 0; transform: translateX(-40px) scaleY(0); }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* #552 — Skeleton shimmer for loading placeholders */
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position:  200% center; }
 }
 
 /* Utility classes */
@@ -32,8 +45,27 @@
   animation: slideOut 300ms ease-in forwards;
 }
 
+/* #551 — Safari-safe variant: GPU-composited transform + opacity, no layout reflow */
+.slide-out-row {
+  animation: slideOutRow 300ms ease-in forwards;
+  transform-origin: top center;
+  overflow: hidden;
+}
+
 .modal-slide-in {
   animation: modalSlideIn 220ms ease-out both;
+}
+
+/* #552 — Shimmer for skeleton loading placeholders */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-border, #2e3347) 25%,
+    color-mix(in srgb, var(--color-border, #2e3347) 60%, #fff 40%) 50%,
+    var(--color-border, #2e3347) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
 }
 
 .spinner {
@@ -52,8 +84,10 @@
 @media (prefers-reduced-motion: reduce) {
   .fade-in,
   .slide-out,
+  .slide-out-row,
   .modal-slide-in,
-  .spinner {
+  .spinner,
+  .skeleton-shimmer {
     animation: none !important;
     transition: none !important;
     transform: none !important;

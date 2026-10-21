@@ -1,3 +1,24 @@
+/**
+ * issueService.ts — Issue query and caching service
+ *
+ * SQL DIALECT COMPATIBILITY AUDIT (#861):
+ *   This service uses the Knex query builder which is dialect-agnostic for
+ *   most operations (SELECT, JOIN, WHERE, COUNT, ORDER BY, LIMIT, OFFSET).
+ *   No raw date functions (e.g. date('now'), GETDATE()) or INSERT OR IGNORE
+ *   constructs are used.
+ *
+ *   Known PostgreSQL-specific constructs:
+ *   - `whereRaw('? = ANY(issues.labels)', [label])` — PostgreSQL array operator.
+ *     SQLite has no array type; this query would fail on SQLite. However, the
+ *     production and staging databases are PostgreSQL, and backend-integration.yml
+ *     validates against PostgreSQL 15/16 containers.
+ *   - `whereRaw('COALESCE(...) < issues.max_applicants')` — COALESCE is
+ *     SQL-standard and works on both SQLite and PostgreSQL.
+ *   - `db.raw('COUNT(*) as count')` — Standard SQL; dialect-agnostic.
+ *
+ *   No INSERT OR IGNORE, raw date literals, or SQLite-specific constructs
+ *   are present in this file.
+ */
 import { db } from '../config/database';
 import { redisClient } from '../config/redis';
 import { syncIssues } from '../github';

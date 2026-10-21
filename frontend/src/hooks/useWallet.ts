@@ -1,30 +1,29 @@
-import { useState, useEffect } from 'react';
-import {
-  isConnected as freighterIsConnected,
-  getAddress as freighterGetAddress,
-  getNetwork as freighterGetNetwork,
-} from '@stellar/freighter-api';
+import { useState, useEffect, useCallback } from "react";
 
-const STORAGE_KEY = 'wg_wallet_pubkey';
+const STORAGE_KEY = "wg_wallet_pubkey";
+
+/** Message type sent by the Freighter browser extension. */
+interface FreighterMessage {
+  type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  detail?: any;
+}
 
 export interface WalletState {
   publicKey: string | null;
   error: string | null;
   connecting: boolean;
-  networkMismatch: boolean;
 }
 
 export interface UseWallet extends WalletState {
   connect: () => Promise<void>;
   disconnect: () => void;
-  isInstalled: boolean;
 }
 
-function expectedNetwork(): string {
-  return (
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_STELLAR_NETWORK) ||
-    'TESTNET'
-  ).toUpperCase();
+// Thin wrapper so we can mock in tests
+function getFreighter() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (globalThis as any).__freighter_api__ ?? null;
 }
 
 export function useWallet(): UseWallet {
@@ -33,74 +32,83 @@ export function useWallet(): UseWallet {
   );
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [networkMismatch, setNetworkMismatch] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(true);
 
-  // Auto-reconnect: rehydrate from localStorage on mount
+  // Re-hydrate from storage on mount (covers page-reload scenario)
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && !publicKey) {
-      setPublicKey(stored);
-    }
+    if (stored && !publicKey) setPublicKey(stored);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function connect(): Promise<void> {
-    setConnecting(true);
-    setError(null);
-    setNetworkMismatch(false);
+  // Listen for wallet extension messages (e.g. account-changed events).
+  // FIX #545: the cleanup function returns removeEventListener so the
+  // listener is detached when the component unmounts, preventing accumulation
+  // of stale callbacks across mount/unmount cycles.
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      const data = event.data as FreighterMessage | null;
+      if (!data || typeof data !== "object") return;
 
-    try {
-      // Step 1: Check if Freighter is installed/connected
-      const connResult = await freighterIsConnected();
-      if (connResult.error || !connResult.isConnected) {
-        setIsInstalled(false);
-        setError('Freighter extension not found. Please install it.');
-        return;
-      }
-
-      setIsInstalled(true);
-
-      // Step 2: Get the wallet address
-      const addrResult = await freighterGetAddress();
-      if (addrResult.error) {
-        setError(addrResult.error);
-        return;
-      }
-
-      const address = addrResult.address;
-
-      // Step 3: Check network
-      const netResult = await freighterGetNetwork();
-      if (!netResult.error && netResult.network) {
-        if (netResult.network.toUpperCase() !== expectedNetwork()) {
-          setNetworkMismatch(true);
+      if (data.type === "FREIGHTER_ACCOUNT_CHANGED") {
+        const newKey: string | null = data.detail?.publicKey ?? null;
+        if (newKey) {
+          localStorage.setItem(STORAGE_KEY, newKey);
+          setPublicKey(newKey);
+        } else {
+          // Extension signalled a disconnect
+          localStorage.removeItem(STORAGE_KEY);
+          setPublicKey(null);
         }
       }
 
-      // Persist and set public key
+      if (data.type === "FREIGHTER_DISCONNECTED") {
+        localStorage.removeItem(STORAGE_KEY);
+        setPublicKey(null);
+        setError(null);
+      }
+    }
+
+    window.addEventListener("message", handleMessage);
+
+    // Cleanup: remove the listener when the component unmounts or the effect
+    // re-runs so listeners never accumulate.
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, []); // runs once; setPublicKey / setError are stable dispatch functions
+
+  const connect = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      const freighter = getFreighter();
+      if (!freighter) {
+        setError("Freighter extension not found. Please install it.");
+        return;
+      }
+      const { isConnected } = await freighter.isConnected();
+      if (!isConnected) {
+        setError("Freighter extension not found. Please install it.");
+        return;
+      }
+      const { address, error: addrErr } = await freighter.getAddress();
+      if (addrErr) {
+        setError(addrErr);
+        return;
+      }
       localStorage.setItem(STORAGE_KEY, address);
       setPublicKey(address);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setConnecting(false);
     }
-  }
+  }, []);
 
-  function disconnect(): void {
+  const disconnect = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setPublicKey(null);
     setError(null);
-    setNetworkMismatch(false);
-  }
+  }, []);
 
-  return {
-    publicKey,
-    error,
-    connecting,
-    networkMismatch,
-    connect,
-    disconnect,
-    isInstalled,
-  };
+  return { publicKey, error, connecting, connect, disconnect };
 }

@@ -283,6 +283,30 @@ Trade-offs and implications.
 
 Link new ADRs from the README documentation table.
 
+### Changing a REST endpoint
+
+The REST API is described in two places that must stay in sync:
+
+| File | Audience |
+|---|---|
+| [`openapi.yaml`](../openapi.yaml) | Machine-readable contract used by request validation, contract tests, and Dredd |
+| [`docs/api-reference.md`](api-reference.md) | Human-readable reference |
+
+Whenever you add, remove, or change a route under `src/routes/`:
+
+1. **Update `openapi.yaml`** — add or edit the path, method, parameters, request body, and responses. Put reusable shapes under `components/schemas`.
+2. **Update `docs/api-reference.md`** — add or edit an endpoint heading in the form ``#### `METHOD /path` `` (e.g. ``#### `GET /orgs/{orgId}/cap` ``), followed by auth requirements, parameters, an example response, and error codes. When you remove an endpoint from the spec, remove its heading too.
+3. **Run the sync check locally:**
+   ```bash
+   npm run docs:check-api-sync
+   ```
+   The script lists every spec operation that has no matching heading and exits non-zero. It also warns about headings for endpoints that are not in the spec; pass `--strict` (`node scripts/check-api-docs-sync.js --strict`) to make those fail too.
+4. **Run the contract tests** — `npm run test:contract` checks that route responses match the spec.
+
+The check treats `{param}` and `:param` placeholders as equivalent and ignores an optional `/api` prefix, so ``#### `GET /api/orgs/:orgId/cap` `` also matches `/orgs/{orgId}/cap`.
+
+CI runs the same check in the `docs-sync` job of [`.github/workflows/openapi-validate.yml`](../.github/workflows/openapi-validate.yml) on every PR that touches `openapi.yaml`, `docs/api-reference.md`, or `src/routes/`.
+
 ---
 
 ## 8. Submitting a pull request

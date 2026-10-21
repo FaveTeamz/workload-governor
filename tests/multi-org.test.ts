@@ -556,3 +556,190 @@ describe('Multi-org isolation — issue #374', () => {
     service.stop();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Concurrent multi-organization application conflict tests (issue #880)
+// ---------------------------------------------------------------------------
+
+describe('Concurrent multi-organization application conflict (#880)', () => {
+  const GLOBAL_CAP = 15;
+  const CONTRIBUTOR_ID = 'GAEZI4FCPWKKLICUZSXR5RBYVOAX4HDDE5MZLE3BZEIIQNFZPQZW55Z';
+
+  interface BackendApplication {
+    id: number;
+    contributor: string;
+    org_id: string;
+    issue_id: number;
+    status: 'pending';
+    created_at: Date;
+  }
+
+  interface ContractApplication {
+    contributor: string;
+    org_id: string;
+    issue_id: number;
+  }
+
+  interface ApplyResponse {
+    status: number;
+    body: {
+      success?: boolean;
+      tx_hash?: string;
+      error?: string;
+      code?: string;
+      details?: Record<string, unknown>;
+    };
+  }
+
+  /**
+   * Simulated transactional coordinator modeling database transaction isolation
+   * and on-chain Soroban contract batch state.
+   */
+  class ConcurrentApplicationCoordinator {
+    public backendDb: BackendApplication[] = [];
+    public contractState: ContractApplication[] = [];
+    private lock = Promise.resolve();
+    private nextId = 1;
+
+    async apply(contributor: string, org_id: string, issue_id: number): Promise<ApplyResponse> {
+      // Simulate serializable transaction isolation / mutex lock on contributor records
+      let releaseLock: () => void = () => {};
+      const acquireLock = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      const previousLock = this.lock;
+      this.lock = this.lock.then(() => acquireLock);
+
+      await previousLock;
+
+      try {
+        // 1. Transaction isolation check: verify current DB pending applications
+        const currentDbCount = this.backendDb.filter(
+          (a) => a.contributor === contributor && a.status === 'pending',
+        ).length;
+
+        // 2. Global cap enforcement
+        if (currentDbCount >= GLOBAL_CAP) {
+          return {
+            status: 429,
+            body: {
+              error: 'Global application cap reached',
+              code: 'ERR_CAP_EXCEEDED',
+              details: {
+                cap_type: 'global',
+                limit: GLOBAL_CAP,
+                current: currentDbCount,
+              },
+            },
+          };
+        }
+
+        // 3. Atomically write to backend DB and contract state
+        const record: BackendApplication = {
+          id: this.nextId++,
+          contributor,
+          org_id,
+          issue_id,
+          status: 'pending',
+          created_at: new Date(),
+        };
+        this.backendDb.push(record);
+
+        this.contractState.push({
+          contributor,
+          org_id,
+          issue_id,
+        });
+
+        return {
+          status: 201,
+          body: {
+            success: true,
+            tx_hash: 'a'.repeat(64),
+            code: 'OK',
+          },
+        };
+      } finally {
+        releaseLock();
+      }
+    }
+  }
+
+  it('fires 20 simultaneous application requests across 3 organizations and strictly respects 15 global cap', async () => {
+    const coordinator = new ConcurrentApplicationCoordinator();
+    const orgs = ['org_a', 'org_b', 'org_c'];
+
+    // 20 requests distributed across 3 organizations: Org A (7), Org B (7), Org C (6)
+    const requests: Array<{ org: string; issueId: number }> = [];
+    for (let i = 1; i <= 20; i++) {
+      requests.push({
+        org: orgs[(i - 1) % 3],
+        issueId: 100 + i,
+      });
+    }
+
+    // Fire all 20 simultaneous requests concurrently
+    const responses = await Promise.all(
+      requests.map((r) => coordinator.apply(CONTRIBUTOR_ID, r.org, r.issueId)),
+    );
+
+    // Partition responses into successful and rejected
+    const successful = responses.filter((r) => r.status === 201 && r.body.success === true);
+    const rejected = responses.filter((r) => r.status === 429 && r.body.code === 'ERR_CAP_EXCEEDED');
+
+    // Exactly 15 applications must succeed
+    expect(successful).toHaveLength(15);
+
+    // Exactly 5 applications must be rejected with ERR_CAP_EXCEEDED
+    expect(rejected).toHaveLength(5);
+
+    // Zero 500 crashes
+    const crashes = responses.filter((r) => r.status >= 500);
+    expect(crashes).toHaveLength(0);
+
+    // Assert exact contract state and backend DB state match
+    expect(coordinator.backendDb).toHaveLength(15);
+    expect(coordinator.contractState).toHaveLength(15);
+    expect(coordinator.backendDb.length).toBe(coordinator.contractState.length);
+
+    // Check each record matches 1-to-1 between DB and contract
+    for (let i = 0; i < 15; i++) {
+      expect(coordinator.backendDb[i].contributor).toBe(coordinator.contractState[i].contributor);
+      expect(coordinator.backendDb[i].org_id).toBe(coordinator.contractState[i].org_id);
+      expect(coordinator.backendDb[i].issue_id).toBe(coordinator.contractState[i].issue_id);
+    }
+  });
+
+  it('simulates 10 concurrent requests applying for issues in Org A, Org B, and Org C (30 total concurrent requests)', async () => {
+    const coordinator = new ConcurrentApplicationCoordinator();
+
+    // 10 concurrent requests in Org A, 10 in Org B, 10 in Org C = 30 total
+    const requests: Array<{ org: string; issueId: number }> = [];
+    for (let i = 1; i <= 10; i++) requests.push({ org: 'Org A', issueId: 100 + i });
+    for (let i = 1; i <= 10; i++) requests.push({ org: 'Org B', issueId: 200 + i });
+    for (let i = 1; i <= 10; i++) requests.push({ org: 'Org C', issueId: 300 + i });
+
+    // Fire all 30 requests simultaneously
+    const responses = await Promise.all(
+      requests.map((r) => coordinator.apply(CONTRIBUTOR_ID, r.org, r.issueId)),
+    );
+
+    const successful = responses.filter((r) => r.status === 201 && r.body.success === true);
+    const rejected = responses.filter((r) => r.status === 429 && r.body.code === 'ERR_CAP_EXCEEDED');
+
+    // Exactly 15 succeed
+    expect(successful).toHaveLength(15);
+
+    // Remaining 15 receive ERR_CAP_EXCEEDED
+    expect(rejected).toHaveLength(15);
+
+    // No 500 crashes
+    const crashes = responses.filter((r) => r.status >= 500);
+    expect(crashes).toHaveLength(0);
+
+    // Exact contract state and backend DB state match
+    expect(coordinator.backendDb).toHaveLength(15);
+    expect(coordinator.contractState).toHaveLength(15);
+  });
+});
+

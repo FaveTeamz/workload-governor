@@ -1,0 +1,158 @@
+/* ============================================================
+   Toast notification styles — #649
+   ============================================================ */
+
+/* ── Container: fixed bottom-right stack ─────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  pointer-events: none; /* let clicks through the gap between toasts */
+  max-width: 380px;
+  width: calc(100vw - var(--space-8));
+}
+
+/* ── Single toast ─────────────────────────────────────────── */
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border-left: 4px solid transparent;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  pointer-events: all; /* re-enable on the toasts themselves */
+  outline: none;
+  min-width: 260px;
+}
+
+.toast:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ── Entering (slide in from right) ──────────────────────── */
+.toast--entering {
+  animation: toastSlideIn 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ── Dismissing (fade + slide out right) ─────────────────── */
+.toast--dismissing {
+  animation: toastSlideOut 300ms ease-in forwards;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(100% + var(--space-6)));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toastSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    max-height: 120px;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(calc(100% + var(--space-6)));
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+  }
+}
+
+/* ── Reduced motion ──────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .toast--entering,
+  .toast--dismissing {
+    animation: none !important;
+    transform: none !important;
+  }
+  .toast--dismissing {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: opacity 150ms ease;
+  }
+}
+
+/* ── Variant colours ─────────────────────────────────────── */
+.toast--success {
+  border-left-color: var(--color-success-500);
+  color: var(--color-text);
+}
+.toast--success .toast__icon {
+  color: var(--color-success-500);
+}
+
+.toast--error {
+  border-left-color: var(--color-error-600);
+  color: var(--color-text);
+}
+.toast--error .toast__icon {
+  color: var(--color-error-600);
+}
+
+.toast--warning {
+  border-left-color: var(--color-warning-500);
+  color: var(--color-text);
+}
+.toast--warning .toast__icon {
+  color: var(--color-warning-500);
+}
+
+.toast--info {
+  border-left-color: var(--color-primary);
+  color: var(--color-text);
+}
+.toast--info .toast__icon {
+  color: var(--color-primary);
+}
+
+/* ── Parts ───────────────────────────────────────────────── */
+.toast__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.toast__message {
+  flex: 1;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.toast__close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-muted);
+  transition: color var(--transition-fast);
+}
+.toast__close:hover {
+  color: var(--color-text);
+}
+.toast__close:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}

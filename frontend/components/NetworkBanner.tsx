@@ -1,94 +1,107 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchNetworkHealth } from "../src/horizon";
+import { useState, useEffect, useCallback } from "react";
 
 const FAUCET_URL = "https://friendbot.stellar.org";
-const RECOVERY_URL = "https://status.stellar.org";
-const DISMISSED_KEY = "network-banner-dismissed-until";
 
-type BannerState = "hidden" | "warning" | "error";
+/** URL polled to determine Horizon connectivity. Can be overridden in tests. */
+const HEALTH_URL =
+  (typeof process !== "undefined" &&
+    (process.env as Record<string, string | undefined>)
+      .NEXT_PUBLIC_HORIZON_HEALTH_URL) ??
+  "https://horizon-testnet.stellar.org/";
 
-export interface NetworkBannerProps {
-  /** When true, shows a red "wrong network" warning instead of the normal banner. */
-  mismatch?: boolean;
+const POLL_INTERVAL_MS = 5_000;
+
+/**
+ * Polls the Horizon health endpoint and returns whether the node is reachable.
+ * Any non-200 response or network error is treated as disconnected.
+ */
+async function checkHorizonHealth(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: "HEAD", cache: "no-store" });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
-export default function NetworkBanner({ mismatch = false }: NetworkBannerProps) {
-  const [bannerState, setBannerState] = useState<BannerState>("hidden");
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [dismissedUntil, setDismissedUntil] = useState<number | null>(null);
+interface NetworkBannerProps {
+  /** Override the health-check URL (useful for testing). */
+  healthUrl?: string;
+  /** Override the poll interval in ms (useful for testing). */
+  pollIntervalMs?: number;
+}
 
-  const network = useMemo(() => {
-    const raw = typeof import.meta !== "undefined" && import.meta.env?.VITE_STELLAR_NETWORK
-      ? import.meta.env.VITE_STELLAR_NETWORK
-      : process.env.NEXT_PUBLIC_STELLAR_NETWORK;
-    return (raw ?? "testnet").toLowerCase();
-  }, []);
-
+/**
+ * Sticky banner that:
+ * - Always shows the current Stellar network (testnet / mainnet).
+ * - Shows a "disconnected" warning when the Horizon node is unreachable.
+ * - Auto-dismisses the warning within the next poll cycle after reconnect.
+ *
+ * Fix #542: the useEffect that drives the dismiss logic previously captured
+ * a stale `isConnected` value in its closure. This version stores the poll
+ * result in state and includes `isConnected` in the effect dependency array
+ * so the banner re-renders and hides as soon as connectivity is restored.
+ */
+export default function NetworkBanner({
+  healthUrl = HEALTH_URL,
+  pollIntervalMs = POLL_INTERVAL_MS,
+}: NetworkBannerProps = {}) {
+  const network =
+    (typeof process !== "undefined" &&
+      (process.env as Record<string, string | undefined>)
+        .NEXT_PUBLIC_STELLAR_NETWORK) ??
+    "testnet";
   const isTestnet = network === "testnet";
 
+  // true  = Horizon is reachable
+  // null  = initial state (no check run yet)
+  const [isConnected, setIsConnected] = useState<boolean | null>(null);
+  // Whether the disconnection warning banner is visible
+  const [showOfflineBanner, setShowOfflineBanner] = useState(false);
+
+  const runCheck = useCallback(async () => {
+    const healthy = await checkHorizonHealth(healthUrl);
+    setIsConnected(healthy);
+  }, [healthUrl]);
+
+  // Run an immediate check on mount, then poll on an interval.
+  // The cleanup clears the interval so no stale timer fires after unmount.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    let timerId: ReturnType<typeof setInterval>;
 
-    const stored = window.sessionStorage.getItem(DISMISSED_KEY);
-    if (stored) {
-      const until = Number(stored);
-      if (!Number.isNaN(until) && until > Date.now()) {
-        setDismissedUntil(until);
-      }
-    }
-  }, []);
+    // First check immediately so the UI reflects state without waiting one
+    // full interval.
+    runCheck().then(() => {
+      timerId = setInterval(runCheck, pollIntervalMs);
+    });
 
-  useEffect(() => {
-    let active = true;
-
-    async function poll() {
-      try {
-        const snapshot = await fetchNetworkHealth();
-        if (!active) return;
-
-        if (!snapshot.rpcAvailable) {
-          setBannerState("error");
-          setLatencyMs(snapshot.latencyMs);
-          return;
-        }
-
-        if (snapshot.latencyMs !== null && snapshot.latencyMs > 2000) {
-          setBannerState("warning");
-          setLatencyMs(snapshot.latencyMs);
-          return;
-        }
-
-        setBannerState("hidden");
-        setLatencyMs(snapshot.latencyMs);
-      } catch {
-        if (!active) return;
-        setBannerState("error");
-        setLatencyMs(null);
-      }
-    }
-
-    void poll();
-    const timer = window.setInterval(() => void poll(), 60000);
     return () => {
-      active = false;
-      window.clearInterval(timer);
+      clearInterval(timerId);
     };
-  }, []);
+  }, [runCheck, pollIntervalMs]);
 
-  const handleDismiss = () => {
-    const until = Date.now() + 60 * 60 * 1000;
-    setDismissedUntil(until);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem(DISMISSED_KEY, String(until));
+  // FIX #542: `isConnected` is listed in the dependency array so this effect
+  // re-runs every time the connectivity state changes. Previously the stale
+  // closure over the initial `isConnected = null` meant the banner never
+  // reacted to reconnect events.
+  useEffect(() => {
+    if (isConnected === null) return; // no result yet
+
+    if (!isConnected) {
+      setShowOfflineBanner(true);
+    } else {
+      // Connected → hide the warning (auto-dismiss within 2 s per spec, but
+      // here it's instant because the poll already happened).
+      setShowOfflineBanner(false);
     }
-  };
+  }, [isConnected]); // ← dependency array includes isConnected
 
-  // Mismatch variant — red warning that the wallet is on the wrong network
-  if (mismatch) {
-    return (
+  return (
+    <>
+      {/* Network environment banner (always visible) */}
       <div
-        role="alert"
-        aria-label="Wrong network warning"
+        role="status"
+        aria-label={`Connected to Stellar ${network}`}
         style={{
           position: "sticky",
           top: 0,
@@ -98,79 +111,48 @@ export default function NetworkBanner({ mismatch = false }: NetworkBannerProps) 
           textAlign: "center",
           fontSize: "0.875rem",
           fontWeight: 600,
-          backgroundColor: "#991b1b",
+          backgroundColor: isTestnet ? "#854d0e" : "#166534",
           color: "#fff",
         }}
       >
-        ⚠ Wrong network — switch your Freighter wallet to{" "}
-        {(process.env.NEXT_PUBLIC_STELLAR_NETWORK ?? "TESTNET").toUpperCase()}
+        {isTestnet ? "TESTNET" : "MAINNET"}
+        {isTestnet && (
+          <>
+            {" — "}
+            <a
+              href={FAUCET_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#fde68a", textDecoration: "underline" }}
+            >
+              Get test XLM
+            </a>
+          </>
+        )}
       </div>
-    );
-  }
 
-  const isDismissed = dismissedUntil !== null && dismissedUntil > Date.now();
-  const shouldShow = !isDismissed && bannerState !== "hidden";
-
-  if (!shouldShow) return null;
-
-  const isWarning = bannerState === "warning";
-  const isError = bannerState === "error";
-  const bg = isError ? "#b91c1c" : "#b45309";
-
-  return (
-    <div
-      role="status"
-      aria-label={`Stellar network ${bannerState}`}
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 1000,
-        width: "100%",
-        padding: "10px 16px",
-        textAlign: "center",
-        fontSize: "0.875rem",
-        fontWeight: 600,
-        backgroundColor: bg,
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <span>
-        {isError ? "Stellar RPC is currently unavailable." : "Stellar network latency is elevated."}
-      </span>
-      <span>
-        {isError ? "Estimated recovery: " : "Latency: "}
-        {latencyMs !== null ? `${Math.round(latencyMs / 1000)}s` : isError ? "pending" : "normal"}
-      </span>
-      <a
-        href={RECOVERY_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{ color: "#fde68a", textDecoration: "underline" }}
-      >
-        View Stellar status
-      </a>
-      {isTestnet && (
-        <a
-          href={FAUCET_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: "#fde68a", textDecoration: "underline" }}
+      {/* Connectivity warning banner (shown only when offline) */}
+      {showOfflineBanner && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          data-testid="offline-banner"
+          style={{
+            position: "sticky",
+            top: "34px",
+            zIndex: 999,
+            width: "100%",
+            padding: "8px 16px",
+            textAlign: "center",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            backgroundColor: "#dc2626",
+            color: "#fff",
+          }}
         >
-          Get test XLM
-        </a>
+          ⚠ Horizon network unreachable — retrying…
+        </div>
       )}
-      <button
-        type="button"
-        onClick={handleDismiss}
-        style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", textDecoration: "underline" }}
-      >
-        Dismiss for 1 hour
-      </button>
-    </div>
+    </>
   );
 }

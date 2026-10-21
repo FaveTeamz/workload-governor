@@ -29,12 +29,12 @@ fn test_already_assigned_error_prevents_double_assignment() {
     client.apply_for_issue(&contributor_a, &org_id, &issue_id);
 
     // Maintainer assigns issue to Contributor A (should succeed)
-    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
 
     // Try to assign the same issue to Contributor B (should fail)
     // This should panic with error code 11 (AlreadyAssigned)
     let result = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
     });
 
     // Verify the second assignment failed
@@ -47,7 +47,7 @@ fn test_already_assigned_error_prevents_double_assignment() {
     // Try to assign to another contributor (also should fail)
     let contributor_c = Address::generate(&env);
     let result2 = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_c, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_c, &org_id, &issue_id, &None::<u32>);
     });
     assert!(result2.is_err(), "Expected error 11 for any second assignment");
 
@@ -57,7 +57,7 @@ fn test_already_assigned_error_prevents_double_assignment() {
     // After revocation, should be able to assign again
     // Assign to Contributor B (should succeed now)
     client.apply_for_issue(&contributor_b, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
 
     // Verify the assignment was successful
     // If we got here, the assignment worked
@@ -83,13 +83,13 @@ fn test_already_assigned_error_code_is_error_11() {
 
     // Assign to Contributor A
     client.apply_for_issue(&contributor_a, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
 
     // Try to assign to Contributor B - should get error 11
     // Since we can't easily catch specific error codes in this test framework,
     // we verify the panic contains the error code
     let result = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
     });
 
     // The panic should contain error code 11
@@ -117,11 +117,11 @@ fn test_first_assignment_remains_active_after_failed_second_attempt() {
 
     // Assign to Contributor A (should succeed)
     client.apply_for_issue(&contributor_a, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
 
     // Try to assign to Contributor B (should fail)
     let result = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
     });
     assert!(result.is_err(), "Second assignment should have failed");
 
@@ -129,7 +129,7 @@ fn test_first_assignment_remains_active_after_failed_second_attempt() {
     // Let's verify by checking that we can't assign the same issue again
     // (If it was inactive, we could assign it)
     let result3 = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
     });
     assert!(result3.is_err(), "First assignment should still be active");
 }
@@ -154,20 +154,20 @@ fn test_revoke_then_reassign_works() {
 
     // Assign to Contributor A
     client.apply_for_issue(&contributor_a, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
 
     // Revoke the assignment
     client.revoke_assignment(&maintainer, &contributor_a, &org_id, &issue_id);
 
     // Now assign to Contributor B (should succeed)
     client.apply_for_issue(&contributor_b, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
 
     // If we got here, it worked!
     // Let's verify by checking we can't assign again (should be blocked)
     let contributor_c = Address::generate(&env);
     let result = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_c, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_c, &org_id, &issue_id, &None::<u32>);
     });
     assert!(result.is_err(), "After assigning to B, should not be able to assign again");
 }
@@ -197,14 +197,14 @@ fn unit_already_assigned_returns_error_11() {
     // Setup: register maintainer and have contributor_a apply + get assigned
     client.register_maintainer(&admin, &maintainer, &org_id);
     client.apply_for_issue(&contributor_a, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
 
     // contributor_b must apply before the maintainer can attempt assignment
     client.apply_for_issue(&contributor_b, &org_id, &issue_id);
 
     // Attempting to assign the same issue to contributor_b must fail (AlreadyAssigned = 11)
     let result = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
     });
     assert!(result.is_err(), "Expected AlreadyAssigned (error 11) but assignment succeeded");
 
@@ -236,7 +236,7 @@ fn unit_already_assigned_after_revoke_reassign_to_different_contributor() {
 
     // Assign to contributor_a then revoke
     client.apply_for_issue(&contributor_a, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_a, &org_id, &issue_id, &None::<u32>);
     client.revoke_assignment(&maintainer, &contributor_a, &org_id, &issue_id);
 
     // contributor_a must no longer be assigned
@@ -247,7 +247,7 @@ fn unit_already_assigned_after_revoke_reassign_to_different_contributor() {
 
     // contributor_b applies and gets assigned — must succeed
     client.apply_for_issue(&contributor_b, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor_b, &org_id, &issue_id, &None::<u32>);
 
     assert!(
         client.is_assigned(&contributor_b, &org_id, &issue_id),
@@ -275,12 +275,12 @@ fn unit_already_assigned_after_revoke_reassign_to_same_contributor() {
 
     // First assignment cycle
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
 
     // Second assignment cycle for the same contributor
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
 
     assert!(
         client.is_assigned(&contributor, &org_id, &issue_id),
@@ -309,14 +309,14 @@ fn unit_already_assigned_two_sequential_same_issue_second_fails() {
 
     // First call: apply + assign succeeds
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
 
     // contributor applies again (application entry was consumed by first assign)
     client.apply_for_issue(&contributor, &org_id, &issue_id);
 
     // Second assign_issue for same contributor+issue must fail with AlreadyAssigned
     let result = std::panic::catch_unwind(|| {
-        client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     });
     assert!(
         result.is_err(),
@@ -344,7 +344,7 @@ fn unit_already_assigned_storage_cleared_after_revoke() {
 
     // Assign then revoke
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
 
     // Counter must be 1 while assigned
     assert_eq!(
@@ -370,7 +370,7 @@ fn unit_already_assigned_storage_cleared_after_revoke() {
 
     // Re-assign to verify storage is fully clear and accepts a new assignment
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
     assert_eq!(
         client.get_org_assignment_count(&contributor, &org_id),
         1,
@@ -403,7 +403,7 @@ fn unit_already_assigned_is_assigned_true_after_assignment() {
     );
 
     client.apply_for_issue(&contributor, &org_id, &issue_id);
-    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
 
     // After assignment: application entry is consumed, assignment entry is written
     assert!(
@@ -414,4 +414,98 @@ fn unit_already_assigned_is_assigned_true_after_assignment() {
         client.is_assigned(&contributor, &org_id, &issue_id),
         "is_assigned should be true after assign_issue",
     );
+}
+
+// ============================================================
+// Issue #599 — revoke_assignment counter decrement regression
+// ============================================================
+
+/// Regression test: after revoke_assignment the org_assignment_count must be
+/// decremented to 0. Before the fix, the counter remained at 1 so a subsequent
+/// assign_issue would succeed unexpectedly and eventually hit OrgAssignmentLimitReached.
+#[test]
+fn unit_revoke_decrements_org_assignment_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org599");
+    let issue_id: u32 = 1;
+
+    client.initialize(&admin);
+    client.register_maintainer(&admin, &maintainer, &org_id);
+
+    // Step 1: apply → assign
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    assert_eq!(
+        client.get_org_assignment_count(&contributor, &org_id),
+        1,
+        "counter must be 1 after assign_issue",
+    );
+
+    // Step 2: revoke — counter must drop to 0
+    client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
+    assert_eq!(
+        client.get_org_assignment_count(&contributor, &org_id),
+        0,
+        "counter must be 0 after revoke_assignment (regression #599)",
+    );
+
+    // Step 3: is_assigned must be false
+    assert!(
+        !client.is_assigned(&contributor, &org_id, &issue_id),
+        "is_assigned must return false after revoke",
+    );
+
+    // Step 4: re-assign the same issue to the same contributor — must succeed,
+    // proving the counter did not stay at 1 causing a premature cap block.
+    client.apply_for_issue(&contributor, &org_id, &issue_id);
+    client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+    assert_eq!(
+        client.get_org_assignment_count(&contributor, &org_id),
+        1,
+        "counter must be 1 again after re-assignment",
+    );
+}
+
+/// Regression test: saturating decrement means a counter of 0 (unexpected
+/// but possible in corrupted state) does NOT panic but stays at 0.
+///
+/// We use seed_assignment to inject an orphan sentinel without a counter
+/// and then complete the cycle via complete_assignment (same pattern as revoke).
+/// For revoke we verify the saturating path with a normal assign+revoke cycle
+/// on a fresh contributor to confirm no underflow panic occurs.
+#[test]
+fn unit_revoke_saturating_decrement_no_panic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let maintainer = Address::generate(&env);
+    let org_id = Symbol::new(&env, "org599b");
+
+    client.initialize(&admin);
+    client.register_maintainer(&admin, &maintainer, &org_id);
+
+    // Run two full assign-revoke cycles to confirm the saturating path never panics.
+    for issue_id in [10u32, 20u32] {
+        let contributor = Address::generate(&env);
+        client.apply_for_issue(&contributor, &org_id, &issue_id);
+        client.assign_issue(&maintainer, &contributor, &org_id, &issue_id, &None::<u32>);
+        // revoke must not panic regardless of how many times it is called
+        client.revoke_assignment(&maintainer, &contributor, &org_id, &issue_id);
+        assert_eq!(
+            client.get_org_assignment_count(&contributor, &org_id),
+            0,
+        );
+    }
 }

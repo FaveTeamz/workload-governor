@@ -1,15 +1,14 @@
 # cargo-mutants configuration for WorkloadGovernor
 # Docs: https://mutants.rs/configuration.html
 
-# Test command: enable testutils feature so Soroban test harness is available
-test_tool = "cargo"
-additional_cargo_test_args = ["--features", "testutils"]
+# Enable testutils feature for both build and test so the Soroban test harness
+# and the generated try_* client methods are available.
+features = ["testutils"]
 
-# Kill any mutant whose test run exceeds 120 s (prevents the 10k-iteration
-# prop_global_cap test from stalling the whole run).
-timeout = 120
+# Kill any mutant whose test run exceeds 3x the baseline duration.
+timeout_multiplier = 3.0
 
-# Only mutate core business logic — skip events, errors boilerplate, and tests
+# Only mutate core business logic — skip generated boilerplate and tests
 examine_globs = ["src/lib.rs", "src/storage.rs"]
 
 # Skip TTL/instance-bump helpers: they call Soroban host functions that are

@@ -1,0 +1,83 @@
+name: Notify Slack
+
+on:
+  workflow_call:
+    inputs:
+      workflow_name:
+        description: "Human-readable name of the calling workflow"
+        required: true
+        type: string
+      status:
+        description: "Build status: 'failure' or 'success'"
+        required: true
+        type: string
+      commit_sha:
+        description: "Full commit SHA"
+        required: true
+        type: string
+      actor:
+        description: "GitHub username who triggered the run"
+        required: true
+        type: string
+      commit_message:
+        description: "First line of the commit message"
+        required: true
+        type: string
+      run_url:
+        description: "URL to the failing/passing Actions run"
+        required: true
+        type: string
+    secrets:
+      SLACK_WEBHOOK_URL:
+        required: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - name: Post Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        shell: bash
+        run: |
+          SHORT_SHA="${{ inputs.commit_sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+
+          if [ "${{ inputs.status }}" = "failure" ]; then
+            COLOR="danger"
+            EMOJI=":x:"
+            TEXT="${EMOJI} *${{ inputs.workflow_name }}* failed on \`main\`"
+          else
+            COLOR="good"
+            EMOJI=":white_check_mark:"
+            TEXT="${EMOJI} *${{ inputs.workflow_name }}* is green again on \`main\`"
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg text "$TEXT" \
+            --arg color "$COLOR" \
+            --arg sha  "$SHORT_SHA" \
+            --arg run_url "${{ inputs.run_url }}" \
+            --arg actor "${{ inputs.actor }}" \
+            --arg msg "${{ inputs.commit_message }}" \
+            '{
+              attachments: [{
+                color:    $color,
+                fallback: $text,
+                text:     $text,
+                fields: [
+                  { title: "Commit",  value: ("<\($run_url)|\($sha)>"), short: true },
+                  { title: "Author",  value: $actor,                    short: true },
+                  { title: "Message", value: $msg,                      short: false }
+                ],
+                footer: "GitHub Actions",
+                ts: now | floor
+              }]
+            }')
+
+          curl --silent --show-error --fail \
+            -X POST \
+            -H "Content-Type: application/json" \
+            --data "$PAYLOAD" \
+            "$SLACK_WEBHOOK_URL"

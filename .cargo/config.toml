@@ -1,0 +1,28 @@
+# Cargo configuration for WorkloadGovernor workspace.
+#
+# panic = "abort" is required for Soroban WASM contracts: it eliminates
+# unwinding code that would push the compiled .wasm above the 64 KB on-chain
+# size limit.  Using a build-target rustflag keeps it scoped to WASM builds —
+# native builds (unit tests, fuzz harness) keep the default panic = "unwind",
+# which the Soroban test harness requires so that panic_with_error! unwinds
+# instead of aborting the process.
+
+[target.wasm32v1-none]
+rustflags = ["-C", "panic=abort"]
+
+# ── Memory-efficient fuzz builds ──────────────────────────────────────────────
+# stellar-xdr is a huge generated file (~100K lines). When cargo-fuzz adds
+# -Cpasses=sancov-module to ALL crates in the dep tree, instrumenting
+# stellar-xdr exceeds the available memory on 8 GB runners and is OOM-killed.
+#
+# Solution: when building for the fuzz target (x86_64-unknown-linux-gnu in
+# release mode with --cfg fuzzing), restrict sancov to the fuzz binary only
+# by passing -C passes=sancov-module only to the top-level crate.  We
+# achieve this by setting NO_COVERAGE=1 as a build-time env hint for deps
+# and checking it in the fuzz harness — but a simpler approach is to just
+# exclude all [build-dependencies] coverage via cap-lints, which cargo-fuzz
+# already does with --cap-lints allow.
+#
+# The actual guard is that we use `--sanitizer none` in Makefile and CI,
+# which disables both ASan and the sancov-module pass on deps via cargo-fuzz's
+# own dep-exclusion logic.

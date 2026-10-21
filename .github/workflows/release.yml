@@ -1,0 +1,61 @@
+name: Release WASM Artifacts
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build WASM & Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Install stellar-cli
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Build contract WASM
+        run: cargo build --target wasm32v1-none --release
+
+      - name: Optimize contract WASM
+        run: |
+          mkdir -p artifacts
+          stellar contract optimize \
+            --wasm target/wasm32v1-none/release/workload_governor.wasm \
+            --wasm-out artifacts/workload_governor.wasm
+
+      - name: Compute SHA256 checksums
+        working-directory: artifacts
+        run: |
+          sha256sum workload_governor.wasm > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/workload_governor.wasm
+            artifacts/SHA256SUMS.txt
+          generate_release_notes: true
+          body: |
+            ## Workload Governor Contract Release ${{ github.ref_name }}
+
+            ### Artifacts
+            - `workload_governor.wasm`: Optimized Soroban smart contract binary.
+            - `SHA256SUMS.txt`: SHA256 checksum file for verifying artifact integrity.
+
+            Refer to [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for full details.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

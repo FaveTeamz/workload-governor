@@ -1,0 +1,71 @@
+{
+  "nav": {
+    "home": "Accueil",
+    "issues": "Problèmes",
+    "assignments": "Assignations",
+    "settings": "Paramètres",
+    "connect_wallet": "Connecter le portefeuille",
+    "disconnect": "Déconnecter",
+    "switch_org": "Changer d'organisation",
+    "search_orgs": "Rechercher des organisations…",
+    "no_orgs_found": "Aucune organisation trouvée",
+    "recent_orgs": "Organisations récentes",
+    "notifications": "Notifications",
+    "no_notifications": "Aucune nouvelle notification",
+    "mark_all_read": "Marquer tout comme lu",
+    "open_menu": "Ouvrir le menu",
+    "close_menu": "Fermer le menu"
+  },
+  "cap": {
+    "global_applications": "Candidatures globales",
+    "of_15": "sur 15",
+    "applications_remaining": "{{count}} créneaux de candidature restants",
+    "at_limit": "Limite de candidatures atteinte",
+    "near_limit": "Proche de la limite de candidatures"
+  },
+  "org": {
+    "assignments": "Assignations",
+    "of_4": "sur 4",
+    "capacity_remaining": "{{count}} créneaux d'assignation restants",
+    "at_limit": "Limite d'assignations atteinte"
+  },
+  "issue": {
+    "apply": "Postuler",
+    "withdraw": "Retirer",
+    "assign": "Assigner",
+    "complete": "Terminer",
+    "revoke": "Révoquer",
+    "status_pending": "En attente",
+    "status_assigned": "Assigné",
+    "status_available": "Disponible",
+    "status_completed": "Terminé"
+  },
+  "errors": {
+    "already_initialized": "Contrat déjà initialisé",
+    "not_initialized": "Contrat pas encore initialisé",
+    "unauthorized_admin": "Non autorisé : identifiants administrateur requis",
+    "unauthorized_maintainer": "Non autorisé : le mainteneur n'est pas enregistré pour cette organisation",
+    "unauthorized_contributor": "Non autorisé : l'authentification du contributeur a échoué",
+    "global_limit_reached": "Vous avez atteint le maximum de 15 candidatures en attente",
+    "org_limit_reached": "Vous avez atteint le maximum de 4 assignations actives dans cette organisation",
+    "duplicate_application": "Vous avez déjà postulé à ce problème",
+    "application_not_found": "Candidature introuvable",
+    "assignment_not_found": "Assignation introuvable",
+    "already_assigned": "Ce problème a déjà une assignation active"
+  },
+  "settings": {
+    "language": "Langue",
+    "select_language": "Sélectionner la langue",
+    "theme": "Thème",
+    "notifications_enabled": "Activer les notifications"
+  },
+  "common": {
+    "loading": "Chargement…",
+    "error": "Erreur",
+    "retry": "Réessayer",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "save": "Enregistrer",
+    "close": "Fermer"
+  }
+}

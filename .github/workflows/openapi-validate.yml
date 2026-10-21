@@ -5,9 +5,58 @@ on:
     paths:
       - 'src/routes/**'
       - 'openapi.yaml'
+      - 'docs/api-reference.md'
+      - 'scripts/check-api-docs-sync.js'
       - 'dredd-hooks.js'
+      - 'tests/contract/**'
 
 jobs:
+  # ── Job 0: openapi.yaml ↔ docs/api-reference.md sync check ──────────────────
+  docs-sync:
+    name: API reference docs in sync with OpenAPI spec
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Check openapi.yaml and docs/api-reference.md are in sync
+        run: npm run docs:check-api-sync
+
+  # ── Job 1: express-openapi-validator response-shape contract tests ──────────
+  contract-tests:
+    name: OpenAPI response-shape contract tests
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run OpenAPI contract tests
+        run: npm run test:contract
+
+  # ── Job 2: Dredd live-server validation (existing) ──────────────────────────
   validate-api:
     name: Validate OpenAPI spec against live server
     runs-on: ubuntu-latest
@@ -43,10 +92,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: 'npm'

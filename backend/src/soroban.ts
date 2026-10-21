@@ -42,6 +42,37 @@ export interface ApplicationRef {
   issueId: number;     // u32
 }
 
+export const CONTRACT_ERROR_CODES: Record<number, string> = {
+  0: 'InternalError',
+  1: 'AlreadyInitialized',
+  2: 'UnauthorizedByAdmin',
+  3: 'UnauthorizedByMaintainer',
+  4: 'NegativeAmount',
+  5: 'BalanceError',
+  6: 'InvalidIssueState',
+  7: 'NoAssignment',
+  8: 'NoApplication',
+  9: 'AmountTooLow',
+  10: 'UnclosedPeriod',
+};
+
+export function parseContractError(errorMessage: string): { code: string; message: string; details?: string } {
+  const codeMatch = errorMessage.match(/error code=(\d+)/);
+  if (codeMatch) {
+    const code = parseInt(codeMatch[1], 10);
+    const errorCodeName = CONTRACT_ERROR_CODES[code] || 'Unknown';
+    return {
+      code: errorCodeName,
+      message: errorMessage,
+      details: `Contract error code: ${code}`,
+    };
+  }
+  return {
+    code: 'Unknown',
+    message: errorMessage,
+  };
+}
+
 /**
  * Submit a batch of extend_application_ttl calls in a single transaction.
  *
@@ -91,10 +122,11 @@ export async function extendApplicationTtlBatch(
 
   const tx = txBuilder.setTimeout(30).build();
 
-  // Simulate to get the resource footprint
+  // Simulate to get the resource footprint and fee before submission
   const simResult = await rpcServer.simulateTransaction(tx);
   if (StellarSdk.SorobanRpc.Api.isSimulationError(simResult)) {
-    throw new Error(`Simulation failed: ${simResult.error}`);
+    const parsed = parseContractError(simResult.error);
+    throw new Error(`Simulation failed: ${parsed.code} - ${parsed.message}`);
   }
 
   const preparedTx = StellarSdk.SorobanRpc.assembleTransaction(tx, simResult).build();
@@ -102,7 +134,9 @@ export async function extendApplicationTtlBatch(
 
   const sendResult = await rpcServer.sendTransaction(preparedTx);
   if (sendResult.status === "ERROR") {
-    throw new Error(`Transaction rejected: ${sendResult.errorResult?.toXDR("base64")}`);
+    const errDetail = sendResult.errorResult?.toXDR("base64") || "Unknown error";
+    const parsed = parseContractError(errDetail);
+    throw new Error(`Transaction rejected: ${parsed.code} - ${parsed.message}`);
   }
 
   const hash = sendResult.hash;
@@ -115,7 +149,9 @@ export async function extendApplicationTtlBatch(
   }
 
   if (getResult.status === "FAILED") {
-    throw new Error(`Transaction ${hash} failed on-chain`);
+    const errDetail = getResult.resultXdr?.toString() || `Transaction ${hash} failed on-chain`;
+    const parsed = parseContractError(errDetail);
+    throw new Error(`Transaction failed: ${parsed.code} - ${parsed.message}`);
   }
 
   logger.info({ hash, batchSize: applications.length }, "TTL extension batch confirmed");

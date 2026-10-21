@@ -28,6 +28,35 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [queuedToasts, setQueuedToasts] = useState<Toast[]>([]);
   const visibleRef = useRef<Toast[]>([]);
   const queuedRef = useRef<Toast[]>([]);
+  const timersRef = useRef(new Map<number, { timeoutId: number; startedAt: number; remaining: number }>());
+
+  const clearTimer = useCallback((id: number) => {
+    const timer = timersRef.current.get(id);
+    if (!timer) return;
+    window.clearTimeout(timer.timeoutId);
+    timersRef.current.delete(id);
+  }, []);
+
+  const startTimer = useCallback((toast: Toast, remaining = toast.duration) => {
+    clearTimer(toast.id);
+    const startedAt = Date.now();
+    const timeoutId = window.setTimeout(() => remove(toast.id), remaining);
+    timersRef.current.set(toast.id, { timeoutId, startedAt, remaining });
+  }, [clearTimer]);
+
+  const pauseTimer = useCallback((id: number) => {
+    const timer = timersRef.current.get(id);
+    if (!timer) return;
+    const remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+    window.clearTimeout(timer.timeoutId);
+    timersRef.current.set(id, { ...timer, remaining });
+  }, []);
+
+  const resumeTimer = useCallback((toast: Toast) => {
+    const timer = timersRef.current.get(toast.id);
+    if (!timer) return;
+    startTimer(toast, timer.remaining);
+  }, [startTimer]);
 
   const add = useCallback((message: string, type: ToastType = "info", options: ToastOptions = {}) => {
     const toast: Toast = {
@@ -45,11 +74,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     visibleRef.current = [...visibleRef.current, toast];
     setVisibleToasts(visibleRef.current);
-
-    window.setTimeout(() => remove(toast.id), toast.duration);
-  }, []);
+    startTimer(toast);
+  }, [startTimer]);
 
   const remove = useCallback((id: number) => {
+    clearTimer(id);
     visibleRef.current = visibleRef.current.filter((toast) => toast.id !== id);
     setVisibleToasts(visibleRef.current);
 
@@ -59,8 +88,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setQueuedToasts(rest);
       visibleRef.current = [...visibleRef.current, nextToast];
       setVisibleToasts(visibleRef.current);
-      window.setTimeout(() => remove(nextToast.id), nextToast.duration);
+      startTimer(nextToast);
     }
+  }, [clearTimer, startTimer]);
+
+  useEffect(() => () => {
+    timersRef.current.forEach(({ timeoutId }) => window.clearTimeout(timeoutId));
+    timersRef.current.clear();
   }, []);
 
   return (
@@ -75,7 +109,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-relevant="additions"
       >
         {visibleToasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onRemove={remove} />
+          <ToastItem
+            key={toast.id}
+            toast={toast}
+            onRemove={remove}
+            onPause={() => pauseTimer(toast.id)}
+            onResume={() => resumeTimer(toast)}
+          />
         ))}
       </div>
     </ToastContext.Provider>
@@ -90,8 +130,32 @@ export function useToast() {
   return context;
 }
 
-function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) => void }) {
+function ToastItem({
+  toast,
+  onRemove,
+  onPause,
+  onResume,
+}: {
+  toast: Toast;
+  onRemove: (id: number) => void;
+  onPause: () => void;
+  onResume: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const hoveredRef = useRef(false);
+  const focusedRef = useRef(false);
+  const pausedRef = useRef(false);
+
+  const updateInteraction = (kind: "hovered" | "focused", active: boolean) => {
+    if (kind === "hovered") hoveredRef.current = active;
+    else focusedRef.current = active;
+
+    const paused = hoveredRef.current || focusedRef.current;
+    if (paused === pausedRef.current) return;
+    pausedRef.current = paused;
+    if (paused) onPause();
+    else onResume();
+  };
 
   useEffect(() => {
     ref.current?.focus();
@@ -108,6 +172,20 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) =
       className={`toast toast-${toast.type}`}
       tabIndex={-1}
       aria-busy={toast.type === "pending"}
+      onMouseEnter={() => updateInteraction("hovered", true)}
+      onMouseLeave={() => updateInteraction("hovered", false)}
+      onFocus={() => updateInteraction("focused", true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          updateInteraction("focused", false);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onRemove(toast.id);
+        }
+      }}
     >
       {toast.type === "pending" && (
         <span className="toast-spinner" aria-hidden="true" />

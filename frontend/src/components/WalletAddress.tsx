@@ -1,4 +1,4 @@
-import { CopyButton } from './CopyButton';
+import { useState } from 'react';
 
 export interface WalletAddressProps {
   address: string;
@@ -13,10 +13,34 @@ export function truncateAddress(address: string): string {
 /**
  * Displays a Stellar wallet address truncated to first 4 + last 4 chars.
  * - Hover tooltip shows the full address.
- * - Copy button copies the full address; shows a check icon for 2 s.
- * - Screen reader is notified on copy success via aria-live.
+ * - Copy button copies the full address to the clipboard.
+ *   - Uses the Clipboard API when available.
+ *   - Falls back to window.prompt() on browsers without clipboard access.
+ * - Shows a checkmark (✓) for 2 seconds after a successful copy.
+ * - Accessible: the button has a descriptive aria-label.
  */
 export function WalletAddress({ address }: WalletAddressProps) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(address);
+      } else {
+        // Fallback: open a prompt so the user can copy manually
+        window.prompt('Copy this address:', address);
+        return; // no feedback — we can't confirm user actually copied
+      }
+    } catch {
+      // If clipboard access was denied, fall back to prompt
+      window.prompt('Copy this address:', address);
+      return;
+    }
+
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
     <span
       className="wallet-address"
@@ -25,10 +49,11 @@ export function WalletAddress({ address }: WalletAddressProps) {
       <span title={address} style={{ fontFamily: 'monospace', cursor: 'default' }}>
         {truncateAddress(address)}
       </span>
-      <CopyButton
-        text={address}
-        label={`Copy address ${address}`}
-        copiedLabel="Address copied"
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={copied ? 'Address copied' : `Copy address ${address}`}
+        title={copied ? 'Copied!' : 'Copy address'}
         style={{
           background: 'none',
           border: 'none',
@@ -40,7 +65,9 @@ export function WalletAddress({ address }: WalletAddressProps) {
           display: 'inline-flex',
           alignItems: 'center',
         }}
-      />
+      >
+        {copied ? '✓' : '⧉'}
+      </button>
     </span>
   );
 }

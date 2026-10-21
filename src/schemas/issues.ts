@@ -46,3 +46,12 @@ export const applyIssueSchema = z.object({
 
 export type ApplyIssueInput = z.infer<typeof applyIssueSchema>;
 
+export const bulkRegisterIssuesSchema = z.object({
+  issue_ids: z
+    .array(z.number().int().positive('issue_id must be positive'))
+    .min(1, 'At least one issue_id is required')
+    .max(100, 'Batch size cannot exceed 100 issues'),
+});
+
+export type BulkRegisterIssuesInput = z.infer<typeof bulkRegisterIssuesSchema>;
+

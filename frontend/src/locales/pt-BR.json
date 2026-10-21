@@ -1,0 +1,79 @@
+{
+  "nav": {
+    "home": "Início",
+    "issues": "Tarefas",
+    "assignments": "Atribuições",
+    "settings": "Configurações",
+    "connect_wallet": "Conectar carteira",
+    "disconnect": "Desconectar",
+    "switch_org": "Trocar organização",
+    "search_orgs": "Buscar organizações…",
+    "no_orgs_found": "Nenhuma organização encontrada",
+    "recent_orgs": "Organizações recentes",
+    "notifications": "Notificações",
+    "no_notifications": "Sem novas notificações",
+    "mark_all_read": "Marcar tudo como lido",
+    "open_menu": "Abrir menu",
+    "close_menu": "Fechar menu"
+  },
+  "cap": {
+    "global_applications": "Candidaturas globais",
+    "of_15": "de 15",
+    "applications_remaining": "{{count}} vagas de candidatura restantes",
+    "at_limit": "Limite de candidaturas atingido",
+    "near_limit": "Próximo ao limite de candidaturas"
+  },
+  "org": {
+    "assignments": "Atribuições",
+    "of_4": "de 4",
+    "capacity_remaining": "{{count}} vagas de atribuição restantes",
+    "at_limit": "Limite de atribuições atingido"
+  },
+  "issue": {
+    "apply": "Candidatar-se",
+    "withdraw": "Retirar candidatura",
+    "assign": "Atribuir",
+    "complete": "Concluir",
+    "revoke": "Revogar",
+    "status_pending": "Pendente",
+    "status_assigned": "Atribuído",
+    "status_available": "Disponível",
+    "status_completed": "Concluído"
+  },
+  "errors": {
+    "already_initialized": "Contrato já inicializado",
+    "not_initialized": "Contrato ainda não inicializado",
+    "unauthorized_admin": "Não autorizado: credenciais de administrador necessárias",
+    "unauthorized_maintainer": "Não autorizado: mantenedor não registrado nesta organização",
+    "unauthorized_contributor": "Não autorizado: falha na autenticação do colaborador",
+    "global_limit_reached": "Você atingiu o máximo de 15 candidaturas pendentes",
+    "org_limit_reached": "Você atingiu o máximo de 4 atribuições ativas nesta organização",
+    "duplicate_application": "Você já se candidatou a esta tarefa",
+    "application_not_found": "Candidatura não encontrada",
+    "assignment_not_found": "Atribuição não encontrada",
+    "already_assigned": "Esta tarefa já possui uma atribuição ativa"
+  },
+  "settings": {
+    "language": "Idioma",
+    "select_language": "Selecionar idioma",
+    "theme": "Tema",
+    "notifications_enabled": "Ativar notificações"
+  },
+  "common": {
+    "loading": "Carregando…",
+    "error": "Erro",
+    "retry": "Tentar novamente",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "save": "Salvar",
+    "close": "Fechar"
+  },
+  "_meta": {
+    "locale": "pt-BR",
+    "dateFormat": "DD/MM/YYYY",
+    "thousandsSeparator": ".",
+    "decimalSeparator": ",",
+    "currency": "none",
+    "note": "Translation pending review by a native Brazilian Portuguese speaker. Open a comment on PR to confirm accuracy."
+  }
+}

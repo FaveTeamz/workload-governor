@@ -19,6 +19,7 @@ describe('ApplyForm', () => {
   it('shows no errors before user interaction', () => {
     render(<ApplyForm onSubmit={vi.fn()} registeredOrgs={REGISTERED_ORGS} />)
     expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: /^apply$/i })).toBeEnabled()
   })
 
   it('shows org error on blur when empty', async () => {
@@ -28,6 +29,21 @@ describe('ApplyForm', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(/required/i)
     )
+  })
+
+  it('disables submit for a validation error and re-enables it after fixing the field', async () => {
+    render(<ApplyForm onSubmit={vi.fn()} registeredOrgs={REGISTERED_ORGS} />)
+    const orgInput = screen.getByLabelText(/organisation id/i)
+    const submit = screen.getByRole('button', { name: /^apply$/i })
+
+    fireEvent.blur(orgInput)
+    await waitFor(() => expect(submit).toBeDisabled())
+
+    fireEvent.change(orgInput, { target: { value: 'stellar-org' } })
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(submit).toBeEnabled()
+    })
   })
 
   it('shows issue error on blur when empty', async () => {
@@ -89,6 +105,20 @@ describe('ApplyForm', () => {
     expect(screen.getByRole('button', { name: /apply/i })).toBeDisabled()
   })
 
+  it('associates the cap warning with the Apply submit button', () => {
+    render(
+      <ApplyForm
+        onSubmit={vi.fn()}
+        capStatus={{ globalSlotsRemaining: 0, orgSlotsRemaining: 3 }}
+      />
+    )
+    const warning = screen.getByRole('alert')
+    const submit = screen.getByRole('button', { name: /apply/i })
+
+    expect(warning).toHaveAttribute('id')
+    expect(submit).toHaveAttribute('aria-describedby', warning.id)
+  })
+
   it('calls onSubmit with valid data', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(
@@ -100,6 +130,7 @@ describe('ApplyForm', () => {
     )
     await userEvent.type(screen.getByLabelText(/organisation id/i), 'stellar-org')
     await userEvent.type(screen.getByLabelText(/issue id/i), '42')
+    expect(screen.getByRole('button', { name: /^apply$/i })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: /^apply$/i }))
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith({ orgId: 'stellar-org', issueId: '42' })
@@ -114,6 +145,7 @@ describe('ApplyForm', () => {
     await waitFor(() =>
       expect(onSubmit).not.toHaveBeenCalled()
     )
+    expect(screen.getByRole('button', { name: /apply/i })).toBeDisabled()
   })
 
   it('error messages are associated via aria-describedby', async () => {
@@ -173,6 +205,17 @@ describe('AssignForm', () => {
       })
     )
   })
+
+  it('disables submit after contributor validation fails', async () => {
+    render(<AssignForm onSubmit={vi.fn()} />)
+    const contributorInput = screen.getByLabelText(/contributor address/i)
+    const submit = screen.getByRole('button', { name: /^assign$/i })
+
+    fireEvent.change(contributorInput, { target: { value: 'not-a-key' } })
+    fireEvent.blur(contributorInput)
+
+    await waitFor(() => expect(submit).toBeDisabled())
+  })
 })
 
 // ─── CompleteForm ─────────────────────────────────────────────────────────────
@@ -191,6 +234,7 @@ describe('CompleteForm', () => {
       const alerts = screen.getAllByRole('alert')
       expect(alerts.length).toBeGreaterThan(0)
     })
+    expect(screen.getByRole('button', { name: /^complete$/i })).toBeDisabled()
   })
 })
 
@@ -210,5 +254,6 @@ describe('RevokeForm', () => {
       const alerts = screen.getAllByRole('alert')
       expect(alerts.length).toBeGreaterThan(0)
     })
+    expect(screen.getByRole('button', { name: /^revoke$/i })).toBeDisabled()
   })
 })

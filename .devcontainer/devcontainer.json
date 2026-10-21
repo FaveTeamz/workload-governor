@@ -1,0 +1,64 @@
+{
+  "name": "WorkloadGovernor Dev",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
+
+  // Forward all service ports to the host
+  "forwardPorts": [3000, 5173, 5432, 6379, 5050],
+  "portsAttributes": {
+    "3000": { "label": "Backend API" },
+    "5173": { "label": "Frontend (Vite)" },
+    "5432": { "label": "PostgreSQL" },
+    "6379": { "label": "Redis" },
+    "5050": { "label": "pgAdmin" }
+  },
+
+  // Start PostgreSQL and Redis via Docker Compose inside the container
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "devcontainer",
+  "runServices": ["postgres", "redis"],
+
+  "features": {
+    // Rust is already in the base image; pin to stable and add wasm target
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "stable",
+      "targets": "wasm32v1-none"
+    },
+    // Node.js 20 LTS
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    // Stellar CLI (latest released version)
+    "ghcr.io/devcontainers-contrib/features/stellar-cli:1": {}
+  },
+
+  // Install project dependencies and copy env files the first time the container starts
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  // VS Code / cursor extensions that improve the Rust + TypeScript experience
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "fill-labs.dependi",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-azuretools.vscode-docker",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "cweijan.vscode-redis-client"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": ["testutils"],
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+
+  // Run as the non-root vscode user that ships in the base image
+  "remoteUser": "vscode"
+}

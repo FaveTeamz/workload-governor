@@ -6,6 +6,15 @@
     <meta name="description" content="WorkloadGovernor — fair workload caps for open-source contributors on Stellar" />
     <title>WorkloadGovernor</title>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Inline theme init: sets data-theme before first paint to prevent flash (issue #533) -->
+    <script>
+      (function () {
+        var s = localStorage.getItem('wg_theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = (s === 'light' || s === 'dark') ? s : (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

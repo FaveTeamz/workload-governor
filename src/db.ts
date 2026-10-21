@@ -33,13 +33,33 @@ export function getPool(): Pool {
   if (!_pool) {
     _pool = new Pool({
       connectionString: process.env['DATABASE_URL'],
-      max: parseInt(process.env['DB_POOL_MAX'] ?? '10', 10),
+      // Pool sizing — configurable via environment variables.
+      // DB_POOL_MIN: minimum connections kept alive (default 2)
+      // DB_POOL_MAX: maximum connections allowed (default 10)
+      min: parseInt(process.env['DB_POOL_MIN'] ?? '2', 10),
+      max: parseInt(process.env['DB_POOL_MAX'] ?? '20', 10),
       idleTimeoutMillis: parseInt(process.env['DB_IDLE_TIMEOUT'] ?? '30000', 10),
-      connectionTimeoutMillis: parseInt(process.env['DB_CONNECTION_TIMEOUT'] ?? '5000', 10),
+      connectionTimeoutMillis: parseInt(process.env['DB_CONNECTION_TIMEOUT'] ?? process.env['DB_ACQUIRE_TIMEOUT'] ?? '10000', 10),
     });
+
+    // Log and alert on unexpected idle-client errors (fixes issue #561)
     _pool.on('error', (err) => {
-      console.error('Unexpected error on idle DB client', err);
+      console.error('[db] Unexpected error on idle DB client:', err.message, err.stack);
     });
+
+    // Optionally log new connections in non-production environments for
+    // visibility into pool churn during development/staging.
+    if (process.env['NODE_ENV'] !== 'production') {
+      _pool.on('connect', () => {
+        // Fire-and-forget: log pool counts when a new connection is established
+        const p = _pool;
+        if (p) {
+          console.debug(
+            `[db] New connection established. Pool stats — total: ${p.totalCount}, idle: ${p.idleCount}, waiting: ${p.waitingCount}`,
+          );
+        }
+      });
+    }
   }
   return _pool;
 }
@@ -126,6 +146,7 @@ export async function migrate(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_events_org_id ON events(org_id);
     CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON events(occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_events_org_created ON events(org_id, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS issues (
       id         SERIAL PRIMARY KEY,
@@ -158,12 +179,13 @@ export async function migrate(): Promise<void> {
     );
 
     CREATE TABLE IF NOT EXISTS api_keys (
-      id         SERIAL PRIMARY KEY,
-      key_hash   TEXT NOT NULL UNIQUE,
-      label      TEXT NOT NULL,
-      scopes     TEXT[] NOT NULL DEFAULT '{}',
-      expires_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id             SERIAL PRIMARY KEY,
+      key_hash       TEXT NOT NULL UNIQUE,
+      label          TEXT NOT NULL,
+      scopes         TEXT[] NOT NULL DEFAULT '{}',
+      expires_at     TIMESTAMPTZ,
+      rotating_until TIMESTAMPTZ,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS github_issue_labels (
@@ -195,7 +217,66 @@ export async function migrate(): Promise<void> {
       ON contract_events(ledger_seq);
     CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp
       ON contract_events(timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS indexer_checkpoints (
+      contract_id      TEXT PRIMARY KEY,
+      last_ledger      INTEGER NOT NULL,
+      last_ledger_hash TEXT,
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_indexer_checkpoints_last_ledger
+      ON indexer_checkpoints(last_ledger);
   `);
+}
+
+// ---------------------------------------------------------------------------
+// Indexer Checkpoints queries (issue #849)
+// ---------------------------------------------------------------------------
+
+export interface IndexerCheckpoint {
+  contract_id: string;
+  last_ledger: number;
+  last_ledger_hash: string | null;
+  updated_at: Date;
+}
+
+/**
+ * Persist indexer checkpoint to database transactionally.
+ */
+export async function saveCheckpoint(
+  contractId: string,
+  lastLedger: number,
+  lastLedgerHash?: string | null,
+  client?: Pool | PoolClient,
+): Promise<void> {
+  const runner = client ?? getPool();
+  await runner.query(
+    `INSERT INTO indexer_checkpoints (contract_id, last_ledger, last_ledger_hash, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (contract_id)
+     DO UPDATE SET last_ledger = EXCLUDED.last_ledger,
+                   last_ledger_hash = EXCLUDED.last_ledger_hash,
+                   updated_at = NOW()`,
+    [contractId, lastLedger, lastLedgerHash ?? null],
+  );
+}
+
+/**
+ * Retrieve indexer checkpoint for contract from database.
+ */
+export async function getCheckpoint(
+  contractId: string,
+  client?: Pool | PoolClient,
+): Promise<IndexerCheckpoint | null> {
+  const runner = client ?? getPool();
+  const res = await runner.query<IndexerCheckpoint>(
+    `SELECT contract_id, last_ledger, last_ledger_hash, updated_at
+     FROM indexer_checkpoints
+     WHERE contract_id = $1`,
+    [contractId],
+  );
+  return res.rows[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,3 +290,4 @@ export async function closePool(): Promise<void> {
     _pool = null;
   }
 }
+

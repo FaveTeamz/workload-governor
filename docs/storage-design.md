@@ -2,6 +2,8 @@
 
 WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixes to manage contract state.
 
+> **Why this design?** The rationale for the six-prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
+
 ## Storage Tiers
 
 | Tier | Purpose | Survival |
@@ -56,7 +58,32 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 3 — Admin Address
+### 3 — Application Index
+
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address)` |
+| Prefix | `"app_idx"` |
+| Value | `Vec<(Symbol, u32)>` |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
+
+**Purpose:** Maintains an enumerable list of all `(org_id, issue_id)` pairs for which a contributor has a pending application. Enables the `get_pending_applications` query to return a complete list without requiring an off-chain event index.
+
+The index is updated atomically with the per-issue application entry on every `apply_for_issue`, `withdraw_application`, and `assign_issue` call. It shares the same TTL as the per-issue entries and is extended by `extend_application_ttl` — the three temporary entries for a contributor always expire together.
+
+**Example key:**
+```
+("app_idx", GBFZB...XK2Q)
+```
+
+**Example value:** `[("stellar-org", 42), ("rust_libs", 7)]`
+
+When the contributor's last application is withdrawn or assigned, the index entry is removed entirely rather than left as an empty Vec.
+
+---
+
+### 4 — Admin Address
 
 | Field | Value |
 |---|---|
@@ -76,7 +103,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 4 — Maintainer Registration
+### 5 — Maintainer Registration
 
 | Field | Value |
 |---|---|
@@ -96,7 +123,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 5 — Org Assignment Count
+### 6 — Org Assignment Count
 
 | Field | Value |
 |---|---|
@@ -116,7 +143,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 6 — Active Assignment Entry
+### 7 — Active Assignment Entry
 
 | Field | Value |
 |---|---|
@@ -136,7 +163,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 ---
 
-### 7 — Per-Org Assignment Cap
+### 8 — Per-Org Assignment Cap
 
 | Field | Value |
 |---|---|
@@ -145,7 +172,7 @@ When the count drops to zero the entry is removed. On every application submissi
 | Prefix | `"o_cap"` |
 | Value | `u32` |
 
-**Purpose:** Stores a per-org override for the assignment cap set by a registered maintainer via `set_org_cap`. When absent callers fall back to `ORG_ASSIGNMENT_LIMIT = 4`. Valid range: `[1, 20]`.
+**Purpose:** Stores a per-org override for the maximum number of active assignments a contributor may hold within a specific organisation. When absent callers fall back to `ORG_ASSIGNMENT_LIMIT = 4`. Valid range: `[1, 20]`.
 
 **Example key:**
 ```
@@ -153,6 +180,52 @@ When the count drops to zero the entry is removed. On every application submissi
 ```
 
 **Example value:** `8`
+
+**Who writes it:** Admin only, via the `set_org_cap(admin, org_id, cap)` contract function introduced in v0.2. No other role can write this key. The value is validated at write time — values outside `[1, 20]` are rejected with `InvalidOrgCap` (code 16).
+
+**Default behaviour when absent:** The key is optional. `assign_issue` reads it with `unwrap_or(ORG_ASSIGNMENT_LIMIT)`, so any org without an explicit cap entry behaves as if the global default of 4 were stored. Adding a new org does not require writing this key unless a non-default cap is needed.
+
+**Interaction with `OrgAssignmentLimitReached` (error 7):** In `assign_issue`, after the contributor's org assignment count is fetched from `("o_asgn", contributor, org_id)`, the effective cap is determined by reading this key:
+
+```rust
+let cap = storage::get_org_cap(&env, &org_id).unwrap_or(ORG_ASSIGNMENT_LIMIT);
+if asgn_count >= cap {
+    panic_with_error!(&env, ContractError::OrgAssignmentLimitReached);
+}
+```
+
+A contributor blocked by error 7 in an org with a raised cap is blocked at the *org's* cap, not the global default. See [docs/error-reference.md — Error 7](error-reference.md#error-7--orgassignmentlimitreached) for resolution steps.
+
+**Upgrade path:** To raise the cap for an org in production:
+
+1. Confirm the request comes from the platform governance process (see [docs/runbooks/cap-emergency-increase.md](runbooks/cap-emergency-increase.md)).
+2. Call `set_org_cap` as the admin:
+
+   ```bash
+   stellar contract invoke \
+     --id "$CONTRACT_ID" \
+     --network testnet \
+     --source <admin-account> \
+     -- set_org_cap \
+     --admin <ADMIN_ADDRESS> \
+     --org_id <ORG_ID> \
+     --cap <NEW_CAP>
+   ```
+
+3. Verify the stored value:
+
+   ```bash
+   stellar contract invoke \
+     --id "$CONTRACT_ID" \
+     --network testnet \
+     -- get_org_cap \
+     --org_id <ORG_ID>
+   # Expected: <NEW_CAP>
+   ```
+
+The cap change takes effect immediately for subsequent `assign_issue` calls. Existing assignments are not affected.
+
+See [docs/admin-guide.md](admin-guide.md) for the full org cap management procedure.
 
 ---
 
@@ -272,17 +345,18 @@ Refer to `docs/runbooks/incident-response.md` for the full remediation playbook.
 
 ## Key Collision Proof
 
-All seven prefixes are distinct `symbol_short!` values:
+All eight prefixes are distinct `symbol_short!` values:
 
 | # | Prefix | Rust literal |
 |---|---|---|
 | 1 | `g_apps` | `symbol_short!("g_apps")` |
 | 2 | `app` | `symbol_short!("app")` |
-| 3 | `admin` | `symbol_short!("admin")` |
-| 4 | `maint` | `symbol_short!("maint")` |
-| 5 | `o_asgn` | `symbol_short!("o_asgn")` |
-| 6 | `asgn` | `symbol_short!("asgn")` |
-| 7 | `o_cap` | `symbol_short!("o_cap")` |
+| 3 | `app_idx` | `symbol_short!("app_idx")` |
+| 4 | `admin` | `symbol_short!("admin")` |
+| 5 | `maint` | `symbol_short!("maint")` |
+| 6 | `o_asgn` | `symbol_short!("o_asgn")` |
+| 7 | `asgn` | `symbol_short!("asgn")` |
+| 8 | `o_cap` | `symbol_short!("o_cap")` |
 
 ### Formal Argument
 
@@ -294,31 +368,38 @@ Soroban serialises every storage key as a `ScVal`. Tuple keys become `ScVal::Vec
 
 *Cross-pattern collision is impossible* because every key begins with a unique prefix byte sequence. A `ScVal::Vec` whose first element is `symbol_short!("x")` cannot equal one whose first element is `symbol_short!("y")` when `"x" ≠ "y"`. A `ScVal::Vec` cannot equal `ScVal::Symbol` because the XDR discriminant byte differs.
 
-Exhaustive check of all C(7, 2) = **21 pairs**:
+Exhaustive check of all C(8, 2) = **28 pairs**:
 
 | Pair | Why no collision |
 |------|-----------------|
 | 1 vs 2 | `"g_apps"` ≠ `"app"` |
-| 1 vs 3 | Vec ≠ Symbol (different `ScVal` variant) |
-| 1 vs 4 | `"g_apps"` ≠ `"maint"` |
-| 1 vs 5 | `"g_apps"` ≠ `"o_asgn"` |
-| 1 vs 6 | `"g_apps"` ≠ `"asgn"` |
-| 1 vs 7 | `"g_apps"` ≠ `"o_cap"` |
-| 2 vs 3 | Vec ≠ Symbol |
-| 2 vs 4 | `"app"` ≠ `"maint"` |
-| 2 vs 5 | `"app"` ≠ `"o_asgn"` |
-| 2 vs 6 | `"app"` ≠ `"asgn"` |
-| 2 vs 7 | `"app"` ≠ `"o_cap"` |
-| 3 vs 4 | Symbol ≠ Vec |
-| 3 vs 5 | Symbol ≠ Vec |
-| 3 vs 6 | Symbol ≠ Vec |
-| 3 vs 7 | Symbol ≠ Vec |
-| 4 vs 5 | `"maint"` ≠ `"o_asgn"` |
-| 4 vs 6 | `"maint"` ≠ `"asgn"` |
-| 4 vs 7 | `"maint"` ≠ `"o_cap"` |
-| 5 vs 6 | `"o_asgn"` ≠ `"asgn"` |
-| 5 vs 7 | `"o_asgn"` ≠ `"o_cap"` |
-| 6 vs 7 | `"asgn"` ≠ `"o_cap"` |
+| 1 vs 3 | `"g_apps"` ≠ `"app_idx"` |
+| 1 vs 4 | Vec ≠ Symbol (different `ScVal` variant) |
+| 1 vs 5 | `"g_apps"` ≠ `"maint"` |
+| 1 vs 6 | `"g_apps"` ≠ `"o_asgn"` |
+| 1 vs 7 | `"g_apps"` ≠ `"asgn"` |
+| 1 vs 8 | `"g_apps"` ≠ `"o_cap"` |
+| 2 vs 3 | `"app"` ≠ `"app_idx"` |
+| 2 vs 4 | Vec ≠ Symbol |
+| 2 vs 5 | `"app"` ≠ `"maint"` |
+| 2 vs 6 | `"app"` ≠ `"o_asgn"` |
+| 2 vs 7 | `"app"` ≠ `"asgn"` |
+| 2 vs 8 | `"app"` ≠ `"o_cap"` |
+| 3 vs 4 | Vec ≠ Symbol |
+| 3 vs 5 | `"app_idx"` ≠ `"maint"` |
+| 3 vs 6 | `"app_idx"` ≠ `"o_asgn"` |
+| 3 vs 7 | `"app_idx"` ≠ `"asgn"` |
+| 3 vs 8 | `"app_idx"` ≠ `"o_cap"` |
+| 4 vs 5 | Symbol ≠ Vec |
+| 4 vs 6 | Symbol ≠ Vec |
+| 4 vs 7 | Symbol ≠ Vec |
+| 4 vs 8 | Symbol ≠ Vec |
+| 5 vs 6 | `"maint"` ≠ `"o_asgn"` |
+| 5 vs 7 | `"maint"` ≠ `"asgn"` |
+| 5 vs 8 | `"maint"` ≠ `"o_cap"` |
+| 6 vs 7 | `"o_asgn"` ≠ `"asgn"` |
+| 6 vs 8 | `"o_asgn"` ≠ `"o_cap"` |
+| 7 vs 8 | `"asgn"` ≠ `"o_cap"` |
 
 *Within-pattern collision is impossible* because the remaining tuple fields uniquely identify the logical record. `Address` values are validated by the host via `require_auth`, preventing impersonation. Distinct logical records within the same category differ in at least one of `(contributor, org_id, issue_id)`. ∎
 
@@ -475,3 +556,31 @@ Assume 100 contributors each submit 3 applications, 30 are assigned, 30 complete
 - Do not let the contract instance TTL lapse — bump it regularly or rely on the `bump_instance` call made on every state-changing transaction.
 - For orgs with > 5 000 contributors, raise `APP_TTL_LEDGERS` only if the Wave duration requires it — a longer TTL multiplies the temporary rent cost proportionally.
 - Monitor the `("o_cap", org_id)` key: each distinct org adds one persistent entry of ~35 bytes (negligible unless there are thousands of orgs).
+
+---
+
+## Off-chain Redis Cache Architecture
+
+In addition to on-chain Soroban storage, WorkloadGovernor uses an off-chain Redis caching layer (`src/services/redis.ts`) to serve high-throughput read traffic, enforce transaction idempotency, and provide distributed synchronization across backend instances.
+
+### Key Namespaces and TTL Policies
+
+| Key Pattern | Description | TTL | Invalidation Trigger |
+|-------------|-------------|-----|----------------------|
+| `idemp:<key>` | Idempotency token storage preventing double execution | 86,400 s (24 h) | Natural TTL expiry |
+| `lock:<resource>` | Distributed Redlock mutex for critical sections | 30 s | Explicit release on operation completion |
+| `cache:org:<org_id>` | Cached organization metadata and active issue capacities | 300 s (5 min) | Contract events (`applied`, `assigned`, `completed`) |
+| `cache:contributor:<address>` | Cached global application count and active assignment list | 60 s (1 min) | Contract events (`applied`, `withdrawn`, `revoked`) |
+
+### Cache Invalidation Flow
+
+When state changes on-chain, Soroban contract events are ingested by the off-chain indexer service, which publishes cache eviction messages to purge stale entries:
+
+```mermaid
+flowchart LR
+    A["Soroban Smart Contract"] -->|"Emit Event"| B["Event Indexer Service"]
+    B -->|"Parse Event"| C["Redis Cache Service"]
+    C -->|"DEL cache:org:<org_id>"| D["Organization Cache"]
+    C -->|"DEL cache:contributor:<address>"| E["Contributor Cache"]
+```
+

@@ -19,6 +19,8 @@ import type { Difficulty } from '../hooks/useOrgIssues';
 import type { IssueStatus } from '../hooks/useOrgIssues';
 import { useToast } from '../components/Toast';
 import { IssueCardSkeleton } from '../components/SkeletonScreens';
+import TxConfirmModal from '../components/TxConfirmModal';
+import { useTxModal } from '../hooks/useTxModal';
 import './OrgIssuesPage.css';
 
 const GLOBAL_CAP = 15;
@@ -34,6 +36,29 @@ const STATUS_LABEL: Record<IssueStatus, string> = {
   applied: 'Applied',
   assigned: 'Assigned',
 };
+
+interface FreighterApi {
+  signTransaction: (
+    xdr: string,
+    options: { network: string; accountToSign: string },
+  ) => Promise<{ signedTxXdr?: string; error?: string }>;
+}
+
+interface PreparedTransaction {
+  xdr: string;
+  fee: string;
+}
+
+function formatFee(feeStroops: string): string {
+  const stroops = BigInt(feeStroops);
+  const whole = stroops / 10_000_000n;
+  const fraction = (stroops % 10_000_000n).toString().padStart(7, '0').replace(/0+$/, '') || '0';
+  return `${whole}.${fraction} XLM`;
+}
+
+function getFreighter(): FreighterApi | null {
+  return (globalThis as typeof globalThis & { __freighter_api__?: FreighterApi }).__freighter_api__ ?? null;
+}
 
 // ── IssueRow ──────────────────────────────────────────────────────────────────
 
@@ -151,6 +176,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   const wallet = useWallet();
   const [searchParams, setSearchParams] = useSearchParams();
   const { add: addToast } = useToast();
+  const txModal = useTxModal();
 
   const {
     issues,
@@ -276,65 +302,112 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  async function executeReviewedTransaction(action: 'apply' | 'withdraw', issueId: string): Promise<string> {
+    if (!wallet.publicKey || !org_id) throw new Error('Connect your wallet before submitting a transaction.');
+
+    const horizonBase = import.meta.env.VITE_HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
+    const accountResponse = await fetch(`${horizonBase}/accounts/${encodeURIComponent(wallet.publicKey)}`);
+    if (!accountResponse.ok) throw new Error(`Failed to fetch account sequence: ${accountResponse.status}`);
+    const account = await accountResponse.json() as { sequence: string };
+
+    const buildResponse = await fetch(`${apiBase}/transactions/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contributor: wallet.publicKey,
+        org_id,
+        issue_id: Number(issueId),
+        sequence: account.sequence,
+      }),
+    });
+    if (!buildResponse.ok) {
+      const body = await buildResponse.json().catch(() => ({})) as { error?: string };
+      throw new Error(body.error ?? `Failed to prepare transaction: ${buildResponse.status}`);
+    }
+
+    const prepared = await buildResponse.json() as PreparedTransaction;
+    const issue = issues.find((item) => item.issue_id === issueId);
+    const operation = action === 'apply' ? 'apply_for_issue' : 'withdraw_application';
+    const network = (import.meta.env.VITE_STELLAR_NETWORK ?? 'TESTNET').toLowerCase();
+    await txModal.confirm({
+      action: `${action === 'apply' ? 'Apply for' : 'Withdraw from'} ${issue?.title ?? `issue ${issueId}`}`,
+      operation,
+      parameters: {
+        contributor: wallet.publicKey,
+        org_id,
+        issue_id: Number(issueId),
+      },
+      target: `Organization ${org_id} / Issue ${issueId}`,
+      fee: formatFee(prepared.fee),
+      network,
+      destructive: action === 'withdraw',
+      xdr: prepared.xdr,
+      confirmLabel: action === 'apply' ? 'Confirm application' : 'Confirm withdrawal',
+    });
+
+    txModal.setLoading();
+    const freighter = getFreighter();
+    if (!freighter) throw new Error('Freighter extension not found.');
+
+    const { signedTxXdr, error: signError } = await freighter.signTransaction(prepared.xdr, {
+      network: network.toUpperCase(),
+      accountToSign: wallet.publicKey,
+    });
+    if (signError) throw new Error(`Signing failed: ${signError}`);
+    if (!signedTxXdr) throw new Error('Freighter did not return a signed transaction.');
+
+    const submitResponse = await fetch(`${apiBase}/transactions/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signed_xdr: signedTxXdr }),
+    });
+    if (!submitResponse.ok) {
+      const body = await submitResponse.json().catch(() => ({})) as { error?: string; reason?: string };
+      throw new Error(body.reason ?? body.error ?? `Transaction submission failed: ${submitResponse.status}`);
+    }
+
+    const result = await submitResponse.json() as { hash: string };
+    return result.hash;
+  }
+
   async function handleApply(issueId: string) {
     if (!wallet.publicKey) return;
     setBusyIssue(issueId);
     setTxHash(null);
 
     try {
+      const hash = await executeReviewedTransaction('apply', issueId);
       setIssueStatus(issueId, 'applied');
-
-      const res = await fetch(
-        `${apiBase}/orgs/${encodeURIComponent(org_id!)}/issues/${encodeURIComponent(issueId)}/apply`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contributor: wallet.publicKey }),
-        },
-      );
-      if (!res.ok) throw new Error(`Apply failed: ${res.status}`);
-      const data = (await res.json()) as { tx_hash?: string };
-      if (data.tx_hash) setTxHash(data.tx_hash);
+      setTxHash(hash);
       const issue = issues.find((entry) => entry.issue_id === issueId);
       addToast(issue ? `Applied for "${issue.title}"` : 'Applied for issue', 'success');
     } catch (err) {
-      setIssueStatus(issueId, 'open');
-      addToast(err instanceof Error ? err.message : 'Apply failed', 'error');
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        addToast(err instanceof Error ? err.message : 'Apply failed', 'error');
+      }
     } finally {
+      txModal.close();
       setBusyIssue(null);
     }
   }
 
   async function handleWithdraw(issueId: string) {
     if (!wallet.publicKey) return;
-    const confirmed = window.confirm(
-      'Withdraw this application? This will free one global cap slot.',
-    );
-    if (!confirmed) return;
-
     setBusyIssue(issueId);
     setTxHash(null);
 
     try {
+      const hash = await executeReviewedTransaction('withdraw', issueId);
       setIssueStatus(issueId, 'open');
-
-      const txRes = await fetch(`${apiBase}/transactions/withdraw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contributor: wallet.publicKey,
-          org_id: org_id,
-          issue_id: Number(issueId),
-          sequence: '0',
-        }),
-      });
-      if (!txRes.ok) throw new Error(`Withdraw failed: ${txRes.status}`);
+      setTxHash(hash);
       const issue = issues.find((entry) => entry.issue_id === issueId);
       addToast(issue ? `Withdrawn from "${issue.title}"` : 'Withdrawn from issue', 'info');
     } catch (err) {
-      setIssueStatus(issueId, 'applied');
-      addToast(err instanceof Error ? err.message : 'Withdraw failed', 'error');
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        addToast(err instanceof Error ? err.message : 'Withdraw failed', 'error');
+      }
     } finally {
+      txModal.close();
       setBusyIssue(null);
     }
   }
@@ -532,6 +605,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
           )}
         </div>
       )}
+      <TxConfirmModal modal={txModal} />
     </main>
   );
 }

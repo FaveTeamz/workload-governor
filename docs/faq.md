@@ -17,6 +17,9 @@ To free a slot: wait for a maintainer to assign one of your existing application
 (which converts it to an assignment and removes it from your pending count), or
 withdraw an application yourself using `withdraw_application`.
 
+For a plain-English explanation of how both caps work and what to do when you
+hit them, see [docs/fairness-explainer.md](fairness-explainer.md).
+
 ---
 
 ### 2. How long does a pending application last?
@@ -68,6 +71,9 @@ by the contract via error code `7` (`OrgAssignmentLimitReached`).
 
 There is no global assignment cap — the cap is per-org. You could theoretically have
 4 assignments in org A and 4 in org B simultaneously.
+
+For worked examples showing how the global and per-org caps interact, see
+[docs/fairness-explainer.md](fairness-explainer.md).
 
 ---
 

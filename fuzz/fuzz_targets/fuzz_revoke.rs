@@ -65,7 +65,7 @@ fuzz_target!(|data: &[u8]| {
 
         // Assign
         let assign_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+            client.assign_issue(&maintainer, &contributor, &org, &issue_id, &None::<u32>);
         }));
         assigned_ok = assign_result.is_ok();
 

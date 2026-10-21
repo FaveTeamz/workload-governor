@@ -1,5 +1,7 @@
 'use client';
 
+import { memo, useCallback } from 'react';
+
 type IssueStatus = 'open' | 'assigned' | 'completed';
 
 export type Issue = {
@@ -28,9 +30,15 @@ const STATUS_STYLES: Record<IssueStatus, string> = {
 
 /**
  * Individual issue card.
+ *
+ * Wrapped with React.memo so that cards whose props have not changed are
+ * skipped on re-renders triggered by unrelated global state updates (e.g.
+ * wallet connection events). The parent must pass stable callback references
+ * via useCallback to take full advantage of the memoization.
+ *
  * The "Apply" button meets WCAG 2.5.5 minimum touch target of 44×44 px.
  */
-function IssueCard({ issue, onApply }: IssueCardProps) {
+const IssueCard = memo(function IssueCard({ issue, onApply }: IssueCardProps) {
   return (
     <article
       data-testid="issue-card"
@@ -76,7 +84,7 @@ function IssueCard({ issue, onApply }: IssueCardProps) {
       </div>
     </article>
   );
-}
+});
 
 /**
  * Responsive grid of issue cards.
@@ -85,15 +93,28 @@ function IssueCard({ issue, onApply }: IssueCardProps) {
  *  - Default (< 640px):  1 column
  *  - sm (640px+):        2 columns
  *  - lg (1024px+):       3 columns
+ *
+ * The onApply callback is stabilised with useCallback so that IssueCard's
+ * React.memo check is not defeated by a new function reference on every
+ * render of the parent.
  */
 export default function IssueCardGrid({ issues, onApply }: IssueCardGridProps) {
+  // Stable callback reference — prevents IssueCard from re-rendering when
+  // unrelated parent state (e.g. wallet connection status) changes.
+  const stableOnApply = useCallback(
+    (issueId: string) => {
+      onApply?.(issueId);
+    },
+    [onApply],
+  );
+
   return (
     <div
       data-testid="issue-card-grid"
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
     >
       {issues.map((issue) => (
-        <IssueCard key={issue.id} issue={issue} onApply={onApply} />
+        <IssueCard key={issue.id} issue={issue} onApply={stableOnApply} />
       ))}
     </div>
   );

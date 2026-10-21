@@ -9,14 +9,16 @@ Complete reference for running every test layer in the WorkloadGovernor project.
 1. [Prerequisites](#prerequisites)
 2. [Localnet Setup (Stellar Quickstart)](#localnet-setup-stellar-quickstart)
 3. [Environment Variables](#environment-variables)
-4. [Contract Tests (Rust)](#contract-tests-rust)
-5. [Property-Based Tests](#property-based-tests)
-6. [Backend API Tests](#backend-api-tests)
-7. [E2E Tests (Playwright)](#e2e-tests-playwright)
-8. [Fuzz Tests](#fuzz-tests)
-9. [Mutation Testing](#mutation-testing)
-10. [Benchmarks](#benchmarks)
-11. [CI Notes](#ci-notes)
+4. [Test Runner Configuration](#test-runner-configuration)
+5. [Command Reference](#command-reference)
+6. [Contract Tests (Rust)](#contract-tests-rust)
+7. [Property-Based Tests](#property-based-tests)
+8. [Backend API Tests](#backend-api-tests)
+9. [E2E Tests (Playwright)](#e2e-tests-playwright)
+10. [Fuzz Tests](#fuzz-tests)
+11. [Mutation Testing](#mutation-testing)
+12. [Benchmarks](#benchmarks)
+13. [CI Notes](#ci-notes)
 
 ---
 
@@ -152,6 +154,136 @@ the smoke tests.  Copy `.env.example` to `.env` and fill in the values.
 In CI, inject `ADMIN_PUBLIC_KEY` and `ADMIN_SECRET_KEY` as GitHub Actions secrets.
 The E2E test file `tests/e2e/admin-maintainer-flow.spec.ts` reads them via
 `process.env` and falls back to safe test-only defaults when absent.
+
+---
+
+## Test Runner Configuration
+
+The repository has three JavaScript test runners (Jest, Vitest, Playwright)
+plus Cargo, spread across seven config files. Each config file covers a
+different set of test files. Pick the command by the file you are working on,
+not by the directory it happens to sit in.
+
+### Config inventory
+
+| Config file | Runner | Test files covered (globs) | Environment | Command |
+|---|---|---|---|---|
+| `jest.config.js` → project `unit` | Jest + ts-jest | `tests/unit/**/*.test.ts` | node | `npx jest -c jest.config.js --selectProjects unit` |
+| `jest.config.js` → project `api` | Jest + ts-jest | `tests/api/**/*.test.ts` (global setup `tests/api/setup.ts`, `MockPool`) | node | `npx jest -c jest.config.js --selectProjects api` |
+| `jest.config.js` → project `contract` | Jest + ts-jest | `tests/contract/**/*.test.ts` (OpenAPI response-shape tests) | node | `npm run test:contract` |
+| `jest.config.ts` | Jest + ts-jest | `tests/**/*.test.ts`, including `tests/routes/`, `tests/integration/`, and `tests/multi-org.test.ts` | node | `npx jest -c jest.config.ts` |
+| `vitest.config.ts` → project `prop` | Vitest | `tests/unit/prop_*.test.ts` | node | `npm run test:unit -- --project prop` |
+| `vitest.config.ts` → project `unit-jsdom` | Vitest | `tests/unit/**/*.test.tsx` | jsdom | `npm run test:unit -- --project unit-jsdom` |
+| `vitest.unit.config.ts` | Vitest | `tests/unit/**/*.test.{ts,tsx}` (coverage over `frontend/src/**`) | jsdom | `npx vitest run --config vitest.unit.config.ts` |
+| `frontend/vitest.config.ts` | Vitest | `frontend/src/**/*.test.{ts,tsx}` | jsdom | `npm --prefix frontend test` |
+| `backend/vitest.config.ts` | Vitest | `backend/src/**/*.test.ts` | node | `cd backend && npx vitest run` |
+| `backend/package.json` → `"jest"` | Jest + ts-jest | `backend/src/**` Jest default (`__tests__/`, `*.test.ts`) | node | `npm --prefix backend test` |
+| `playwright.config.ts` | Playwright | `tests/e2e/**` | Chromium | `npx playwright test` |
+| `Cargo.toml` (`testutils` feature) | cargo test | `src/test.rs`, `tests/*.rs` | in-process Soroban ledger | `cargo test --features testutils` |
+
+> **Two root Jest configs.** Jest refuses to start when it finds both
+> `jest.config.js` and `jest.config.ts` without an explicit `--config`:
+>
+> ```
+> ● Multiple configurations found:
+>     * jest.config.js
+>     * jest.config.ts
+> ```
+>
+> Until one of them is removed, pass `-c jest.config.js` (or
+> `-c jest.config.ts`) when running Jest from the repository root, e.g.
+> `npm test -- -c jest.config.js`. `jest.config.js` is the primary config: it
+> defines the `unit` / `api` / `contract` projects that `npm run test:contract`
+> and `npm run coverage:backend` rely on.
+
+### Why the configs are split
+
+**Jest vs Vitest at the root.** The backend service code in `src/` was tested
+with Jest first, and most files in `tests/unit/*.test.ts` and all of
+`tests/api/` use Jest-only APIs (`jest.mock`, `jest.fn`). They must run under
+Jest. Newer tests use Vitest. This is either because they are
+React components that need jsdom and the same Vite/React plugin chain as the
+frontend (`tests/unit/*.test.tsx`), or because they are pure property-based
+tests (`fast-check`) that have no Jest dependency and run faster under Vitest
+(`tests/unit/prop_*.test.ts`). The root `vitest.config.ts` includes only
+those two groups, so that Vitest never tries to run a Jest-API file.
+
+**`vitest.config.ts` vs `vitest.unit.config.ts`.**
+
+| | `vitest.config.ts` | `vitest.unit.config.ts` |
+|---|---|---|
+| Structure | Two named projects (`prop` in node, `unit-jsdom` in jsdom) | One flat project, everything in jsdom |
+| Includes | `prop_*.test.ts` + `*.test.tsx` only | Every `tests/unit/*.test.{ts,tsx}` file |
+| Coverage | None configured (backend coverage comes from Jest) | V8 over `frontend/src/**` (`text` + `lcov`) |
+| `@tokens` alias | No | Yes (`frontend/src/tokens.json`) |
+| Used by | `npm run test:unit`, `coverage.yml` | Manual runs only |
+
+`vitest.config.ts` is the safe default: it runs only files known to be
+Vitest-compatible, each in the right environment. `vitest.unit.config.ts` is
+a lightweight single-project config with no Storybook or browser project. Use
+it when you want frontend coverage for components tested from `tests/unit/`,
+or need the `@tokens` alias. Because it also picks up the Jest-API `.ts`
+files, expect those to fail under it. Filter to the files you care about,
+e.g. `npx vitest run --config vitest.unit.config.ts WithdrawConfirmModal`.
+
+**Frontend and backend packages.** `frontend/` and `backend/` are separate npm
+packages with their own `node_modules`, so each has its own config.
+`frontend/vitest.config.ts` owns the component tests that sit next to source
+files and enforces a 75% coverage threshold. `backend/` (the Horizon
+service) currently has one Vitest file (`src/scheduler.test.ts`, run with
+`backend/vitest.config.ts`) and one Jest file
+(`src/__tests__/HorizonService.test.ts`, run with `npm test` in `backend/`,
+which enforces 100% coverage). Neither `backend/` runner is wired into CI.
+
+---
+
+## Command Reference
+
+Run from the repository root unless noted.
+
+**Rust contract**
+
+| Command | What it runs |
+|---|---|
+| `cargo test --features testutils` | All contract unit, integration, and property tests |
+| `cargo test --features testutils unit_` | Contract unit tests only (name filter) |
+| `cargo test --features testutils prop_` | Contract property-based tests only (name filter) |
+| `cargo test --features testutils bench_ -- --nocapture` | Benchmark tests, printing CPU/memory figures |
+| `cargo llvm-cov --features testutils --lcov --output-path coverage/contract/lcov.info` | Contract tests with coverage (as in `coverage.yml`) |
+| `cargo mutants` | Mutation testing (see [Mutation Testing](#mutation-testing)) |
+| `cargo +nightly fuzz run <target>` | A fuzz target (see [Fuzz Tests](#fuzz-tests)) |
+
+**Root package (backend service in `src/`)**
+
+| Command | What it runs |
+|---|---|
+| `npm test -- -c jest.config.js` | Jest: `unit` + `api` + `contract` projects (`npm test` without `-c` currently fails; see above) |
+| `npm test -- -c jest.config.js --selectProjects api` | Jest: API tests in `tests/api/` only |
+| `npm run test:contract` | Jest: OpenAPI response-shape contract tests in `tests/contract/` |
+| `npm run coverage:backend` | Jest with coverage (`lcov` + `text`), 80% global threshold |
+| `npm run test:unit` | Vitest (`vitest.config.ts`): `prop` + `unit-jsdom` projects |
+| `npm run test:unit -- --project prop` | Vitest: property-based tests only |
+| `npm run test:unit:watch` | Vitest in watch mode |
+| `npm run test:unit:coverage` | Vitest with coverage |
+| `npx vitest run --config vitest.unit.config.ts` | Vitest: flat jsdom run over all `tests/unit/`, V8 coverage of `frontend/src` |
+| `npx playwright test` | Playwright E2E suite in `tests/e2e/` |
+| `npm run coverage` | `coverage:backend` then `coverage:frontend` |
+
+**Frontend package**
+
+| Command | What it runs |
+|---|---|
+| `npm --prefix frontend test` | Vitest (`frontend/vitest.config.ts`): all `frontend/src/**/*.test.{ts,tsx}` |
+| `npm --prefix frontend run coverage` | The same with Istanbul coverage into `frontend/coverage/` (75% threshold) |
+| `npm --prefix frontend run test:e2e` | Playwright from `frontend/` |
+| `npm --prefix frontend run test:responsive` | Playwright responsive spec only |
+
+**Backend package**
+
+| Command | What it runs |
+|---|---|
+| `npm --prefix backend test` | Jest with coverage over `backend/src` (100% threshold) |
+| `cd backend && npx vitest run` | Vitest (`backend/vitest.config.ts`) over `backend/src/**/*.test.ts` |
 
 ---
 
@@ -392,17 +524,69 @@ Benchmark results are documented in [docs/benchmarks.md](benchmarks.md).
 
 ## CI Notes
 
-The GitHub Actions workflow at `.github/workflows/ci.yml` runs the following
-checks on every pull request:
+### Workflow ↔ config mapping
 
-- `cargo test --features testutils` — all Rust contract tests
-- `npm test` — all backend API + unit tests
-- `npx playwright test` — all E2E tests (workers = 1 in CI, 1 retry)
-- `npm run typecheck` — TypeScript type checking
-- `npm run lint` — ESLint
+| Workflow | Job | Command | Config used |
+|---|---|---|---|
+| [`ci.yml`](../.github/workflows/ci.yml) | `ci` | `npm test` | Root Jest (subject to the two-config caveat above) |
+| [`ci.yml`](../.github/workflows/ci.yml) | `ci` | `npm run test:contract` | `jest.config.js` → `contract` |
+| [`openapi-validate.yml`](../.github/workflows/openapi-validate.yml) | `contract-tests` | `npm run test:contract` | `jest.config.js` → `contract` |
+| [`openapi-validate.yml`](../.github/workflows/openapi-validate.yml) | `validate-api` | `npm run validate:api` | Dredd + `dredd-hooks.js` (note: no `validate:api` script is currently defined in `package.json`) |
+| [`backend-integration.yml`](../.github/workflows/backend-integration.yml) | `integration` | `npm test -- --testPathPattern="tests/api"` | Root Jest, against a real PostgreSQL service |
+| [`frontend-ci.yml`](../.github/workflows/frontend-ci.yml) | `frontend-ci` | `npm test` (in `frontend/`) | `frontend/vitest.config.ts` |
+| [`frontend.yml`](../.github/workflows/frontend.yml) | `build` | `npm test -- --watchAll=false` (in `frontend/`) | `frontend/vitest.config.ts` |
+| [`coverage.yml`](../.github/workflows/coverage.yml) | `coverage-backend` | `npx vitest run --config vitest.config.ts --coverage` | Root `vitest.config.ts` |
+| [`coverage.yml`](../.github/workflows/coverage.yml) | `coverage-frontend` | `npx vitest run --config frontend/vitest.config.ts --coverage` | `frontend/vitest.config.ts` |
+| [`coverage.yml`](../.github/workflows/coverage.yml) | `coverage-contract` | `cargo llvm-cov --features testutils --lcov` | `Cargo.toml` |
+| [`contract-ci.yml`](../.github/workflows/contract-ci.yml) | `test` | `cargo llvm-cov --features testutils --lcov --summary-only` | `Cargo.toml` |
+| [`contract-pipeline.yml`](../.github/workflows/contract-pipeline.yml) | `test` | `cargo llvm-cov --features testutils` (full suite) | `Cargo.toml` |
+| [`e2e.yml`](../.github/workflows/e2e.yml) | `e2e` | `npx playwright test` | `playwright.config.ts` |
+| [`smoke-tests.yml`](../.github/workflows/smoke-tests.yml) | `smoke` | `bash tests/smoke/testnet-smoke.sh` (manual dispatch) | — |
+
+Not run by any workflow: `vitest.unit.config.ts`, `backend/vitest.config.ts`,
+the `backend/package.json` Jest config, and `jest.config.ts` when selected
+explicitly.
 
 The contract pipeline at `.github/workflows/contract-pipeline.yml` additionally
-runs `cargo mutants` and publishes the mutation score badge.
+runs fuzzing and publishes the mutation report.
+
+### Coverage reporting (`codecov.yml`)
+
+Coverage is uploaded to Codecov as three separate **flags**, one per upload in
+`coverage.yml`. Each flag has its own project and patch targets:
+
+| Flag | Paths | Produced by | Project target | Patch target |
+|---|---|---|---|---|
+| `backend` | `src/` | `coverage-backend` job, upload `./coverage/backend/lcov.info` | 80% (±2%) | 70% |
+| `frontend` | `frontend/src/` | `coverage-frontend` job, upload `./coverage/frontend/lcov.info` | 75% (±2%) | 65% |
+| `contract` | `src/` (Rust) | `coverage-contract` job, upload `./coverage/contract/lcov.info`; also `contract-pipeline.yml` | 90% (±1%) | 80% |
+
+- **Overall status:** the combined project check targets 80% and fails on a
+  drop of more than 2%. The default patch check targets 70% of changed lines
+  (±5%).
+- **Carryforward:** all flags use `carryforward: true`. When a run does not
+  upload a flag (for example, a workflow was skipped by a path filter),
+  Codecov reuses that flag's last good upload instead of treating it as 0%.
+- **Ignored paths:** `tests/`, `infra/`, `docs/`, `*.md`, `dist/`,
+  `coverage/`, `node_modules/`, and `target/` never count towards coverage.
+- **PR comment:** Codecov updates a single comment per PR, and only when
+  coverage changes, with carryforward flags shown.
+
+Things to know when reading coverage numbers:
+
+- `backend` and `contract` share the `src/` path. The TypeScript and Rust
+  sources live side by side, so each flag's percentage is computed over
+  whatever files its lcov report actually contains.
+- Local reporters write to each config's default directory (`coverage/` at
+  the root, `frontend/coverage/` for the frontend). The `coverage.yml` uploads
+  expect `coverage/backend/` and `coverage/frontend/`. If an upload reports a
+  missing file, compare the `reportsDirectory` in the config with the `files:`
+  path in the workflow.
+- Local thresholds are separate from Codecov targets: `jest.config.js`
+  enforces 80%, `frontend/vitest.config.ts` 75%, and `backend/package.json`
+  100%.
+
+### Secrets
 
 Secrets required in the repository settings for E2E tests to use real credentials:
 

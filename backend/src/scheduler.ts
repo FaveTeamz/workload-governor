@@ -10,6 +10,8 @@
  *
  *   2. GitHub sync    — every 15 minutes
  *      Full-sync all registered org repos via github.ts.
+ *      If Horizon endpoint is unreachable, error is logged and scheduler
+ *      continues. After 3 consecutive failures, an alert is triggered.
  */
 
 import cron from "node-cron";
@@ -31,6 +33,14 @@ const TTL_EXTEND_THRESHOLD_LEDGERS = APP_TTL_LEDGERS; // extend when within 1 fu
 
 /** Max number of TTL extensions per Soroban transaction. */
 const BATCH_SIZE = 10;
+
+/** Maximum consecutive failures before alerting. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+// ─── Failure tracking ─────────────────────────────────────────────────────────
+
+let consecutiveGitHubSyncFailures = 0;
+let consecutiveTtlExtensionFailures = 0;
 
 // ─── TTL extension job ────────────────────────────────────────────────────────
 
@@ -85,58 +95,82 @@ function chunk<T>(arr: T[], size: number): T[][] {
  * - Submits them in batches of BATCH_SIZE to the Soroban contract.
  * - Logs a summary at the end.
  * - Per-batch failures are logged and the run continues.
+ * - Tracks consecutive failures and alerts after MAX_CONSECUTIVE_FAILURES.
  */
 export async function runTtlExtensionJob(): Promise<void> {
   const jobStart = Date.now();
   logger.info("TTL extension job started");
 
-  let applications: ApplicationRef[];
   try {
-    applications = await loadExpiringApplications();
-  } catch (err) {
-    logger.error({ err }, "TTL extension job: failed to load expiring applications");
-    return;
-  }
-
-  if (applications.length === 0) {
-    logger.info("TTL extension job: no expiring applications found");
-    return;
-  }
-
-  logger.info({ count: applications.length }, "TTL extension job: extending entries");
-
-  const batches = chunk(applications, BATCH_SIZE);
-  let extendedCount = 0;
-  let failedCount   = 0;
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i]!;
+    let applications: ApplicationRef[];
     try {
-      await extendApplicationTtlBatch(batch);
-      extendedCount += batch.length;
-      logger.debug(
-        { batchIndex: i + 1, batchTotal: batches.length, batchSize: batch.length },
-        "TTL batch submitted",
-      );
+      applications = await loadExpiringApplications();
     } catch (err) {
-      failedCount += batch.length;
-      // Log and continue — do NOT abort the entire run
+      consecutiveTtlExtensionFailures++;
       logger.error(
-        { err, batchIndex: i + 1, batchSize: batch.length },
-        "TTL extension batch failed — continuing to next batch",
+        { err, consecutiveFailures: consecutiveTtlExtensionFailures },
+        "TTL extension job: failed to load expiring applications"
       );
-    }
-  }
 
-  const durationMs = Date.now() - jobStart;
-  logger.info(
-    {
-      extended:  extendedCount,
-      failed:    failedCount,
-      durationMs,
-    },
-    "TTL extension job complete",
-  );
+      if (consecutiveTtlExtensionFailures >= MAX_CONSECUTIVE_FAILURES) {
+        logger.error(
+          { consecutiveFailures: consecutiveTtlExtensionFailures, threshold: MAX_CONSECUTIVE_FAILURES },
+          "TTL extension job: ALERT - max consecutive failures reached"
+        );
+      }
+      return;
+    }
+
+    // Success: reset consecutive failure counter
+    consecutiveTtlExtensionFailures = 0;
+
+    if (applications.length === 0) {
+      logger.info("TTL extension job: no expiring applications found");
+      return;
+    }
+
+    logger.info({ count: applications.length }, "TTL extension job: extending entries");
+
+    const batches = chunk(applications, BATCH_SIZE);
+    let extendedCount = 0;
+    let failedCount   = 0;
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]!;
+      try {
+        await extendApplicationTtlBatch(batch);
+        extendedCount += batch.length;
+        logger.debug(
+          { batchIndex: i + 1, batchTotal: batches.length, batchSize: batch.length },
+          "TTL batch submitted",
+        );
+      } catch (err) {
+        failedCount += batch.length;
+        // Log and continue — do NOT abort the entire run
+        logger.error(
+          { err, batchIndex: i + 1, batchSize: batch.length },
+          "TTL extension batch failed — continuing to next batch",
+        );
+      }
+    }
+
+    const durationMs = Date.now() - jobStart;
+    logger.info(
+      {
+        extended:  extendedCount,
+        failed:    failedCount,
+        durationMs,
+      },
+      "TTL extension job complete",
+    );
+  } catch (err) {
+    // Catch any unexpected errors and log them without crashing
+    consecutiveTtlExtensionFailures++;
+    logger.error(
+      { err, consecutiveFailures: consecutiveTtlExtensionFailures },
+      "TTL extension job: unexpected error"
+    );
+  }
 }
 
 // ─── GitHub sync job ─────────────────────────────────────────────────────────
@@ -144,7 +178,11 @@ export async function runTtlExtensionJob(): Promise<void> {
 /**
  * Run one GitHub sync cycle.
  * Delegates to runFullSync() in github.ts.
- * Errors are caught and logged — the scheduler itself never crashes.
+ * 
+ * Error handling:
+ * - Errors are caught and logged — the scheduler itself never crashes.
+ * - Consecutive failures are tracked; alert triggered after MAX_CONSECUTIVE_FAILURES.
+ * - On success, consecutive failure counter is reset.
  */
 export async function runGitHubSyncJob(): Promise<void> {
   logger.info("GitHub sync job started");
@@ -153,13 +191,153 @@ export async function runGitHubSyncJob(): Promise<void> {
     const results = await runFullSync();
     const totalUpserted = results.reduce((s, r) => s + r.upserted, 0);
     const totalClosed   = results.reduce((s, r) => s + r.closed,   0);
+    
+    // Success: reset consecutive failure counter
+    consecutiveGitHubSyncFailures = 0;
+    
     logger.info(
       { repos: results.length, totalUpserted, totalClosed, durationMs: Date.now() - start },
       "GitHub sync job complete",
     );
   } catch (err) {
-    logger.error({ err, durationMs: Date.now() - start }, "GitHub sync job failed");
+    consecutiveGitHubSyncFailures++;
+    logger.error(
+      { err, durationMs: Date.now() - start, consecutiveFailures: consecutiveGitHubSyncFailures },
+      "GitHub sync job failed",
+    );
+
+    if (consecutiveGitHubSyncFailures >= MAX_CONSECUTIVE_FAILURES) {
+      logger.error(
+        { consecutiveFailures: consecutiveGitHubSyncFailures, threshold: MAX_CONSECUTIVE_FAILURES },
+        "GitHub sync job: ALERT - max consecutive failures reached"
+      );
+    }
   }
+}
+
+// ─── Indexer Checkpoint Persistence (issue #849) ─────────────────────────────
+
+export interface CheckpointRecord {
+  contract_id: string;
+  last_ledger: number;
+  last_ledger_hash: string | null;
+  updated_at: Date;
+}
+
+export const CHECKPOINT_LEDGER_INTERVAL = 100;
+export const CHECKPOINT_TIME_INTERVAL_MS = 5_000;
+
+interface LedgerProgressState {
+  lastCommittedLedger: number;
+  lastCommittedTime: number;
+}
+
+const progressStates = new Map<string, LedgerProgressState>();
+
+/**
+ * Commit current ledger checkpoint transactionally into indexer_checkpoints table.
+ */
+export async function commitLedgerCheckpoint(
+  contractId: string,
+  lastLedger: number,
+  lastLedgerHash?: string | null,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO indexer_checkpoints (contract_id, last_ledger, last_ledger_hash, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (contract_id)
+       DO UPDATE SET last_ledger = EXCLUDED.last_ledger,
+                     last_ledger_hash = EXCLUDED.last_ledger_hash,
+                     updated_at = NOW()`,
+      [contractId, lastLedger, lastLedgerHash ?? null],
+    );
+    await client.query("COMMIT");
+
+    progressStates.set(contractId, {
+      lastCommittedLedger: lastLedger,
+      lastCommittedTime: Date.now(),
+    });
+    logger.debug({ contractId, lastLedger }, "Indexer checkpoint committed transactionally");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    logger.error({ err, contractId, lastLedger }, "Failed to commit ledger checkpoint");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Read checkpoint from database.
+ */
+export async function getLedgerCheckpoint(
+  contractId: string,
+): Promise<CheckpointRecord | null> {
+  const result = await pool.query<CheckpointRecord>(
+    `SELECT contract_id, last_ledger, last_ledger_hash, updated_at
+     FROM indexer_checkpoints
+     WHERE contract_id = $1`,
+    [contractId],
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Startup recovery: resumes from database checkpoint if Redis cache is empty.
+ */
+export async function readStartupCheckpoint(
+  contractId: string,
+  redisCacheValue?: string | number | null,
+): Promise<number | null> {
+  if (redisCacheValue !== undefined && redisCacheValue !== null && redisCacheValue !== "") {
+    const parsed = typeof redisCacheValue === "number" ? redisCacheValue : parseInt(String(redisCacheValue), 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      logger.info({ contractId, ledger: parsed }, "Resuming from Redis cache checkpoint");
+      return parsed;
+    }
+  }
+
+  // Redis cache empty or unavailable — query database checkpoint
+  logger.info({ contractId }, "Redis cache empty, reading database checkpoint from indexer_checkpoints");
+  const dbCheckpoint = await getLedgerCheckpoint(contractId);
+  if (dbCheckpoint && dbCheckpoint.last_ledger > 0) {
+    logger.info({ contractId, ledger: dbCheckpoint.last_ledger }, "Resuming from database checkpoint");
+    return dbCheckpoint.last_ledger;
+  }
+
+  return null;
+}
+
+/**
+ * Checkpoint progress tracker: commits checkpoint every 5 seconds or upon every 100 ledgers.
+ */
+export async function trackLedgerProgress(
+  contractId: string,
+  currentLedger: number,
+  lastLedgerHash?: string | null,
+  force: boolean = false,
+): Promise<boolean> {
+  const state = progressStates.get(contractId) ?? {
+    lastCommittedLedger: 0,
+    lastCommittedTime: 0,
+  };
+
+  const ledgersDelta = currentLedger - state.lastCommittedLedger;
+  const timeDelta = Date.now() - state.lastCommittedTime;
+
+  if (
+    force ||
+    ledgersDelta >= CHECKPOINT_LEDGER_INTERVAL ||
+    timeDelta >= CHECKPOINT_TIME_INTERVAL_MS
+  ) {
+    await commitLedgerCheckpoint(contractId, currentLedger, lastLedgerHash);
+    return true;
+  }
+
+  return false;
 }
 
 // ─── Scheduler setup ─────────────────────────────────────────────────────────

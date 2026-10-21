@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust stable with fmt + clippy
         uses: dtolnay/rust-toolchain@stable
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust stable with llvm-tools
         uses: dtolnay/rust-toolchain@stable
@@ -88,7 +88,45 @@ jobs:
 
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: mutants.out/mutation-report.html
+          retention-days: 7
+
+  # ── 3. Build WASM & Size Budget Assertion ───────────────────────────────
+  build-wasm:
+    name: Build WASM & Size Budget Check
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable with wasm targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      - name: Build WASM binaries
+        run: |
+          cargo build --target wasm32v1-none --release
+          cargo build --target wasm32-unknown-unknown --release
+
+      - name: Assert WASM Binary Size Budget (< 64 KB)
+        run: bash scripts/test-contract.sh --check-size
+
+      - name: Upload unoptimized WASM
+        uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/workload_governor.wasm
@@ -103,7 +141,7 @@ jobs:
     # for review). Acceptance criterion: artifact uploaded on every main merge.
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust stable with wasm32v1-none target
         uses: dtolnay/rust-toolchain@stable
@@ -129,15 +167,25 @@ jobs:
       - name: Report WASM size
         run: |
           SIZE=$(wc -c < target/wasm32v1-none/release/workload_governor.optimized.wasm)
-          echo "Optimized WASM size: ${SIZE} bytes (limit 65536)"
+          echo "Optimized WASM size: ${SIZE} bytes"
           echo "### 📦 WASM Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build | Size |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Optimized | ${SIZE} bytes |" >> "$GITHUB_STEP_SUMMARY"
-          [ "$SIZE" -le 65536 ] || (echo "❌ WASM exceeds 64 KB limit" && exit 1)
+          echo "| Build | Size | Limit | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE" -le 20480 ]; then
+            STATUS="✅ under 20 KB target"
+          elif [ "$SIZE" -le 22528 ]; then
+            STATUS="⚠️ above 20 KB target but within 22 KB gate"
+          else
+            STATUS="❌ exceeds 22 KB gate"
+          fi
+          echo "| Optimized | ${SIZE} bytes | 22 528 bytes (22 KB) | ${STATUS} |" >> "$GITHUB_STEP_SUMMARY"
+          # Hard fail: Soroban network limit
+          [ "$SIZE" -le 65536 ] || (echo "❌ WASM exceeds 64 KB Soroban limit" && exit 1)
+          # Hard fail: mainnet deployment gate (22 KB)
+          [ "$SIZE" -le 22528 ] || (echo "❌ WASM exceeds 22 KB deployment gate (${SIZE} bytes). Target is < 20 KB. Reduce binary size before merging." && exit 1)
 
       - name: Upload optimized WASM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
@@ -150,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -178,9 +226,31 @@ jobs:
 
       - name: Upload fuzz artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts-${{ github.run_id }}
           path: fuzz/artifacts/
           if-no-files-found: ignore
           retention-days: 30
+
+  # ── 6. Dependency Audit (cargo audit + cargo deny) ───────────────────────
+  #
+  # Closes issue #605, #874: supply-chain audit before mainnet deployment.
+  # Runs on every PR and push to main (not on the nightly fuzz schedule).
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check cargo-deny (licenses, bans, advisories)
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check
+          arguments: licenses bans advisories
+
+      - name: Check RustSec advisories (cargo-audit)
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

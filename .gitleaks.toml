@@ -1,0 +1,16 @@
+# Gitleaks configuration for workload-governor
+title = "workload-governor gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "stellar-secret-seed"
+description = "Unmasked Stellar secret seed / private key"
+regex = '''(?i)\bS[A-Z0-9]{55}\b'''
+keywords = ["stellar", "seed", "secret", "private"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic unencrypted API key or secret token"
+regex = '''(?i)(?:api_key|secret_key|access_token|private_key|auth_token)\s*[:=]\s*["'][a-zA-Z0-9_\-\.]{20,}["']'''
