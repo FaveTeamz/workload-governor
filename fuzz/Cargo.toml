@@ -49,3 +49,9 @@ name = "fuzz_revoke"
 path = "fuzz_targets/fuzz_revoke.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_dual_cap_saturation"
+path = "fuzz_targets/fuzz_dual_cap_saturation.rs"
+test = false
+doc = false

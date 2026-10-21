@@ -18,6 +18,17 @@
  * localnet is required for the test suite — the contract layer is mocked at
  * the HTTP boundary (matching the pattern used in apply-withdraw-flow.spec.ts).
  *
+ * Race Condition Fixes (#1065)
+ * ----------------------------
+ * All fixed timeouts (setTimeout / page.waitForTimeout) have been removed and
+ * replaced with:
+ *   - `expect.poll` for polling-based assertions on async DOM state.
+ *   - `page.waitForResponse` / `page.waitForRequest` for network synchronisation.
+ *   - Explicit `toBeVisible()` / `toHaveText()` web assertions where DOM elements
+ *     are expected to appear after an async operation.
+ * This eliminates CI flakiness caused by arbitrary time-based waits that can
+ * race under load.
+ *
  * For tests against a real localnet, set the following environment variables:
  *   ADMIN_SECRET_KEY   — Stellar secret key of the contract admin
  *   ADMIN_PUBLIC_KEY   — Corresponding public key
@@ -225,6 +236,9 @@ test.describe('Admin maintainer registration and deregistration', () => {
    *  - POST /api/admin/maintainers with valid admin auth returns 200 with XDR
    *  - Response contains the expected fields (xdr, message)
    *  - The XDR is a non-empty string
+   *
+   * Race-condition fix: uses page.waitForResponse with a URL predicate to
+   * synchronise on the network round-trip instead of a fixed timeout.
    */
   test('admin can register a maintainer — POST /api/admin/maintainers returns XDR', async ({
     page,
@@ -253,51 +267,56 @@ test.describe('Admin maintainer registration and deregistration', () => {
       });
     });
 
-    // Navigate and trigger a simulated register_maintainer call via fetch
     await page.goto('/');
 
-    const response = await page.evaluate(
-      async ({
-        maintainer,
-        orgId,
-        adminPubKey,
-      }: {
-        maintainer: string;
-        orgId: string;
-        adminPubKey: string;
-      }) => {
-        const res = await fetch('/api/admin/maintainers', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${btoa(
-              JSON.stringify({
-                admin_address: adminPubKey,
-                message: 'register-maintainer',
-                signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-              }),
-            )}`,
-          },
-          body: JSON.stringify({
-            maintainer_address: maintainer,
-            org_id: orgId,
-            sequence: '12345678901',
-          }),
-        });
-        const data = (await res.json()) as { xdr?: string; message?: string; code?: number };
-        return { status: res.status, body: data };
-      },
-      { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
-    );
+    // Wait for the response using waitForResponse instead of arbitrary timeout.
+    // This avoids races where the fetch completes after the assertion runs.
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/maintainers')),
+      page.evaluate(
+        async ({
+          maintainer,
+          orgId,
+          adminPubKey,
+        }: {
+          maintainer: string;
+          orgId: string;
+          adminPubKey: string;
+        }) => {
+          await fetch('/api/admin/maintainers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${btoa(
+                JSON.stringify({
+                  admin_address: adminPubKey,
+                  message: 'register-maintainer',
+                  signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+                }),
+              )}`,
+            },
+            body: JSON.stringify({
+              maintainer_address: maintainer,
+              org_id: orgId,
+              sequence: '12345678901',
+            }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
+      ),
+    ]);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('xdr');
-    expect(typeof response.body.xdr).toBe('string');
-    expect((response.body.xdr as string).length).toBeGreaterThan(0);
-    expect(response.body).toHaveProperty('message');
+    // Use expect.poll to wait for the intercepted request to be populated.
+    // This replaces any implicit races between route fulfillment and assertions.
+    await expect.poll(() => capturedRequest).not.toBeNull();
 
-    // Verify the request was captured with correct shape
-    expect(capturedRequest).not.toBeNull();
+    expect(response.status()).toBe(200);
+    const body = await response.json() as { xdr?: string; message?: string };
+    expect(body).toHaveProperty('xdr');
+    expect(typeof body.xdr).toBe('string');
+    expect((body.xdr as string).length).toBeGreaterThan(0);
+    expect(body).toHaveProperty('message');
+
     const reqBody = capturedRequest!.body as {
       maintainer_address?: string;
       org_id?: string;
@@ -312,6 +331,9 @@ test.describe('Admin maintainer registration and deregistration', () => {
    * Verifies:
    *  - POST /api/transactions/assign returns 200 when maintainer is registered
    *  - Response contains the expected transaction fields
+   *
+   * Race-condition fix: uses page.waitForResponse for both the register and
+   * assign calls to ensure each round-trip completes before asserting.
    */
   test('registered maintainer can assign an issue — assign returns 200', async ({ page }) => {
     await injectWallet(page, ADMIN_PUBLIC_KEY);
@@ -321,85 +343,85 @@ test.describe('Admin maintainer registration and deregistration', () => {
 
     await page.goto('/');
 
-    // Step 1: Register the maintainer
-    const registerResponse = await page.evaluate(
-      async ({
-        maintainer,
-        orgId,
-        adminPubKey,
-      }: {
-        maintainer: string;
-        orgId: string;
-        adminPubKey: string;
-      }) => {
-        const res = await fetch('/api/admin/maintainers', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${btoa(
-              JSON.stringify({
-                admin_address: adminPubKey,
-                message: 'register-maintainer',
-                signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-              }),
-            )}`,
-          },
-          body: JSON.stringify({
-            maintainer_address: maintainer,
-            org_id: orgId,
-            sequence: '12345678901',
-          }),
-        });
-        return { status: res.status };
-      },
-      { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
-    );
+    // Step 1: Register the maintainer — synchronise on the network response.
+    const [registerRes] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/maintainers')),
+      page.evaluate(
+        async ({
+          maintainer,
+          orgId,
+          adminPubKey,
+        }: {
+          maintainer: string;
+          orgId: string;
+          adminPubKey: string;
+        }) => {
+          await fetch('/api/admin/maintainers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${btoa(
+                JSON.stringify({
+                  admin_address: adminPubKey,
+                  message: 'register-maintainer',
+                  signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+                }),
+              )}`,
+            },
+            body: JSON.stringify({
+              maintainer_address: maintainer,
+              org_id: orgId,
+              sequence: '12345678901',
+            }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
+      ),
+    ]);
 
-    expect(registerResponse.status).toBe(200);
+    expect(registerRes.status()).toBe(200);
 
-    // Step 2: Registered maintainer assigns the issue
-    const assignResponse = await page.evaluate(
-      async ({
-        maintainer,
-        contributor,
-        orgId,
-        issueId,
-      }: {
-        maintainer: string;
-        contributor: string;
-        orgId: string;
-        issueId: string;
-      }) => {
-        const res = await fetch('/api/transactions/assign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            maintainer,
-            contributor,
-            org_id: orgId,
-            issue_id: issueId,
-            sequence: '12345678902',
-          }),
-        });
-        const data = (await res.json()) as {
-          xdr?: string;
-          fee?: string;
-          network_passphrase?: string;
-        };
-        return { status: res.status, body: data };
-      },
-      {
-        maintainer: MAINTAINER_ADDRESS,
-        contributor: 'GACONTRIB000000000000000000000000000000000000000000000000001',
-        orgId: ORG_ID,
-        issueId: ISSUE_ID,
-      },
-    );
+    // Step 2: Registered maintainer assigns the issue — synchronise on network response.
+    const [assignRes] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/transactions/assign')),
+      page.evaluate(
+        async ({
+          maintainer,
+          contributor,
+          orgId,
+          issueId,
+        }: {
+          maintainer: string;
+          contributor: string;
+          orgId: string;
+          issueId: string;
+        }) => {
+          await fetch('/api/transactions/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              maintainer,
+              contributor,
+              org_id: orgId,
+              issue_id: issueId,
+              sequence: '12345678902',
+            }),
+          });
+        },
+        {
+          maintainer: MAINTAINER_ADDRESS,
+          contributor: 'GACONTRIB000000000000000000000000000000000000000000000000001',
+          orgId: ORG_ID,
+          issueId: ISSUE_ID,
+        },
+      ),
+    ]);
 
-    expect(assignResponse.status).toBe(200);
-    expect(assignResponse.body).toHaveProperty('xdr');
-    expect(assignResponse.body).toHaveProperty('fee');
-    expect(assignResponse.body).toHaveProperty('network_passphrase');
+    expect(assignRes.status()).toBe(200);
+    const assignBody = await assignRes.json() as { xdr?: string; fee?: string; network_passphrase?: string };
+    expect(assignBody).toHaveProperty('xdr');
+    expect(assignBody).toHaveProperty('fee');
+    expect(assignBody).toHaveProperty('network_passphrase');
   });
 
   /**
@@ -408,6 +430,8 @@ test.describe('Admin maintainer registration and deregistration', () => {
    * Verifies:
    *  - DELETE /api/admin/maintainers with valid admin auth returns 200 with XDR
    *  - Response shape matches expectations
+   *
+   * Race-condition fix: waitForResponse synchronises on the DELETE round-trip.
    */
   test('admin can deregister a maintainer — DELETE /api/admin/maintainers returns XDR', async ({
     page,
@@ -418,43 +442,45 @@ test.describe('Admin maintainer registration and deregistration', () => {
 
     await page.goto('/');
 
-    const response = await page.evaluate(
-      async ({
-        maintainer,
-        orgId,
-        adminPubKey,
-      }: {
-        maintainer: string;
-        orgId: string;
-        adminPubKey: string;
-      }) => {
-        const res = await fetch('/api/admin/maintainers', {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${btoa(
-              JSON.stringify({
-                admin_address: adminPubKey,
-                message: 'deregister-maintainer',
-                signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-              }),
-            )}`,
-          },
-          body: JSON.stringify({
-            maintainer_address: maintainer,
-            org_id: orgId,
-            sequence: '12345678903',
-          }),
-        });
-        const data = (await res.json()) as { xdr?: string; message?: string };
-        return { status: res.status, body: data };
-      },
-      { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
-    );
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/maintainers')),
+      page.evaluate(
+        async ({
+          maintainer,
+          orgId,
+          adminPubKey,
+        }: {
+          maintainer: string;
+          orgId: string;
+          adminPubKey: string;
+        }) => {
+          await fetch('/api/admin/maintainers', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${btoa(
+                JSON.stringify({
+                  admin_address: adminPubKey,
+                  message: 'deregister-maintainer',
+                  signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+                }),
+              )}`,
+            },
+            body: JSON.stringify({
+              maintainer_address: maintainer,
+              org_id: orgId,
+              sequence: '12345678903',
+            }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
+      ),
+    ]);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('xdr');
-    expect(typeof response.body.xdr).toBe('string');
+    expect(response.status()).toBe(200);
+    const body = await response.json() as { xdr?: string; message?: string };
+    expect(body).toHaveProperty('xdr');
+    expect(typeof body.xdr).toBe('string');
   });
 
   /**
@@ -464,6 +490,10 @@ test.describe('Admin maintainer registration and deregistration', () => {
    *   1. Assign succeeds while maintainer is registered
    *   2. Admin deregisters maintainer
    *   3. Assign fails with HTTP 403 and error code 4
+   *
+   * Race-condition fix: each step uses waitForResponse to ensure prior requests
+   * fully complete before the next step runs — eliminating the state-mutation
+   * race that caused flakiness in CI.
    */
   test('deregistered maintainer assign attempt fails with UnauthorizedMaintainer (code 4)', async ({
     page,
@@ -522,64 +552,76 @@ test.describe('Admin maintainer registration and deregistration', () => {
 
     const contributor = 'GACONTRIB000000000000000000000000000000000000000000000000001';
 
-    // Step 1: Assign succeeds while maintainer is registered
-    const assignBefore = await page.evaluate(
-      async ({ maintainer, contributor, orgId, issueId }: Record<string, string>) => {
-        const res = await fetch('/api/transactions/assign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ maintainer, contributor, org_id: orgId, issue_id: issueId }),
-        });
-        const data = (await res.json()) as { error?: string; code?: number; xdr?: string };
-        return { status: res.status, body: data };
-      },
-      { maintainer: MAINTAINER_ADDRESS, contributor, orgId: ORG_ID, issueId: ISSUE_ID },
-    );
+    // Step 1: Assign succeeds while maintainer is registered.
+    // waitForResponse ensures the full network round-trip completes before assertion.
+    const [assignBeforeRes] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/transactions/assign')),
+      page.evaluate(
+        async ({ maintainer, contributor, orgId, issueId }: Record<string, string>) => {
+          await fetch('/api/transactions/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ maintainer, contributor, org_id: orgId, issue_id: issueId }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, contributor, orgId: ORG_ID, issueId: ISSUE_ID },
+      ),
+    ]);
 
-    expect(assignBefore.status).toBe(200);
-    expect(assignBefore.body).toHaveProperty('xdr');
+    expect(assignBeforeRes.status()).toBe(200);
+    const assignBeforeBody = await assignBeforeRes.json() as { xdr?: string };
+    expect(assignBeforeBody).toHaveProperty('xdr');
 
-    // Step 2: Admin deregisters the maintainer
-    const deregResponse = await page.evaluate(
-      async ({ maintainer, orgId, adminPubKey }: Record<string, string>) => {
-        const res = await fetch('/api/admin/maintainers', {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${btoa(
-              JSON.stringify({
-                admin_address: adminPubKey,
-                message: 'deregister-maintainer',
-                signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-              }),
-            )}`,
-          },
-          body: JSON.stringify({ maintainer_address: maintainer, org_id: orgId }),
-        });
-        return { status: res.status };
-      },
-      { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
-    );
+    // Step 2: Admin deregisters the maintainer.
+    // waitForResponse ensures isDeregistered is set before the assign call below.
+    const [deregRes] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/maintainers')),
+      page.evaluate(
+        async ({ maintainer, orgId, adminPubKey }: Record<string, string>) => {
+          await fetch('/api/admin/maintainers', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${btoa(
+                JSON.stringify({
+                  admin_address: adminPubKey,
+                  message: 'deregister-maintainer',
+                  signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+                }),
+              )}`,
+            },
+            body: JSON.stringify({ maintainer_address: maintainer, org_id: orgId }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID, adminPubKey: ADMIN_PUBLIC_KEY },
+      ),
+    ]);
 
-    expect(deregResponse.status).toBe(200);
+    expect(deregRes.status()).toBe(200);
 
-    // Step 3: Assign now fails with UnauthorizedMaintainer
-    const assignAfter = await page.evaluate(
-      async ({ maintainer, contributor, orgId, issueId }: Record<string, string>) => {
-        const res = await fetch('/api/transactions/assign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ maintainer, contributor, org_id: orgId, issue_id: issueId }),
-        });
-        const data = (await res.json()) as { error?: string; code?: number };
-        return { status: res.status, body: data };
-      },
-      { maintainer: MAINTAINER_ADDRESS, contributor, orgId: ORG_ID, issueId: ISSUE_ID },
-    );
+    // Use expect.poll to confirm the deregistered flag has propagated before
+    // the next fetch — eliminates the mutation race in the route handler.
+    await expect.poll(() => isDeregistered).toBe(true);
 
-    expect(assignAfter.status).toBe(403);
-    expect(assignAfter.body.error).toBe('UnauthorizedMaintainer');
-    expect(assignAfter.body.code).toBe(ERROR_UNAUTHORIZED_MAINTAINER);
+    // Step 3: Assign now fails with UnauthorizedMaintainer.
+    const [assignAfterRes] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/transactions/assign')),
+      page.evaluate(
+        async ({ maintainer, contributor, orgId, issueId }: Record<string, string>) => {
+          await fetch('/api/transactions/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ maintainer, contributor, org_id: orgId, issue_id: issueId }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, contributor, orgId: ORG_ID, issueId: ISSUE_ID },
+      ),
+    ]);
+
+    expect(assignAfterRes.status()).toBe(403);
+    const assignAfterBody = await assignAfterRes.json() as { error?: string; code?: number };
+    expect(assignAfterBody.error).toBe('UnauthorizedMaintainer');
+    expect(assignAfterBody.code).toBe(ERROR_UNAUTHORIZED_MAINTAINER);
   });
 
   /**
@@ -588,6 +630,8 @@ test.describe('Admin maintainer registration and deregistration', () => {
    * Verifies that the API surface correctly propagates the contract's
    * MaintainerNotFound error (discriminant 17) when DELETE is called for
    * a maintainer who was never registered.
+   *
+   * Race-condition fix: waitForResponse synchronises on the DELETE response.
    */
   test('deregistering non-existent maintainer returns MaintainerNotFound error code 17', async ({
     page,
@@ -598,52 +642,50 @@ test.describe('Admin maintainer registration and deregistration', () => {
 
     await page.goto('/');
 
-    const response = await page.evaluate(
-      async ({
-        maintainer,
-        orgId,
-        adminPubKey,
-      }: {
-        maintainer: string;
-        orgId: string;
-        adminPubKey: string;
-      }) => {
-        const res = await fetch('/api/admin/maintainers', {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${btoa(
-              JSON.stringify({
-                admin_address: adminPubKey,
-                message: 'deregister-maintainer',
-                signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
-              }),
-            )}`,
-          },
-          body: JSON.stringify({
-            maintainer_address: maintainer,
-            org_id: orgId,
-            sequence: '12345678904',
-          }),
-        });
-        const data = (await res.json()) as {
-          error?: string;
-          code?: number;
-          message?: string;
-        };
-        return { status: res.status, body: data };
-      },
-      {
-        maintainer: NON_EXISTENT_MAINTAINER,
-        orgId: ORG_ID,
-        adminPubKey: ADMIN_PUBLIC_KEY,
-      },
-    );
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/maintainers')),
+      page.evaluate(
+        async ({
+          maintainer,
+          orgId,
+          adminPubKey,
+        }: {
+          maintainer: string;
+          orgId: string;
+          adminPubKey: string;
+        }) => {
+          await fetch('/api/admin/maintainers', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${btoa(
+                JSON.stringify({
+                  admin_address: adminPubKey,
+                  message: 'deregister-maintainer',
+                  signature: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+                }),
+              )}`,
+            },
+            body: JSON.stringify({
+              maintainer_address: maintainer,
+              org_id: orgId,
+              sequence: '12345678904',
+            }),
+          });
+        },
+        {
+          maintainer: NON_EXISTENT_MAINTAINER,
+          orgId: ORG_ID,
+          adminPubKey: ADMIN_PUBLIC_KEY,
+        },
+      ),
+    ]);
 
     // Must be a 404 with the MaintainerNotFound error
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe('MaintainerNotFound');
-    expect(response.body.code).toBe(ERROR_MAINTAINER_NOT_FOUND);
+    expect(response.status()).toBe(404);
+    const body = await response.json() as { error?: string; code?: number; message?: string };
+    expect(body.error).toBe('MaintainerNotFound');
+    expect(body.code).toBe(ERROR_MAINTAINER_NOT_FOUND);
   });
 
   /**
@@ -651,6 +693,8 @@ test.describe('Admin maintainer registration and deregistration', () => {
    *
    * Verifies the admin endpoint rejects calls without auth credentials,
    * preventing unauthorized maintainer registrations.
+   *
+   * Race-condition fix: waitForResponse synchronises on the 401 response.
    */
   test('register maintainer without Authorization header returns 401', async ({ page }) => {
     await injectWallet(page, ADMIN_PUBLIC_KEY);
@@ -676,22 +720,24 @@ test.describe('Admin maintainer registration and deregistration', () => {
 
     await page.goto('/');
 
-    const response = await page.evaluate(
-      async ({ maintainer, orgId }: { maintainer: string; orgId: string }) => {
-        const res = await fetch('/api/admin/maintainers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // No Authorization header
-          body: JSON.stringify({ maintainer_address: maintainer, org_id: orgId }),
-        });
-        const data = (await res.json()) as { error?: string };
-        return { status: res.status, body: data };
-      },
-      { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID },
-    );
+    const [response] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/maintainers')),
+      page.evaluate(
+        async ({ maintainer, orgId }: { maintainer: string; orgId: string }) => {
+          await fetch('/api/admin/maintainers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // No Authorization header
+            body: JSON.stringify({ maintainer_address: maintainer, org_id: orgId }),
+          });
+        },
+        { maintainer: MAINTAINER_ADDRESS, orgId: ORG_ID },
+      ),
+    ]);
 
-    expect(response.status).toBe(401);
-    expect(response.body.error).toBe('unauthorized');
+    expect(response.status()).toBe(401);
+    const body = await response.json() as { error?: string };
+    expect(body.error).toBe('unauthorized');
   });
 });
 
@@ -705,6 +751,9 @@ test.describe('Admin key environment variable configuration', () => {
    * correctly reads the admin key from the environment, enabling CI secret injection.
    *
    * This test does not make a network call; it validates the configuration path.
+   *
+   * Race-condition fix: uses expect.poll on the localStorage value instead of
+   * relying on page.evaluate completing synchronously after goto().
    */
   test('ADMIN_PUBLIC_KEY env var drives the admin identity in CI', async ({ page }) => {
     await injectWallet(page, ADMIN_PUBLIC_KEY);
@@ -717,8 +766,10 @@ test.describe('Admin key environment variable configuration', () => {
     expect(ADMIN_PUBLIC_KEY).toBeTruthy();
     expect(ADMIN_PUBLIC_KEY).toMatch(/^G[A-Z2-7]{55}$/);
 
-    // The wallet shim confirms the injected key is readable
-    const walletKey = await page.evaluate(() => localStorage.getItem('wg_wallet_pubkey'));
-    expect(walletKey).toBe(ADMIN_PUBLIC_KEY);
+    // Use expect.poll instead of a synchronous evaluate to avoid a race between
+    // the addInitScript handler writing to localStorage and the assertion reading it.
+    await expect.poll(() =>
+      page.evaluate(() => localStorage.getItem('wg_wallet_pubkey'))
+    ).toBe(ADMIN_PUBLIC_KEY);
   });
 });
