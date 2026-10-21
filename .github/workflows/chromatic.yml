@@ -1,0 +1,45 @@
+name: Chromatic Visual Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  chromatic:
+    name: Run Chromatic
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history is required for Chromatic baseline comparison
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Storybook
+        run: npm run build-storybook
+
+      - name: Run Chromatic
+        uses: chromaui/action@v12
+        with:
+          # Chromatic project token — store in repo secrets as CHROMATIC_PROJECT_TOKEN
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          # Upload pre-built Storybook instead of letting Chromatic rebuild
+          storybookBuildDir: storybook-static
+          # Auto-accept baselines when all stories pass (no unreviewed changes)
+          autoAcceptChanges: false
+          # Exit with non-zero code when visual changes need review
+          exitZeroOnChanges: false
+          # Prevent the workflow from hanging on first-run baseline acceptance
+          onlyChanged: false
