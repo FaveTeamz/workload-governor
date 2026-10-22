@@ -10,6 +10,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ## [Unreleased]
 
 ### Added
+- Document composite unique constraints and checkpoint persistence for event indexer deduplication in `docs/adr/ADR-009-indexer-event-deduplication.md`. (#1121)
 - Document the Jest/Vitest/Playwright/Cargo config inventory, the rationale for the config split, a full command reference, CI job mapping, and Codecov flags in `docs/testing.md`. (#793)
 
 ---
