@@ -12,6 +12,9 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ### Added
 - Document the Jest/Vitest/Playwright/Cargo config inventory, the rationale for the config split, a full command reference, CI job mapping, and Codecov flags in `docs/testing.md`. (#793)
 
+### Fixed
+- Fix devcontainer configuration to ensure Node.js and Rust toolchains are automatically installed and available in standard PATH for all terminal sessions. (#1124)
+
 ---
 
 ## [0.3.0] - 2026-08-28

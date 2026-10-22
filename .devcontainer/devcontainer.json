@@ -18,17 +18,33 @@
   "runServices": ["postgres", "redis"],
 
   "features": {
-    // Rust is already in the base image; pin to stable and add wasm target
+    // Rust toolchain with stable channel and wasm targets
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "stable",
-      "targets": "wasm32v1-none"
+      "profile": "default",
+      "targets": "wasm32v1-none,wasm32-unknown-unknown"
     },
-    // Node.js 20 LTS
+    // Node.js 20 LTS with npm and build dependencies
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
+      "version": "20",
+      "nodeGypDependencies": true
     },
     // Stellar CLI (latest released version)
     "ghcr.io/devcontainers-contrib/features/stellar-cli:1": {}
+  },
+
+  // Ensure node, npm, cargo, and rustup binaries are in standard PATH across all terminal sessions
+  "containerEnv": {
+    "CARGO_HOME": "/usr/local/cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "NVM_DIR": "/usr/local/share/nvm",
+    "PATH": "/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:${containerEnv:PATH}"
+  },
+  "remoteEnv": {
+    "CARGO_HOME": "/usr/local/cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "NVM_DIR": "/usr/local/share/nvm",
+    "PATH": "/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:${containerEnv:PATH}"
   },
 
   // Install project dependencies and copy env files the first time the container starts
