@@ -10,6 +10,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ## [Unreleased]
 
 ### Added
+- Add `npm run db:seed` script in `scripts/seed-mock-data.ts` to populate local database with mock organizations, open issues, pending applications, and assignments. (#1122)
 - Document the Jest/Vitest/Playwright/Cargo config inventory, the rationale for the config split, a full command reference, CI job mapping, and Codecov flags in `docs/testing.md`. (#793)
 
 ---
