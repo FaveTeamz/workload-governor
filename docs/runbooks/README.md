@@ -15,3 +15,4 @@ This directory contains production operations runbooks for the WorkloadGovernor 
 | [Horizon & RPC Node Migration](horizon-migration.md) | Infrastructure | Zero-downtime migration of Stellar Horizon and Soroban RPC endpoints. |
 | [Incident Response](incident-response.md) | SRE | On-call triage, severity classification, and escalation playbooks. |
 | [Mainnet Deployment Checklist](mainnet-deployment-checklist.md) | Release | Pre-flight verification checklist for mainnet contract deployment. |
+| [Stellar Protocol Upgrade](protocol-upgrade.md) | Operations | Protocol upgrade handling, testnet verification, WASM rebuilds, and rollback safeguards. |
