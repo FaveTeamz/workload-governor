@@ -78,13 +78,30 @@ jobs:
           tail -20 /tmp/fuzz_revoke.log >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Fuzz fuzz_lifecycle (${{ github.event.inputs.max_total_time || '300' }}s)
+        run: |
+          MAX_TIME="${{ github.event.inputs.max_total_time || '300' }}"
+          echo "### fuzz_lifecycle" >> "$GITHUB_STEP_SUMMARY"
+          echo "Running stateful lifecycle (5 contributors, 3 orgs, shadow model) for ${MAX_TIME}s" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "Running for ${MAX_TIME}s with seed corpus fuzz/corpus/fuzz_lifecycle/" \
+            >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p fuzz/corpus/fuzz_lifecycle fuzz/artifacts/fuzz_lifecycle
+          cargo +nightly fuzz run fuzz_lifecycle \
+            fuzz/corpus/fuzz_lifecycle \
+            -- -max_total_time="${MAX_TIME}" 2>&1 | tee /tmp/fuzz_lifecycle.log || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -20 /tmp/fuzz_lifecycle.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload fuzz artifacts (crashes / timeouts)
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz-weekly-artifacts-${{ github.run_id }}
           path: |
             fuzz/artifacts/fuzz_withdraw/
             fuzz/artifacts/fuzz_revoke/
+            fuzz/artifacts/fuzz_lifecycle/
           if-no-files-found: ignore
           retention-days: 90

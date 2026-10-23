@@ -11,6 +11,23 @@ for RDS snapshot and PITR options).
 
 ---
 
+## Disaster Recovery Objectives
+
+This runbook operates within the following DR targets. If recovery is taking
+longer than these thresholds, escalate to SEV-1.
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| **RPO** | **< 15 min** | RDS automated backups provide PITR to any 5-minute interval within the last 7 days |
+| **RTO** | **< 30 min** | Covers snapshot creation, down migration, and ECS restart |
+
+For the full severity matrix and step-by-step PITR procedure, see
+[incident-response.md — Disaster Recovery Metrics](./incident-response.md#disaster-recovery-metrics)
+and
+[incident-response.md — Database PITR Recovery checklist](./incident-response.md#database-postgresql-on-rds--pitr-recovery).
+
+---
+
 ## Quick-decision tree
 
 ```
@@ -451,3 +468,4 @@ incident post-mortem has not been completed.
 | ECS service | `workload-governor` |
 | Snapshot restore runbook | [docs/rollback-runbook.md §3](../rollback-runbook.md#3-database-rollback-procedure) |
 | Deployment runbook | [docs/deployment-runbook.md](../deployment-runbook.md) |
+| Incident response (RPO/RTO, severity matrix, PITR checklist) | [docs/runbooks/incident-response.md](./incident-response.md) |

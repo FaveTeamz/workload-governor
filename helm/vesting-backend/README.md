@@ -103,9 +103,57 @@ All values can be overridden with `--set key=value` or a custom `-f values.yaml`
 |---|---|---|
 | `ingress.enabled` | `true` | Create Ingress resource |
 | `ingress.className` | `nginx` | Ingress class |
-| `ingress.annotations` | See values.yaml | Custom annotations |
+| `ingress.annotations` | See values.yaml | Custom annotations (supports cert-manager) |
 | `ingress.hosts` | `vesting-backend.example.com` | Hostname rules |
 | `ingress.tls` | See values.yaml | TLS secret mappings |
+| `ingress.tls[].secretName` | `""` | TLS secret name; leave empty to auto-generate as `<release-name>-tls` |
+
+## cert-manager TLS
+
+The ingress template supports automatic TLS certificate provisioning via
+[cert-manager](https://cert-manager.io/). When a `cert-manager.io/cluster-issuer`
+annotation is set, cert-manager will issue and renew certificates automatically.
+
+### Quick setup
+
+1. Install cert-manager in your cluster and configure a `ClusterIssuer` (e.g. `letsencrypt-prod`).
+2. Enable the annotation in your values override:
+
+```yaml
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  tls:
+    - secretName: ""   # auto-generates as <release-name>-tls
+      hosts:
+        - your-domain.example.com
+```
+
+3. Install or upgrade the chart:
+
+```bash
+helm upgrade --install vesting-backend ./helm/vesting-backend \
+  -f my-values.yaml \
+  --namespace vesting
+```
+
+### TLS secret name
+
+When `ingress.tls[].secretName` is left empty (the default), the template
+automatically derives the secret name as `<release-name>-tls`. This matches the
+secret that cert-manager will create, so no manual coordination is required.
+
+To use a custom secret name, set it explicitly:
+
+```yaml
+ingress:
+  tls:
+    - secretName: "my-custom-tls-secret"
+      hosts:
+        - your-domain.example.com
+```
 
 ### HPA
 

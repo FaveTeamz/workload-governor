@@ -35,6 +35,13 @@ path = "fuzz_targets/fuzz_batch_apply.rs"
 test = false
 doc = false
 
+# ── Issue #836 — Multi-sig threshold permutations ─────────────────────────────
+[[bin]]
+name = "fuzz_admin_threshold"
+path = "fuzz_targets/fuzz_admin_threshold.rs"
+test = false
+doc = false
+
 # ── Profile overrides ─────────────────────────────────────────────────────────
 # The workspace root sets panic = "abort" for the release profile (required for
 # WASM contracts to fit within the 64 KB size limit).  Fuzz targets MUST use

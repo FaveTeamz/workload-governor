@@ -4,14 +4,18 @@
  * Fires signed HTTP POST requests to org-registered webhook URLs whenever
  * an assignment state changes (created, completed, revoked).
  *
- * Features (issue #196):
+ * Features (issue #843):
  *  - HMAC-SHA256 signature in X-WG-Signature header
- *  - Retry queue: up to 3 attempts with exponential back-off (1 s, 2 s, 4 s)
- *  - Dead-letter table insert on final failure
+ *  - Retry queue: up to 5 attempts with exponential backoff + full jitter
+ *    t = min(MAX_DELAY, BASE_DELAY * 2^attempt + rand_jitter)
+ *    where rand_jitter = Math.random() * BASE_DELAY * 2^attempt
+ *  - Dead-letter Redis queue `dlq:webhooks` on final failure (LPUSH)
+ *  - Dead-letter table insert on final failure (webhook_dead_letters)
  */
 
 import crypto from 'crypto';
 import { pool } from '../db';
+import redis from './redis';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +35,15 @@ export type AssignmentEventType =
   | 'assignment.completed'
   | 'assignment.revoked';
 
+export interface DlqEntry {
+  webhook_id: number;
+  url: string;
+  payload: WebhookPayload;
+  last_error: string;
+  attempts: number;
+  failed_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // HMAC signature
 // ---------------------------------------------------------------------------
@@ -46,24 +59,52 @@ export function signPayload(payload: string, secret: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP delivery with retry
+// Backoff with full jitter
 // ---------------------------------------------------------------------------
 
-const MAX_ATTEMPTS = 3;
+/** Maximum number of delivery attempts before moving to the DLQ. */
+export const MAX_ATTEMPTS = 5;
 
-/** Delay helper (exponential back-off: 5 s → 30 s → 5 min). */
-const BACKOFF_DELAYS = [5_000, 30_000, 300_000];
+/** Base delay in milliseconds for the backoff formula. */
+const BASE_DELAY = 1_000;
 
-function delay(attemptNumber: number): Promise<void> {
-  const ms = BACKOFF_DELAYS[attemptNumber] ?? BACKOFF_DELAYS[BACKOFF_DELAYS.length - 1];
+/** Maximum delay cap in milliseconds. */
+const MAX_DELAY = 60_000;
+
+/** Redis key for the dead-letter queue. */
+export const DLQ_KEY = 'dlq:webhooks';
+
+/**
+ * Computes the delay for attempt `attempt` (0-indexed) using full-jitter
+ * exponential backoff:
+ *
+ *   cap   = min(MAX_DELAY, BASE_DELAY * 2^attempt)
+ *   delay = random_between(0, cap)          ← full jitter
+ *
+ * Full jitter distributes retries more uniformly across the interval,
+ * which reduces thundering-herd effects when many webhooks retry together.
+ */
+export function computeBackoffDelay(attempt: number): number {
+  const cap = Math.min(MAX_DELAY, BASE_DELAY * Math.pow(2, attempt));
+  return Math.random() * cap;
+}
+
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ---------------------------------------------------------------------------
+// HTTP delivery with retry
+// ---------------------------------------------------------------------------
+
 /**
  * Attempt to deliver a payload to a single webhook endpoint.
- * Retries up to MAX_ATTEMPTS times with exponential back-off (5s, 30s, 5min).
+ * Retries up to MAX_ATTEMPTS (5) times with exponential backoff + full jitter.
  * Logs each attempt with status code and response body.
- * On final failure, writes the payload to webhook_dead_letters.
+ *
+ * On final failure:
+ *  1. Pushes a DLQ entry to Redis key `dlq:webhooks` (LPUSH).
+ *  2. Writes a row to the `webhook_dead_letters` DB table.
  */
 export async function dispatchToWebhook(
   webhookId: number,
@@ -92,7 +133,6 @@ export async function dispatchToWebhook(
         signal: AbortSignal.timeout(10_000),
       });
 
-      // Log each attempt with status code and response body
       let responseBody: string | null = null;
       try {
         responseBody = await response.text();
@@ -120,17 +160,36 @@ export async function dispatchToWebhook(
       );
     }
 
-    // Back-off before next retry (skip after final attempt)
+    // Backoff before next retry (skip after final attempt)
     if (attempt < MAX_ATTEMPTS - 1) {
-      await delay(attempt);
+      const delayMs = computeBackoffDelay(attempt);
+      await sleep(delayMs);
     }
   }
 
-  // All attempts exhausted — write to dead-letter table
+  // ── All attempts exhausted — move to dead-letter queue ──────────────────
+
   console.error(
     `[WebhookDispatcher] All ${MAX_ATTEMPTS} attempts failed for webhook #${webhookId} → ${url}: ${lastError}`,
   );
 
+  const dlqEntry: DlqEntry = {
+    webhook_id: webhookId,
+    url,
+    payload,
+    last_error: lastError,
+    attempts: MAX_ATTEMPTS,
+    failed_at: new Date().toISOString(),
+  };
+
+  // 1. Push to Redis DLQ
+  try {
+    await redis.lpush(DLQ_KEY, JSON.stringify(dlqEntry));
+  } catch (redisErr) {
+    console.error('[WebhookDispatcher] Failed to push to Redis DLQ:', redisErr);
+  }
+
+  // 2. Write to DB dead-letter table
   try {
     await pool.query(
       `INSERT INTO webhook_dead_letters (webhook_id, payload, last_error, attempts, last_status_code, last_response_body)
@@ -138,7 +197,7 @@ export async function dispatchToWebhook(
       [webhookId, body, lastError, MAX_ATTEMPTS, lastStatusCode, lastResponseBody],
     );
   } catch (dbErr) {
-    console.error('[WebhookDispatcher] Failed to write dead letter:', dbErr);
+    console.error('[WebhookDispatcher] Failed to write dead letter to DB:', dbErr);
   }
 }
 
@@ -150,7 +209,8 @@ export async function dispatchToWebhook(
  * Look up all webhooks registered for `orgId`, then fire the assignment
  * event payload to each one concurrently.
  *
- * This function never throws — failures are captured in the dead-letter table.
+ * This function never throws — failures are captured in the DLQ and
+ * dead-letter table.
  */
 export async function dispatchAssignmentEvent(
   eventType: AssignmentEventType,

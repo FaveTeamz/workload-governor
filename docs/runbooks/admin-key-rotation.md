@@ -35,6 +35,10 @@ a secure two-step admin transfer. Their security properties are:
   - `AdminTransferProposed { current_admin, new_admin }` on `propose_admin`
   - `AdminTransferred { old_admin, new_admin }` on `accept_admin`
 
+For why the contract uses this pattern instead of a one-step `set_admin`, a
+multisig guardian, or a timelock, see
+[ADR-006: Two-Step Admin Transfer](../adr/ADR-006-two-step-admin-transfer.md).
+
 ---
 
 ## Error Codes

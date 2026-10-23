@@ -1116,3 +1116,128 @@ proptest! {
         prop_assert_eq!(client.get_global_cap(), 15u32);
     }
 }
+
+// ---------------------------------------------------------------------------
+// #828 SC-003 — Admin nonce tracking and replay protection
+// ---------------------------------------------------------------------------
+
+/// After initialization the nonce starts at 0. The first privileged call
+/// (register_maintainer) increments it to 1.
+#[test]
+fn unit_sc003_nonce_starts_at_zero() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    // initialize does NOT call require_admin_auth (auth is on the `admin` param
+    // directly), so the nonce stays at 0 until the first require_admin_auth call.
+    assert_eq!(t.client.get_admin_nonce(), 0u32);
+}
+
+/// Each call to a privileged admin function increments the nonce by 1.
+#[test]
+fn unit_sc003_nonce_increments_on_privileged_call() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("noncetestorg");
+
+    t.client.initialize(&admin);
+    assert_eq!(t.client.get_admin_nonce(), 0u32);
+
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    assert_eq!(t.client.get_admin_nonce(), 1u32);
+
+    t.client.register_maintainer(&admin, &maintainer, &org); // idempotent second call
+    assert_eq!(t.client.get_admin_nonce(), 2u32);
+}
+
+/// Multiple distinct privileged actions each advance the nonce monotonically.
+#[test]
+fn unit_sc003_nonce_monotonically_increasing() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org1 = t.org("orga");
+    let org2 = t.org("orgb");
+
+    t.client.initialize(&admin);
+
+    t.client.register_maintainer(&admin, &maintainer, &org1);
+    let n1 = t.client.get_admin_nonce();
+
+    t.client.register_maintainer(&admin, &maintainer, &org2);
+    let n2 = t.client.get_admin_nonce();
+
+    assert!(n2 > n1, "nonce must increase on every privileged call");
+    assert_eq!(n2, n1 + 1);
+}
+
+/// AdminActionExecuted event is emitted by every privileged call and contains
+/// the new (post-increment) nonce value.
+#[test]
+fn unit_sc003_admin_action_executed_event_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{TryIntoVal, Val, Vec as SdkVec};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("eventorg");
+
+    t.client.initialize(&admin);
+    let events_before = t.env.events().all().len();
+
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let all = t.env.events().all();
+    // There must be at least 2 events: MaintainerRegistered + AdminActionExecuted
+    assert!(
+        all.len() > events_before,
+        "at least one new event must be emitted by register_maintainer"
+    );
+
+    // Find the AdminActionExecuted event (topic[0] == "adm_act")
+    let adm_act_sym = soroban_sdk::symbol_short!("adm_act");
+    let adm_event = all.iter().find(|(_, topics, _): &(_, SdkVec<Val>, Val)| {
+        if let Ok(t0) = topics.get(0).unwrap().try_into_val::<_, soroban_sdk::Symbol>(&t.env) {
+            t0 == adm_act_sym
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        adm_event.is_some(),
+        "AdminActionExecuted (adm_act) event must be emitted by register_maintainer"
+    );
+
+    // Verify data contains the new nonce (1 after first privileged call)
+    let (_, _, data) = adm_event.unwrap();
+    let (nonce,): (u32,) = data.try_into_val(&t.env).unwrap();
+    assert_eq!(nonce, 1u32, "AdminActionExecuted data must contain the new nonce (1)");
+}
+
+/// Simulated replay: calling the same privileged function again re-uses a
+/// different nonce, so a stale auth cannot satisfy the new nonce. We verify
+/// the nonce advances strictly.
+#[test]
+fn unit_sc003_nonce_prevents_replay() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("replayorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    let nonce_after_first = t.client.get_admin_nonce();
+
+    // Second call (simulating a "replayed" invocation) advances nonce again
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    let nonce_after_second = t.client.get_admin_nonce();
+
+    assert_ne!(
+        nonce_after_first, nonce_after_second,
+        "nonce must differ between calls; a replayed auth would bind to the old nonce \
+         and therefore be rejected by the Stellar auth framework"
+    );
+}

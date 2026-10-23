@@ -26,13 +26,15 @@ resource "aws_security_group" "cache" {
 }
 
 resource "aws_elasticache_replication_group" "this" {
-  replication_group_id = local.name
-  description          = "Redis for ${local.name}"
-  node_type            = "cache.t3.micro"
-  num_cache_clusters   = var.environment == "production" ? 2 : 1
-  port                 = 6379
-  subnet_group_name    = aws_elasticache_subnet_group.this.name
-  security_group_ids   = [aws_security_group.cache.id]
+  replication_group_id       = local.name
+  description                = "Redis for ${local.name}"
+  node_type                  = "cache.t3.micro"
+  num_cache_clusters         = var.num_cache_clusters
+  automatic_failover_enabled = var.automatic_failover_enabled
+  multi_az_enabled           = var.multi_az_enabled
+  port                       = 6379
+  subnet_group_name          = aws_elasticache_subnet_group.this.name
+  security_group_ids         = [aws_security_group.cache.id]
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
 

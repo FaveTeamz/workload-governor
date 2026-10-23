@@ -1,95 +1,98 @@
 /**
- * verify-xdr.ts
+ * POST /api/v1/verify-xdr
  *
- * POST /api/verify-xdr — XDR signature verification endpoint (issue #573).
- *
- * Accepts raw XDR and optional expected parameters, returns structured
- * validation result. Caches results in Redis for identical XDR inputs.
+ * Validates a Stellar XDR transaction envelope:
+ *  - Enforces 64 KB payload size limit (via Zod schema)
+ *  - Parses XDR using Stellar SDK with structured error catching (no stack leakage)
+ *  - Validates network passphrase when `network` query param is provided
  */
 
 import { Router, Request, Response } from 'express';
-import { validateBody } from '../middleware/validation';
-import { verifyXdrSchema, VerifyXdrInput } from '../schemas/verify-xdr';
-import { verifyTransactionXdr } from '../xdrVerifier';
-import { getCache, setCache } from '../services/redis';
-import { logger } from '../logger';
+import { TransactionBuilder, Networks, Transaction, FeeBumpTransaction } from '@stellar/stellar-sdk';
+import { validateRequest } from '../middleware/validation';
+import { verifyXdrSchema } from '../schemas/verify-xdr';
 
 const router = Router();
 
-/** Cache TTL: 1 hour */
-const CACHE_TTL = 3600;
+const NETWORK_PASSPHRASES: Record<string, string> = {
+  testnet: Networks.TESTNET,
+  mainnet: Networks.PUBLIC,
+};
 
-/**
- * POST /api/verify-xdr
- *
- * Request body:
- *   - xdr: string (required) — Base64-encoded XDR transaction envelope
- *   - expected_signer?: string — Expected signer public key
- *   - expected_contract?: string — Expected contract ID
- *
- * Response:
- *   - valid: boolean
- *   - errors: string[]
- *   - signer?: string — Extracted signer address (if valid)
- *   - contract?: string — Extracted contract ID (if valid)
- */
 router.post(
-  '/verify-xdr',
-  validateBody(verifyXdrSchema),
-  async (req: Request, res: Response) => {
-    const { xdr, expected_signer, expected_contract } = req.body as VerifyXdrInput;
+  '/',
+  validateRequest({ body: verifyXdrSchema }),
+  (req: Request, res: Response) => {
+    const { xdr, network } = req.body as { xdr: string; network?: string };
 
-    const cacheKey = `verify-xdr:${xdr}`;
+    // Determine which network passphrase to use for parsing
+    const passphrase = network
+      ? NETWORK_PASSPHRASES[network]
+      : // Fall back to the configured environment passphrase; default to Testnet
+        (process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET);
 
-    // Check cache
-    const cached = await getCache<{ valid: boolean; errors: string[]; signer?: string; contract?: string }>(cacheKey);
-    if (cached) {
-      res.setHeader('X-Cache', 'HIT');
-      res.json(cached);
+    let tx: ReturnType<typeof TransactionBuilder.fromXDR>;
+
+    try {
+      tx = TransactionBuilder.fromXDR(xdr, passphrase);
+    } catch {
+      // Do NOT propagate internal SDK error messages — they may contain
+      // implementation details. Return a sanitized client error instead.
+      res.status(400).json({
+        error: 'invalid_xdr',
+        message:
+          'The provided XDR could not be parsed. Ensure it is a valid ' +
+          'Stellar transaction envelope encoded in base64 and that the ' +
+          'correct network is specified.',
+      });
       return;
     }
 
-    // Verify the XDR
-    const result = verifyTransactionXdr(xdr);
+    // If a specific network was requested, verify the transaction's network
+    // passphrase matches (prevents cross-network submission).
+    if (network) {
+      const txPassphrase = (tx as unknown as { networkPassphrase?: string })
+        .networkPassphrase;
 
-    const errors: string[] = [];
-    let valid = false;
-    let signer: string | undefined;
-    let contract: string | undefined;
-
-    if (result.ok) {
-      valid = true;
-      signer = result.signerAddress;
-      contract = result.contractId;
-
-      // Check expected_signer if provided
-      if (expected_signer && result.signerAddress !== expected_signer) {
-        valid = false;
-        errors.push(`Signer mismatch: expected ${expected_signer}, got ${result.signerAddress}`);
+      if (txPassphrase && txPassphrase !== passphrase) {
+        res.status(400).json({
+          error: 'network_mismatch',
+          message: `Transaction network passphrase does not match the requested network "${network}".`,
+        });
+        return;
       }
-
-      // Check expected_contract if provided
-      if (expected_contract && result.contractId !== expected_contract) {
-        valid = false;
-        errors.push(`Contract mismatch: expected ${expected_contract}, got ${result.contractId}`);
-      }
-    } else {
-      errors.push(`${result.reason}: ${result.detail}`);
     }
 
-    const response = { valid, errors, signer, contract };
+    // Build a sanitized summary — never echo back raw internal fields.
+    // FeeBumpTransaction doesn't have .sequence or .operations at the top level.
+    if (tx instanceof FeeBumpTransaction) {
+      res.json({
+        valid: true,
+        hash: tx.hash().toString('hex'),
+        fee: tx.fee,
+        source: tx.feeSource,
+        type: 'fee_bump',
+        network: network ?? 'testnet',
+      });
+      return;
+    }
 
-    // Cache the result
-    await setCache(cacheKey, response, CACHE_TTL);
+    const innerTx = tx as Transaction;
+    const operations = innerTx.operations.map((op) => ({
+      type: op.type,
+      source: op.source ?? null,
+    }));
 
-    logger.info({
-      event: 'xdr_verification',
-      valid,
-      errors: errors.length > 0 ? errors : undefined,
+    res.json({
+      valid: true,
+      hash: innerTx.hash().toString('hex'),
+      fee: innerTx.fee,
+      sequence: innerTx.sequence,
+      source: innerTx.source,
+      operations,
+      operationCount: operations.length,
+      network: network ?? 'testnet',
     });
-
-    res.setHeader('X-Cache', 'MISS');
-    res.json(response);
   },
 );
 

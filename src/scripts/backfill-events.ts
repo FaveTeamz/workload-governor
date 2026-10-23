@@ -1,384 +1,425 @@
+#!/usr/bin/env ts-node
 /**
- * backfill-events.ts — CLI command to backfill historical events from Horizon
+ * backfill-events.ts
+ *
+ * CLI tool for backfilling historical Soroban contract events into the
+ * contract_events table.
  *
  * Usage:
- *   npm run backfill -- --from-ledger=1000 --to-ledger=2000
- *   npm run backfill -- --from-ledger=1000 --to-ledger=2000 --resume
+ *   ts-node src/scripts/backfill-events.ts [options]
  *
- * Flags:
- *   --from-ledger=N   Starting ledger sequence (required)
- *   --to-ledger=M     Ending ledger sequence (required)
- *   --resume          Resume from last processed ledger (stores progress in DB)
- *   --batch-size=N    Events per RPC call (default: 200)
+ * Options:
+ *   --dry-run             Log event statistics without inserting into the DB
+ *   --batch-size <n>      Number of events to process per RPC fetch (default: 100)
+ *   --resume              Resume from the last saved ledger in .backfill-checkpoint.json
+ *   --start-ledger <n>    Ledger sequence to start from (ignored when --resume is used)
+ *   --end-ledger <n>      Ledger sequence to stop at (inclusive)
  */
 
-import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
+import 'dotenv/config';
+import * as fs from 'fs';
+import * as path from 'path';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+import { SorobanRpc } from '@stellar/stellar-sdk';
 import { pool } from '../db';
-import { logger } from '../logger';
-import type { ContractEventRecord, ContractEventType } from '../eventIndexer';
 
-// ─── Configuration ────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-const CONTRACT_ID =
-  process.env['CONTRACT_ID'] ??
-  'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
-
-const RPC_URL =
-  process.env['SOROBAN_RPC_URL'] ?? 'https://soroban-testnet.stellar.org';
-
-const BATCH_SIZE = 200;
-
-// ─── CLI Argument Parsing ─────────────────────────────────────────────────
-
-function parseArgs(): {
-  fromLedger: number;
-  toLedger: number;
-  resume: boolean;
-  batchSize: number;
-} {
-  const args = process.argv.slice(2);
-  let fromLedger: number | null = null;
-  let toLedger: number | null = null;
-  let resume = false;
-  let batchSize = BATCH_SIZE;
-
-  for (const arg of args) {
-    if (arg.startsWith('--from-ledger=')) {
-      fromLedger = parseInt(arg.split('=')[1], 10);
-    } else if (arg.startsWith('--to-ledger=')) {
-      toLedger = parseInt(arg.split('=')[1], 10);
-    } else if (arg === '--resume') {
-      resume = true;
-    } else if (arg.startsWith('--batch-size=')) {
-      batchSize = parseInt(arg.split('=')[1], 10);
-    }
-  }
-
-  if (fromLedger === null || toLedger === null || Number.isNaN(fromLedger) || Number.isNaN(toLedger)) {
-    console.error('Error: --from-ledger and --to-ledger are required and must be valid integers');
-    console.error('Usage: npm run backfill -- --from-ledger=1000 --to-ledger=2000');
-    process.exit(1);
-  }
-
-  if (fromLedger > toLedger) {
-    console.error('Error: --from-ledger must be less than or equal to --to-ledger');
-    process.exit(1);
-  }
-
-  return { fromLedger, toLedger, resume, batchSize };
-}
-
-// ─── XDR Helpers ──────────────────────────────────────────────────────────
-
-/**
- * Safely decode an XDR base64 string to its native JS value.
- * Returns null if decoding fails.
- */
-function decodeScVal(xdrBase64: string): unknown {
-  try {
-    const scVal = stellarXdr.ScVal.fromXDR(xdrBase64, 'base64');
-    return scValToNative(scVal);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extract the symbol string from a Soroban ScVal topic (first topic slot).
- */
-function extractEventType(topics: string[]): ContractEventType | null {
-  if (topics.length === 0) return null;
-  const val = decodeScVal(topics[0]);
-  if (typeof val !== 'string') return null;
-  const known: ContractEventType[] = [
-    'applied',
-    'withdrew',
-    'assigned',
-    'completed',
-    'revoked',
-    'maintainer_registered',
-  ];
-  return known.includes(val as ContractEventType) ? (val as ContractEventType) : null;
-}
-
-/**
- * Extract the contributor address from a Soroban ScVal topic (second topic slot).
- */
-function extractContributorFromTopic(topics: string[]): string | null {
-  if (topics.length < 2) return null;
-  const val = decodeScVal(topics[1]);
-  if (typeof val === 'string') return val;
-  return null;
-}
-
-/**
- * Parse the data value tuple emitted with each event.
- */
-interface ParsedData {
-  org_id: string | null;
-  issue_id: number | null;
-}
-
-function parseEventData(dataXdr: string, eventType: ContractEventType): ParsedData {
-  const raw = decodeScVal(dataXdr);
-
-  if (eventType === 'maintainer_registered') {
-    return {
-      org_id: typeof raw === 'string' ? raw : null,
-      issue_id: null,
-    };
-  }
-
-  if (!Array.isArray(raw)) {
-    return { org_id: null, issue_id: null };
-  }
-
-  if (eventType === 'applied' || eventType === 'withdrew') {
-    const [orgId, issueId] = raw as [unknown, unknown];
-    return {
-      org_id: typeof orgId === 'string' ? orgId : null,
-      issue_id: typeof issueId === 'number' ? issueId : null,
-    };
-  }
-
-  const [, orgId, issueId] = raw as [unknown, unknown, unknown];
-  return {
-    org_id: typeof orgId === 'string' ? orgId : null,
-    issue_id: typeof issueId === 'number' ? issueId : null,
-  };
-}
-
-// ─── Event Parsing ────────────────────────────────────────────────────────
-
-interface RpcEvent {
+interface ContractEventResource {
   type: string;
   id: string;
   pagingToken: string;
   ledger: string;
   createdAt: string;
-  txHash?: string;
   topic: Array<{ type: string; xdr: string }>;
-  value: { type: string; xdr: string };
+  value: Array<{ type: string; xdr: string }>;
 }
 
-function parseRpcEvent(raw: RpcEvent): ContractEventRecord | null {
-  try {
-    if (raw.type !== 'contract') return null;
+interface ParsedEvent {
+  type: string;
+  ledger: number;
+  timestamp: Date;
+  actor: string;
+  orgId: string;
+  issueId: number | null;
+  contributor: string | null;
+  data: Record<string, unknown>;
+}
 
-    const topics = raw.topic?.map((t) => t.xdr) ?? [];
-    const dataXdr = raw.value?.xdr ?? '';
+interface Checkpoint {
+  lastLedger: number;
+  processedAt: string;
+}
+
+interface BackfillStats {
+  totalFetched: number;
+  totalParsed: number;
+  totalInserted: number;
+  totalSkipped: number;
+  ledgersProcessed: number;
+  estimatedStorageBytes: number;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const CHECKPOINT_FILE = path.resolve(process.cwd(), '.backfill-checkpoint.json');
+const CHECKPOINT_INTERVAL = 1000; // Persist checkpoint every N ledgers
+const CONTRACT_ID =
+  process.env.CONTRACT_ID ??
+  'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+const RPC_URL = process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
+
+// Approximate bytes per stored event row (type + ledger + ts + actor + org + data JSON)
+const BYTES_PER_EVENT_ESTIMATE = 512;
+
+// ---------------------------------------------------------------------------
+// Checkpoint helpers
+// ---------------------------------------------------------------------------
+
+function loadCheckpoint(): Checkpoint | null {
+  try {
+    if (!fs.existsSync(CHECKPOINT_FILE)) {
+      return null;
+    }
+    const raw = fs.readFileSync(CHECKPOINT_FILE, 'utf8');
+    return JSON.parse(raw) as Checkpoint;
+  } catch {
+    return null;
+  }
+}
+
+function saveCheckpoint(lastLedger: number): void {
+  const checkpoint: Checkpoint = {
+    lastLedger,
+    processedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(CHECKPOINT_FILE, JSON.stringify(checkpoint, null, 2), 'utf8');
+}
+
+// ---------------------------------------------------------------------------
+// Event parsing (mirrors EventIndexer logic)
+// ---------------------------------------------------------------------------
+
+function extractEventType(topics: Array<{ xdr: string }>): string | null {
+  if (topics.length === 0) return null;
+  const xdr = topics[0].xdr;
+  if (xdr.includes('applied')) return 'applied';
+  if (xdr.includes('withdrawn')) return 'withdrawn';
+  if (xdr.includes('assigned')) return 'assigned';
+  if (xdr.includes('completed')) return 'completed';
+  if (xdr.includes('revoked')) return 'revoked';
+  return null;
+}
+
+function parseEvent(event: ContractEventResource): ParsedEvent | null {
+  try {
+    const topics = event.topic ?? [];
+    const values = event.value ?? [];
+
+    if (topics.length === 0) return null;
 
     const eventType = extractEventType(topics);
     if (!eventType) return null;
 
-    const contributor =
-      eventType === 'maintainer_registered'
-        ? null
-        : extractContributorFromTopic(topics);
+    const ledger = parseInt(event.ledger, 10);
+    const timestamp = new Date(event.createdAt);
+    const actor = values.length > 0 ? values[0].xdr.substring(0, 20) : 'unknown';
+    const orgId = values.length > 1 ? values[1].xdr.substring(0, 20) : 'unknown';
 
-    const { org_id, issue_id } = parseEventData(dataXdr, eventType);
+    let issueId: number | null = null;
+    if (values.length > 2) {
+      const match = values[2].xdr.match(/\d+/);
+      issueId = match ? parseInt(match[0], 10) : null;
+    }
 
-    const idParts = raw.id.split('-');
-    const eventIndex = idParts.length >= 3 ? parseInt(idParts[2], 10) : 0;
-
-    const txHash = raw.txHash ?? raw.id;
-    const ledger = parseInt(raw.ledger, 10);
-    const timestamp = new Date(raw.createdAt);
+    const contributor = values.length > 3 ? values[3].xdr.substring(0, 20) : null;
 
     return {
-      event_type: eventType,
-      contributor,
-      org_id,
-      issue_id,
-      tx_hash: txHash,
-      event_index: eventIndex,
+      type: eventType,
       ledger,
       timestamp,
+      actor,
+      orgId,
+      issueId,
+      contributor,
+      data: {
+        topics: topics.map((t) => t),
+        values: values.map((v) => v),
+      },
     };
   } catch {
     return null;
   }
 }
 
-// ─── Progress Tracking ────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// DB insert
+// ---------------------------------------------------------------------------
 
-async function getLastProcessedLedger(): Promise<number | null> {
-  try {
-    const { rows } = await pool.query<{ last_ledger: string | null }>(
-      `SELECT MAX(ledger_seq) AS last_ledger FROM contract_events`,
-    );
-    const lastLedger = rows[0]?.last_ledger != null ? parseInt(rows[0].last_ledger, 10) : null;
-    return lastLedger;
-  } catch {
-    return null;
-  }
-}
-
-// ─── Event Storage ────────────────────────────────────────────────────────
-
-async function storeEvent(record: ContractEventRecord): Promise<boolean> {
+async function insertEvent(event: ParsedEvent): Promise<boolean> {
   const result = await pool.query(
     `INSERT INTO contract_events
-       (event_type, contributor, org_id, issue_id, tx_hash, event_index, ledger_seq, timestamp)
+       (event_type, ledger_seq, timestamp, actor, org_id, issue_id, contributor, data)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (ledger_seq, tx_hash, event_index) DO NOTHING`,
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
     [
-      record.event_type,
-      record.contributor,
-      record.org_id,
-      record.issue_id,
-      record.tx_hash,
-      record.event_index,
-      record.ledger,
-      record.timestamp,
+      event.type,
+      event.ledger,
+      event.timestamp,
+      event.actor,
+      event.orgId,
+      event.issueId,
+      event.contributor,
+      JSON.stringify(event.data),
     ],
   );
-
-  return (result as { rowCount?: number }).rowCount === 1;
+  // Returns true if a row was actually inserted (not a conflict skip).
+  return (result.rowCount ?? 0) > 0;
 }
 
-// ─── Main Backfill Logic ──────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Main backfill loop
+// ---------------------------------------------------------------------------
 
-async function backfill(fromLedger: number, toLedger: number, resume: boolean): Promise<void> {
+async function runBackfill(options: {
+  dryRun: boolean;
+  batchSize: number;
+  resume: boolean;
+  startLedger?: number;
+  endLedger?: number;
+}): Promise<void> {
+  const { dryRun, batchSize, resume, endLedger } = options;
+
   const server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
-  let startLedger = fromLedger;
 
-  // If --resume is set, start from the last processed ledger
+  const stats: BackfillStats = {
+    totalFetched: 0,
+    totalParsed: 0,
+    totalInserted: 0,
+    totalSkipped: 0,
+    ledgersProcessed: 0,
+    estimatedStorageBytes: 0,
+  };
+
+  // Determine starting cursor / ledger.
+  let cursor: string | undefined;
+  let currentLedger: number | undefined;
+
   if (resume) {
-    const lastLedger = await getLastProcessedLedger();
-    if (lastLedger !== null && lastLedger >= fromLedger) {
-      startLedger = lastLedger;
-      logger.info({ message: 'Resuming backfill from ledger', ledger: lastLedger });
+    const checkpoint = loadCheckpoint();
+    if (checkpoint) {
+      console.log(
+        `[backfill] Resuming from checkpoint: ledger ${checkpoint.lastLedger} (saved at ${checkpoint.processedAt})`,
+      );
+      currentLedger = checkpoint.lastLedger + 1;
+    } else {
+      console.log('[backfill] No checkpoint found — starting from the beginning');
     }
+  } else if (options.startLedger !== undefined) {
+    currentLedger = options.startLedger;
+    console.log(`[backfill] Starting from ledger ${currentLedger}`);
   }
 
-  const totalLedgers = toLedger - startLedger + 1;
-  let processedLedgers = 0;
-  let persistedEvents = 0;
-  let duplicateEvents = 0;
-  let startTime = Date.now();
+  if (dryRun) {
+    console.log('[backfill] *** DRY-RUN MODE — no database writes will be performed ***');
+  }
 
-  logger.info({
-    message: 'Starting event backfill',
-    contract: CONTRACT_ID,
-    fromLedger: startLedger,
-    toLedger,
-    resumeEnabled: resume,
-  });
+  let ledgersSinceCheckpoint = 0;
 
-  let cursor: string | undefined = String(startLedger);
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    // Build the filter; optionally scope by ledger range.
+    const fetchOptions: Parameters<typeof server.getEvents>[0] = {
+      filters: [
+        {
+          type: 'contract',
+          contractIds: [CONTRACT_ID],
+        },
+      ],
+      cursor,
+      limit: batchSize,
+    };
 
-  while (processedLedgers < totalLedgers) {
+    let events: Awaited<ReturnType<typeof server.getEvents>>;
+
     try {
-      const response = await server.getEvents({
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [CONTRACT_ID],
-          },
-        ],
-        cursor,
-        limit: 200,
-      });
-
-      const events = response.events as unknown as RpcEvent[];
-
-      if (events.length === 0) {
-        logger.info({ message: 'No more events found, backfill complete' });
-        break;
-      }
-
-      for (const raw of events) {
-        const record = parseRpcEvent(raw);
-        if (!record) continue;
-
-        // Stop if we've gone past the target ledger
-        if (record.ledger > toLedger) {
-          logger.info({
-            message: 'Reached target ledger, stopping backfill',
-            targetLedger: toLedger,
-          });
-          break;
-        }
-
-        const stored = await storeEvent(record);
-        if (stored) {
-          persistedEvents++;
-        } else {
-          duplicateEvents++;
-        }
-      }
-
-      // Update cursor for next batch
-      const lastEvent = events[events.length - 1];
-      cursor = lastEvent.pagingToken ?? lastEvent.id;
-
-      // Check if we've reached the target ledger
-      const maxEventLedger = Math.max(...events.map((e) => parseInt(e.ledger, 10)));
-      if (maxEventLedger >= toLedger) {
-        processedLedgers = totalLedgers;
-      } else {
-        processedLedgers = maxEventLedger - startLedger + 1;
-      }
-
-      // Calculate progress and ETA
-      const elapsed = Date.now() - startTime;
-      const rate = elapsed > 0 ? processedLedgers / (elapsed / 1000) : 0;
-      const remaining = totalLedgers - processedLedgers;
-      const estimatedSecRemaining = rate > 0 ? remaining / rate : 0;
-
-      const progressPercent = Math.round((processedLedgers / totalLedgers) * 100);
-      logger.info({
-        message: 'Backfill progress',
-        progress: `${progressPercent}%`,
-        processedLedgers,
-        totalLedgers,
-        persistedEvents,
-        duplicateEvents,
-        estimatedSecsRemaining: Math.round(estimatedSecRemaining),
-      });
+      events = await server.getEvents(fetchOptions);
     } catch (err) {
-      logger.error({
-        message: 'Error during backfill',
-        error: err instanceof Error ? err.message : String(err),
-        cursor,
-      });
-      // Continue on transient errors
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      console.error(
+        '[backfill] RPC error:',
+        err instanceof Error ? err.message : String(err),
+      );
+      // Brief back-off before retrying.
+      await new Promise((r) => setTimeout(r, 5000));
+      continue;
+    }
+
+    if (events.events.length === 0) {
+      // No more events — we have caught up.
+      break;
+    }
+
+    stats.totalFetched += events.events.length;
+
+    for (const raw of events.events as unknown[]) {
+      const event = raw as ContractEventResource;
+      const parsed = parseEvent(event);
+
+      if (!parsed) {
+        stats.totalSkipped++;
+        continue;
+      }
+
+      stats.totalParsed++;
+
+      // Stop if we have passed the requested end ledger.
+      if (endLedger !== undefined && parsed.ledger > endLedger) {
+        console.log(`[backfill] Reached end-ledger ${endLedger} — stopping`);
+        printSummary(stats, dryRun);
+        if (!dryRun) await pool.end();
+        return;
+      }
+
+      if (dryRun) {
+        // In dry-run mode just accumulate stats.
+        stats.estimatedStorageBytes += BYTES_PER_EVENT_ESTIMATE;
+        stats.totalInserted++;
+      } else {
+        const inserted = await insertEvent(parsed);
+        if (inserted) {
+          stats.totalInserted++;
+        } else {
+          stats.totalSkipped++;
+        }
+      }
+    }
+
+    // Advance cursor.
+    const lastEvent = events.events[events.events.length - 1] as unknown as ContractEventResource;
+    cursor = lastEvent.pagingToken;
+    const lastLedger = parseInt(lastEvent.ledger, 10);
+
+    if (currentLedger === undefined || lastLedger > currentLedger) {
+      const delta =
+        currentLedger !== undefined ? lastLedger - currentLedger : 0;
+      ledgersSinceCheckpoint += delta;
+      currentLedger = lastLedger;
+      stats.ledgersProcessed += delta || 1;
+    }
+
+    console.log(
+      `[backfill] Processed up to ledger ${currentLedger} | ` +
+        `fetched=${stats.totalFetched} parsed=${stats.totalParsed} ` +
+        `inserted=${stats.totalInserted} skipped=${stats.totalSkipped}`,
+    );
+
+    // Persist checkpoint every CHECKPOINT_INTERVAL ledgers.
+    if (!dryRun && ledgersSinceCheckpoint >= CHECKPOINT_INTERVAL) {
+      saveCheckpoint(currentLedger);
+      console.log(`[backfill] Checkpoint saved at ledger ${currentLedger}`);
+      ledgersSinceCheckpoint = 0;
+    }
+
+    // If the RPC returned fewer events than batchSize we have reached the tip.
+    if (events.events.length < batchSize) {
+      break;
     }
   }
 
-  const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-  logger.info({
-    message: 'Backfill complete',
-    persistedEvents,
-    duplicateEvents,
-    totalEvents: persistedEvents + duplicateEvents,
-    durationSeconds: totalElapsed,
-  });
-}
+  // Save final checkpoint.
+  if (!dryRun && currentLedger !== undefined) {
+    saveCheckpoint(currentLedger);
+    console.log(`[backfill] Final checkpoint saved at ledger ${currentLedger}`);
+  }
 
-// ─── Entry Point ──────────────────────────────────────────────────────────
+  printSummary(stats, dryRun);
 
-async function main(): Promise<void> {
-  try {
-    const { fromLedger, toLedger, resume } = parseArgs();
-    await backfill(fromLedger, toLedger, resume);
+  if (!dryRun) {
     await pool.end();
-    process.exit(0);
-  } catch (err) {
-    logger.error({
-      message: 'Backfill failed',
-      error: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined,
-    });
-    try {
-      await pool.end();
-    } catch {
-      // Ignore pool close errors
-    }
-    process.exit(1);
   }
 }
 
-main();
+// ---------------------------------------------------------------------------
+// Summary printer
+// ---------------------------------------------------------------------------
+
+function printSummary(stats: BackfillStats, dryRun: boolean): void {
+  console.log('\n==============================');
+  console.log(' Backfill summary');
+  console.log('==============================');
+  console.log(`  Mode            : ${dryRun ? 'DRY-RUN (no writes)' : 'LIVE'}`);
+  console.log(`  Total fetched   : ${stats.totalFetched}`);
+  console.log(`  Total parsed    : ${stats.totalParsed}`);
+  if (dryRun) {
+    console.log(`  Would insert    : ${stats.totalInserted}`);
+    console.log(
+      `  Est. storage    : ${(stats.estimatedStorageBytes / 1024).toFixed(1)} KB` +
+        ` (~${BYTES_PER_EVENT_ESTIMATE} bytes/event)`,
+    );
+  } else {
+    console.log(`  Inserted        : ${stats.totalInserted}`);
+  }
+  console.log(`  Skipped/dup     : ${stats.totalSkipped}`);
+  console.log('==============================\n');
+}
+
+// ---------------------------------------------------------------------------
+// CLI entry point
+// ---------------------------------------------------------------------------
+
+const argv = yargs(hideBin(process.argv))
+  .scriptName('backfill-events')
+  .usage('$0 [options]')
+  .option('dry-run', {
+    alias: 'd',
+    type: 'boolean',
+    default: false,
+    description: 'Report event statistics without writing to the database',
+  })
+  .option('batch-size', {
+    alias: 'b',
+    type: 'number',
+    default: 100,
+    description: 'Number of events to fetch per RPC call',
+  })
+  .option('resume', {
+    alias: 'r',
+    type: 'boolean',
+    default: false,
+    description: 'Resume from the last ledger saved in .backfill-checkpoint.json',
+  })
+  .option('start-ledger', {
+    alias: 's',
+    type: 'number',
+    description: 'Ledger sequence number to start from (ignored when --resume is set)',
+  })
+  .option('end-ledger', {
+    alias: 'e',
+    type: 'number',
+    description: 'Ledger sequence number to stop at (inclusive)',
+  })
+  .example('$0 --dry-run', 'Estimate event volume without writing to the DB')
+  .example(
+    '$0 --batch-size 500 --start-ledger 1000000',
+    'Backfill from ledger 1,000,000 with large batches',
+  )
+  .example('$0 --resume', 'Continue a previously interrupted backfill')
+  .help()
+  .parseSync();
+
+runBackfill({
+  dryRun: argv['dry-run'],
+  batchSize: argv['batch-size'],
+  resume: argv['resume'],
+  startLedger: argv['start-ledger'],
+  endLedger: argv['end-ledger'],
+}).catch((err) => {
+  console.error('[backfill] Fatal error:', err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});

@@ -29,6 +29,7 @@ Use [ADR-TEMPLATE.md](ADR-TEMPLATE.md) when writing a new ADR.
 | [ADR-003](ADR-003-temporary-storage-applications.md) | Use Temporary Storage for Pending Applications | Accepted | 2024-01-22 |
 | [ADR-004](ADR-004-postgresql-over-sqlite.md) | Use PostgreSQL Instead of SQLite for the Backend Database | Accepted | 2024-02-01 |
 | [ADR-005](ADR-005-nextjs-frontend.md) | Use Next.js for the Frontend | Accepted | 2024-02-05 |
+| [ADR-006](ADR-006-two-step-admin-transfer.md) | Use a Two-Step Propose/Accept Pattern for Admin Transfer | Accepted | 2026-08-30 |
 
 ## Adding a new ADR
 

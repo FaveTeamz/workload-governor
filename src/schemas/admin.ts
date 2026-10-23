@@ -5,27 +5,26 @@ export const addMaintainerSchema = z.object({
   org_id: z.string().min(1, 'org_id is required'),
 });
 
-/**
- * Body schema for POST /api/admin/maintainers
- * Builds an unsigned register_maintainer Soroban transaction.
- */
-export const registerMaintainerBodySchema = z.object({
-  maintainer_address: z.string().min(1, 'maintainer_address is required'),
-  org_id: z.string().min(1, 'org_id is required'),
-  sequence: z.string().min(1, 'sequence is required'),
-});
-
-/**
- * Body schema for DELETE /api/admin/maintainers
- * Builds an unsigned deregister_maintainer Soroban transaction.
- * sequence is optional — the backend can fetch it from the RPC if omitted.
- */
-export const deregisterMaintainerBodySchema = z.object({
-  maintainer_address: z.string().min(1, 'maintainer_address is required'),
-  org_id: z.string().min(1, 'org_id is required'),
-  sequence: z.string().optional(),
-});
-
 export type AddMaintainerInput = z.infer<typeof addMaintainerSchema>;
-export type RegisterMaintainerBody = z.infer<typeof registerMaintainerBodySchema>;
-export type DeregisterMaintainerBody = z.infer<typeof deregisterMaintainerBodySchema>;
+
+/**
+ * Schema for POST /api/v1/admin/caps
+ *
+ * Constraints per the business rules in README:
+ *   global_cap  – max 15 pending applications per contributor (int 1..100)
+ *   per_org_cap – max 4 active assignments per org           (int 1..20)
+ */
+export const adminCapUpdateSchema = z.object({
+  global_cap: z
+    .number({ error: 'global_cap must be a number' })
+    .int('global_cap must be an integer')
+    .min(1, 'global_cap must be at least 1')
+    .max(100, 'global_cap must be at most 100'),
+  per_org_cap: z
+    .number({ error: 'per_org_cap must be a number' })
+    .int('per_org_cap must be an integer')
+    .min(1, 'per_org_cap must be at least 1')
+    .max(20, 'per_org_cap must be at most 20'),
+});
+
+export type AdminCapUpdateInput = z.infer<typeof adminCapUpdateSchema>;

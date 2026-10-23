@@ -1,5 +1,7 @@
 locals {
-  name = "${var.project}-${var.environment}"
+  name        = "${var.project}-${var.environment}"
+  task_cpu    = var.cpu != null ? tostring(var.cpu) : (var.environment == "production" ? "1024" : "512")
+  task_memory = var.memory != null ? tostring(var.memory) : (var.environment == "production" ? "2048" : "1024")
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -138,16 +140,18 @@ resource "aws_ecs_task_definition" "this" {
   family                   = local.name
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = var.environment == "production" ? "1024" : "512"
-  memory                   = var.environment == "production" ? "2048" : "1024"
+  cpu                      = local.task_cpu
+  memory                   = local.task_memory
   execution_role_arn       = aws_iam_role.task_exec.arn
   task_role_arn            = aws_iam_role.task.arn
 
   container_definitions = jsonencode([
     # ── Application container ────────────────────────────────────────────────
     {
-      name  = var.project
-      image = "${var.image_repository}:${var.image_tag}"
+      name         = var.project
+      image        = "${var.image_repository}:${var.image_tag}"
+      cpu          = tonumber(local.task_cpu)
+      memory       = tonumber(local.task_memory)
       portMappings = [{ containerPort = 3000 }]
       environment = [
         { name = "XRAY_ENABLED",    value = "true" },

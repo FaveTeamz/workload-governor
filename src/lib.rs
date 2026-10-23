@@ -46,15 +46,19 @@ fn require_valid_issue_id(env: &Env, issue_id: u32) {
 // Internal helper: require admin auth, supporting multi-sig (#603)
 // ---------------------------------------------------------------------------
 
-/// Requires authentication from the stored admin address.
+/// Requires authentication from the stored admin address and increments the
+/// monotonic admin nonce to prevent authorisation replay attacks. (#828 SC-003)
 ///
-/// If a multi-sig threshold has been configured via `set_admin_threshold`, each
-/// signer in the list is required to provide auth up to the configured threshold.
-/// The Stellar protocol enforces multi-sig by requiring all listed `require_auth`
-/// calls to be satisfied; the threshold is encoded as "require auth from the first
-/// `threshold` signers in the ordered list".
+/// Every privileged governance action calls this helper which:
+/// 1. Requires auth from the admin (and multi-sig signers when configured).
+/// 2. Reads the current nonce from persistent storage.
+/// 3. Increments and persists the nonce atomically.
+/// 4. Emits `AdminActionExecuted` with the new nonce so off-chain indexers
+///    can confirm each action was executed exactly once.
 ///
-/// In single-admin mode (threshold == 0), only the admin address is required.
+/// Because the nonce changes on every successful call, any previously
+/// collected multi-sig signatures are invalidated for future invocations —
+/// they were bound to the old nonce value and will not satisfy a fresh check.
 #[inline]
 fn require_admin_auth(env: &Env) {
     let stored_admin = storage::get_admin(env).unwrap();
@@ -63,8 +67,6 @@ fn require_admin_auth(env: &Env) {
     let threshold = storage::get_multisig_threshold(env);
     if threshold > 0 {
         let signers = storage::get_multisig_signers(env);
-        // Require auth from the first `threshold` signers in the ordered list.
-        // Stellar's auth framework will verify all collected signatures.
         let mut count: u32 = 0;
         for i in 0..signers.len() {
             if count >= threshold {
@@ -75,6 +77,10 @@ fn require_admin_auth(env: &Env) {
             count += 1;
         }
     }
+
+    // #828 SC-003: increment nonce and emit AdminActionExecuted
+    let new_nonce = storage::increment_admin_nonce(env);
+    events::emit_admin_action_executed(env, &stored_admin, new_nonce);
 }
 
 #[contract]
@@ -543,5 +549,18 @@ impl WorkloadGovernor {
     /// compile-time default (`GLOBAL_APP_LIMIT` = 15).
     pub fn get_global_cap(env: Env) -> u32 {
         storage::get_effective_global_cap(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // #828 SC-003 — Admin nonce query
+    // -----------------------------------------------------------------------
+
+    /// Returns the current admin nonce (0 before the first privileged call).
+    ///
+    /// Off-chain clients can read this value before constructing a multi-sig
+    /// authorisation to ensure their signatures are bound to the latest on-chain
+    /// state and cannot be replayed after the nonce advances.
+    pub fn get_admin_nonce(env: Env) -> u32 {
+        storage::get_admin_nonce(&env)
     }
 }

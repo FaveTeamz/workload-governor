@@ -1,5 +1,6 @@
 # cargo-deny configuration for WorkloadGovernor
 # Docs: https://embarkstudios.github.io/cargo-deny/
+# Schema version: cargo-deny 0.20.x (config v2)
 
 [graph]
 # All targets we build for
@@ -12,37 +13,75 @@ targets = [
 # Vulnerability advisories
 # ---------------------------------------------------------------------------
 [advisories]
-# Path to the local advisory database (fetched automatically by cargo-deny)
+# In cargo-deny v0.20 (config v2), the old `deny`, `vulnerability`, `notice`,
+# and `severity-threshold` keys were removed. All vulnerability advisories now
+# always emit errors. The three remaining action fields are `yanked`,
+# `unmaintained`, and `unsound`.
 version = 2
-# Fail the build on any unignored vulnerability
-deny = ["unmaintained", "unsound", "yanked"]
-# Advisory database update interval
-notice = "warn"
+# Fail on yanked crate versions
+yanked = "deny"
+# Fail on unmaintained advisories for direct workspace dependencies
+unmaintained = "workspace"
+# Fail on unsound advisories for direct workspace dependencies
+unsound = "workspace"
 
 # ---------------------------------------------------------------------------
 # License policy
 # ---------------------------------------------------------------------------
+#
+# STRICT PERMISSIVE-ONLY ALLOWLIST
+# =================================
+# This project (Apache-2.0) must not incorporate copyleft dependencies.
+# Only the licenses enumerated below are allowed.  Every other license —
+# including GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.0, LGPL-2.1, LGPL-3.0,
+# EUPL-1.x, MPL-2.0, and CDDL-1.0 — is denied by default under config v2
+# (cargo-deny no longer requires an explicit `deny` list; any license not
+# in `allow` is automatically rejected).
+#
+# HOW TO ADD A NEW DEPENDENCY
+# ----------------------------
+# 1. Run `cargo deny check licenses` locally.
+# 2. If a new license appears that is not in this list, evaluate it:
+#    a. Permissive (MIT, Apache, BSD, ISC, …) → add to `allow` below and
+#       update the "Licenses in use" table in CONTRIBUTING.md.
+#    b. Weak copyleft (LGPL, MPL) → discuss with maintainers before adding.
+#    c. Strong copyleft (GPL, AGPL) → do NOT add; find an alternative crate.
+# 3. If the license is only required by a single unusual crate (not a broad
+#    ecosystem license), prefer [[licenses.exceptions]] over the main `allow`
+#    list so the scope of the allowance is explicit and narrow.
+#
 [licenses]
 version = 2
-# Allow only permissive and copyleft-compatible licences used by soroban-sdk
+confidence-threshold = 0.8
+# Warn (rather than error) on allowed licenses that are present in the list
+# but not actually used by any dependency — keeps the list from growing stale.
+unused-allowed-license = "warn"
+
+# Permissive OSS licenses permitted across all dependencies:
 allow = [
+  # ── Core permissive licenses ────────────────────────────────────────────
   "MIT",
   "Apache-2.0",
+  # Apache-2.0 + LLVM exception: adds patent grant, still permissive.
+  # Required by: wasmparser, wasmparser-nostd (pulled in by soroban-wasmi).
   "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
   "BSD-3-Clause",
   "ISC",
-  "Unicode-DFS-2016",
-  "Zlib",
-  "CC0-1.0",
+  # ── Additional permissive licenses present in the dependency tree ────────
+  # Unicode License v3 (OSI-approved, permissive).
+  # Required by: unicode-ident@1.0.24 (via proc-macro2 → soroban-sdk chain).
+  # License text: https://www.unicode.org/license.txt
+  "Unicode-3.0",
+  # Unlicense: public-domain dedication, maximally permissive.
+  # Required by: memchr@2.8.3 (text-search utility used by soroban-env-host).
+  "Unlicense",
 ]
-# Fail on any crate whose licence is not in the allow list above
-deny = []
-# Warn (rather than deny) on crates whose licence is unclear
-copyleft = "warn"
-allow-osi-fsf-free = "neither"
-default = "deny"
-confidence-threshold = 0.8
+
+# Workspace crates that are `publish = false` are internal and do not need
+# a license expression checked.
+[licenses.private]
+ignore = true
 
 # ---------------------------------------------------------------------------
 # Duplicate crate detection

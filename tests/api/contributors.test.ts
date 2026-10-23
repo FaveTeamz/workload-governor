@@ -57,14 +57,23 @@ const app = createApp();
 // Zod schemas — declare the expected response shapes
 // ---------------------------------------------------------------------------
 
-/** Single application / assignment row returned by the list endpoints */
+/** Single application row inside the paginated items array */
 const ApplicationRowSchema = z.object({
+  id: z.number(),
   contributor: z.string(),
   org_id: z.string(),
   issue_id: z.union([z.number(), z.string()]),
   created_at: z.string(),
-  title: z.string(),
   status: z.string(),
+  title: z.string(),
+  issue_status: z.string(),
+});
+
+/** Pagination envelope returned by GET /applications */
+const ApplicationsEnvelopeSchema = z.object({
+  items: z.array(ApplicationRowSchema),
+  next_cursor: z.union([z.string(), z.null()]),
+  has_more: z.boolean(),
 });
 
 /** Single assignment row */
@@ -134,8 +143,8 @@ beforeEach(async () => {
 
   // Seed application for ACTIVE_ADDR
   await mockPool.query(
-    `INSERT INTO applications (contributor, org_id, issue_id) VALUES ($1, $2, $3)`,
-    [ACTIVE_ADDR, "org-alpha", issueId],
+    `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+    [ACTIVE_ADDR, "org-alpha", issueId, "pending"],
   );
 
   // Seed assignment for ACTIVE_ADDR
@@ -151,35 +160,40 @@ beforeEach(async () => {
 
 describe("GET /api/contributors/:address/applications", () => {
   // ── Test 1 ─────────────────────────────────────────────────────────────
-  it("TC-1: 200 with correct profile shape for active contributor", async () => {
+  it("TC-1: 200 with pagination envelope for active contributor", async () => {
     const res = await request(app).get(
       `/api/contributors/${ACTIVE_ADDR}/applications`,
     );
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThan(0);
+    const parsed = ApplicationsEnvelopeSchema.safeParse(res.body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.items.length).toBeGreaterThan(0);
   });
 
   // ── Test 2 ─────────────────────────────────────────────────────────────
-  it("TC-2: all expected fields are present and correctly typed (Zod)", async () => {
+  it("TC-2: all expected fields present and correctly typed (Zod)", async () => {
     const res = await request(app).get(
       `/api/contributors/${ACTIVE_ADDR}/applications`,
     );
 
     expect(res.status).toBe(200);
 
-    // Validate each row against the Zod schema
-    const parsed = z.array(ApplicationRowSchema).safeParse(res.body);
+    const parsed = ApplicationsEnvelopeSchema.safeParse(res.body);
     expect(parsed.success).toBe(true);
 
-    const first = parsed.data![0];
+    const { items } = parsed.data!;
+    expect(items.length).toBeGreaterThan(0);
+
+    const first = items[0];
+    expect(typeof first.id).toBe("number");
     expect(first.contributor).toBe(ACTIVE_ADDR);
     expect(first.org_id).toBe("org-alpha");
     expect(typeof first.issue_id).toBe("number");
     expect(typeof first.created_at).toBe("string");
     expect(typeof first.title).toBe("string");
     expect(typeof first.status).toBe("string");
+    expect(typeof first.issue_status).toBe("string");
   });
 
   // ── Test 4 ─────────────────────────────────────────────────────────────
@@ -200,6 +214,225 @@ describe("GET /api/contributors/:address/applications", () => {
     );
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(500);
+  });
+
+  // ── Pagination: limit parameter ─────────────────────────────────────────
+  it("PAG-1: respects the limit query parameter", async () => {
+    // Seed 5 more applications so we have 6 total for ACTIVE_ADDR
+    for (let i = 1; i <= 5; i++) {
+      const { rows } = await mockPool.query(
+        `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Issue ${i}', 'open') RETURNING id`,
+      );
+      await mockPool.query(
+        `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+        [ACTIVE_ADDR, "org-alpha", rows[0].id, "pending"],
+      );
+    }
+
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?limit=3`,
+    );
+    expect(res.status).toBe(200);
+    const parsed = ApplicationsEnvelopeSchema.safeParse(res.body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.items.length).toBe(3);
+    expect(parsed.data!.has_more).toBe(true);
+    expect(parsed.data!.next_cursor).not.toBeNull();
+  });
+
+  // ── Pagination: cursor-based next page ──────────────────────────────────
+  it("PAG-2: cursor advances to the next page correctly", async () => {
+    // Seed 4 more applications so we have 5 total
+    for (let i = 1; i <= 4; i++) {
+      const { rows } = await mockPool.query(
+        `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Cursor Issue ${i}', 'open') RETURNING id`,
+      );
+      await mockPool.query(
+        `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+        [ACTIVE_ADDR, "org-alpha", rows[0].id, "pending"],
+      );
+    }
+
+    // Page 1: 2 items
+    const page1 = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?limit=2`,
+    );
+    expect(page1.status).toBe(200);
+    const p1 = ApplicationsEnvelopeSchema.parse(page1.body);
+    expect(p1.items.length).toBe(2);
+    expect(p1.has_more).toBe(true);
+    expect(p1.next_cursor).not.toBeNull();
+
+    const firstPageIds = p1.items.map((i) => i.id);
+
+    // Page 2: use cursor from page 1
+    const page2 = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?limit=2&cursor=${p1.next_cursor}`,
+    );
+    expect(page2.status).toBe(200);
+    const p2 = ApplicationsEnvelopeSchema.parse(page2.body);
+    expect(p2.items.length).toBeGreaterThan(0);
+
+    // Ensure no overlap between pages
+    const secondPageIds = p2.items.map((i) => i.id);
+    for (const id of secondPageIds) {
+      expect(firstPageIds).not.toContain(id);
+    }
+    // All ids on page 2 must be greater than all ids on page 1
+    const maxPage1Id = Math.max(...firstPageIds);
+    for (const id of secondPageIds) {
+      expect(id).toBeGreaterThan(maxPage1Id);
+    }
+  });
+
+  // ── Pagination: last page has no next_cursor ────────────────────────────
+  it("PAG-3: last page returns has_more=false and next_cursor=null", async () => {
+    // Only 1 application seeded in beforeEach; limit=20 default
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?limit=20`,
+    );
+    expect(res.status).toBe(200);
+    const parsed = ApplicationsEnvelopeSchema.parse(res.body);
+    expect(parsed.has_more).toBe(false);
+    expect(parsed.next_cursor).toBeNull();
+  });
+
+  // ── Pagination: default limit is 20 ────────────────────────────────────
+  it("PAG-4: default limit is 20 when no limit parameter is supplied", async () => {
+    // Seed 25 applications
+    for (let i = 0; i < 25; i++) {
+      const { rows } = await mockPool.query(
+        `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Default Limit Issue ${i}', 'open') RETURNING id`,
+      );
+      await mockPool.query(
+        `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+        [ACTIVE_ADDR, "org-alpha", rows[0].id, "pending"],
+      );
+    }
+
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications`,
+    );
+    expect(res.status).toBe(200);
+    const parsed = ApplicationsEnvelopeSchema.parse(res.body);
+    expect(parsed.items.length).toBe(20);
+    expect(parsed.has_more).toBe(true);
+  });
+
+  // ── Pagination: limit max enforcement ──────────────────────────────────
+  it("PAG-5: rejects limit above 100", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?limit=101`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(res.body.error).toMatch(/limit/i);
+  });
+
+  // ── Pagination: invalid cursor ──────────────────────────────────────────
+  it("PAG-6: returns 400 for a malformed cursor", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?cursor=!!!not-valid!!!`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(res.body.error).toMatch(/cursor/i);
+  });
+
+  // ── Status filtering ────────────────────────────────────────────────────
+  it("FILT-1: status=pending returns only pending applications", async () => {
+    // Seed an additional 'assigned' application so we can differentiate
+    const { rows } = await mockPool.query(
+      `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Assigned Issue', 'open') RETURNING id`,
+    );
+    await mockPool.query(
+      `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+      [ACTIVE_ADDR, "org-alpha", rows[0].id, "assigned"],
+    );
+
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?status=pending`,
+    );
+    expect(res.status).toBe(200);
+    const parsed = ApplicationsEnvelopeSchema.parse(res.body);
+    for (const item of parsed.items) {
+      expect(item.status).toBe("pending");
+    }
+  });
+
+  it("FILT-2: status=assigned returns only assigned applications", async () => {
+    // Seed an 'assigned' application
+    const { rows } = await mockPool.query(
+      `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Assigned Issue 2', 'open') RETURNING id`,
+    );
+    await mockPool.query(
+      `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+      [ACTIVE_ADDR, "org-alpha", rows[0].id, "assigned"],
+    );
+
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?status=assigned`,
+    );
+    expect(res.status).toBe(200);
+    const parsed = ApplicationsEnvelopeSchema.parse(res.body);
+    expect(parsed.items.length).toBeGreaterThan(0);
+    for (const item of parsed.items) {
+      expect(item.status).toBe("assigned");
+    }
+  });
+
+  it("FILT-3: invalid status value returns 400", async () => {
+    const res = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?status=invalid_status`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+    expect(res.body.error).toMatch(/status/i);
+  });
+
+  it("FILT-4: status and cursor can be combined", async () => {
+    // Seed 3 pending applications in addition to the one seeded in beforeEach
+    for (let i = 0; i < 3; i++) {
+      const { rows } = await mockPool.query(
+        `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Combo Issue ${i}', 'open') RETURNING id`,
+      );
+      await mockPool.query(
+        `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+        [ACTIVE_ADDR, "org-alpha", rows[0].id, "pending"],
+      );
+    }
+    // Also seed 2 assigned ones that should be excluded
+    for (let i = 0; i < 2; i++) {
+      const { rows } = await mockPool.query(
+        `INSERT INTO issues (org_id, title, status) VALUES ('org-alpha', 'Assigned Combo ${i}', 'open') RETURNING id`,
+      );
+      await mockPool.query(
+        `INSERT INTO applications (contributor, org_id, issue_id, status) VALUES ($1, $2, $3, $4)`,
+        [ACTIVE_ADDR, "org-alpha", rows[0].id, "assigned"],
+      );
+    }
+
+    // Page 1 of pending: get 2
+    const page1 = await request(app).get(
+      `/api/contributors/${ACTIVE_ADDR}/applications?status=pending&limit=2`,
+    );
+    expect(page1.status).toBe(200);
+    const p1 = ApplicationsEnvelopeSchema.parse(page1.body);
+    expect(p1.items.length).toBe(2);
+    for (const item of p1.items) {
+      expect(item.status).toBe("pending");
+    }
+
+    if (p1.has_more && p1.next_cursor) {
+      const page2 = await request(app).get(
+        `/api/contributors/${ACTIVE_ADDR}/applications?status=pending&limit=2&cursor=${p1.next_cursor}`,
+      );
+      expect(page2.status).toBe(200);
+      const p2 = ApplicationsEnvelopeSchema.parse(page2.body);
+      for (const item of p2.items) {
+        expect(item.status).toBe("pending");
+      }
+    }
   });
 });
 

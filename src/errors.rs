@@ -41,4 +41,9 @@ pub enum ContractError {
     QuorumNotMet                  = 18,
     /// Less than 50 % of votes are approvals; proposal is rejected.
     InsufficientApproval          = 19,
+
+    // #828 SC-003 — Admin nonce / replay protection
+    /// The provided expected_nonce does not match the current on-chain admin nonce.
+    /// This indicates a stale or replayed authorisation attempt.
+    StaleAdminNonce               = 20,
 }

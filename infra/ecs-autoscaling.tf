@@ -38,6 +38,18 @@ variable "sns_alarm_topic_arn" {
   default     = ""
 }
 
+variable "cpu_target_utilization" {
+  description = "Target average CPU utilization percentage for ECS service auto-scaling"
+  type        = number
+  default     = 70.0
+}
+
+variable "memory_target_utilization" {
+  description = "Target average memory utilization percentage for ECS service auto-scaling"
+  type        = number
+  default     = 80.0
+}
+
 # ---------------------------------------------------------------------------
 # Autoscaling target
 # ---------------------------------------------------------------------------
@@ -62,12 +74,34 @@ resource "aws_appautoscaling_policy" "cpu_tracking" {
   service_namespace  = aws_appautoscaling_target.ecs.service_namespace
 
   target_tracking_scaling_policy_configuration {
-    target_value       = 70.0
+    target_value       = var.cpu_target_utilization
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
 
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Policy 1b: Memory target tracking
+# ---------------------------------------------------------------------------
+
+resource "aws_appautoscaling_policy" "memory_tracking" {
+  name               = "${var.service_name}-memory-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.memory_target_utilization
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
     }
   }
 }
@@ -187,13 +221,38 @@ resource "aws_cloudwatch_metric_alarm" "alb_low_request_rate" {
 
 resource "aws_cloudwatch_metric_alarm" "ecs_high_cpu" {
   alarm_name          = "${var.service_name}-ecs-high-cpu"
-  alarm_description   = "ECS CPUUtilization > 70% for 2 min — scale out via CPU target tracking policy"
+  alarm_description   = "ECS CPUUtilization > ${var.cpu_target_utilization}% for 2 min — scale out via CPU target tracking policy"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
-  threshold           = 70
+  threshold           = var.cpu_target_utilization
   treat_missing_data  = "notBreaching"
 
   metric_name = "CPUUtilization"
+  namespace   = "AWS/ECS"
+  period      = 60
+  statistic   = "Average"
+
+  dimensions = {
+    ClusterName = var.cluster_name
+    ServiceName = var.service_name
+  }
+
+  alarm_actions = compact([var.sns_alarm_topic_arn])
+}
+
+# ---------------------------------------------------------------------------
+# CloudWatch alarm: Memory high utilisation → scale out
+# ---------------------------------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "ecs_high_memory" {
+  alarm_name          = "${var.service_name}-ecs-high-memory"
+  alarm_description   = "ECS MemoryUtilization > ${var.memory_target_utilization}% for 2 min — scale out via memory target tracking policy"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  threshold           = var.memory_target_utilization
+  treat_missing_data  = "notBreaching"
+
+  metric_name = "MemoryUtilization"
   namespace   = "AWS/ECS"
   period      = 60
   statistic   = "Average"
@@ -220,6 +279,11 @@ output "cpu_tracking_policy_arn" {
   value       = aws_appautoscaling_policy.cpu_tracking.arn
 }
 
+output "memory_tracking_policy_arn" {
+  description = "ARN of the memory target-tracking autoscaling policy"
+  value       = aws_appautoscaling_policy.memory_tracking.arn
+}
+
 output "alb_scale_out_policy_arn" {
   description = "ARN of the ALB request-count scale-out step scaling policy"
   value       = aws_appautoscaling_policy.alb_request_scale_out.arn
@@ -243,4 +307,9 @@ output "alb_low_request_rate_alarm_arn" {
 output "ecs_high_cpu_alarm_arn" {
   description = "ARN of the ECS high-CPU CloudWatch alarm"
   value       = aws_cloudwatch_metric_alarm.ecs_high_cpu.arn
+}
+
+output "ecs_high_memory_alarm_arn" {
+  description = "ARN of the ECS high-memory CloudWatch alarm"
+  value       = aws_cloudwatch_metric_alarm.ecs_high_memory.arn
 }

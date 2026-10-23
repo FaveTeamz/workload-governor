@@ -109,6 +109,8 @@ module "compute" {
   redis_url_secret    = module.cache.connection_url_secret_arn
   github_token_secret = module.secrets.github_token_arn
   jwt_secret_arn      = module.secrets.jwt_secret_arn
+  cpu                 = var.cpu
+  memory              = var.memory
 }
 
 # ── HTTPS listener (ALB → ECS) with ACM certificate ─────────────────────────

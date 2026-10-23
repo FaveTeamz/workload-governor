@@ -60,11 +60,22 @@ export const options = {
         { duration: '30s', target: 0  }, // ramp down
       ],
     },
+    spike_scenario: {
+      executor: 'ramping-vus',
+      startTime: '6m',
+      stages: [
+        { duration: '30s', target: 500 }, // ramp up to 500 VUs during batch apply spike
+        { duration: '60s', target: 500 }, // hold at 500 VUs for 60s
+        { duration: '30s', target: 0   }, // ramp down
+      ],
+    },
   },
 
   thresholds: {
     // Primary SLA gates — CI will fail if these are breached
     http_req_duration: ['p(95)<2000'],   // p95 across all requests < 2 s
+    'http_req_duration{status:200}': ['p(95)<500'], // p95 for successful requests < 500ms
+    http_req_failed:   ['rate<0.01'],    // failure rate < 1 %
     errors:            ['rate<0.01'],    // aggregate error rate < 1 %
 
     // Per-endpoint p95 targets (informational, non-blocking)

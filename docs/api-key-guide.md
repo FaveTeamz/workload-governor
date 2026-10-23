@@ -388,3 +388,36 @@ using `deregister_maintainer` — see [docs/admin-guide.md](admin-guide.md#maint
 
 Set calendar reminders. Treat an overdue rotation the same as a suspected
 compromise.
+
+---
+
+## Error Code Reference
+
+When API key authentication or authorization fails, the backend returns structured JSON error payloads accompanied by standard HTTP status codes. Refer to [docs/error-reference.md](error-reference.md) for full application error taxonomy.
+
+### Error Codes Table
+
+| Error Code | HTTP Status | Description / Cause | Resolution / Client Action |
+|------------|-------------|---------------------|----------------------------|
+| `ERR_INVALID_KEY` | 401 Unauthorized | Missing or malformed `x-admin-token` / API key header | Verify header syntax and valid token value |
+| `ERR_KEY_EXPIRED` | 401 Unauthorized | Provided API key has exceeded its expiration date | Rotate key and deploy updated active credentials |
+| `ERR_RATE_LIMITED` | 429 Too Many Requests | Request rate limit exceeded for key tier | Back off and retry with exponential delay (`Retry-After`) |
+| `ERR_UNAUTHORIZED_ORG` | 403 Forbidden | Key scope does not permit managing specified organization | Verify key permissions and requesting principal scope |
+| `ERR_CAP_EXCEEDED` | 422 Unprocessable Entity | Attempted operation exceeds maximum allowed capacity limits | Check organization limit before submitting operations |
+
+### Example Error Response Payload
+
+```json
+{
+  "error": {
+    "code": "ERR_INVALID_KEY",
+    "message": "The provided API key is invalid or unrecognized.",
+    "status": 401,
+    "timestamp": "2026-09-28T12:00:00.000Z",
+    "details": {
+      "header": "x-admin-token"
+    }
+  }
+}
+```
+

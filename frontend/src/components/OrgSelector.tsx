@@ -162,21 +162,41 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
           setOpen(true);
           setActiveIndex(0);
         } else {
-          setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
+          setActiveIndex((i) => (i < 0 ? 0 : Math.min(i + 1, filtered.length - 1)));
         }
         break;
 
       case "ArrowUp":
         e.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
+        if (!open) {
+          setOpen(true);
+          setActiveIndex(Math.max(0, filtered.length - 1));
+        } else {
+          setActiveIndex((i) => Math.max(i - 1, 0));
+        }
+        break;
+
+      case "Home":
+        if (open && filtered.length > 0) {
+          e.preventDefault();
+          setActiveIndex(0);
+        }
+        break;
+
+      case "End":
+        if (open && filtered.length > 0) {
+          e.preventDefault();
+          setActiveIndex(filtered.length - 1);
+        }
         break;
 
       case "Enter":
         e.preventDefault();
         if (open && activeIndex >= 0 && activeIndex < filtered.length) {
           selectOrg(filtered[activeIndex]);
-        } else {
-          setOpen((o) => !o);
+        } else if (!open) {
+          setOpen(true);
+          setActiveIndex(0);
         }
         break;
 
@@ -191,7 +211,11 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
         break;
 
       case "Tab":
-        setOpen(false);
+        if (open && activeIndex >= 0 && activeIndex < filtered.length) {
+          selectOrg(filtered[activeIndex]);
+        } else {
+          setOpen(false);
+        }
         break;
     }
   }
@@ -231,7 +255,7 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
         Organisation
       </label>
 
-      <div className="org-selector__control" role="combobox" aria-expanded={open} aria-haspopup="listbox" aria-owns={listboxId}>
+      <div className="org-selector__control">
         {selectedOrg.id && !open && (
           <OrgAvatar org={selectedOrg} />
         )}
@@ -249,9 +273,10 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
           aria-label="Search organisations"
           aria-autocomplete="list"
           aria-controls={listboxId}
+          aria-haspopup="listbox"
           aria-activedescendant={
             open && activeIndex >= 0
-              ? `org-option-${filtered[activeIndex]?.id ?? "all"}`
+              ? `org-option-${filtered[activeIndex]?.id || "all"}`
               : undefined
           }
           aria-expanded={open}

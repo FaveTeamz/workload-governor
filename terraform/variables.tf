@@ -43,3 +43,15 @@ variable "budget_alert_email" {
   type        = string
   default     = ""
 }
+
+variable "cpu" {
+  description = "ECS task and container CPU units (e.g. 512, 1024)"
+  type        = string
+  default     = "512"
+}
+
+variable "memory" {
+  description = "ECS task and container memory allocation in MB (e.g. 1024, 2048)"
+  type        = string
+  default     = "1024"
+}

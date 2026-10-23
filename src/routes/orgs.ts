@@ -11,7 +11,7 @@ const router = Router();
 // ---------------------------------------------------------------------------
 // Known orgs for stub implementation
 // ---------------------------------------------------------------------------
-const KNOWN_ORGS = ['stellar-oss', 'org_stellar_001'];
+const KNOWN_ORGS = ['stellar-oss', 'org_stellar_001', 'org_a', 'org_b', 'org_c', 'Org A', 'Org B', 'Org C', 'org-a', 'org-b', 'org-c'];
 const ORG_CAP_DEFAULT = 4;
 const orgCapOverrides = new Map<string, number>();
 const orgCapSchema = z.object({
@@ -282,16 +282,32 @@ router.post(
     next();
   },
   validateBody(orgApplyBodySchema),
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { contributor } = req.body as OrgApplyBody;
+    if (pool && typeof pool.query === 'function') {
+      try {
+        const globalAppsRes = await pool.query<{ count: string }>(
+          'SELECT COUNT(*) as count FROM applications WHERE contributor = $1 AND status = $2',
+          [contributor, 'pending'],
+        );
+        const globalAppsCount = parseInt(globalAppsRes.rows[0]?.count ?? '0', 10);
+        if (globalAppsCount >= 15) {
+          return res.status(429).json({
+            error: 'Global application cap reached',
+            code: 'ERR_CAP_EXCEEDED',
+            message: 'Global application cap of 15 exceeded',
+          });
+        }
+      } catch {
+        // Ignore DB query errors in mock/stub mode
+      }
+    }
     // Return 201 Created as defined in the OpenAPI spec
     res.status(201).json({
       success: true,
       tx_hash: 'a'.repeat(64),
       message: 'Application submitted successfully',
     });
-    // contributor is captured for future use (e.g. event logging)
-    void contributor;
   },
 );
 

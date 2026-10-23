@@ -9,6 +9,24 @@
  *   - Rate-limit detection (HTTP 429 + X-RateLimit-* headers) with backoff
  *   - Marks issues closed in DB when they no longer appear in the API response
  *   - Structured log per org (issue count, duration, sync status)
+ *
+ * SQL DIALECT COMPATIBILITY AUDIT (#861):
+ *   This module targets PostgreSQL exclusively (no SQLite path). The following
+ *   PostgreSQL-specific constructs are intentional and required:
+ *
+ *   - TIMESTAMPTZ        : timezone-aware timestamps; SQLite stores as text
+ *   - TEXT[]             : native array type; SQLite has no array type
+ *   - NOW()              : PostgreSQL server-side timestamp function;
+ *                          Knex equivalent: knex.fn.now() — not used here
+ *                          because we use raw pg pool queries, not Knex
+ *   - ON CONFLICT (id) DO UPDATE : PostgreSQL upsert syntax (UPSERT);
+ *                          SQLite uses INSERT OR REPLACE (different semantics)
+ *   - $3::BIGINT[]       : PostgreSQL typed array cast; no SQLite equivalent
+ *   - ALL($3)            : PostgreSQL array membership operator; no SQLite equivalent
+ *
+ *   The integration test suite (backend-integration.yml) runs against real
+ *   PostgreSQL 15 and 16 containers to validate this module end-to-end.
+ *   SQLite is NOT used in any test path for this module.
  */
 
 import pool from "./db.js";

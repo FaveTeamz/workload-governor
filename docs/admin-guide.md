@@ -6,6 +6,20 @@ The Workload Governor contract manages issue assignments and applications for co
 
 ---
 
+## Admin Transfer
+
+Admin authority moves between addresses in two steps, each signed by a different key:
+
+1. The current admin calls `propose_admin(current_admin, new_admin)`. The nominated address is stored under `"p_admin"`, and the current admin keeps full authority.
+2. The nominated address calls `accept_admin(new_admin)`. The stored admin is replaced and the pending entry is cleared in the same invocation.
+
+If step 2 never happens, nothing changes: the current admin stays active. To correct a wrong nomination, call `propose_admin` again with the right address.
+
+- Step-by-step procedure: [Admin key rotation runbook](runbooks/admin-key-rotation.md)
+- Design rationale and alternatives considered: [ADR-006: Two-Step Admin Transfer](adr/ADR-006-two-step-admin-transfer.md)
+
+---
+
 ## TTL Management
 
 ### What is TTL?

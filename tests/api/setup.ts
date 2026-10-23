@@ -38,10 +38,13 @@ function evalCond(row: Row, cond: string, params: unknown[]): boolean {
     const pattern = String(params[+m[2] - 1]).replace(/%/g, '');
     return String(row[m[1]] ?? '').toLowerCase().includes(pattern.toLowerCase());
   }
-  // timestamp >= $n
+  // col > $n  (numeric greater-than, used for cursor pagination)
+  m = cond.match(/^(\w+)\s*>\s*\$(\d+)$/i);
+  if (m) return Number(row[m[1]]) > Number(params[+m[2] - 1]);
+  // col >= $n
   m = cond.match(/^(\w+)\s*>=\s*\$(\d+)$/i);
   if (m) return new Date(row[m[1]] as string) >= (params[+m[2] - 1] as Date);
-  // timestamp <= $n
+  // col <= $n
   m = cond.match(/^(\w+)\s*<=\s*\$(\d+)$/i);
   if (m) return new Date(row[m[1]] as string) <= (params[+m[2] - 1] as Date);
   return true;
@@ -149,14 +152,14 @@ export function runQuery(sql: string, params: unknown[] = []): { rows: Row[] } {
   }
 
   // ---- SELECT * / SELECT col,... ----
-  // Capture: SELECT <cols> FROM <table> [WHERE <cond>] [ORDER BY ...] [LIMIT $n OFFSET $m]
-  m = s.match(/^SELECT (.+?) FROM (\w+)(?:\s+WHERE (.+?))?(?:\s+ORDER BY .+?)?(?:\s+LIMIT \$(\d+) OFFSET \$(\d+))?$/i);
+  // Capture: SELECT <cols> FROM <table> [WHERE <cond>] [ORDER BY ...] [LIMIT $n [OFFSET $m]]
+  m = s.match(/^SELECT (.+?) FROM (\w+)(?:\s+WHERE (.+?))?(?:\s+ORDER BY .+?)?(?:\s+LIMIT \$(\d+)(?:\s+OFFSET \$(\d+))?)?$/i);
   if (m) {
     const [, , tableName, where, limitIdx, offsetIdx] = m;
     let rows = filterRows(tbl(tableName), where, params);
-    if (limitIdx && offsetIdx) {
+    if (limitIdx) {
       const limit = params[+limitIdx - 1] as number;
-      const offset = params[+offsetIdx - 1] as number;
+      const offset = offsetIdx ? (params[+offsetIdx - 1] as number) : 0;
       rows = rows.slice(offset, offset + limit);
     }
     return { rows };

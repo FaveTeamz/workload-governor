@@ -20,7 +20,7 @@ spec:
         {{- range .hosts }}
         - {{ . | quote }}
         {{- end }}
-      secretName: {{ .secretName }}
+      secretName: {{ .secretName | default (printf "%s-tls" (include "vesting-backend.fullname" $)) }}
     {{- end }}
   {{- end }}
   rules:

@@ -85,3 +85,11 @@ and step-by-step instructions on running them manually.
 | `health-check.tf` | Target group health check |
 | `rds-backup.tf` | RDS automated backup configuration |
 | `outputs.tf` | Shared outputs (log group names, dashboard ARN) |
+
+---
+
+## Runbooks
+
+| Runbook | Description |
+|---|---|
+| [Redis Cache Failure](../docs/runbooks/redis-failure.md) | Redis unreachable, mass key eviction, cache flush, ElastiCache cluster resizing, and recovery verification |

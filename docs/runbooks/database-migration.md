@@ -1,187 +1,181 @@
-# Runbook: Database Migration
+# Database Migration Runbook
 
-This document covers how automated schema migrations work, how to run them
-manually, and what to do if a migration fails.
+This runbook covers procedures for migrating and backfilling data in the WorkloadGovernor PostgreSQL database, with a focus on the `contract_events` table.
+
+---
+
+## Table of contents
+
+1. [Overview](#overview)
+2. [backfill-events CLI](#backfill-events-cli)
+   - [Prerequisites](#prerequisites)
+   - [Flags reference](#flags-reference)
+   - [Common workflows](#common-workflows)
+   - [Checkpoint behaviour](#checkpoint-behaviour)
+   - [Dry-run mode](#dry-run-mode)
+3. [Schema migrations](#schema-migrations)
+4. [Rollback](#rollback)
 
 ---
 
 ## Overview
 
-Database migrations run as a one-shot ECS Fargate task before every deployment.
-The task executes `npx prisma migrate deploy` against the live database and exits.
-The main service update is blocked until the migration task exits with code 0.
+The `contract_events` table stores decoded Soroban smart-contract events indexed by the `EventIndexer` service. When new replicas are provisioned or the indexer has been offline, historical events may need to be backfilled directly from the Soroban RPC node.
 
-```
-GitHub Actions deployment flow:
-  1. build-and-push Docker image
-  2. migrate job  ← runs prisma migrate deploy via ECS task
-  3. deploy job   ← updates ECS service with new image (only starts after step 2)
-```
-
-If step 2 fails the deployment stops immediately — no traffic ever reaches code
-that expects a schema that has not been applied.
+The `src/scripts/backfill-events.ts` CLI script handles this process safely with support for dry-run estimation, configurable batch sizes, and automatic resume checkpointing.
 
 ---
 
-## Infrastructure
+## backfill-events CLI
 
-| Resource | Name pattern | Details |
-|---|---|---|
-| ECS task definition | `workload-governor-<env>-migration` | 0.25 vCPU / 512 MB Fargate |
-| CloudWatch log group | `/ecs/workload-governor-<env>-migration` | 30-day retention |
-| Security group | `workload-governor-<env>-migration` | Egress-only (RDS + internet for npm) |
-| SSM parameters | `/<project>/<env>/migration-task-def-arn` | Looked up at deploy time |
+### Prerequisites
 
-The migration task shares the same IAM execution role and VPC as the main service.
-No additional permissions are required.
+| Requirement | Details |
+|---|---|
+| Node.js ≥ 18 | Required to run `ts-node` |
+| `DATABASE_URL` env var | PostgreSQL connection string |
+| `SOROBAN_RPC_URL` env var | Soroban RPC endpoint (defaults to testnet) |
+| `CONTRACT_ID` env var | Soroban contract address to query |
 
----
-
-## Running a Migration Manually
-
-Use this when you need to apply migrations outside the normal deployment flow
-(e.g. after a failed deploy or a hotfix).
-
-### Option A — GitHub Actions (recommended)
-
-1. Navigate to **Actions → DB Migration → Run workflow**.
-2. Select the target environment (`staging` or `production`).
-3. Enter the image tag (Git SHA) that contains the migration files.
-4. Click **Run workflow**.
-
-Monitor the run at **Actions → DB Migration → latest run**.
-
-### Option B — AWS CLI
+Install dependencies (if not already done):
 
 ```bash
-# 1. Resolve infrastructure parameters
-ENV=staging   # or production
-PROJECT=workload-governor
-CLUSTER="${PROJECT}-${ENV}"
-
-TASK_DEF=$(aws ssm get-parameter \
-  --name "/${PROJECT}/${ENV}/migration-task-def-arn" \
-  --query "Parameter.Value" --output text)
-SUBNET=$(aws ssm get-parameter \
-  --name "/${PROJECT}/${ENV}/migration-subnet-id" \
-  --query "Parameter.Value" --output text)
-SG=$(aws ssm get-parameter \
-  --name "/${PROJECT}/${ENV}/migration-sg-id" \
-  --query "Parameter.Value" --output text)
-
-# 2. Run the migration task
-TASK_ARN=$(aws ecs run-task \
-  --cluster "$CLUSTER" \
-  --task-definition "$TASK_DEF" \
-  --launch-type FARGATE \
-  --network-configuration \
-    "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SG],assignPublicIp=DISABLED}" \
-  --query "tasks[0].taskArn" --output text)
-echo "Task ARN: $TASK_ARN"
-
-# 3. Wait for it to finish
-aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
-
-# 4. Check exit code
-aws ecs describe-tasks \
-  --cluster "$CLUSTER" \
-  --tasks "$TASK_ARN" \
-  --query "tasks[0].containers[0].exitCode"
-# Expected: 0
+npm install
 ```
 
-### Viewing migration logs
+### Flags reference
+
+| Flag | Alias | Type | Default | Description |
+|---|---|---|---|---|
+| `--dry-run` | `-d` | boolean | `false` | Report event statistics without writing to the DB |
+| `--batch-size` | `-b` | number | `100` | Events fetched per RPC call |
+| `--resume` | `-r` | boolean | `false` | Resume from `.backfill-checkpoint.json` |
+| `--start-ledger` | `-s` | number | — | Ledger sequence to start from (ignored when `--resume` is set) |
+| `--end-ledger` | `-e` | number | — | Ledger sequence to stop at (inclusive) |
+
+### Common workflows
+
+#### 1. Estimate backfill volume before touching production
+
+Always run a dry-run first to understand event counts and projected storage impact:
 
 ```bash
-aws logs tail /ecs/workload-governor-staging-migration --since 30m --follow
-# Replace 'staging' with 'production' as needed.
+npx ts-node src/scripts/backfill-events.ts --dry-run
 ```
 
----
+Sample output:
 
-## Rollback Procedure for Failed Migrations
+```
+[backfill] *** DRY-RUN MODE — no database writes will be performed ***
+[backfill] Processed up to ledger 1234567 | fetched=850 parsed=742 inserted=742 skipped=108
+...
 
-### Step 1 — Stop the deployment
+==============================
+ Backfill summary
+==============================
+  Mode            : DRY-RUN (no writes)
+  Total fetched   : 850
+  Total parsed    : 742
+  Would insert    : 742
+  Est. storage    : 371.0 KB (~512 bytes/event)
+  Skipped/dup     : 108
+==============================
+```
 
-If the CI pipeline failed on the migration step, the main service was never
-updated — no rollback of application code is needed. Investigate the migration
-error first.
-
-### Step 2 — Diagnose the failure
+#### 2. Full historical backfill (live)
 
 ```bash
-# Fetch logs from the failed migration task
-aws logs tail /ecs/workload-governor-staging-migration --since 1h
-
-# Common causes:
-#   - DATABASE_URL secret has wrong credentials
-#   - Migration SQL has a syntax error
-#   - Schema conflict with data already in the table
+npx ts-node src/scripts/backfill-events.ts --batch-size 500
 ```
 
-### Step 3 — Fix and re-apply
+#### 3. Backfill from a specific ledger range
 
-If the migration SQL is incorrect:
-1. Fix the migration file in the codebase.
-2. Open a PR, get it merged to `main`.
-3. The deployment pipeline will re-run the migration automatically.
+```bash
+npx ts-node src/scripts/backfill-events.ts \
+  --start-ledger 1000000 \
+  --end-ledger   1500000 \
+  --batch-size   200
+```
 
-If the migration is structurally valid but failed due to a transient error
-(e.g. network timeout), re-run the GitHub Actions workflow manually
-(**Actions → DB Migration → Run workflow**).
+#### 4. Resume an interrupted backfill
 
-### Step 4 — Reverting an already-applied migration
+If the process was killed mid-run, resume from where it left off:
 
-Prisma does not support automatic rollback of `migrate deploy`. To revert:
+```bash
+npx ts-node src/scripts/backfill-events.ts --resume
+```
 
-1. Write a new migration that undoes the schema change:
-   ```bash
-   npx prisma migrate dev --name revert_<migration_name>
-   # Edit the generated SQL to undo the forward migration
-   ```
-2. Commit and deploy via the normal PR flow.
-3. The forward migration and its revert are both recorded in migration history.
+The script reads `.backfill-checkpoint.json` from the current working directory and continues from `lastLedger + 1`.
 
-> **Important:** Never manually edit or delete rows from the `_prisma_migrations`
-> table in production. Always use Prisma tooling to manage migration state.
+#### 5. Large-scale production backfill
 
-### Step 5 — Emergency: service is running but DB is in a broken state
+For multi-million ledger backfills, run in a dedicated ECS task or screen session:
 
-If code was deployed before the migration completed (e.g. a manual deploy that
-bypassed CI):
+```bash
+# Start a detached screen session
+screen -S backfill
 
-1. Stop the ECS service to take the application offline:
-   ```bash
-   aws ecs update-service \
-     --cluster workload-governor-production \
-     --service workload-governor-production \
-     --desired-count 0
-   ```
-2. Run the migration manually (Option B above).
-3. Restore service:
-   ```bash
-   aws ecs update-service \
-     --cluster workload-governor-production \
-     --service workload-governor-production \
-     --desired-count 2
-   ```
+# Inside the session
+DATABASE_URL="postgres://..." \
+SOROBAN_RPC_URL="https://..." \
+CONTRACT_ID="C..." \
+npx ts-node src/scripts/backfill-events.ts \
+  --batch-size 1000 \
+  --resume
+
+# Detach: Ctrl+A then D
+# Re-attach later: screen -r backfill
+```
+
+### Checkpoint behaviour
+
+- Progress is saved to `.backfill-checkpoint.json` in the current working directory every **1,000 ledgers**.
+- A final checkpoint is saved when the script exits cleanly.
+- Checkpoint format:
+
+```json
+{
+  "lastLedger": 1234567,
+  "processedAt": "2026-09-27T18:00:00.000Z"
+}
+```
+
+- Delete `.backfill-checkpoint.json` if you want to start over from the beginning.
+- The file is listed in `.gitignore` to prevent accidental commits.
+
+### Dry-run mode
+
+`--dry-run` makes no database writes. It fetches events from the RPC node, parses them, accumulates statistics, and prints a summary. Use it to:
+
+- Estimate row count before provisioning disk space.
+- Validate RPC connectivity without side effects.
+- Verify event parsing logic in staging.
+
+> **Note:** Checkpoint files are **not** written in dry-run mode.
 
 ---
 
-## Testing Against Staging
+## Schema migrations
 
-Before promoting a migration to production:
+The `migrate()` function in `src/db.ts` runs `CREATE TABLE IF NOT EXISTS` statements on startup. For additive changes this is safe to re-run.
 
-1. Merge the PR to `main` — the migration auto-runs against staging.
-2. Verify the staging service starts and `/api/health` returns `200`.
-3. Run a manual smoke test or check recent API logs.
-4. Only then approve the production deployment via the GitHub Environment gate.
+For destructive or index-heavy migrations:
+
+1. Write the migration SQL under `scripts/migrations/YYYYMMDD_description.sql`.
+2. Test against a staging DB snapshot first.
+3. Run with `psql "$DATABASE_URL" -f scripts/migrations/YYYYMMDD_description.sql`.
+4. Verify with `\d+ contract_events` in `psql`.
 
 ---
 
-## Health Check Verification
+## Rollback
 
-After each migration, the CI workflow polls `GET /api/health` and checks for an
-HTTP 200 response. The health endpoint checks that PostgreSQL is reachable and
-responding. A `503` or timeout after migration indicates a database connectivity
-issue — investigate before proceeding with the service deploy.
+If a backfill introduced corrupt rows:
+
+```sql
+-- Delete events inserted after a specific timestamp
+DELETE FROM contract_events
+WHERE created_at > '2026-09-27 18:00:00+00';
+```
+
+If a schema migration must be reversed, follow the [rollback runbook](../rollback-runbook.md).

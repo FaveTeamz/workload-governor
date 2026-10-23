@@ -26,6 +26,7 @@ interface GitHubWebhookBody {
   issue?: GitHubIssue;
   label?: GitHubLabel;
   repository?: GitHubRepository;
+  contributor?: string;
 }
 
 const GOOD_FIRST_ISSUE = 'good first issue';
@@ -140,6 +141,14 @@ router.post('/github', async (req: Request, res: Response) => {
         );
         console.log(`GitHub issue #${issueNumber} unlabeled good-first-issue`);
         break;
+      }
+
+      case 'apply':
+      case 'withdraw': {
+        // Contributor applied or withdrew — invalidate their global-count cache
+        await invalidateCache('global-count:*');
+        console.log(`Webhook action '${action}': invalidated global-count cache`);
+        return res.status(200).json({ message: 'webhook processed successfully' });
       }
 
       default:

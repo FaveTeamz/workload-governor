@@ -67,6 +67,109 @@ rules:
         - "**/*.test.ts"
         - "**/tests/**"
 
+  # ── Custom rule: Knex raw() with template-literal interpolation ─────────────
+  #
+  # Flags calls to knex.raw() or db.raw() whose first argument is a template
+  # literal that contains a ${...} interpolation.  String-literal arguments
+  # and parameterised bindings (db.raw('... ?', [val])) are safe and are NOT
+  # flagged.
+  #
+  # Safe alternatives:
+  #   db.raw('SELECT * FROM issues WHERE id = ?', [id])       -- positional
+  #   db.raw('SELECT * FROM issues WHERE id = :id', { id })   -- named
+  #
+  # The two pattern-either arms cover all interpolation positions:
+  #   arm 1: `prefix${X}suffix`   (interpolation in the middle or at the end)
+  #   arm 2: `prefix${X}`         (trailing interpolation, no suffix text)
+  #
+  # References:
+  #   https://knexjs.org/guide/raw.html#raw-parameter-binding
+  #   CWE-89: Improper Neutralisation of Special Elements in SQL Commands
+  - id: workload-governor.knex-no-raw-interpolation
+    pattern-either:
+      - pattern: $OBJ.raw(`$A${$X}$B`)
+      - pattern: $OBJ.raw(`$A${$X}`)
+    message: >
+      Knex raw() called with a template-literal containing an interpolated
+      variable '$X'. This bypasses Knex's parameterisation and may allow SQL
+      injection if '$X' is user-controlled.
+
+      Use parameterised bindings instead:
+        db.raw('SELECT ... WHERE col = ?', [$X])
+        db.raw('SELECT ... WHERE col = :val', { val: $X })
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-89"
+      confidence: HIGH
+      category: security
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.js"
+        - "**/*.spec.ts"
+        - "**/tests/**"
+        - "**/test/**"
+        - "**/__tests__/**"
+
+  # ── Custom rule: XDR base64 deserialization without size guard ───────────────
+  #
+  # Flags calls to .fromXDR(expr, 'base64') that are not preceded by a size /
+  # length check on the input.  Parsing arbitrarily large XDR blobs can cause
+  # excessive memory consumption or CPU exhaustion (DoS).
+  #
+  # Recognised safe guards (pattern-not-inside):
+  #   if (input.length > MAX)  { throw ... }       -- string-char length
+  #   if (input.length >= MAX) { throw ... }
+  #   if (Buffer.from(input, 'base64').length > MAX)  { throw ... }  -- byte length
+  #   if (Buffer.from(input, 'base64').length >= MAX) { throw ... }
+  #
+  # Safe example:
+  #   const MAX_XDR_BYTES = 65536;
+  #   if (xdrB64.length > MAX_XDR_BYTES) throw new Error('XDR payload too large');
+  #   const tx = xdr.TransactionEnvelope.fromXDR(xdrB64, 'base64');
+  #
+  # References:
+  #   CWE-400: Uncontrolled Resource Consumption
+  #   Stellar XDR: https://developers.stellar.org/docs/encyclopedia/xdr
+  - id: workload-governor.stellar-xdr-size-check
+    patterns:
+      - pattern: $OBJ.fromXDR($DATA, "base64")
+      - pattern-not-inside: |
+          if ($DATA.length > $SIZE) { ... }
+          $OBJ.fromXDR($DATA, "base64")
+      - pattern-not-inside: |
+          if ($DATA.length >= $SIZE) { ... }
+          $OBJ.fromXDR($DATA, "base64")
+      - pattern-not-inside: |
+          if (Buffer.from($DATA, "base64").length > $SIZE) { ... }
+          $OBJ.fromXDR($DATA, "base64")
+      - pattern-not-inside: |
+          if (Buffer.from($DATA, "base64").length >= $SIZE) { ... }
+          $OBJ.fromXDR($DATA, "base64")
+    message: >
+      XDR deserialization of '$DATA' performed without a prior size/length check.
+      An attacker supplying an oversized base64 payload can cause excessive memory
+      consumption or CPU exhaustion (DoS).
+
+      Add a guard before deserializing:
+        const MAX_XDR_BYTES = 65_536; // 64 KB
+        if ($DATA.length > MAX_XDR_BYTES) throw new Error('XDR payload too large');
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-400"
+      confidence: HIGH
+      category: security
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.js"
+        - "**/*.spec.ts"
+        - "**/tests/**"
+        - "**/test/**"
+        - "**/__tests__/**"
+
 
 # ── Suppressions for known false positives ─────────────────────────────────────
 #

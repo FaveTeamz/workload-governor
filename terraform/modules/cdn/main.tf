@@ -194,6 +194,9 @@ resource "aws_cloudfront_distribution" "frontend" {
     error_caching_min_ttl = 0
   }
 
+  # ── AWS WAF WebACL association ────────────────────────────────────────────
+  web_acl_id = var.waf_enabled ? aws_wafv2_web_acl.frontend_waf[0].arn : null
+
   # ── HTTPS certificate ─────────────────────────────────────────────────────
   viewer_certificate {
     # Use custom ACM certificate when domain_aliases is set, else default
@@ -212,5 +215,79 @@ resource "aws_cloudfront_distribution" "frontend" {
   tags = {
     Name    = "${var.project} ${var.environment} frontend CDN"
     Purpose = "frontend-cdn"
+  }
+}
+
+# ── AWS WAF WebACL (CLOUDFRONT scope — must be in us-east-1) ─────────────────
+# Issue #867: rate-limiting + AWS Managed Common Rule Set to protect against
+# DDoS and layer-7 brute force attacks on the CloudFront distribution.
+
+resource "aws_wafv2_web_acl" "frontend_waf" {
+  count       = var.waf_enabled ? 1 : 0
+  name        = "${local.name}-waf"
+  description = "WAF WebACL for ${var.project} ${var.environment} CloudFront distribution"
+  scope       = "CLOUDFRONT"  # CloudFront WAFs must be created in us-east-1
+
+  default_action {
+    allow {}
+  }
+
+  # ── Rule 1: IP rate-limiting ───────────────────────────────────────────────
+  # Blocks any single IP that exceeds waf_rate_limit requests in 5 minutes.
+  rule {
+    name     = "IPRateLimit"
+    priority = 1
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.waf_rate_limit
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name}-ip-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # ── Rule 2: AWS Managed Common Rule Set ───────────────────────────────────
+  # Blocks known malicious signatures, bad bots, and common web exploits.
+  rule {
+    name     = "AWSCommonRuleSet"
+    priority = 2
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name}-aws-common-rules"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${local.name}-waf"
+    sampled_requests_enabled   = true
+  }
+
+  tags = {
+    Name    = "${local.name}-waf"
+    Purpose = "cloudfront-waf"
   }
 }

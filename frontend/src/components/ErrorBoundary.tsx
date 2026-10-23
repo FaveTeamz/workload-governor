@@ -1,14 +1,15 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
+import i18n from "../i18n";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface ErrorPayload {
+export interface ErrorPayload {
   message: string;
   stack?: string;
   componentStack?: string;
 }
 
-interface ErrorBoundaryProps {
+export interface ErrorBoundaryProps {
   children: ReactNode;
   /** Optional custom fallback element */
   fallback?: ReactNode;
@@ -20,11 +21,17 @@ interface ErrorBoundaryProps {
   resetKey?: string | number;
   /** Called after the boundary resets */
   onReset?: () => void;
+  /** Telemetry callback sending error metadata and stack trace */
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
   /** Base URL prepended to /api/errors (defaults to '') */
   apiBase?: string;
+  /** Optional variant (e.g. 'page' or 'panel') */
+  variant?: "page" | "panel" | string;
+  /** Optional label for boundary identification */
+  label?: string;
 }
 
-interface ErrorBoundaryState {
+export interface ErrorBoundaryState {
   hasError: boolean;
   error?: Error;
   errorInfo?: ErrorInfo;
@@ -35,9 +42,9 @@ interface ErrorBoundaryState {
 /**
  * React class-based error boundary.
  *
- * Catches errors thrown in any descendant, renders a fallback UI with a
- * "Retry" button, logs the error to POST /api/errors, and resets automatically
- * when `resetKey` changes (navigation).
+ * Catches errors thrown in any descendant, renders a localized fallback UI with a
+ * "Try Again" button, reports errors to the onError telemetry hook and POST /api/errors,
+ * and resets automatically when `resetKey` changes.
  */
 export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
@@ -57,6 +64,17 @@ export class ErrorBoundary extends Component<
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
+
+    // Telemetry callback
+    if (this.props.onError) {
+      try {
+        this.props.onError(error, errorInfo);
+      } catch {
+        // Never allow telemetry errors to crash the error boundary
+      }
+    }
+
+    // Backend error logger
     this.logError({
       message: error.message,
       stack: error.stack,
@@ -103,20 +121,28 @@ export class ErrorBoundary extends Component<
       return this.props.fallback;
     }
 
+    const fallbackMessage = i18n.t("error.boundary_fallback", {
+      defaultValue: "Something went wrong. Please try again.",
+    });
+
     return (
       <div
         role="alert"
         aria-live="assertive"
+        className={`error-boundary error-boundary--${this.props.variant ?? "default"}`}
         style={{ padding: "2rem", textAlign: "center" }}
       >
-        <h2>Something went wrong</h2>
-        <p>{this.state.error?.message}</p>
+        <h2>{fallbackMessage}</h2>
+        {this.state.error?.message && (
+          <p className="error-boundary__message">{this.state.error.message}</p>
+        )}
         <button
           type="button"
           onClick={this.handleRetry}
-          aria-label="Retry"
+          aria-label="Retry (Try Again)"
+          className="btn btn-primary error-boundary__retry-btn"
         >
-          Retry
+          Try Again
         </button>
       </div>
     );

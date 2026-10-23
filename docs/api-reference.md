@@ -603,6 +603,446 @@ Returns service liveness status. No authentication required.
 
 ---
 
+### Organizations
+
+The endpoints in this and the following sections are defined in [`openapi.yaml`](../openapi.yaml) and are kept in sync with this document by `scripts/check-api-docs-sync.js` (see [Changing a REST endpoint](contributing.md#changing-a-rest-endpoint)). Unless noted otherwise they require a bearer token (`Authorization: Bearer <token>`), and error responses use the shared `Error` shape:
+
+```json
+{ "error": "not_found", "message": "Org not found", "code": "ORG_NOT_FOUND" }
+```
+
+#### `GET /orgs`
+
+List all registered organizations.
+
+**Auth:** Bearer token
+
+**Response `200`**
+```json
+[
+  {
+    "org_id": "org_stellar_001",
+    "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    "created_at": "2026-06-01T10:00:00Z"
+  }
+]
+```
+
+**Errors:** `401`, `500`
+
+---
+
+#### `GET /orgs/{orgId}/cap`
+
+Return the effective per-org assignment cap. Returns the override set via `PUT /orgs/{orgId}/cap` when one exists, otherwise the platform default of `4`.
+
+**Auth:** Bearer token
+
+**Response `200`**
+```json
+{ "org_id": "my_org", "cap": 4 }
+```
+
+**Errors:** `401`, `404`, `429`, `500`
+
+---
+
+#### `PUT /orgs/{orgId}/cap`
+
+Override the org-level assignment cap. The change takes effect on the next `assign_issue` call for the org.
+
+**Auth:** Valid maintainer signature in the `Authorization` header
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `maintainer_address` | string | Yes | Registered maintainer Stellar address |
+| `new_cap` | integer | Yes | New cap, `1`–`20` inclusive |
+
+**Response `200`** — the updated `{ "org_id", "cap" }` object.
+
+**Errors:** `400` (cap out of range), `401`, `403` (caller is not a maintainer of the org), `404`, `429`, `500`
+
+---
+
+### Org Issues and Applications
+
+#### `GET /orgs/{orgId}/issues`
+
+List open issues for an org.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | integer | `20` | Page size, `1`–`100` |
+| `offset` | integer | `0` | Number of records to skip |
+
+**Response `200`**
+```json
+[
+  {
+    "issue_id": "issue_42",
+    "org_id": "org_stellar_001",
+    "title": "Fix memory leak in sync service",
+    "description": null,
+    "status": "open",
+    "reward_xlm": 50.0,
+    "created_at": "2026-06-01T10:00:00Z"
+  }
+]
+```
+
+**Errors:** `401`, `404`, `500`
+
+---
+
+#### `POST /orgs/{orgId}/issues`
+
+Bulk-register up to 100 issues for an org in a single atomic operation. If any registration fails, all are rolled back. The response is a report listing the successes and failures.
+
+**Auth:** Bearer token
+
+**Response `201`** — a `BulkRegistrationReport`.
+
+**Errors:** `400` (invalid payload or more than 100 issues), `401`, `404`, `409` (issue already registered), `500`
+
+---
+
+#### `GET /orgs/{orgId}/applications`
+
+List pending applications for an org, aggregated from on-chain state via Soroban RPC. Results are cached in Redis for 30 seconds; the `X-Cache` response header is `HIT` when served from cache and `MISS` otherwise.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `page` | integer | `1` | 1-based page number |
+| `limit` | integer | `20` | Results per page, max `50` |
+
+**Response `200`**
+```json
+{
+  "org_id": "stellar-oss",
+  "total": 12,
+  "page": 1,
+  "limit": 20,
+  "applications": [
+    {
+      "contributor": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+      "issue_id": 42,
+      "applied_at_ledger": 1234567
+    }
+  ]
+}
+```
+
+**Errors:** `401`, `404`, `500`
+
+---
+
+#### `POST /orgs/{orgId}/issues/{issueId}/apply`
+
+Apply for an open issue on behalf of a contributor.
+
+**Auth:** Bearer token
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `contributor` | string | Yes | Stellar address of the contributor applying |
+
+**Response `201`**
+```json
+{ "success": true, "tx_hash": "a1b2c3…", "message": "Application submitted" }
+```
+
+**Errors:** `400`, `401`, `404`, `409` (duplicate application or global cap reached), `500`
+
+---
+
+#### `DELETE /orgs/{orgId}/issues/{issueId}/apply`
+
+Withdraw a contributor's pending application for an issue.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `contributor` | string | Yes | Contributor address withdrawing the application |
+
+**Response `204`** — no body.
+
+**Errors:** `400`, `401`, `404` (no pending application), `500`
+
+---
+
+#### `GET /orgs/{orgId}/assignments`
+
+List active assignments for an org.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `contributor` | string | — | Filter by contributor address |
+| `limit` | integer | `20` | Page size, `1`–`100` |
+| `offset` | integer | `0` | Number of records to skip |
+
+**Response `200`**
+```json
+[
+  {
+    "assignment_id": "asg_17",
+    "org_id": "org_stellar_001",
+    "issue_id": "issue_42",
+    "contributor": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+    "assigned_at": "2026-06-11T09:00:00Z"
+  }
+]
+```
+
+**Errors:** `401`, `404`, `500`
+
+---
+
+#### `GET /orgs/{orgId}/events`
+
+List indexed on-chain events for an org.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `contributor` | string | — | Filter by contributor address |
+| `event_type` | string | — | One of `applied`, `withdrawn`, `assigned`, `completed`, `revoked` |
+| `limit` | integer | `20` | Page size, `1`–`100` |
+| `offset` | integer | `0` | Number of records to skip |
+
+**Response `200`**
+```json
+[
+  {
+    "event_id": "981",
+    "org_id": "org_stellar_001",
+    "event_type": "applied",
+    "issue_id": "issue_42",
+    "contributor": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+    "tx_hash": "a1b2c3…",
+    "occurred_at": "2026-06-10T08:30:00Z"
+  }
+]
+```
+
+**Errors:** `401`, `404`, `500`
+
+---
+
+### Contributor Profiles
+
+#### `GET /contributors/{address}/stats`
+
+Return global counters for a contributor.
+
+**Auth:** Bearer token
+
+**Response `200`**
+```json
+{
+  "address": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+  "global_application_count": 3,
+  "org_assignment_counts": { "org_stellar_001": 1 }
+}
+```
+
+`global_application_count` is always in the range `0`–`15` (the global cap).
+
+**Errors:** `401`, `404`, `500`
+
+---
+
+#### `GET /contributors/{address}/summary`
+
+Return the full aggregated profile for a contributor: global application and assignment counts, a per-org breakdown, and the last 50 on-chain events (newest first). Returns `404` when the contributor has no recorded on-chain activity.
+
+**Auth:** Bearer token
+
+**Response `200`**
+```json
+{
+  "address": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+  "global_application_count": 3,
+  "global_assignment_count": 1,
+  "orgs": [
+    { "org_id": "org_stellar_001", "applications": 2, "assignments": 1 }
+  ],
+  "recent_events": [
+    {
+      "id": 981,
+      "event_type": "applied",
+      "org_id": "org_stellar_001",
+      "issue_id": 42,
+      "tx_hash": "a1b2c3…",
+      "ledger": 1234567,
+      "timestamp": "2026-06-10T08:30:00Z"
+    }
+  ]
+}
+```
+
+**Errors:** `400` (malformed address), `401`, `404`, `429`, `500`
+
+---
+
+### Audit
+
+#### `GET /audit`
+
+Return paginated assignment cancellation records (`revoked`, `expired`, `completed`) for monitoring and compliance. Admin callers may omit `org_id` to query across all organisations.
+
+**Auth:** Bearer token
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `org_id` | string | — | Organisation filter; required for non-admin callers |
+| `page` | integer | `1` | 1-based page number |
+| `pageSize` | integer | `50` | Page size, `1`–`200` |
+
+**Response `200`**
+```json
+{
+  "data": [
+    {
+      "event_type": "revoked",
+      "actor": "GMAIN7BFZLPQKRSUVWXY2ACDEJHK3MNO4PQRS5TUVWXYZ6ABCDTEST",
+      "contributor": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+      "org_id": "org_stellar_001",
+      "issue_id": 42,
+      "reason": "Inactive for 14 days",
+      "timestamp": "2026-06-20T12:00:00Z",
+      "tx_hash": "d4e5f6…"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "pageSize": 50,
+  "totalPages": 1
+}
+```
+
+**Errors:** `400`, `401`, `403` (non-admin caller omitted `org_id`), `429`, `500`
+
+---
+
+### Admin Consistency
+
+#### `GET /admin/consistency`
+
+Invoke the contract's `check_consistency` function and return every `(contributor, org_id)` pair whose stored org assignment counter disagrees with the live assignment sentinels. Used to detect storage corruption after migrations.
+
+**Auth:** Admin bearer token
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pairs` | string | Yes | JSON-encoded array of `[address, org_id]` pairs, e.g. `[["GABC...","my_org"]]` |
+| `issue_ids` | string | Yes | Comma-separated issue IDs to probe per pair, e.g. `1,2,3,42` |
+
+**Response `200`**
+```json
+{
+  "inconsistent_pairs": [
+    { "contributor": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN", "org_id": "my_org" }
+  ],
+  "checked_at": "2026-06-21T09:00:00Z"
+}
+```
+
+An empty `inconsistent_pairs` array means all probed pairs are consistent.
+
+**Errors:** `400`, `401`, `403`, `429`, `500`
+
+---
+
+#### `POST /admin/consistency/remediate`
+
+Rebuild the org assignment counter for each supplied pair from live assignment sentinels. Accepts the output of `GET /admin/consistency`.
+
+**Auth:** Admin bearer token
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `pairs` | array of `{ contributor, org_id }` | Yes | Pairs to remediate |
+| `issue_ids` | array of integers | Yes | Issue IDs to probe when rebuilding counters |
+
+**Response `200`**
+```json
+{
+  "remediated": [
+    { "contributor": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN", "org_id": "my_org" }
+  ],
+  "failed": [],
+  "summary": { "total": 1, "remediated_count": 1, "failed_count": 0 }
+}
+```
+
+Each `failed` entry has the shape `{ "pair": { … }, "reason": "…" }`.
+
+**Errors:** `400`, `401`, `403`, `429`, `500`
+
+---
+
+### XDR Verification
+
+#### `POST /verify-xdr`
+
+Validate a base64-encoded signed Stellar transaction envelope without submitting it. The endpoint checks that the XDR is well-formed, targets the configured contract ID, is within its `timeBounds`, and carries a signature from the contributor address in the first operation argument.
+
+**Auth:** None
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `xdr` | string | Yes | Base64-encoded signed transaction envelope |
+
+**Response `200` — valid**
+```json
+{
+  "ok": true,
+  "signerAddress": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+  "contractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+}
+```
+
+**Response `200` — invalid**
+```json
+{ "ok": false, "reason": "TRANSACTION_EXPIRED", "detail": "maxTime 1718000000 is in the past" }
+```
+
+`reason` is one of `MISSING_SIGNATURE`, `SIGNER_MISMATCH`, `TRANSACTION_EXPIRED`, `TRANSACTION_NOT_YET_VALID`, `WRONG_CONTRACT`, `MALFORMED_XDR`, `MISSING_CONTRIBUTOR_ARG`.
+
+**Errors:** `400`, `429`, `500`
+
+---
+
 ### Issues
 
 #### `GET /api/issues`

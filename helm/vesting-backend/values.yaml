@@ -68,19 +68,23 @@ ingress:
   enabled: true
   # -- Ingress class name (e.g. nginx, traefik)
   className: "nginx"
-  # -- Additional annotations (e.g. cert-manager, rate limiting)
+  # -- Additional annotations (e.g. cert-manager, rate limiting).
+  # To enable automatic TLS certificate provisioning via cert-manager, add:
+  #   cert-manager.io/cluster-issuer: "letsencrypt-prod"
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
     nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # uncomment to enable cert-manager TLS
   # -- Ingress hostname rules
   hosts:
     - host: vesting-backend.example.com
       paths:
         - path: /
           pathType: Prefix
-  # -- TLS configuration
+  # -- TLS configuration.
+  # Leave secretName empty to auto-generate as <release-name>-tls (recommended with cert-manager).
   tls:
-    - secretName: vesting-backend-tls
+    - secretName: ""  # leave empty to auto-generate as <release-name>-tls
       hosts:
         - vesting-backend.example.com
 
@@ -106,13 +110,32 @@ autoscaling:
   # -- Target memory utilisation percentage (requires metrics-server)
   targetMemoryUtilizationPercentage: 80
 
+# ─── Pod Disruption Budget ───────────────────────────────────────────────────
+podDisruptionBudget:
+  # -- Enable PodDisruptionBudget (guarantees service availability during node drains)
+  enabled: true
+  # -- Minimum number of available pods
+  minAvailable: 1
+  # -- Maximum number of unavailable pods (mutually exclusive with minAvailable)
+  maxUnavailable: ""
+
 # ─── Probes ──────────────────────────────────────────────────────────────────
+startupProbe:
+  httpGet:
+    path: /api/v1/health
+    port: 3000
+  initialDelaySeconds: 0
+  periodSeconds: 2
+  timeoutSeconds: 1
+  failureThreshold: 30
+
 livenessProbe:
   httpGet:
     path: /health
     port: 3000
-  initialDelaySeconds: 15
-  periodSeconds: 20
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
   failureThreshold: 3
 
 readinessProbe:
@@ -121,6 +144,7 @@ readinessProbe:
     port: 3000
   initialDelaySeconds: 5
   periodSeconds: 10
+  timeoutSeconds: 1
   failureThreshold: 3
 
 # ─── Application config (ConfigMap) ─────────────────────────────────────────

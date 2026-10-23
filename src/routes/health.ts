@@ -3,27 +3,28 @@
  *
  * GET /health — liveness + readiness probe.
  *
- * Always returns HTTP 200. The `status` field is "ok" when the DB is
- * reachable, "degraded" when it is not (so upstream health checks that only
- * inspect the status code still succeed, but alerting systems can inspect the
- * body for degraded state).
- *
  * Response shape:
  * {
  *   status:    "ok" | "degraded",
  *   timestamp: string,               // ISO-8601
  *   db: {
- *     status:  "ok" | "error",
+ *     status:    "healthy" | "degraded" | "unhealthy",
+ *     latency_ms: number,            // round-trip latency for SELECT 1 in milliseconds
  *     pool: {
- *       total:   number,             // total connections in the pool
+ *       active:  number,             // connections currently in use
  *       idle:    number,             // connections currently idle
  *       waiting: number,             // queued requests waiting for a connection
  *     }
  *   }
  * }
  *
+ * HTTP status:
+ *   200 — DB healthy (latency < 2000ms)
+ *   503 — DB unhealthy (connection failure) or degraded (latency >= 2000ms)
+ *
  * Pool stats give operators visibility into connection exhaustion before
- * requests start failing (fixes issue #561).
+ * requests start failing (issue #561). DB latency measurement added per
+ * issue #862.
  */
 
 import { Router, Request, Response } from 'express';
@@ -31,18 +32,24 @@ import { getPool } from '../db';
 
 const router = Router();
 
+/** Latency threshold in ms above which the DB is considered degraded */
+const DB_LATENCY_DEGRADED_MS = 2_000;
+
 router.get('/health', async (_req: Request, res: Response) => {
   const pool = getPool();
 
   // Collect pool stats (node-postgres Pool exposes these as synchronous properties)
   const poolStats = {
-    total: pool.totalCount,
-    idle: pool.idleCount,
+    active:  pool.totalCount - pool.idleCount,
+    idle:    pool.idleCount,
     waiting: pool.waitingCount,
   };
 
-  // Perform a lightweight connectivity check; fail-open so liveness always passes
-  let dbStatus: 'ok' | 'error' = 'ok';
+  // Measure SELECT 1 round-trip latency and determine DB status
+  let dbStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+  let latency_ms = 0;
+
+  const start = Date.now();
   try {
     const client = await pool.connect();
     try {
@@ -50,19 +57,30 @@ router.get('/health', async (_req: Request, res: Response) => {
     } finally {
       client.release();
     }
+    latency_ms = Date.now() - start;
+
+    if (latency_ms >= DB_LATENCY_DEGRADED_MS) {
+      dbStatus = 'degraded';
+    }
   } catch {
-    dbStatus = 'error';
+    latency_ms = Date.now() - start;
+    dbStatus = 'unhealthy';
   }
 
-  const overallStatus = dbStatus === 'ok' ? 'ok' : 'degraded';
+  const isHealthy = dbStatus === 'healthy';
+  const overallStatus = isHealthy ? 'ok' : 'degraded';
 
-  // Always return HTTP 200 so upstream load-balancer health checks pass.
-  // Consumers that need the DB status should inspect res.body.db.status.
-  res.status(200).json({
+  // Return HTTP 503 when DB is disconnected or latency exceeds threshold.
+  // Load-balancer health checks that only look at the status code will
+  // receive 503 and stop routing traffic to unhealthy instances.
+  const httpStatus = dbStatus === 'unhealthy' || dbStatus === 'degraded' ? 503 : 200;
+
+  res.status(httpStatus).json({
     status: overallStatus,
     timestamp: new Date().toISOString(),
     db: {
       status: dbStatus,
+      latency_ms,
       pool: poolStats,
     },
   });

@@ -50,7 +50,9 @@ export default function TxConfirmModal({ modal }: Props) {
   // ── Focus management ────────────────────────────────────────
   useEffect(() => {
     if (isOpen) {
-      previousFocus.current = document.activeElement as HTMLElement;
+      if (!previousFocus.current) {
+        previousFocus.current = document.activeElement as HTMLElement;
+      }
       document.body.style.overflow = 'hidden';
       requestAnimationFrame(() => {
         const first = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)[0];
@@ -58,10 +60,17 @@ export default function TxConfirmModal({ modal }: Props) {
       });
     } else {
       document.body.style.overflow = '';
-      previousFocus.current?.focus();
+      if (previousFocus.current) {
+        previousFocus.current.focus();
+        previousFocus.current = null;
+      }
     }
     return () => {
       document.body.style.overflow = '';
+      if (previousFocus.current) {
+        previousFocus.current.focus();
+        previousFocus.current = null;
+      }
     };
   }, [isOpen]);
 
@@ -69,7 +78,10 @@ export default function TxConfirmModal({ modal }: Props) {
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape' && !isLoading) _reject();
+      if (e.key === 'Escape' && !isLoading) {
+        e.preventDefault();
+        _reject();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -163,6 +175,27 @@ export default function TxConfirmModal({ modal }: Props) {
         {/* ── Info grid ───────────────────────────────────────── */}
         {details && (
           <dl style={{ margin: '0 0 1rem', padding: 0 }}>
+            {details.operation && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <dt style={{ fontWeight: 600, fontSize: '0.875rem' }}>Operation</dt>
+                <dd style={{ margin: 0, fontSize: '0.875rem' }}>{details.operation}</dd>
+              </div>
+            )}
+            {details.parameters && Object.keys(details.parameters).length > 0 && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <dt style={{ fontWeight: 600, fontSize: '0.875rem' }}>Parameters</dt>
+                <dd style={{ margin: 0 }}>
+                  <dl style={{ margin: '0.25rem 0 0' }}>
+                    {Object.entries(details.parameters).map(([name, value]) => (
+                      <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+                        <dt style={{ fontSize: '0.8rem', color: '#666' }}>{name}</dt>
+                        <dd style={{ margin: 0, fontSize: '0.8rem', overflowWrap: 'anywhere' }}>{String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </dd>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <dt style={{ fontWeight: 600, fontSize: '0.875rem' }}>Target</dt>
               <dd style={{ margin: 0, fontSize: '0.875rem' }}>{details.target}</dd>

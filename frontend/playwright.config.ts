@@ -15,6 +15,12 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env['CI'] ? 2 : 0,
   reporter: process.env['CI'] ? 'github' : 'list',
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.02,
+    },
+  },
+  snapshotPathTemplate: '{testDir}/drawer.spec.ts-snapshots/{arg}{ext}',
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',

@@ -25,7 +25,8 @@ smart contract, the Node.js backend, or the Next.js frontend.
 15. [Fuzz Testing](#fuzz-testing)
 16. [API Spec Validation](#api-spec-validation)
 17. [Frontend Development](#frontend-development)
-18. [Code Style](#code-style)
+18. [License Policy](#license-policy)
+19. [Code Style](#code-style)
 
 ---
 
@@ -76,8 +77,6 @@ Include:
 - Alternatives you considered
 - Whether it requires a contract upgrade (ABI change = MAJOR semver bump)
 
----
-
 ## Development Workflow
 
 1. Sync your fork: `git fetch upstream && git rebase upstream/main`.
@@ -85,6 +84,35 @@ Include:
 3. Make your changes — keep commits focused and atomic.
 4. Update `CHANGELOG.md` under the `[Unreleased]` section (see below).
 5. Open a pull request targeting `main`.
+
+---
+
+## Development Commands (Makefile)
+
+Use the root `Makefile` targets to manage setup, builds, tests, and formatting:
+
+```bash
+# First-time setup (dependencies across contract, backend, and frontend)
+make setup
+
+# Build all components
+make build-all
+
+# Run all test suites locally
+make test-all
+
+# Run contract tests and verify key collision freedom
+make test-contract
+
+# Run linters and formatters
+make lint-all
+
+# Launch local backend and frontend development servers
+make dev
+
+# Display all available targets and descriptions
+make help
+```
 
 ---
 
@@ -125,6 +153,7 @@ Before requesting review, confirm every item:
 - [ ] `cargo fmt` applied
 - [ ] `cargo clippy --features testutils -- -D warnings` passes with zero warnings
 - [ ] `cargo test --features testutils` passes
+- [ ] `cargo deny check licenses` passes (no new non-allowlisted licenses introduced)
 - [ ] New functionality has new tests
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
 - [ ] Docs updated if public API or behaviour changed
@@ -426,6 +455,72 @@ npm run typecheck # TypeScript type-check
 - TxConfirmModal renders as a bottom sheet on mobile
 - EventHistoryTable renders as card list on mobile
 - All touch targets ≥ 44×44 px (WCAG 2.5.5)
+
+---
+
+## License Policy
+
+WorkloadGovernor is released under the **Apache-2.0** license. To protect
+downstream users from unintended copyleft obligations, all Rust dependencies
+must carry a **permissive** OSS license. Copyleft licenses (GPL-2.0, GPL-3.0,
+AGPL-3.0, LGPL-2.x/3.x, MPL-2.0, EUPL-1.x, and similar) are **not permitted**.
+
+License compliance is enforced automatically by
+[`cargo-deny`](https://embarkstudios.github.io/cargo-deny/) on every CI run.
+
+### Allowed licenses
+
+The following licenses are explicitly permitted. Any license not in this list
+is denied by default — cargo-deny v2 schema requires no additional
+`deny = [...]` entry; unlisted licenses are automatically rejected.
+
+| SPDX Identifier | License Name | Notes |
+|---|---|---|
+| `MIT` | MIT License | |
+| `Apache-2.0` | Apache License 2.0 | |
+| `Apache-2.0 WITH LLVM-exception` | Apache 2.0 + LLVM Exception | Used by `wasmparser` (via soroban-wasmi) |
+| `BSD-2-Clause` | BSD 2-Clause "Simplified" | |
+| `BSD-3-Clause` | BSD 3-Clause "New" or "Revised" | |
+| `ISC` | ISC License | |
+| `Unicode-3.0` | Unicode License v3 | OSI-approved permissive; required by `unicode-ident` (soroban proc-macro chain) |
+| `Unlicense` | The Unlicense | Public-domain dedication; required by `memchr` (soroban-env-host) |
+
+### Running the check locally
+
+```bash
+# Install cargo-deny (one time)
+cargo install cargo-deny --locked
+
+# Run the license check
+cargo deny check licenses
+
+# Run all checks (licenses + advisories + bans + sources)
+cargo deny check all
+```
+
+The check exits 0 on success. A non-zero exit indicates a violation that must
+be resolved before the PR can merge.
+
+### Adding a dependency with a new license
+
+1. Run `cargo deny check licenses` after adding the dependency.
+2. If a new license appears and it is **permissive**, add it to the `allow`
+   list in `deny.toml` and to the table above, then open a PR with both changes.
+3. If the new license is **weak copyleft** (LGPL, MPL), discuss with the
+   maintainers — there may be an alternative crate with a permissive license.
+4. If the new license is **strong copyleft** (GPL, AGPL), find an alternative
+   crate. Do not add copyleft licenses to the allow list.
+
+> **Tip:** If only a single crate requires the new license (and it is not a
+> widespread ecosystem license), use a `[[licenses.exceptions]]` entry in
+> `deny.toml` rather than broadening the main `allow` list.
+
+### Licenses in use by the dependency tree
+
+Run `cargo deny list` at any time to see the full list of licenses in the
+resolved dependency graph. The current tree (as of the last `cargo deny check`
+run) uses only the licenses in the table above — no copyleft licenses are
+present.
 
 ---
 

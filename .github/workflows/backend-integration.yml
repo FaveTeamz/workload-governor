@@ -1,4 +1,6 @@
 name: Backend Integration Tests
+# Validates backend queries against real PostgreSQL containers (issue #861).
+# All SQL dialect compatibility is tested here — no SQLite test path exists.
 
 on:
   push:
@@ -47,12 +49,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
@@ -64,6 +66,33 @@ jobs:
         run: npm run migrate:up
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/testdb
+
+      - name: SQL dialect audit — check for SQLite-specific syntax (#861)
+        # Fails if any SQLite-only constructs are found in backend/src/ or src/services/.
+        # INSERT OR IGNORE and raw date('now') are the most common SQLite-isms.
+        # ON CONFLICT … DO UPDATE and NOW() are PostgreSQL-compatible and allowed.
+        run: |
+          set -e
+          echo "Auditing for SQLite-specific SQL constructs..."
+          FOUND=0
+
+          # INSERT OR IGNORE is SQLite-specific; PostgreSQL uses ON CONFLICT
+          if grep -rn "INSERT OR IGNORE" backend/src/ src/services/ 2>/dev/null; then
+            echo "ERROR: INSERT OR IGNORE found — use ON CONFLICT … DO NOTHING instead"
+            FOUND=1
+          fi
+
+          # Raw SQLite date functions (date('now'), datetime('now'))
+          if grep -rn "date('now')\|datetime('now')" backend/src/ src/services/ 2>/dev/null; then
+            echo "ERROR: SQLite-specific date literal found — use knex.fn.now() or NOW()"
+            FOUND=1
+          fi
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "No SQLite-specific constructs found. Dialect audit passed."
+          else
+            exit 1
+          fi
 
       - name: Run integration tests
         run: npm test -- --testPathPattern="tests/api" --forceExit --runInBand

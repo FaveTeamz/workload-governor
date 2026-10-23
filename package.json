@@ -14,6 +14,7 @@
     "backfill": "ts-node src/scripts/backfill-events.ts",
     "test": "jest --runInBand --forceExit",
     "test:contract": "jest --runInBand --forceExit --selectProjects contract",
+    "docs:check-api-sync": "node scripts/check-api-docs-sync.js",
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
     "test:unit:watch": "vitest",

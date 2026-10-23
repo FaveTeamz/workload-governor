@@ -312,3 +312,32 @@ test.describe('Touch targets — WCAG 2.5.5 compliance (375px)', () => {
     await assertTouchTarget(page, '[data-testid="hamburger-button"]');
   });
 });
+
+// ---------------------------------------------------------------------------
+// SlideOutRow — mobile overflow and horizontal scrollbar prevention (320px - 480px)
+// Issue #854 / FE-019
+// ---------------------------------------------------------------------------
+
+test.describe('SlideOutRow — no horizontal scrollbar jitter on mobile (320px - 480px)', () => {
+  for (const width of [320, 375, 414, 480]) {
+    test(`no horizontal overflow or scrollbar appears during animation at ${width}px viewport`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 667 });
+      await openDashboard(page);
+
+      // Verify page document does not have horizontal overflow
+      const hasHorizontalScrollbar = await page.evaluate(() => {
+        return document.documentElement.scrollWidth > document.documentElement.clientWidth;
+      });
+      expect(hasHorizontalScrollbar).toBe(false);
+
+      // Verify all SlideOutRow containers strictly enforce overflow-x: hidden
+      const containers = page.locator('[data-testid="slide-out-row-container"], .slide-out-row-container');
+      const count = await containers.count();
+      for (let i = 0; i < count; i++) {
+        const overflowX = await containers.nth(i).evaluate((el) => window.getComputedStyle(el).overflowX);
+        expect(['hidden', 'clip']).toContain(overflowX);
+      }
+    });
+  }
+});
+

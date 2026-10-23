@@ -120,7 +120,7 @@ To run this query:
 3. Open the slowest trace to see which subsegment (DB, Horizon, GitHub) is the bottleneck.
 4. Cross-reference with CloudWatch metrics for the suspected service:
    - **RDS**: `DatabaseConnections`, `DBLoad`
-   - **Horizon/Soroban RPC**: `soroban_rpc` subsegment duration in X-Ray
+   - **Horizon/Soroban RPC**: `soroban_rpc` subsegment duration in X-Ray; if RPC throttling or high latency persists, consult the [Horizon & RPC Node Migration Runbook](runbooks/horizon-migration.md) for switching providers with zero downtime.
    - **GitHub API**: check rate-limit headers in application logs
 
 ---

@@ -1,6 +1,7 @@
 /**
  * Integration tests for /api/transactions endpoints.
- * Covers: happy paths for all 5 operations, 400 validation errors, 429 rate limit.
+ * Covers: happy paths for all 5 operations, 400 validation errors, 429 rate limit,
+ *         and idempotency key behaviour.
  */
 
 import request from 'supertest';
@@ -13,6 +14,79 @@ jest.mock('../../src/db', () => ({
   migrate: jest.fn(),
   healthCheck: jest.fn(),
 }));
+
+// ---------- Redis mock (required by idempotency + api-key-auth middleware) -
+const redisStore = new Map<string, { value: string; expiresAt: number }>();
+
+jest.mock('../../src/services/redis', () => {
+  const store = redisStore;
+  const now = () => Date.now();
+
+  function alive(key: string): boolean {
+    const entry = store.get(key);
+    return !!entry && now() < entry.expiresAt;
+  }
+
+  const mockRedis = {
+    get: jest.fn(async (key: string) => {
+      return alive(key) ? store.get(key)!.value : null;
+    }),
+    setex: jest.fn(async (key: string, ttl: number, val: string) => {
+      store.set(key, { value: val, expiresAt: now() + ttl * 1000 });
+      return 'OK';
+    }),
+    set: jest.fn(async (key: string, val: string) => {
+      store.set(key, { value: val, expiresAt: Infinity });
+      return 'OK';
+    }),
+    del: jest.fn(async (...keys: string[]) => {
+      keys.forEach((k) => store.delete(k));
+      return keys.length;
+    }),
+    incr: jest.fn(async (key: string) => {
+      const cur = alive(key) ? parseInt(store.get(key)!.value, 10) : 0;
+      const next = cur + 1;
+      // Preserve TTL if already set, otherwise no expiry
+      const existing = store.get(key);
+      store.set(key, {
+        value: String(next),
+        expiresAt: existing ? existing.expiresAt : Infinity,
+      });
+      return next;
+    }),
+    expire: jest.fn(async (key: string, ttl: number) => {
+      const entry = store.get(key);
+      if (entry) {
+        store.set(key, { value: entry.value, expiresAt: now() + ttl * 1000 });
+        return 1;
+      }
+      return 0;
+    }),
+    ttl: jest.fn(async (key: string) => {
+      const entry = store.get(key);
+      if (!entry || now() >= entry.expiresAt) return -2;
+      return Math.ceil((entry.expiresAt - now()) / 1000);
+    }),
+    keys: jest.fn(async () => []),
+    on: jest.fn(),
+    quit: jest.fn(async () => 'OK'),
+  };
+
+  return {
+    __esModule: true,
+    default: mockRedis,
+    getCache: jest.fn(async (key: string) => {
+      const raw = alive(key) ? store.get(key)!.value : null;
+      return raw ? JSON.parse(raw) : null;
+    }),
+    setCache: jest.fn(async (key: string, value: unknown, ttl = 30) => {
+      store.set(key, { value: JSON.stringify(value), expiresAt: now() + ttl * 1000 });
+    }),
+    invalidateCache: jest.fn(async () => {}),
+    getMetrics: jest.fn(() => ({ hits: 0, misses: 0 })),
+    closeRedis: jest.fn(async () => {}),
+  };
+});
 
 // Mock SorobanService so tests don't need a real Soroban node
 jest.mock('../../src/soroban', () => {
@@ -45,7 +119,10 @@ const contributor = Keypair.random().publicKey();
 const maintainer = Keypair.random().publicKey();
 const SEQ = '12345678901';
 
-afterEach(() => resetDb());
+afterEach(() => {
+  resetDb();
+  redisStore.clear();
+});
 
 describe('POST /api/transactions/apply', () => {
   it('returns 400 when contributor address is invalid', async () => {
@@ -229,5 +306,101 @@ describe('Rate limiting on /api/transactions', () => {
     const tooMany = responses.find((r) => r.status === 429)!;
     expect(tooMany.body).toHaveProperty('error');
     expect(tooMany.body).toHaveProperty('retryAfter');
+  });
+});
+
+// =============================================================================
+// Idempotency-Key tests (API-001)
+// =============================================================================
+
+describe('Idempotency-Key on POST /api/transactions/apply', () => {
+  const validBody = {
+    contributor,
+    org_id: 'org-a',
+    issue_id: 1,
+    sequence: SEQ,
+  };
+
+  it('processes a request normally when no Idempotency-Key header is present', async () => {
+    const res = await request(app)
+      .post('/api/transactions/apply')
+      .send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
+  });
+
+  it('returns 200 on first request with an Idempotency-Key', async () => {
+    const res = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', 'unique-key-001')
+      .send(validBody);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
+  });
+
+  it('replays the cached response for a duplicate Idempotency-Key', async () => {
+    const iKey = 'replay-key-001';
+
+    // First request — populates cache
+    const first = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', iKey)
+      .send(validBody);
+    expect(first.status).toBe(200);
+
+    // Second request with same key — should get cached response
+    const second = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', iKey)
+      .send(validBody);
+    expect(second.status).toBe(200);
+    // Body must match the original cached response
+    expect(second.body).toEqual(first.body);
+  });
+
+  it('returns 409 Conflict when the same key is in-flight (pending state)', async () => {
+    const iKey = 'concurrent-key-001';
+
+    // Manually inject a "pending" sentinel into the Redis mock store
+    redisStore.set(`idemp:${iKey}`, {
+      value: JSON.stringify({ status: 'pending', code: 0, body: null }),
+      expiresAt: Date.now() + 300_000,
+    });
+
+    const res = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', iKey)
+      .send(validBody);
+
+    expect(res.status).toBe(409);
+    expect(res.body).toHaveProperty('error', 'conflict');
+  });
+
+  it('uses separate cache entries for different Idempotency-Key values', async () => {
+    const res1 = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', 'key-aaa')
+      .send(validBody);
+
+    const res2 = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', 'key-bbb')
+      .send(validBody);
+
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    // Both should be independent successful responses
+    expect(res1.body).toHaveProperty('xdr');
+    expect(res2.body).toHaveProperty('xdr');
+  });
+
+  it('ignores an empty Idempotency-Key header and processes normally', async () => {
+    const res = await request(app)
+      .post('/api/transactions/apply')
+      .set('Idempotency-Key', '')
+      .send(validBody);
+    // Empty key → treated as no header → normal processing
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('xdr');
   });
 });

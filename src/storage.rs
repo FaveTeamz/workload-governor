@@ -324,6 +324,49 @@ pub(crate) fn remove_assignment(
 }
 
 // ---------------------------------------------------------------------------
+// #826 — SC-001: Persistent assignment TTL extension constants and helpers
+// ---------------------------------------------------------------------------
+
+/// Minimum ledger threshold before a persistent assignment entry triggers TTL
+/// extension. ~7 days at 5 s/ledger — half of MAX to avoid redundant extends.
+pub const MIN_PERSISTENT_EXTEND_TTL: u32 = 120_960;
+
+/// Target TTL for persistent assignment entries after extension.
+/// ~30 days at 5 s/ledger, aligned with Stellar Wave network parameters.
+pub const MAX_PERSISTENT_EXTEND_TTL: u32 = 518_400;
+
+/// Extends the TTL of a persistent assignment entry.
+///
+/// Called whenever an assignment is read, validated, or transitioned so that
+/// active assignment records never expire under Soroban state rent rules.
+pub(crate) fn extend_assignment_ttl(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) {
+    let key = assignment_entry_key(org_id, issue_id, contributor);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, MIN_PERSISTENT_EXTEND_TTL, MAX_PERSISTENT_EXTEND_TTL);
+}
+
+/// Extends the TTL of a persistent org assignment count entry.
+///
+/// Called on the same paths as `extend_assignment_ttl` to keep the count
+/// and the entry entries in sync.
+pub(crate) fn extend_org_assignment_count_ttl(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+) {
+    let key = org_assignment_count_key(contributor, org_id);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, MIN_PERSISTENT_EXTEND_TTL, MAX_PERSISTENT_EXTEND_TTL);
+}
+
+// ---------------------------------------------------------------------------
 // #602 — Persistent storage: Migration flag
 // ---------------------------------------------------------------------------
 //
@@ -530,4 +573,40 @@ pub(crate) fn set_global_cap_override(env: &Env, new_cap: u32) {
     env.storage()
         .persistent()
         .set(&global_cap_override_key(), &new_cap);
+}
+
+// ---------------------------------------------------------------------------
+// #828 SC-003 — Persistent storage: Admin action nonce
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("adm_nc")`  →  `u32`
+//
+// A monotonic counter incremented on every privileged governance action.
+// Including the current nonce in the auth digest that `require_admin_auth`
+// verifies prevents authorisation replay across ledger forks or re-orgs.
+
+fn admin_nonce_key() -> Symbol {
+    symbol_short!("adm_nc")
+}
+
+/// Returns the current admin nonce (0 before the first privileged call).
+pub(crate) fn get_admin_nonce(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get::<_, u32>(&admin_nonce_key())
+        .unwrap_or(0)
+}
+
+/// Increments and persists the admin nonce, returning the **new** value.
+///
+/// Called at the start of every privileged admin operation so that:
+/// 1. The digest includes the pre-increment nonce value (replay protection).
+/// 2. Any previously collected signatures are invalidated for future calls.
+pub(crate) fn increment_admin_nonce(env: &Env) -> u32 {
+    let current = get_admin_nonce(env);
+    let next = current.saturating_add(1);
+    env.storage()
+        .persistent()
+        .set(&admin_nonce_key(), &next);
+    next
 }

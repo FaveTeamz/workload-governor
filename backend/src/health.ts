@@ -1,5 +1,5 @@
 /**
- * health.ts — Health check endpoint handler (#309)
+ * health.ts — Health check endpoint handler (#309, #862)
  *
  * GET /api/health
  *
@@ -7,13 +7,19 @@
  *   {
  *     status: "healthy" | "degraded" | "unhealthy",
  *     dependencies: [
- *       { name: string, status: "healthy" | "unhealthy", latency_ms: number }
+ *       {
+ *         name:       string,
+ *         status:     "healthy" | "degraded" | "unhealthy",
+ *         latency_ms: number,
+ *         pool?:      { active: number, idle: number, waiting: number }
+ *       }
  *     ]
  *   }
  *
  * HTTP status:
  *   200 — all dependencies healthy
- *   503 — any critical dependency (DB or Soroban RPC) is unhealthy
+ *   503 — any critical dependency (DB or Soroban RPC) is unhealthy or
+ *          DB latency exceeds 2000ms (degraded)
  *
  * Each check has a 2-second timeout. The handler itself resolves within ~3s.
  */
@@ -26,12 +32,19 @@ import Redis from "ioredis";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type DepStatus = "healthy" | "unhealthy";
+type DepStatus = "healthy" | "degraded" | "unhealthy";
+
+interface PoolStats {
+  active:  number;
+  idle:    number;
+  waiting: number;
+}
 
 interface DependencyResult {
   name:       string;
   status:     DepStatus;
   latency_ms: number;
+  pool?:      PoolStats;
 }
 
 type OverallStatus = "healthy" | "degraded" | "unhealthy";
@@ -90,18 +103,31 @@ async function withTimeout<T>(
   }
 }
 
-/** Check PostgreSQL by running SELECT 1. */
+/** Check PostgreSQL by running SELECT 1 and measuring round-trip latency. */
 async function checkDatabase(): Promise<DependencyResult> {
+  const poolStats: PoolStats = {
+    active:  pool.totalCount - pool.idleCount,
+    idle:    pool.idleCount,
+    waiting: pool.waitingCount,
+  };
+
   const { result, latency_ms, error } = await withTimeout("postgres", async () => {
     const res = await pool.query("SELECT 1");
     return res.rowCount === 1;
   });
 
-  if (result && !error) {
-    return { name: "postgres", status: "healthy", latency_ms };
+  if (error || !result) {
+    logger.warn({ error }, "Health check: postgres unhealthy");
+    return { name: "postgres", status: "unhealthy", latency_ms, pool: poolStats };
   }
-  logger.warn({ error }, "Health check: postgres unhealthy");
-  return { name: "postgres", status: "unhealthy", latency_ms };
+
+  // Latency >= 2000ms is treated as degraded (not a hard failure, but triggers 503)
+  if (latency_ms >= CHECK_TIMEOUT_MS) {
+    logger.warn({ latency_ms }, "Health check: postgres degraded (high latency)");
+    return { name: "postgres", status: "degraded", latency_ms, pool: poolStats };
+  }
+
+  return { name: "postgres", status: "healthy", latency_ms, pool: poolStats };
 }
 
 /** Check Redis by sending PING. */
@@ -194,7 +220,7 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
   const dependencies: DependencyResult[] = [postgres, redis, sorobanRpc, horizon, github];
 
   const criticalDown = dependencies.some(
-    (d) => CRITICAL_DEPS.has(d.name) && d.status === "unhealthy",
+    (d) => CRITICAL_DEPS.has(d.name) && (d.status === "unhealthy" || d.status === "degraded"),
   );
   const anyDown = dependencies.some((d) => d.status === "unhealthy");
 
