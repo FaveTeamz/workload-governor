@@ -19,6 +19,7 @@ import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
 import { auditMiddleware } from './middleware/audit';
 import { metricsMiddleware, metricsHandler } from './metrics';
+import { idempotencyMiddleware } from './middleware/idempotency';
 
 async function getSorobanHealth() {
   const rpcUrl = process.env.SOROBAN_RPC_URL ?? 'https://soroban-testnet.stellar.org';
@@ -75,6 +76,11 @@ export function createApp(): express.Application {
 
   // Audit logging for all state-changing operations
   app.use(auditMiddleware);
+
+  // Idempotency middleware — prevents duplicate processing of mutating requests
+  // The in-flight lock is always released in a finally block so unhandled errors
+  // never leave stale locks in Redis (fixes #1013).
+  app.use(idempotencyMiddleware);
 
   setupSwagger(app);
 
