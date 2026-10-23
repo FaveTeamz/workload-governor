@@ -1,5 +1,6 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, PoolConfig } from 'pg';
 import path from 'path';
+import { logger } from './logger';
 // node-pg-migrate exposes `default` in CJS interop; use dynamic require to handle both
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pgMigrateRun: typeof import('node-pg-migrate').default = require('node-pg-migrate').default ?? require('node-pg-migrate');
@@ -28,36 +29,92 @@ export type OrgEvent = {
 
 let _pool: Pool | null = null;
 
+/** Default pool settings (issue #1035). Each can be overridden via env vars. */
+export const DB_POOL_DEFAULTS = {
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+} as const;
+
+/**
+ * Parse a non-negative integer from an environment variable, falling back to
+ * `fallback` when the variable is unset, empty, or not a valid integer.
+ */
+export function parseEnvInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    logger.warn({ msg: `[db] Invalid value for ${name}; using default`, value: raw, default: fallback });
+    return fallback;
+  }
+  return value;
+}
+
+/**
+ * Build the node-pg pool configuration from environment variables.
+ *
+ *   DB_POOL_MIN            minimum connections kept alive      (default: 2)
+ *   DB_POOL_MAX            maximum connections allowed         (default: 20)
+ *   DB_IDLE_TIMEOUT        ms before an idle client is reaped  (default: 30000)
+ *   DB_CONNECTION_TIMEOUT  ms to wait when acquiring a client  (default: 5000)
+ *                          (DB_ACQUIRE_TIMEOUT is accepted as a legacy alias)
+ *
+ * Explicit idle/connection timeouts prevent zombie connections from piling up
+ * in serverless/container environments (issue #1035).
+ */
+export function buildPoolConfig(): PoolConfig {
+  const max = Math.max(1, parseEnvInt('DB_POOL_MAX', DB_POOL_DEFAULTS.max));
+  const min = Math.min(parseEnvInt('DB_POOL_MIN', 2), max);
+  const connectionTimeoutEnv =
+    process.env['DB_CONNECTION_TIMEOUT'] !== undefined ? 'DB_CONNECTION_TIMEOUT' : 'DB_ACQUIRE_TIMEOUT';
+
+  return {
+    connectionString: process.env['DATABASE_URL'],
+    min,
+    max,
+    idleTimeoutMillis: parseEnvInt('DB_IDLE_TIMEOUT', DB_POOL_DEFAULTS.idleTimeoutMillis),
+    connectionTimeoutMillis: parseEnvInt(connectionTimeoutEnv, DB_POOL_DEFAULTS.connectionTimeoutMillis),
+  };
+}
+
+/**
+ * Handler for the pool-level `error` event. node-pg emits this when an idle
+ * client loses its connection unexpectedly (e.g. backend restart, network
+ * drop, server-side idle kill). Without a listener the error would crash the
+ * process; with it, the broken client is discarded and the pool recovers.
+ */
+export function handlePoolError(err: Error & { code?: string }, pool: Pool): void {
+  logger.error({
+    msg: '[db] Unexpected error on idle DB client (client disconnected)',
+    error: err.message,
+    code: err.code,
+    stack: err.stack,
+    pool: {
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+    },
+  });
+}
+
 /** Returns the shared connection pool, creating it on first call. */
 export function getPool(): Pool {
   if (!_pool) {
-    _pool = new Pool({
-      connectionString: process.env['DATABASE_URL'],
-      // Pool sizing — configurable via environment variables.
-      // DB_POOL_MIN: minimum connections kept alive (default 2)
-      // DB_POOL_MAX: maximum connections allowed (default 10)
-      min: parseInt(process.env['DB_POOL_MIN'] ?? '2', 10),
-      max: parseInt(process.env['DB_POOL_MAX'] ?? '20', 10),
-      idleTimeoutMillis: parseInt(process.env['DB_IDLE_TIMEOUT'] ?? '30000', 10),
-      connectionTimeoutMillis: parseInt(process.env['DB_CONNECTION_TIMEOUT'] ?? process.env['DB_ACQUIRE_TIMEOUT'] ?? '10000', 10),
-    });
+    const pool = new Pool(buildPoolConfig());
+    _pool = pool;
 
-    // Log and alert on unexpected idle-client errors (fixes issue #561)
-    _pool.on('error', (err) => {
-      console.error('[db] Unexpected error on idle DB client:', err.message, err.stack);
-    });
+    // Log unexpected idle-client disconnections (issues #561, #1035)
+    pool.on('error', (err) => handlePoolError(err, pool));
 
     // Optionally log new connections in non-production environments for
     // visibility into pool churn during development/staging.
     if (process.env['NODE_ENV'] !== 'production') {
-      _pool.on('connect', () => {
+      pool.on('connect', () => {
         // Fire-and-forget: log pool counts when a new connection is established
-        const p = _pool;
-        if (p) {
-          console.debug(
-            `[db] New connection established. Pool stats — total: ${p.totalCount}, idle: ${p.idleCount}, waiting: ${p.waitingCount}`,
-          );
-        }
+        console.debug(
+          `[db] New connection established. Pool stats — total: ${pool.totalCount}, idle: ${pool.idleCount}, waiting: ${pool.waitingCount}`,
+        );
       });
     }
   }
