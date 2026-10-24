@@ -251,6 +251,6 @@ jobs:
           arguments: licenses bans advisories
 
       - name: Check RustSec advisories (cargo-audit)
-        uses: rustsec/audit-check@v1
+        uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
