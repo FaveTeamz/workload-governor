@@ -78,45 +78,45 @@ header()  { echo; echo "=== $* ==="; }
 # ---------------------------------------------------------------------------
 
 # K1 — Global App Count
-# ("g_apps", contributor: Address)
+# ("g", contributor: Address)
 encode_key_global_app_count() {
     local contributor="$1"
-    echo "tmp|2|g_apps|Symbol:Address|g_apps:${contributor}"
+    echo "tmp|2|g|Symbol:Address|g:${contributor}"
 }
 
 # K2 — App Entry
-# ("app", contributor: Address, org_id: Symbol, issue_id: u32)
+# ("a", contributor: Address, org_id: Symbol, issue_id: u32)
 encode_key_app_entry() {
     local contributor="$1" org_id="$2" issue_id="$3"
-    echo "tmp|4|app|Symbol:Address:Symbol:u32|app:${contributor}:${org_id}:${issue_id}"
+    echo "tmp|4|a|Symbol:Address:Symbol:u32|a:${contributor}:${org_id}:${issue_id}"
 }
 
 # K3 — Admin
-# "admin"  (scalar Symbol — NOT a tuple)
+# "d"  (scalar Symbol — NOT a tuple)
 encode_key_admin() {
     # Arity=0 signals a scalar (no tuple wrapping); PREFIX_SYM carries the full key
-    echo "per|0|admin|Symbol|admin"
+    echo "per|0|d|Symbol|d"
 }
 
 # K4 — Maintainer
-# ("maint", maintainer: Address, org_id: Symbol)
+# ("m", maintainer: Address, org_id: Symbol)
 encode_key_maintainer() {
     local maintainer="$1" org_id="$2"
-    echo "per|3|maint|Symbol:Address:Symbol|maint:${maintainer}:${org_id}"
+    echo "per|3|m|Symbol:Address:Symbol|m:${maintainer}:${org_id}"
 }
 
 # K5 — Org Assignment Count
-# ("o_asgn", contributor: Address, org_id: Symbol)
+# ("o", contributor: Address, org_id: Symbol)
 encode_key_org_assignment_count() {
     local contributor="$1" org_id="$2"
-    echo "per|3|o_asgn|Symbol:Address:Symbol|o_asgn:${contributor}:${org_id}"
+    echo "per|3|o|Symbol:Address:Symbol|o:${contributor}:${org_id}"
 }
 
 # K6 — Assignment Entry
-# ("asgn", org_id: Symbol, issue_id: u32, contributor: Address)
+# ("s", org_id: Symbol, issue_id: u32, contributor: Address)
 encode_key_assignment_entry() {
     local org_id="$1" issue_id="$2" contributor="$3"
-    echo "per|4|asgn|Symbol:Symbol:u32:Address|asgn:${org_id}:${issue_id}:${contributor}"
+    echo "per|4|s|Symbol:Symbol:u32:Address|s:${org_id}:${issue_id}:${contributor}"
 }
 
 # ---------------------------------------------------------------------------
@@ -338,9 +338,9 @@ done
 
 # Namespace overlap check: assert distinct byte prefixes for application, assignment, and admin keys
 header "Namespace Overlap & Prefix Assertion"
-APP_KEYS=("g_apps" "app")
-ASGN_KEYS=("asgn" "o_asgn")
-ADMIN_KEYS=("admin")
+APP_KEYS=("g" "a")
+ASGN_KEYS=("s" "o")
+ADMIN_KEYS=("d")
 
 for k in "${APP_KEYS[@]}"; do
     for a in "${ADMIN_KEYS[@]}"; do

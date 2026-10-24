@@ -7,13 +7,8 @@
 //!                      so the contract itself never gets archived.
 //!
 //! All key prefixes are distinct `symbol_short!` values — zero collision guarantee:
-//!   "g_apps", "app", "admin", "maint", "o_asgn", "asgn"
-//!   "mig_v2"  (migration flag, #602)
-//!   "ms_thr"  (multi-sig threshold, #603)
-//!   "ms_sig"  (multi-sig signers, #603)
-//!   "prop"    (governance proposal entry, #600)
-//!   "vote"    (governance vote entry, #600)
-//!   "g_cap"   (dynamic global cap override, #600)
+//!   "g", "a", "d", "m", "o", "s", "v", "t", "u", "p", "w", "c", "r", "n"
+//!   The one-character symbols minimize XDR string padding while remaining unique.
 
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec, symbol_short};
 
@@ -76,11 +71,11 @@ pub(crate) fn require_initialized(env: &Env, error: &ContractError) {
 // Temporary storage — Global Application Count
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("g_apps"), contributor: Address)`
+// Key: `(symbol_short!("g"), contributor: Address)`
 // Value: `u32`
 
 fn global_app_count_key(contributor: &Address) -> (Symbol, Address) {
-    (symbol_short!("g_apps"), contributor.clone())
+    (symbol_short!("g"), contributor.clone())
 }
 
 /// Returns the contributor's current global pending-application count (0 if absent/expired).
@@ -113,7 +108,7 @@ pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {
 // Temporary storage — Per-Issue Application Entry
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("app"), contributor: Address, org_id: Symbol, issue_id: u32)`
+// Key: `(symbol_short!("a"), contributor: Address, org_id: Symbol, issue_id: u32)`
 // Value: `bool` (presence sentinel — always `true`)
 
 fn app_entry_key(
@@ -122,7 +117,7 @@ fn app_entry_key(
     issue_id: u32,
 ) -> (Symbol, Address, Symbol, u32) {
     (
-        symbol_short!("app"),
+        symbol_short!("a"),
         contributor.clone(),
         org_id.clone(),
         issue_id,
@@ -182,11 +177,11 @@ pub(crate) fn extend_app_entry_ttl(
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("admin")`
+// Key: `symbol_short!("d")`
 // Value: `Address`
 
 fn admin_key() -> Symbol {
-    symbol_short!("admin")
+    symbol_short!("d")
 }
 
 /// Returns the stored admin address, or `None` if not yet initialized.
@@ -203,11 +198,11 @@ pub(crate) fn set_admin(env: &Env, admin: &Address) {
 // Persistent storage — Maintainer Registration
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("maint"), maintainer: Address, org_id: Symbol)`
+// Key: `(symbol_short!("m"), maintainer: Address, org_id: Symbol)`
 // Value: `bool`
 
 fn maintainer_key(maintainer: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {
-    (symbol_short!("maint"), maintainer.clone(), org_id.clone())
+    (symbol_short!("m"), maintainer.clone(), org_id.clone())
 }
 
 /// Returns `true` if `maintainer` is registered for `org_id`.
@@ -229,11 +224,11 @@ pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
 // Persistent storage — Org Assignment Count
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("o_asgn"), contributor: Address, org_id: Symbol)`
+// Key: `(symbol_short!("o"), contributor: Address, org_id: Symbol)`
 // Value: `u32`
 
 fn org_assignment_count_key(contributor: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {
-    (symbol_short!("o_asgn"), contributor.clone(), org_id.clone())
+    (symbol_short!("o"), contributor.clone(), org_id.clone())
 }
 
 /// Returns the contributor's active assignment count for `org_id` (0 if absent).
@@ -271,7 +266,7 @@ pub(crate) fn remove_org_assignment_count(
 // Persistent storage — Active Assignment Entry
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("asgn"), org_id: Symbol, issue_id: u32, contributor: Address)`
+// Key: `(symbol_short!("s"), org_id: Symbol, issue_id: u32, contributor: Address)`
 // Value: `bool` (presence sentinel — always `true`)
 
 fn assignment_entry_key(
@@ -280,7 +275,7 @@ fn assignment_entry_key(
     contributor: &Address,
 ) -> (Symbol, Symbol, u32, Address) {
     (
-        symbol_short!("asgn"),
+        symbol_short!("s"),
         org_id.clone(),
         issue_id,
         contributor.clone(),
@@ -370,11 +365,11 @@ pub(crate) fn extend_org_assignment_count_ttl(
 // #602 — Persistent storage: Migration flag
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("mig_v2")`
+// Key: `symbol_short!("v")`
 // Value: `bool` (true once migration has run)
 
 fn migration_v2_flag_key() -> Symbol {
-    symbol_short!("mig_v2")
+    symbol_short!("v")
 }
 
 /// Returns `true` if the v1→v2 migration has already been executed.
@@ -432,15 +427,15 @@ pub(crate) fn remove_org_assignment_count_v1(
 // #603 — Persistent storage: Multi-sig threshold and signers
 // ---------------------------------------------------------------------------
 //
-// Threshold key: `symbol_short!("ms_thr")` → `u32`
-// Signers key:   `symbol_short!("ms_sig")` → `Vec<Address>`
+// Threshold key: `symbol_short!("t")` → `u32`
+// Signers key:   `symbol_short!("u")` → `Vec<Address>`
 
 fn multisig_threshold_key() -> Symbol {
-    symbol_short!("ms_thr")
+    symbol_short!("t")
 }
 
 fn multisig_signers_key() -> Symbol {
-    symbol_short!("ms_sig")
+    symbol_short!("u")
 }
 
 /// Returns the current multi-sig threshold (0 if not configured — single-admin mode).
@@ -477,10 +472,10 @@ pub(crate) fn set_multisig_signers(env: &Env, signers: &Vec<Address>) {
 // #600 — Persistent storage: Governance proposals
 // ---------------------------------------------------------------------------
 //
-// Proposal entry key: `(symbol_short!("prop"), proposal_id: u32)` → `GovernanceProposal`
-// Vote entry key:     `(symbol_short!("vote"), proposal_id: u32, voter: Address)` → `bool`
-// Global cap override:`symbol_short!("g_cap")` → `u32`
-// Proposal counter:   `symbol_short!("p_ctr")` → `u32`
+// Proposal entry key: `(symbol_short!("p"), proposal_id: u32)` → `GovernanceProposal`
+// Vote entry key:     `(symbol_short!("w"), proposal_id: u32, voter: Address)` → `bool`
+// Global cap override:`symbol_short!("c")` → `u32`
+// Proposal counter:   `symbol_short!("r")` → `u32`
 
 use soroban_sdk::contracttype;
 
@@ -503,19 +498,19 @@ pub struct GovernanceProposal {
 }
 
 fn proposal_key(proposal_id: u32) -> (Symbol, u32) {
-    (symbol_short!("prop"), proposal_id)
+    (symbol_short!("p"), proposal_id)
 }
 
 fn vote_key(proposal_id: u32, voter: &Address) -> (Symbol, u32, Address) {
-    (symbol_short!("vote"), proposal_id, voter.clone())
+    (symbol_short!("w"), proposal_id, voter.clone())
 }
 
 fn proposal_counter_key() -> Symbol {
-    symbol_short!("p_ctr")
+    symbol_short!("r")
 }
 
 fn global_cap_override_key() -> Symbol {
-    symbol_short!("g_cap")
+    symbol_short!("c")
 }
 
 /// Returns the next proposal ID and increments the counter.
@@ -579,14 +574,14 @@ pub(crate) fn set_global_cap_override(env: &Env, new_cap: u32) {
 // #828 SC-003 — Persistent storage: Admin action nonce
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("adm_nc")`  →  `u32`
+// Key: `symbol_short!("n")`  →  `u32`
 //
 // A monotonic counter incremented on every privileged governance action.
 // Including the current nonce in the auth digest that `require_admin_auth`
 // verifies prevents authorisation replay across ledger forks or re-orgs.
 
 fn admin_nonce_key() -> Symbol {
-    symbol_short!("adm_nc")
+    symbol_short!("n")
 }
 
 /// Returns the current admin nonce (0 before the first privileged call).

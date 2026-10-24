@@ -1,8 +1,8 @@
 # Storage Design
 
-WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixes to manage contract state.
+WorkloadGovernor uses three Soroban storage tiers and compact, distinct key prefixes to manage contract state.
 
-> **Why this design?** The rationale for the six-prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
+> **Why this design?** The rationale for the compact prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
 
 ## Storage Tiers
 
@@ -14,13 +14,38 @@ WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixe
 
 ## Key Patterns
 
+## XDR Prefix Footprint
+
+An XDR-encoded `ScVal::Symbol` contains a 4-byte discriminant, a 4-byte string length, and string data padded to a 4-byte boundary. Therefore a 1–4 character prefix occupies 12 bytes, while a 5–8 character prefix occupies 16 bytes. Other tuple fields and tuple framing are unchanged by these prefix substitutions.
+
+| Storage key | Previous prefix | Previous bytes | Active prefix | Active bytes | Saved per key |
+|---|---:|---:|---:|---:|---:|
+| Global application count | `g_apps` | 16 | `g` | 12 | 4 |
+| Application entry | `app` | 12 | `a` | 12 | 0 |
+| Admin | `admin` | 16 | `d` | 12 | 4 |
+| Maintainer | `maint` | 16 | `m` | 12 | 4 |
+| Org assignment count | `o_asgn` | 16 | `o` | 12 | 4 |
+| Assignment entry | `asgn` | 12 | `s` | 12 | 0 |
+| Migration flag | `mig_v2` | 16 | `v` | 12 | 4 |
+| Multi-sig threshold | `ms_thr` | 16 | `t` | 12 | 4 |
+| Multi-sig signers | `ms_sig` | 16 | `u` | 12 | 4 |
+| Governance proposal | `prop` | 12 | `p` | 12 | 0 |
+| Governance vote | `vote` | 12 | `w` | 12 | 0 |
+| Global cap override | `g_cap` | 16 | `c` | 12 | 4 |
+| Proposal counter | `p_ctr` | 16 | `r` | 12 | 4 |
+| Admin action nonce | `adm_nc` | 16 | `n` | 12 | 4 |
+
+The profile measures the serialized prefix component, not the entire ledger-key envelope. The maximum saving is 4 bytes per key because XDR padding makes every symbol from 1 through 4 characters the same encoded size. Shorter names than four characters do not reduce the serialized size further.
+
+**Upgrade compatibility:** A prefix is part of the storage key identity. This change is not compatible with existing deployed state by itself: persistent entries written with the old prefixes require an explicit storage migration before upgrading, and pending temporary entries must be allowed to expire or migrated consistently. Do not upgrade a live instance to this schema without that migration.
+
 ### 1 — Global Application Count
 
 | Field | Value |
 |---|---|
 | Tier | Temporary |
 | Key type | `(Symbol, Address)` |
-| Prefix | `"g_apps"` |
+| Prefix | `"g"` |
 | Value | `u32` |
 | TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
 
@@ -28,7 +53,7 @@ WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixe
 
 **Example key:**
 ```
-("g_apps", GBFZB...XK2Q)
+("g", GBFZB...XK2Q)
 ```
 
 **Example value:** `3`
@@ -43,7 +68,7 @@ When the count drops to zero the entry is removed. On every application submissi
 |---|---|
 | Tier | Temporary |
 | Key type | `(Symbol, Address, Symbol, u32)` |
-| Prefix | `"app"` |
+| Prefix | `"a"` |
 | Value | `bool` (always `true`, presence sentinel) |
 | TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
 
@@ -51,7 +76,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 **Example key:**
 ```
-("app", GBFZB...XK2Q, "stellar-org", 42)
+("a", GBFZB...XK2Q, "stellar-org", 42)
 ```
 
 **Example value:** `true`
@@ -89,14 +114,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `Symbol` |
-| Prefix | `"admin"` |
+| Prefix | `"d"` |
 | Value | `Address` |
 
 **Purpose:** Stores the single admin `Address` set during `initialize`. Reading `None` is the initialisation guard — it means the contract has not been set up yet.
 
 **Example key:**
 ```
-"admin"
+"d"
 ```
 
 **Example value:** `GCEZW...SJ3P` (Stellar address)
@@ -109,14 +134,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `(Symbol, Address, Symbol)` |
-| Prefix | `"maint"` |
+| Prefix | `"m"` |
 | Value | `bool` (always `true`, presence sentinel) |
 
 **Purpose:** Records that address `M` is an authorised maintainer for org `O`. The write is idempotent.
 
 **Example key:**
 ```
-("maint", GABC1...9KLM, "stellar-org")
+("m", GABC1...9KLM, "stellar-org")
 ```
 
 **Example value:** `true`
@@ -129,14 +154,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `(Symbol, Address, Symbol)` |
-| Prefix | `"o_asgn"` |
+| Prefix | `"o"` |
 | Value | `u32` |
 
 **Purpose:** Tracks how many active assignments contributor `C` holds within org `O`. Capped at the effective org cap (default `ORG_ASSIGNMENT_LIMIT = 4`, overridable via `set_org_cap`). Entry is removed when count reaches zero.
 
 **Example key:**
 ```
-("o_asgn", GBFZB...XK2Q, "stellar-org")
+("o", GBFZB...XK2Q, "stellar-org")
 ```
 
 **Example value:** `2`
@@ -149,14 +174,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `(Symbol, Symbol, u32, Address)` |
-| Prefix | `"asgn"` |
+| Prefix | `"s"` |
 | Value | `bool` (always `true`, presence sentinel) |
 
 **Purpose:** Records that contributor `C` is actively assigned to issue `I` in org `O`. Key order is `(org_id, issue_id, contributor)` so lookups by issue are efficient.
 
 **Example key:**
 ```
-("asgn", "stellar-org", 42, GBFZB...XK2Q)
+("s", "stellar-org", 42, GBFZB...XK2Q)
 ```
 
 **Example value:** `true`
@@ -345,18 +370,26 @@ Refer to `docs/runbooks/incident-response.md` for the full remediation playbook.
 
 ## Key Collision Proof
 
-All eight prefixes are distinct `symbol_short!` values:
+The current storage prefixes are distinct one-character `symbol_short!` values:
 
 | # | Prefix | Rust literal |
 |---|---|---|
-| 1 | `g_apps` | `symbol_short!("g_apps")` |
-| 2 | `app` | `symbol_short!("app")` |
-| 3 | `app_idx` | `symbol_short!("app_idx")` |
-| 4 | `admin` | `symbol_short!("admin")` |
-| 5 | `maint` | `symbol_short!("maint")` |
-| 6 | `o_asgn` | `symbol_short!("o_asgn")` |
-| 7 | `asgn` | `symbol_short!("asgn")` |
-| 8 | `o_cap` | `symbol_short!("o_cap")` |
+| 1 | `g` | `symbol_short!("g")` |
+| 2 | `a` | `symbol_short!("a")` |
+| 3 | `d` | `symbol_short!("d")` |
+| 4 | `m` | `symbol_short!("m")` |
+| 5 | `o` | `symbol_short!("o")` |
+| 6 | `s` | `symbol_short!("s")` |
+| 7 | `v` | `symbol_short!("v")` |
+| 8 | `t` | `symbol_short!("t")` |
+| 9 | `u` | `symbol_short!("u")` |
+| 10 | `p` | `symbol_short!("p")` |
+| 11 | `w` | `symbol_short!("w")` |
+| 12 | `c` | `symbol_short!("c")` |
+| 13 | `r` | `symbol_short!("r")` |
+| 14 | `n` | `symbol_short!("n")` |
+
+The legacy `o_asgn` prefix remains only in the v1 migration reader and is not used for current writes.
 
 ### Formal Argument
 
