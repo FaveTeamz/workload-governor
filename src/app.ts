@@ -23,8 +23,6 @@ import { setupSwagger } from './swagger';
 export function createApp(): express.Application {
   const app = express();
 
-  app.use(correlationIdMiddleware);
-
   // Enforce HTTPS-only transport and HSTS headers in production environment
   if (process.env.NODE_ENV === 'production') {
     app.use((req: Request, res: Response, next) => {
@@ -37,34 +35,35 @@ export function createApp(): express.Application {
     });
   }
 
-  // Security middleware
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:', 'https:'],
-          connectSrc: ["'self'", 'https:'],
-          fontSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          frameAncestors: ["'none'"],
-        },
+  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',');
+
+  // Security middleware — strict CSP, HSTS with preload, deny framing (issue #1098)
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", 'https:', ...corsOrigins],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: null,
       },
-      hsts: {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true,
-      },
-      frameguard: {
-        action: 'deny',
-      },
-    }),
-  );
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  }));
 
   // CORS middleware
-  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',');
   app.use(cors({
     origin: corsOrigins,
     credentials: true,
