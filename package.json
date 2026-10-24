@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "migrate:up": "node-pg-migrate up --migrations-dir migrations --migrations-table pgmigrations",
     "migrate:down": "node-pg-migrate down --migrations-dir migrations --migrations-table pgmigrations",
+    "db:seed": "ts-node scripts/seed-mock-data.ts",
     "backfill": "ts-node src/scripts/backfill-events.ts",
     "test": "jest --runInBand --forceExit",
     "test:contract": "jest --runInBand --forceExit --selectProjects contract",
