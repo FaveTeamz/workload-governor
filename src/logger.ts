@@ -10,6 +10,11 @@ const logger = pino({
     const context = requestContext.getStore();
     return context ? { requestId: context.requestId } : {};
   },
+  redact: {
+    paths: ['req.headers.authorization', 'req.headers.cookie', 'body.secret'],
+    censor: '[REDACTED]',
+  },
+  },
   transport: {
     target: 'pino/file',
   },

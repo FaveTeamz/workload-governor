@@ -116,6 +116,19 @@ export function updatePgPoolGauges(): void {
   pgPoolWaitingRequests.set(pool.waitingCount);
 }
 
+export const webhookDeliveriesTotal = new Counter({
+  name: "webhook_deliveries_total",
+  help: "Total outbound webhook delivery attempts",
+  labelNames: ["org_id", "event_type"],
+  registers: [register],
+});
+
+export const webhookDeliveryFailuresTotal = new Counter({
+  name: "webhook_delivery_failures_total",
+  help: "Total outbound webhook delivery failures",
+  labelNames: ["org_id", "event_type"],
+  registers: [register],
+});
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 /**
