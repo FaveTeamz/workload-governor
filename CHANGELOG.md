@@ -9,6 +9,9 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 
 ## [Unreleased]
 
+### Fixed
+- Validate contract event topics and data against the XDR ABI before indexing, and preserve rejected events in `indexer_quarantine` for inspection. (#1030)
+
 ### Added
 - Document the Jest/Vitest/Playwright/Cargo config inventory, the rationale for the config split, a full command reference, CI job mapping, and Codecov flags in `docs/testing.md`. (#793)
 

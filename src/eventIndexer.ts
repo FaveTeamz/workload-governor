@@ -28,7 +28,8 @@
  *   and deletes orphaned events back to the last confirmed common ancestor.
  */
 
-import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
+import { SorobanRpc } from '@stellar/stellar-sdk';
+import { EventValidationError, validateContractEvent } from './contractEventSchema';
 import { pool, getCheckpoint, saveCheckpoint, IndexerCheckpoint } from './db';
 import { logger } from './logger';
 import { publishLiveEvent } from './services/event-bus';
@@ -87,119 +88,7 @@ export interface LedgerHeaderInfo {
 export type LedgerProvider = (sequence: number) => Promise<LedgerHeaderInfo | null>;
 
 // ---------------------------------------------------------------------------
-// XDR helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Safely decode an XDR base64 string to its native JS value.
- * Returns null if decoding fails.
- */
-function decodeScVal(xdrBase64: string): unknown {
-  try {
-    const scVal = stellarXdr.ScVal.fromXDR(xdrBase64, 'base64');
-    return scValToNative(scVal);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Validate that topics[0] == "WG" (the contract namespace discriminant).
- * Returns false for any event that does not belong to WorkloadGovernor.
- * (#829 SC-004: structured 3-topic schema)
- */
-function isWorkloadGovernorEvent(topics: string[]): boolean {
-  if (topics.length < 3) return false;
-  const val = decodeScVal(topics[0]);
-  return val === 'WG';
-}
-
-/**
- * Extract the event type symbol from topics[1].
- * With the 3-topic schema: topics[0]="WG", topics[1]=event_name, topics[2]=entity.
- */
-function extractEventType(topics: string[]): ContractEventType | null {
-  if (topics.length < 3) return null;
-  const val = decodeScVal(topics[1]);
-  if (typeof val !== 'string') return null;
-  const known: ContractEventType[] = [
-    'applied',
-    'withdrew',
-    'assigned',
-    'completed',
-    'revoked',
-    'maint_reg',
-  ];
-  return known.includes(val as ContractEventType) ? (val as ContractEventType) : null;
-}
-
-/**
- * Extract the primary entity address from topics[2].
- * With the 3-topic schema the primary entity (contributor or admin) is always
- * in the third slot, making indexer topic-filter queries unambiguous.
- */
-function extractContributorFromTopic(topics: string[]): string | null {
-  if (topics.length < 3) return null;
-  const val = decodeScVal(topics[2]);
-  if (typeof val === 'string') return val;
-  return null;
-}
-
-/**
- * Parse the data value tuple emitted with each event.
- *
- * Event data layouts (from src/events.rs — 3-topic schema):
- *   applied    → data = (org_id: Symbol, issue_id: u32)
- *   withdrew   → data = (org_id: Symbol, issue_id: u32)
- *   assigned   → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   completed  → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   revoked    → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   maint_reg  → data = (admin: Address, org_id: Symbol)
- */
-interface ParsedData {
-  org_id: string | null;
-  issue_id: number | null;
-}
-
-function parseEventData(dataXdr: string, eventType: ContractEventType): ParsedData {
-  const raw = decodeScVal(dataXdr);
-
-  if (eventType === 'maint_reg') {
-    // data = (admin: Address, org_id: Symbol)
-    if (!Array.isArray(raw)) {
-      return { org_id: null, issue_id: null };
-    }
-    const [, orgId] = raw as [unknown, unknown];
-    return {
-      org_id: typeof orgId === 'string' ? orgId : null,
-      issue_id: null,
-    };
-  }
-
-  // All other events emit a tuple
-  if (!Array.isArray(raw)) {
-    return { org_id: null, issue_id: null };
-  }
-
-  if (eventType === 'applied' || eventType === 'withdrew') {
-    // (org_id, issue_id)
-    const [orgId, issueId] = raw as [unknown, unknown];
-    return {
-      org_id: typeof orgId === 'string' ? orgId : null,
-      issue_id: typeof issueId === 'number' ? issueId : null,
-    };
-  }
-
-  // assigned / completed / revoked → (maintainer, org_id, issue_id)
-  const [, orgId, issueId] = raw as [unknown, unknown, unknown];
-  return {
-    org_id: typeof orgId === 'string' ? orgId : null,
-    issue_id: typeof issueId === 'number' ? issueId : null,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// RPC event shape (SDK v11 / RPC spec)
+// RPC event shape (SDK v12, raw RPC, and legacy wrappers)
 // ---------------------------------------------------------------------------
 
 interface RpcEvent {
@@ -208,16 +97,17 @@ interface RpcEvent {
   /** "<ledger>-<tx_index>-<event_index>" — paging cursor */
   id: string;
   pagingToken: string;
-  /** ledger sequence number as string */
-  ledger: string;
+  /** SDK returns a number; legacy streams may use a string. */
+  ledger: string | number;
   /** optional ledger hash and parent hash reported by stream / Horizon */
   ledgerHash?: string;
   prevLedgerHash?: string;
   /** ISO-8601 creation timestamp */
-  createdAt: string;
+  createdAt?: string;
+  ledgerClosedAt?: string;
   txHash?: string;
-  topic: Array<{ type: string; xdr: string }>;
-  value: { type: string; xdr: string };
+  topic: unknown;
+  value: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -595,7 +485,7 @@ export class EventIndexer {
           let reorgAbortedBatch = false;
 
           for (const raw of events) {
-            const eventLedger = parseInt(raw.ledger, 10);
+            const eventLedger = Number(raw.ledger);
             if (!isNaN(eventLedger) && (raw.ledgerHash || raw.prevLedgerHash)) {
               const continuity = await this.handleLedgerContinuity({
                 sequence: eventLedger,
@@ -608,7 +498,7 @@ export class EventIndexer {
               }
             }
 
-            const record = this.parseRpcEvent(raw);
+            const record = await this.parseRpcEvent(raw);
             if (!record) {
               skipped++;
               continue;
@@ -622,7 +512,7 @@ export class EventIndexer {
             // Advance cursor to the last event's pagingToken
             const last = events[events.length - 1];
             this.cursor = last.pagingToken ?? last.id;
-            const lastLedger = parseInt(last.ledger, 10);
+            const lastLedger = Number(last.ledger);
             const lastHash = last.ledgerHash ?? last.txHash;
 
             logger.info({
@@ -698,54 +588,62 @@ export class EventIndexer {
 
   /**
    * Convert a raw RPC event object into a ContractEventRecord.
-   * Returns null if the event is unknown or malformed.
+   * Quarantine invalid contract events before returning null. Valid events outside
+   * the indexer projection and non-contract events are skipped.
    */
-  private parseRpcEvent(raw: RpcEvent): ContractEventRecord | null {
+  private async parseRpcEvent(raw: RpcEvent): Promise<ContractEventRecord | null> {
+    if (raw.type !== 'contract') return null;
+
     try {
-      // Only process contract events
-      if (raw.type !== 'contract') return null;
+      const { name, entity, data } = validateContractEvent(raw.topic, raw.value);
+      // Other valid ABI events are not projected into contract_events.
+      const indexedTypes: string[] = ['applied', 'withdrew', 'assigned', 'completed', 'revoked', 'maint_reg'];
+      if (!indexedTypes.includes(name)) return null;
 
-      const topics = raw.topic?.map((t) => t.xdr) ?? [];
-      const dataXdr = raw.value?.xdr ?? '';
-
-      // #829 SC-004: reject events that do not carry the WG namespace discriminant
-      // in topics[0].  This prevents false positives from other contracts sharing
-      // the same RPC stream.
-      if (!isWorkloadGovernorEvent(topics)) return null;
-
-      const eventType = extractEventType(topics);
-      if (!eventType) return null;
-
-      // Primary entity is always topics[2] in the 3-topic schema.
-      // maintainer_registered events have an admin in topics[2] but no contributor.
-      const contributor =
-        eventType === 'maint_reg'
-          ? null
-          : extractContributorFromTopic(topics);
-
-      const { org_id, issue_id } = parseEventData(dataXdr, eventType);
-
-      // Parse the event index from the id string: "<ledger>-<tx_index>-<event_index>"
+      if (typeof raw.id !== 'string' || raw.id.length === 0) {
+        throw new EventValidationError('id: expected non-empty string');
+      }
       const idParts = raw.id.split('-');
-      const eventIndex = idParts.length >= 3 ? parseInt(idParts[2], 10) : 0;
+      const indexPart = idParts.length >= 2 ? idParts[idParts.length - 1] : '0';
+      const eventIndex = /^\d+$/.test(indexPart) ? Number(indexPart) : NaN;
+      const ledger = Number(raw.ledger);
+      const timestamp = new Date(raw.ledgerClosedAt ?? raw.createdAt ?? '');
+      if (!Number.isInteger(ledger) || ledger <= 0 || ledger > 2147483647) {
+        throw new EventValidationError('ledger: expected positive PostgreSQL integer');
+      }
+      if (!Number.isInteger(eventIndex) || eventIndex < 0 || eventIndex > 2147483647) {
+        throw new EventValidationError('id: invalid event index');
+      }
+      if (Number.isNaN(timestamp.getTime())) {
+        throw new EventValidationError('timestamp: expected valid ledger close time');
+      }
+      if (raw.txHash !== undefined && (typeof raw.txHash !== 'string' || raw.txHash.length === 0)) {
+        throw new EventValidationError('txHash: expected non-empty string');
+      }
 
-      // tx_hash may be undefined for some synthetic events; fall back to id
-      const txHash = raw.txHash ?? raw.id;
-
-      const ledger = parseInt(raw.ledger, 10);
-      const timestamp = new Date(raw.createdAt);
-
+      const orgIndex = name === 'applied' || name === 'withdrew' ? 0 : 1;
       return {
-        event_type: eventType,
-        contributor,
-        org_id,
-        issue_id,
-        tx_hash: txHash,
+        event_type: name as ContractEventType,
+        contributor: name === 'maint_reg' ? null : entity,
+        org_id: data[orgIndex] as string,
+        issue_id: name === 'maint_reg' ? null : data[orgIndex + 1] as number,
+        tx_hash: raw.txHash ?? raw.id,
         event_index: eventIndex,
         ledger,
         timestamp,
       };
-    } catch {
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      // Await persistence before the poll loop may advance its cursor. A DB failure
+      // propagates to the retry loop so rejected events cannot be silently lost.
+      await pool.query(
+        `INSERT INTO indexer_quarantine (contract_id, event_id, raw_event, reason)
+         VALUES ($1, $2, $3::jsonb, $4)
+         ON CONFLICT (contract_id, event_id) DO NOTHING`,
+        [CONTRACT_ID, typeof raw.id === 'string' ? raw.id : null, JSON.stringify(raw, (_key, value: unknown) =>
+          typeof value === 'bigint' ? value.toString() : value), reason],
+      );
+      logger.warn({ message: 'Contract event quarantined', contract_id: CONTRACT_ID, event_id: raw.id, reason });
       return null;
     }
   }
