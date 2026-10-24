@@ -28,6 +28,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   fuzz-withdraw-revoke:
     name: Fuzz withdraw + revoke (${{ github.event.inputs.max_total_time || '300' }}s each)

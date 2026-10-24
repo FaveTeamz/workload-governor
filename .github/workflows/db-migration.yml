@@ -35,6 +35,9 @@ on:
 env:
   PROJECT: workload-governor
 
+permissions:
+  contents: read
+
 jobs:
   migrate:
     name: Run DB migrations (${{ inputs.environment }})

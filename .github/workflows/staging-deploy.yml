@@ -12,6 +12,9 @@ env:
   # Maximum number of previous task definition ARNs stored in SSM
   TASK_DEF_HISTORY_COUNT: 5
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

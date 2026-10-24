@@ -20,6 +20,9 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+permissions:
+  contents: read
+
 jobs:
   # ── 1. Lint ─────────────────────────────────────────────────────────────
   lint:
@@ -38,8 +41,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-lint-
@@ -68,8 +73,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-
@@ -115,8 +122,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-wasm-
@@ -173,15 +182,17 @@ jobs:
         with:
           targets: wasm32v1-none
 
-      - name: Restore cargo cache
+      - name: Restore cargo and target cache
         uses: actions/cache@v4
         with:
           path: |
-            mutants-report.txt
-            mutants.out/mutation-report.html
-            mutants.out/outcomes.json
-            mutants.out/caught.txt
-            mutants.out/missed.txt
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
+            target
+          key: ${{ runner.os }}-cargo-wasm-opt-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-opt-
 
       - name: Optimize WASM
         run: |
@@ -232,8 +243,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-fuzz-

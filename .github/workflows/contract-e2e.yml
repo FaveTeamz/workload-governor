@@ -19,6 +19,9 @@ concurrency:
   group: contract-e2e-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   contributor-lifecycle:
     name: Contributor lifecycle E2E

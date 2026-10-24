@@ -9,6 +9,9 @@ on:
   # Allow manual trigger for initial publish
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   release:
     name: Package & Publish Helm Chart
