@@ -40,7 +40,7 @@ export function Modal({ open, title, onClose, children, footer }: ModalProps) {
       <div ref={contentRef} className="modal__content">
         <div className="modal__header">
           <h2 id="modal-title" className="modal__title">{title}</h2>
-          <button className="modal__close" aria-label="Close" onClick={onClose}>✕</button>
+          <button type="button" className="modal__close" aria-label="Close" onClick={onClose}>✕</button>
         </div>
         <div className="modal__body">{children}</div>
         {footer && <div className="modal__footer">{footer}</div>}
