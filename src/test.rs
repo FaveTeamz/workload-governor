@@ -182,6 +182,45 @@ fn unit_ttl_constant_in_range() {
 }
 
 #[test]
+fn unit_extend_application_ttl_emits_event_without_global_count() {
+    use soroban_sdk::{testutils::Events, TryIntoVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("ttlzero");
+    t.client.initialize(&admin);
+    crate::storage::set_app_entry(&t.env, &contributor, &org, 7);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+
+    t.client.extend_application_ttl(&contributor, &org, &7u32);
+
+    let events = t.env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(topics.len(), 3);
+    let event_name: Symbol = topics.get(1).unwrap().try_into_val(&t.env).unwrap();
+    assert_eq!(event_name, soroban_sdk::symbol_short!("app_ttl"));
+    let (event_org, issue_id, _): (Symbol, u32, u64) = data.try_into_val(&t.env).unwrap();
+    assert_eq!(event_org, org);
+    assert_eq!(issue_id, 7);
+}
+
+#[test]
+fn unit_extend_application_ttl_with_global_count() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("ttlcount");
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &8u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    t.client.extend_application_ttl(&contributor, &org, &8u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+#[test]
 fn unit_saturating_sub_zero_floor_global() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);

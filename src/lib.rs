@@ -451,6 +451,7 @@ impl WorkloadGovernor {
         if storage::get_global_app_count(&env, &contributor) > 0 {
             storage::extend_global_app_count_ttl(&env, &contributor);
         }
+        events::emit_app_ttl_extended(&env, &contributor, &org_id, issue_id);
     }
 
     // -----------------------------------------------------------------------
