@@ -183,6 +183,7 @@ cargo +nightly fuzz run fuzz_lifecycle fuzz/corpus/fuzz_lifecycle -- -max_total_
 | `fuzz_withdraw` | apply → withdraw counter invariant; double-withdraw safety |
 | `fuzz_revoke` | apply → assign → revoke org-count invariant |
 | `fuzz_lifecycle` | Full lifecycle: apply → withdraw → assign → complete / revoke; three invariants checked after every step: `global_count ≤ 15`, `org_count ≤ cap`, applied and assigned are mutually exclusive |
+| `fuzz_xdr_envelope` | Arbitrary/malformed byte buffers fed into the XDR decoder; verifies no unexpected panic or memory violation occurs during `TransactionEnvelope` decoding (binary and base64 paths) |
 
 Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
 

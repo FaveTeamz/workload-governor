@@ -1,14 +1,15 @@
-name: Weekly Fuzz (withdraw + revoke)
+name: Weekly Fuzz (withdraw + revoke + xdr-envelope)
 
 # Runs on a weekly schedule and on workflow_dispatch (for manual runs).
-# Exercises the two fuzz targets added in issue #622:
-#   - fuzz_withdraw: apply → withdraw counter invariant
-#   - fuzz_revoke:   assign → revoke org-count invariant
+# Exercises the fuzz targets added in issue #622 and issue #1063:
+#   - fuzz_withdraw:     apply → withdraw counter invariant
+#   - fuzz_revoke:       assign → revoke org-count invariant
+#   - fuzz_xdr_envelope: arbitrary/malformed XDR envelope decoding (#1063)
 #
-# Each target runs for 5 minutes (300 seconds) as required by #622.
+# Each target runs for 5 minutes (300 seconds) by default.
 # The nightly contract-ci / contract-pipeline jobs already cover all targets
-# with 10-minute runs; this workflow adds explicit weekly coverage for the
-# two new targets so they appear independently in the CI schedule history.
+# with 10-minute runs; this workflow adds explicit weekly coverage so each
+# target appears independently in the CI schedule history.
 
 on:
   schedule:
@@ -106,5 +107,50 @@ jobs:
             fuzz/artifacts/fuzz_withdraw/
             fuzz/artifacts/fuzz_revoke/
             fuzz/artifacts/fuzz_lifecycle/
+          if-no-files-found: ignore
+          retention-days: 90
+
+  fuzz-xdr-envelope:
+    name: Fuzz xdr-envelope (${{ github.event.inputs.max_total_time || '300' }}s)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-fuzz-xdr-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-fuzz-xdr-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz fuzz_xdr_envelope (${{ github.event.inputs.max_total_time || '300' }}s)
+        run: |
+          MAX_TIME="${{ github.event.inputs.max_total_time || '300' }}"
+          echo "### fuzz_xdr_envelope" >> "$GITHUB_STEP_SUMMARY"
+          echo "Running for ${MAX_TIME}s with seed corpus fuzz/corpus/fuzz_xdr_envelope/" \
+            >> "$GITHUB_STEP_SUMMARY"
+          cargo +nightly fuzz run fuzz_xdr_envelope \
+            fuzz/corpus/fuzz_xdr_envelope \
+            -- -max_total_time="${MAX_TIME}" 2>&1 | tee /tmp/fuzz_xdr_envelope.log || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -20 /tmp/fuzz_xdr_envelope.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload fuzz artifacts (crashes / timeouts)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-xdr-envelope-artifacts-${{ github.run_id }}
+          path: fuzz/artifacts/fuzz_xdr_envelope/
           if-no-files-found: ignore
           retention-days: 90
