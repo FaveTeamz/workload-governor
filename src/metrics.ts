@@ -58,6 +58,14 @@ export const rpcCallDurationSeconds = new Histogram({
   registers: [register],
 });
 
+export const sorobanRpcDurationSeconds = new Histogram({
+  name: "soroban_rpc_duration_seconds",
+  help: "Soroban RPC call duration in seconds",
+  labelNames: ["rpc_method", "status"],
+  buckets: DEFAULT_BUCKETS,
+  registers: [register],
+});
+
 export const cacheHitsTotal = new Counter({
   name: "cache_hits_total",
   help: "Cache hits and misses by cache name and result",

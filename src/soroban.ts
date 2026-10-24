@@ -127,6 +127,16 @@ export class SorobanParseError extends Error {
   }
 }
 
+function recordRpcMetric(method: string, status: string, durationSec: number): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { sorobanRpcDurationSeconds } = require('./metrics');
+    sorobanRpcDurationSeconds?.labels(method, status)?.observe(durationSec);
+  } catch {
+    // ignore if metrics uninitialized
+  }
+}
+
 export class SorobanService {
   private server: SorobanRpc.Server;
   private contract: Contract;
@@ -134,6 +144,18 @@ export class SorobanService {
   constructor(rpcUrl = 'https://soroban-testnet.stellar.org') {
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: true });
     this.contract = new Contract(CONTRACT_ID);
+  }
+
+  private async measureRpc<T>(method: string, fn: () => Promise<T>): Promise<T> {
+    const start = Date.now();
+    try {
+      const res = await fn();
+      recordRpcMetric(method, 'success', (Date.now() - start) / 1000);
+      return res;
+    } catch (err) {
+      recordRpcMetric(method, 'error', (Date.now() - start) / 1000);
+      throw err;
+    }
   }
 
   /** Build a raw (unsigned, pre-simulated) transaction and return its XDR. */
@@ -164,7 +186,7 @@ export class SorobanService {
 
   async getAccountSequence(address: string): Promise<string> {
     try {
-      const account = await this.server.getAccount(address);
+      const account = await this.measureRpc('getAccount', () => this.server.getAccount(address));
       return typeof account.sequenceNumber === 'function'
         ? account.sequenceNumber()
         : (account as any).sequence ?? '1';
@@ -194,7 +216,7 @@ export class SorobanService {
 
   async simulate(tx: Transaction): Promise<ResourceEstimate> {
     console.log('[Soroban] Simulating transaction...');
-    const result = await this.server.simulateTransaction(tx);
+    const result = await this.measureRpc('simulateTransaction', () => this.server.simulateTransaction(tx));
 
     if (SorobanRpc.Api.isSimulationError(result)) {
       const contractError = this.parseContractError(result.error);
@@ -227,7 +249,7 @@ export class SorobanService {
   ): Promise<TransactionSubmissionResult> {
     try {
       console.log('[Soroban] Simulating transaction before submission...');
-      const simResult = await this.server.simulateTransaction(tx);
+      const simResult = await this.measureRpc('simulateTransaction', () => this.server.simulateTransaction(tx));
 
       if (SorobanRpc.Api.isSimulationError(simResult)) {
         const contractError = this.parseContractError(simResult.error);
@@ -269,7 +291,7 @@ export class SorobanService {
       }
 
       console.log('[Soroban] Submitting transaction...');
-      const result = await this.server.sendTransaction(txToSend);
+      const result = await this.measureRpc('sendTransaction', () => this.server.sendTransaction(txToSend));
 
       console.log('[Soroban] Transaction submitted:', {
         hash: result.hash,
@@ -297,7 +319,7 @@ export class SorobanService {
         const pollInterval = 1000; // 1 second
 
         while (pollCount < maxPolls) {
-          const txStatus = await this.server.getTransaction(result.hash);
+          const txStatus = await this.measureRpc('getTransaction', () => this.server.getTransaction(result.hash));
 
           if (txStatus.status === 'SUCCESS') {
             console.log('[Soroban] Transaction confirmed:', result.hash);
@@ -356,10 +378,12 @@ export class SorobanService {
   async getContractData(key: xdr.ScVal): Promise<unknown> {
     try {
       console.log('[Soroban] Fetching contract data...');
-      const data = await this.server.getContractData(
-        CONTRACT_ID,
-        key,
-        SorobanRpc.Durability.Persistent,
+      const data = await this.measureRpc('getContractData', () =>
+        this.server.getContractData(
+          CONTRACT_ID,
+          key,
+          SorobanRpc.Durability.Persistent,
+        ),
       );
 
       console.log('[Soroban] Contract data retrieved');
@@ -549,7 +573,7 @@ export class SorobanService {
 
     let result: SorobanRpc.Api.SimulateTransactionResponse;
     try {
-      result = await this.server.simulateTransaction(tx);
+      result = await this.measureRpc('simulateTransaction', () => this.server.simulateTransaction(tx));
     } catch (err) {
       throw new SorobanRpcError(
         `RPC network error calling ${fnName}: ${err instanceof Error ? err.message : String(err)}`,

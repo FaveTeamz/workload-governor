@@ -1438,6 +1438,56 @@ One entry per calendar day in the requested period, oldest first. Each entry has
 
 ---
 
+### Contributors
+
+#### `GET /api/contributors`
+
+List registered contributors.
+
+**Response `200`**
+```json
+[
+  {
+    "address": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+    "name": "Alex",
+    "reputation": 100,
+    "created_at": "2026-01-01T00:00:00Z"
+  }
+]
+```
+
+---
+
+### Events
+
+#### `GET /api/events`
+
+List contract events with pagination and filtering.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `org_id` | string | — | Filter by organization ID |
+| `event_type` | string | — | Filter by event type (`applied`, `withdrawn`, `assigned`, `completed`, `revoked`) |
+| `limit` | integer | `50` | Maximum entries to return |
+| `offset` | integer | `0` | Number of entries to skip |
+
+**Response `200`**
+```json
+{
+  "events": [],
+  "pagination": {
+    "total": 0,
+    "limit": 50,
+    "offset": 0,
+    "has_more": false
+  }
+}
+```
+
+---
+
 ### Contributor Leaderboard
 
 #### `GET /api/v1/leaderboard`
