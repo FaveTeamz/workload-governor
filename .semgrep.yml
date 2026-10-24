@@ -8,6 +8,16 @@
 #   suppressions — known false positives with documented justification
 
 rules:
+  # ── Custom rule: Detect hardcoded Stellar secret keys ────────────────────────
+  - id: detect-hardcoded-stellar-secret-key
+    patterns:
+      - pattern-regex: "S[A-Z0-9]{55}"
+    message: >
+      Hardcoded Stellar private secret key detected matching pattern S[A-Z0-9]{55}.
+      Never commit secret seed keys to source control.
+    languages: [generic]
+    severity: ERROR
+
   # ── Custom rule: Detect hardcoded secrets in TypeScript/JS ──────────────────
   - id: no-hardcoded-secrets-ts
     patterns:
