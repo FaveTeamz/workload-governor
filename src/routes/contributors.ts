@@ -148,6 +148,98 @@ router.get('/:address/activity', async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/contributors/:address/summary
+// Returns the full aggregated profile for a contributor:
+//   - global_application_count (0–15)
+//   - global_assignment_count
+//   - per-org breakdown (applications + assignments)
+//   - last 50 on-chain events (newest first)
+// Returns 404 when the contributor has no recorded on-chain activity.
+// ---------------------------------------------------------------------------
+
+router.get('/:address/summary', async (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  if (!isValidStellarAddress(address)) {
+    res.status(400).json({ error: 'invalid stellar address format' });
+    return;
+  }
+
+  try {
+    // Fetch application counts grouped by org
+    const appCountsResult = await pool.query<{ org_id: string; cnt: string }>(
+      `SELECT org_id, COUNT(*) AS cnt
+       FROM applications
+       WHERE contributor = $1
+       GROUP BY org_id`,
+      [address],
+    );
+
+    // Fetch assignment counts grouped by org
+    const asgCountsResult = await pool.query<{ org_id: string; cnt: string }>(
+      `SELECT org_id, COUNT(*) AS cnt
+       FROM assignments
+       WHERE contributor = $1
+       GROUP BY org_id`,
+      [address],
+    );
+
+    // Fetch last 50 on-chain events newest-first
+    const eventsResult = await pool.query<{
+      id: number;
+      event_type: string;
+      org_id: string;
+      issue_id: number;
+      tx_hash: string;
+      ledger: number;
+      timestamp: string;
+    }>(
+      `SELECT id, event_type, org_id, issue_id, tx_hash, ledger, timestamp
+       FROM contract_events
+       WHERE contributor = $1
+       ORDER BY timestamp DESC
+       LIMIT 50`,
+      [address],
+    );
+
+    const totalApplications = appCountsResult.rows.reduce((sum, r) => sum + Number(r.cnt), 0);
+    const totalAssignments = asgCountsResult.rows.reduce((sum, r) => sum + Number(r.cnt), 0);
+
+    // Return 404 if contributor has no activity at all
+    if (totalApplications === 0 && totalAssignments === 0 && eventsResult.rows.length === 0) {
+      res.status(404).json({ error: 'contributor not found' });
+      return;
+    }
+
+    // Build per-org breakdown — union of all org_ids from both tables
+    const orgMap = new Map<string, { applications: number; assignments: number }>();
+    for (const row of appCountsResult.rows) {
+      orgMap.set(row.org_id, { applications: Number(row.cnt), assignments: 0 });
+    }
+    for (const row of asgCountsResult.rows) {
+      const existing = orgMap.get(row.org_id) ?? { applications: 0, assignments: 0 };
+      orgMap.set(row.org_id, { ...existing, assignments: Number(row.cnt) });
+    }
+
+    const orgs = [...orgMap.entries()].map(([org_id, counts]) => ({
+      org_id,
+      ...counts,
+    }));
+
+    res.json({
+      address,
+      global_application_count: totalApplications,
+      global_assignment_count: totalAssignments,
+      orgs,
+      recent_events: eventsResult.rows,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'internal server error';
+    res.status(500).json({ error: msg });
+  }
+});
+
 // Shared SorobanService instance for read-only queries
 const soroban = new SorobanService();
 
