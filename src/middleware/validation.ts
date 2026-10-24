@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { ZodSchema, ZodError, z } from 'zod';
+import { ValidationError } from '../errors';
 
 export interface ValidationSchemas {
   body?: ZodSchema;
@@ -10,6 +11,25 @@ export interface ValidationSchemas {
 export interface FieldError {
   field: string;
   message: string;
+}
+
+const ORG_ID_PATTERN = /^[a-z0-9_-]{2,32}$/;
+
+export function validateOrgIdParam(
+  _req: Request,
+  _res: Response,
+  next: NextFunction,
+  value: string,
+  name: string,
+): void {
+  if (!ORG_ID_PATTERN.test(value)) {
+    next(new ValidationError('Invalid organization ID format', {
+      field: name,
+      pattern: '^[a-z0-9_-]{2,32}$',
+    }));
+    return;
+  }
+  next();
 }
 
 /**

@@ -2,16 +2,18 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { pool } from '../db';
 import { logger } from '../logger';
-import { validateBody } from '../middleware/validation';
+import { validateBody, validateOrgIdParam } from '../middleware/validation';
 import { orgApplyBodySchema, OrgApplyBody } from '../schemas/orgs';
 import { getCache, setCache } from '../services/redis';
 
 const router = Router();
 
+router.param('orgId', validateOrgIdParam);
+
 // ---------------------------------------------------------------------------
 // Known orgs for stub implementation
 // ---------------------------------------------------------------------------
-const KNOWN_ORGS = ['stellar-oss', 'org_stellar_001', 'org_a', 'org_b', 'org_c', 'Org A', 'Org B', 'Org C', 'org-a', 'org-b', 'org-c'];
+const KNOWN_ORGS = ['stellar-oss', 'org_stellar_001', 'org_a', 'org_b', 'org_c', 'org-a', 'org-b', 'org-c'];
 const ORG_CAP_DEFAULT = 4;
 const orgCapOverrides = new Map<string, number>();
 const orgCapSchema = z.object({
