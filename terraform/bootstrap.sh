@@ -30,7 +30,7 @@ set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 BUCKET="workload-governor-tfstate"
-LOCK_TABLE="workload-governor-tfstate-lock"
+LOCK_TABLE="workload-governor-terraform-locks"
 PROJECT="workload-governor"
 
 echo "==> Bootstrapping Terraform remote state"

@@ -149,6 +149,37 @@ router.post('/submit', validateBody(submitSchema), async (req: Request, res: Res
       process.env.STELLAR_NETWORK_PASSPHRASE ?? 'Test SDF Network ; September 2015',
     );
 
+    // Replay attack prevention: validate expiry and sequence number
+    if (tx.timeBounds && Number(tx.timeBounds.maxTime) > 0) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now > Number(tx.timeBounds.maxTime)) {
+        res.status(400).json({
+          error: 'transaction_expired',
+          detail: `Transaction has expired at maxTime ${tx.timeBounds.maxTime}`,
+        });
+        return;
+      }
+    }
+
+    if (typeof soroban.getAccountSequence === 'function') {
+      try {
+        const currentSeqStr = await soroban.getAccountSequence(tx.source || verification.signerAddress);
+        if (currentSeqStr) {
+          const currentSeq = BigInt(currentSeqStr);
+          const txSeq = BigInt(tx.sequence);
+          if (txSeq <= currentSeq && currentSeq > 1n) {
+            res.status(400).json({
+              error: 'stale_transaction',
+              detail: `Transaction sequence number ${txSeq} is stale or already executed. Current account sequence is ${currentSeq}.`,
+            });
+            return;
+          }
+        }
+      } catch {
+        // Fall through if sequence verification is temporarily unavailable
+      }
+    }
+
     const result = await soroban.submitTransaction(tx);
 
     if (result.status === 'error') {

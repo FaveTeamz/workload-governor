@@ -17,7 +17,7 @@ terraform {
     bucket         = "workload-governor-tfstate"
     key            = "workload-governor/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "workload-governor-tfstate-lock"
+    dynamodb_table = "workload-governor-terraform-locks"
     encrypt        = true
     # kms_key_id is intentionally omitted here so the backend block stays
     # static. Pass it at init time via -backend-config if you want a
