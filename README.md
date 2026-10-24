@@ -110,6 +110,7 @@ Step-by-step operator runbooks for production scenarios:
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Two-step admin key transfer procedure |
 | [docs/runbooks/cap-emergency-increase.md](docs/runbooks/cap-emergency-increase.md) | Governance vote + contract upgrade to raise contributor caps |
 | [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | What to do when a bug is found post-deploy (freeze strategy included) |
+| [docs/runbooks/protocol-upgrade.md](docs/runbooks/protocol-upgrade.md) | Network protocol upgrade handling, testnet verification, and rollback |
 
 ## Building
 
