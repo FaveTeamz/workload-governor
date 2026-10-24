@@ -92,6 +92,20 @@ export function walletLimiter(req: Request, res: Response, next: () => void) {
   }
 
   entry.count++;
+
+  const reservedEntry = entry;
+  let reservationReleased = false;
+  req.on('close', () => {
+    if (reservationReleased || !req.aborted || res.headersSent) {
+      return;
+    }
+
+    reservationReleased = true;
+    if (walletLimitStore.get(wallet) === reservedEntry) {
+      reservedEntry.count = Math.max(0, reservedEntry.count - 1);
+    }
+  });
+
   next();
 }
 
