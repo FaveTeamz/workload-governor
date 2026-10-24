@@ -594,6 +594,7 @@ exports[`NavBar snapshots > connected 1`] = `
     aria-expanded="false"
     aria-label="Open navigation menu"
     class="navbar__hamburger"
+    data-testid="hamburger-btn"
   >
     <span
       class="hamburger-bar"
@@ -607,6 +608,7 @@ exports[`NavBar snapshots > connected 1`] = `
   </button>
   <div
     class="navbar__menu"
+    data-testid="navbar-menu"
     id="navbar-menu"
   >
     <a
@@ -659,6 +661,7 @@ exports[`NavBar snapshots > disconnected 1`] = `
     aria-expanded="false"
     aria-label="Open navigation menu"
     class="navbar__hamburger"
+    data-testid="hamburger-btn"
   >
     <span
       class="hamburger-bar"
@@ -672,6 +675,7 @@ exports[`NavBar snapshots > disconnected 1`] = `
   </button>
   <div
     class="navbar__menu"
+    data-testid="navbar-menu"
     id="navbar-menu"
   >
     <a
