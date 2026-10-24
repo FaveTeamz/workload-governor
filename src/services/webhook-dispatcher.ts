@@ -111,7 +111,7 @@ export async function dispatchToWebhook(
   url: string,
   secret: string,
   payload: WebhookPayload,
-): Promise<void> {
+): Promise<boolean> {
   const body = JSON.stringify(payload);
   const signature = signPayload(body, secret);
 
@@ -146,7 +146,7 @@ export async function dispatchToWebhook(
       );
 
       if (response.ok) {
-        return; // Success — done
+        return true;
       }
 
       lastError = `HTTP ${response.status} ${response.statusText}`;
@@ -192,13 +192,16 @@ export async function dispatchToWebhook(
   // 2. Write to DB dead-letter table
   try {
     await pool.query(
-      `INSERT INTO webhook_dead_letters (webhook_id, payload, last_error, attempts, last_status_code, last_response_body)
-       VALUES ($1, $2::jsonb, $3, $4, $5, $6)`,
-      [webhookId, body, lastError, MAX_ATTEMPTS, lastStatusCode, lastResponseBody],
+      `INSERT INTO webhook_dead_letters (webhook_id, payload, last_error, attempts, last_status_code, last_response_body, url, secret)
+       VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [webhookId, body, lastError, MAX_ATTEMPTS, lastStatusCode, lastResponseBody, url, secret],
     );
   } catch (dbErr) {
     console.error('[WebhookDispatcher] Failed to write dead letter to DB:', dbErr);
   }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------

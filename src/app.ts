@@ -9,6 +9,7 @@ import adminRouter from './routes/admin';
 import apiKeysRouter from './routes/api-keys';
 import transactionsRouter from './routes/transactions';
 import webhooksRouter from './routes/webhooks';
+import adminWebhooksRouter from './routes/admin-webhooks';
 import eventsRouter from './routes/events';
 import leaderboardRouter from './routes/leaderboard';
 import auditRouter from './routes/auditRoutes';
@@ -71,6 +72,7 @@ export function createApp(): express.Application {
 
   // Rate limiting middleware
   app.use(globalLimiter);
+  app.use('/api/admin/webhooks', adminWebhooksRouter);
   app.use(apiKeyAuth);
 
   setupSwagger(app);
