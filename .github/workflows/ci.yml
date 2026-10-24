@@ -27,6 +27,9 @@ jobs:
           fi
           echo "✅ CHANGELOG.md updated."
 
+      - name: Lint CHANGELOG.md formatting
+        run: node scripts/lint-changelog.js
+
   gitleaks:
     name: Secret Scanning (Gitleaks)
     runs-on: ubuntu-latest
@@ -92,6 +95,8 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run typecheck
+      - name: Check OpenAPI documentation sync
+        run: node scripts/check-api-docs-sync.js --strict
       - run: npm test
       - name: Run OpenAPI contract tests
         run: npm run test:contract
