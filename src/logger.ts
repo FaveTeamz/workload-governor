@@ -1,8 +1,15 @@
 import pino from 'pino';
 import { v4 as uuidv4 } from 'uuid';
 import { Request, Response, NextFunction } from 'express';
+import { AsyncLocalStorage } from 'async_hooks';
+
+const requestContext = new AsyncLocalStorage<{ requestId: string }>();
 
 const logger = pino({
+  mixin() {
+    const context = requestContext.getStore();
+    return context ? { requestId: context.requestId } : {};
+  },
   transport: {
     target: 'pino/file',
   },
@@ -24,23 +31,30 @@ export function correlationIdMiddleware(
   res: Response,
   next: NextFunction,
 ): void {
-  req.correlationId = uuidv4();
+  const incomingRequestId = req.get('X-Request-ID');
+  const requestId = incomingRequestId && /^[\x21-\x7e]{1,128}$/.test(incomingRequestId)
+    ? incomingRequestId
+    : uuidv4();
+
+  req.correlationId = requestId;
+  res.setHeader('X-Request-ID', requestId);
 
   const startTime = Date.now();
 
-  res.on('finish', () => {
-    const duration = Date.now() - startTime;
-    logger.info({
-      correlationId: req.correlationId,
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      duration,
-      timestamp: new Date().toISOString(),
+  requestContext.run({ requestId }, () => {
+    res.on('finish', () => {
+      const duration = Date.now() - startTime;
+      logger.info({
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        duration,
+        timestamp: new Date().toISOString(),
+      });
     });
-  });
 
-  next();
+    next();
+  });
 }
 
 export function errorHandler(

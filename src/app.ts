@@ -21,6 +21,8 @@ import { setupSwagger } from './swagger';
 export function createApp(): express.Application {
   const app = express();
 
+  app.use(correlationIdMiddleware);
+
   // Security middleware
   app.use(
     helmet({
@@ -60,7 +62,6 @@ export function createApp(): express.Application {
   // JSON parser middleware
   app.use(express.json());
   app.use(express.static('public'));
-  app.use(correlationIdMiddleware);
 
   // Rate limiting middleware
   app.use(globalLimiter);
