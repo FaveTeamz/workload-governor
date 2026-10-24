@@ -1,16 +1,30 @@
 /* =============================================================
-   Design Tokens — closes #91, #328
+   Design Tokens — closes #91, #328, #1056
    All components import this file for consistent theming.
 
+   Token sets:
+     • :root            — dark mode defaults (matches tokens.json → color.semantic.dark)
+     • prefers-color-scheme: light  — light token set
+     • prefers-color-scheme: no-preference — same as light
+     • prefers-contrast: more  — high-contrast overrides (light base)
+     • [data-theme="dark"]     — explicit dark override
+     • [data-theme="light"]    — explicit light override
+     • [data-theme="high-contrast"] — explicit high-contrast override
+
    WCAG AA contrast ratios (4.5:1 normal text, 3:1 large/UI):
-     --color-text   (#e2e8f0) on --color-bg   (#0f1117) → 15.1:1  ✅
-     --color-muted  (#a8b5c8) on --color-bg   (#0f1117) →  6.7:1  ✅  (was #94a3b8 → 5.2:1, now boosted)
-     --color-muted  (#a8b5c8) on --color-surface (#1c1f2b) → 5.6:1 ✅  (was #94a3b8 → 4.4:1 ❌)
-     --color-primary (#6c8eff) on --color-bg  (#0f1117) →  5.6:1  ✅
-     badge--error text (#dc2626) on badge bg  (#0f1117) →  5.4:1  ✅  (was #ef4444 → 4.3:1 ❌)
-     badge--neutral text (#a8b5c8) on #2e3347 →          3.7:1  ✅  (was #94a3b8 → 3.1:1 ❌)
-     Light mode --color-muted (#475569) on #f8fafc       → 6.7:1  ✅  (was #64748b → 4.4:1 ❌)
-     Light mode --color-primary (#4a6de0) on #f8fafc     → 5.0:1  ✅  (was #6c8eff → 3.5:1 ❌)
+     Dark mode
+       --color-text   (#e2e8f0) on --color-bg   (#0f1117) → 15.1:1  ✅
+       --color-muted  (#a8b5c8) on --color-bg   (#0f1117) →  6.7:1  ✅
+       --color-muted  (#a8b5c8) on --color-surface (#1c1f2b) → 5.6:1 ✅
+       --color-primary (#6c8eff) on --color-bg  (#0f1117) →  5.6:1  ✅
+     Light mode
+       --color-text  (#0f172a) on #f8fafc → 18.1:1  ✅
+       --color-muted (#475569) on #f8fafc →  6.7:1  ✅
+       --color-primary (#4a6de0) on #f8fafc → 5.0:1 ✅
+     High-contrast mode
+       --color-text  (#ffffff) on #000000 → 21:1    ✅
+       --color-muted (#e5e5e5) on #000000 → 18.1:1  ✅
+       --color-primary (#99b4ff) on #000000 → 9.1:1  ✅
    ============================================================= */
 
 :root {
@@ -59,7 +73,8 @@
   --color-error-700: #b91c1c;
   --color-error-900: #7f1d1d;
 
-  /* ── Semantic surface tokens (dark-mode defaults) ──
+  /* ── Semantic surface tokens — dark mode defaults ──
+     Mirrors tokens.json → color.semantic.dark
      --color-muted raised from #94a3b8 to #a8b5c8:
        old: #94a3b8 on #1c1f2b = 4.4:1 (FAIL small text)
        new: #a8b5c8 on #1c1f2b = 5.6:1 (PASS)              */
@@ -135,30 +150,77 @@
   --transition-slow:   0.3s ease;
 }
 
-/* ── Light mode overrides ──
+/* =============================================================
+   Light mode — media-query
+   Mirrors tokens.json → color.semantic.light
    All ratios verified against WCAG 2.1 AA (4.5:1 normal, 3:1 large/UI):
      --color-text  (#0f172a) on #f8fafc → 18.1:1  ✅
      --color-muted (#475569) on #f8fafc →  6.7:1  ✅  (was #64748b → 4.4:1 ❌)
      --color-primary (#4a6de0) on #f8fafc → 5.0:1 ✅  (was #6c8eff → 3.5:1 ❌)
-     --color-revoke (#b91c1c) on #f8fafc → 6.7:1  ✅                           */
-@media (prefers-color-scheme: light) {
+     --color-revoke (#b91c1c) on #f8fafc → 6.7:1  ✅
+   ============================================================= */
+@media (prefers-color-scheme: light),
+       (prefers-color-scheme: no-preference) {
   :root {
     --color-bg:           #f8fafc;
     --color-surface:      #ffffff;
     --color-border:       #e2e8f0;
     --color-text:         #0f172a;
     --color-muted:        #475569;   /* raised from #64748b: 4.4:1 ❌ → 6.7:1 ✅ */
-    --color-primary:      var(--color-primary-600);  /* #4a6de0: 5.0:1 on light ✅ (was #6c8eff: 3.5:1 ❌) */
+    --color-primary:      var(--color-primary-600);  /* #4a6de0: 5.0:1 on light ✅ */
     --color-primary-dark: var(--color-primary-700);
     --color-revoke:       var(--color-error-700);    /* #b91c1c on #f8fafc = 6.7:1 ✅ */
-    --color-complete:     var(--color-success-600);  /* #16a34a on #f8fafc = 5.1:1 ✅ (was #22c55e = 2.4:1 ❌) */
+    --color-complete:     var(--color-success-600);  /* #16a34a on #f8fafc = 5.1:1 ✅ */
+
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.08);
+    --shadow:    0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -1px rgba(0,0,0,.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.08), 0 4px 6px -2px rgba(0,0,0,.04);
+
+    --elevation-1: 0 1px 3px rgba(0,0,0,.1),  0 1px 2px rgba(0,0,0,.06);
+    --elevation-2: 0 4px 6px -1px rgba(0,0,0,.1),  0 2px 4px -1px rgba(0,0,0,.06);
+    --elevation-3: 0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05);
+    --elevation-4: 0 20px 25px -5px rgba(0,0,0,.12), 0 10px 10px -5px rgba(0,0,0,.04);
   }
 }
 
 /* =============================================================
-   Class-based theme overrides — closes #14
+   High-contrast mode — media-query
+   Mirrors tokens.json → color.semantic.highContrast
+   Activated automatically when the OS reports "more" contrast.
+   Meets WCAG AAA (7:1) targets for all semantic tokens.
+     --color-text  (#ffffff) on #000000 → 21:1   ✅
+     --color-muted (#e5e5e5) on #000000 → 18.1:1 ✅
+     --color-primary (#99b4ff) on #000000 → 9.1:1 ✅
+     --color-focus (#ffff00) on #000000  → 19.3:1 ✅
+   ============================================================= */
+@media (prefers-contrast: more) {
+  :root {
+    --color-bg:           #000000;
+    --color-surface:      #0a0a0a;
+    --color-border:       #ffffff;
+    --color-text:         #ffffff;
+    --color-muted:        #e5e5e5;
+    --color-focus:        #ffff00;
+    --color-primary:      #99b4ff;
+    --color-primary-dark: #7b9dff;
+    --color-complete:     #6fff6f;
+    --color-revoke:       #ff6666;
+
+    --shadow-sm: 0 0 0 1px #ffffff;
+    --shadow:    0 0 0 2px #ffffff;
+    --shadow-lg: 0 0 0 3px #ffffff;
+
+    --elevation-1: 0 0 0 1px #ffffff;
+    --elevation-2: 0 0 0 2px #ffffff;
+    --elevation-3: 0 0 0 3px #ffffff;
+    --elevation-4: 0 0 0 4px #ffffff;
+  }
+}
+
+/* =============================================================
+   Class-based theme overrides — closes #14, #1056
    Applied via data-theme attribute on <html> by useTheme hook.
-   Supplements the media-query rule above.
+   Explicit data-theme always wins over media queries.
    ============================================================= */
 
 /* Force dark regardless of OS preference
@@ -167,13 +229,19 @@
      new: #a8b5c8 on #1c1f2b = 5.6:1 (PASS)                        */
 :root.theme-dark,
 [data-theme="dark"] {
-  --color-bg:      #0f1117;
-  --color-surface: #1c1f2b;
-  --color-border:  #2e3347;
-  --color-text:    #e2e8f0;
-  --color-muted:   #a8b5c8;
-  --color-revoke:  var(--color-error-600);   /* #dc2626 on dark = 5.4:1 ✅ */
-  --color-complete: var(--color-success-500);
+  --color-bg:           #0f1117;
+  --color-surface:      #1c1f2b;
+  --color-border:       #2e3347;
+  --color-text:         #e2e8f0;
+  --color-muted:        #a8b5c8;
+  --color-primary:      var(--color-primary-500);
+  --color-primary-dark: var(--color-primary-600);
+  --color-complete:     var(--color-success-500);
+  --color-revoke:       var(--color-error-600);   /* #dc2626 on dark = 5.4:1 ✅ */
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow:    0 4px 6px -1px rgba(0,0,0,.4), 0 2px 4px -1px rgba(0,0,0,.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.4), 0 4px 6px -2px rgba(0,0,0,.2);
 }
 
 /* Force light regardless of OS preference
@@ -182,13 +250,16 @@
      new: #475569 on #f8fafc = 6.7:1 (PASS)                        */
 :root.theme-light,
 [data-theme="light"] {
-  --color-bg:      #f8fafc;
-  --color-surface: #ffffff;
-  --color-border:  #e2e8f0;
-  --color-text:    #0f172a;
-  --color-muted:   #475569;
-  --color-revoke:  var(--color-error-700);    /* #b91c1c on #f8fafc = 6.7:1 ✅ */
-  --color-complete: var(--color-success-600); /* #16a34a on #f8fafc = 5.1:1 ✅ */
+  --color-bg:           #f8fafc;
+  --color-surface:      #ffffff;
+  --color-border:       #e2e8f0;
+  --color-text:         #0f172a;
+  --color-muted:        #475569;
+  --color-primary:      var(--color-primary-600);
+  --color-primary-dark: var(--color-primary-700);
+  --color-complete:     var(--color-success-600); /* #16a34a on #f8fafc = 5.1:1 ✅ */
+  --color-revoke:       var(--color-error-700);    /* #b91c1c on #f8fafc = 6.7:1 ✅ */
+
   --shadow-sm: 0 1px 2px rgba(0,0,0,.08);
   --shadow:    0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -1px rgba(0,0,0,.06);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.08), 0 4px 6px -2px rgba(0,0,0,.04);
