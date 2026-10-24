@@ -5,54 +5,50 @@
 
 set -euo pipefail
 
+# Ensure Cargo and Node/npm are present in PATH for subshell execution
 export CARGO_HOME="${CARGO_HOME:-/usr/local/cargo}"
 export RUSTUP_HOME="${RUSTUP_HOME:-/usr/local/rustup}"
 export NVM_DIR="${NVM_DIR:-/usr/local/share/nvm}"
-export PATH="/usr/local/cargo/bin:$HOME/.cargo/bin:/usr/local/share/nvm/current/bin:$PATH"
+export PATH="/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:${HOME}/.cargo/bin:${PATH}"
 
-echo "==> [post-create] Setting up WorkloadGovernor dev environment…"
+if [ -s "${NVM_DIR}/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  source "${NVM_DIR}/nvm.sh"
+fi
 
-# ── Persist PATH for interactive & non-interactive shells ────────────────────
-PROFILE_SNIPPET='export PATH="/usr/local/cargo/bin:$HOME/.cargo/bin:/usr/local/share/nvm/current/bin:$PATH"'
-for rc_file in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshrc"; do
-  if [ -f "$rc_file" ] && ! grep -Fq "/usr/local/share/nvm/current/bin" "$rc_file"; then
-    echo "$PROFILE_SNIPPET" >> "$rc_file"
+# Ensure user shell configuration files retain standard PATH
+for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+  if [ -f "${rc}" ] && ! grep -q "/usr/local/cargo/bin" "${rc}"; then
+    echo 'export PATH="/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:$PATH"' >> "${rc}"
   fi
 done
 
-# ── Verify Node.js & Rust toolchains ─────────────────────────────────────────
-echo "==> [post-create] Verifying Node.js and Rust toolchains in PATH…"
-node --version
-npm --version
-rustc --version
-cargo --version
+echo "==> [post-create] Setting up WorkloadGovernor dev environment…"
 
 # ── Rust toolchain ──────────────────────────────────────────────────────────
-echo "==> [post-create] Adding wasm32-unknown-unknown and wasm32v1-none targets…"
-rustup target add wasm32-unknown-unknown wasm32v1-none
+echo "==> [post-create] Adding wasm32v1-none target…"
+rustup target add wasm32v1-none
 
 # ── Root package (backend + contract tooling) ────────────────────────────────
 echo "==> [post-create] Installing root npm dependencies…"
 npm ci
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
-if [ -f frontend/package.json ]; then
-  echo "==> [post-create] Installing frontend npm dependencies…"
-  (cd frontend && npm ci)
-fi
+echo "==> [post-create] Installing frontend npm dependencies…"
+cd frontend && npm ci && cd ..
 
 # ── Environment files ─────────────────────────────────────────────────────────
-if [ ! -f .env ] && [ -f .env.example ]; then
+if [ ! -f .env ]; then
   echo "==> [post-create] Copying .env.example → .env"
   cp .env.example .env
 fi
 
-if [ ! -f backend/.env ] && [ -f backend/.env.example ]; then
+if [ ! -f backend/.env ]; then
   echo "==> [post-create] Copying backend/.env.example → backend/.env"
   cp backend/.env.example backend/.env
 fi
 
-if [ ! -f frontend/.env ] && [ -f frontend/.env.example ]; then
+if [ ! -f frontend/.env ]; then
   echo "==> [post-create] Copying frontend/.env.example → frontend/.env"
   cp frontend/.env.example frontend/.env
 fi

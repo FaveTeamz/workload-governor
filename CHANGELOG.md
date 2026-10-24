@@ -15,6 +15,9 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 - Document composite unique constraints and checkpoint persistence for event indexer deduplication in `docs/adr/ADR-009-indexer-event-deduplication.md`. (#1121)
 - Document the Jest/Vitest/Playwright/Cargo config inventory, the rationale for the config split, a full command reference, CI job mapping, and Codecov flags in `docs/testing.md`. (#793)
 
+### Fixed
+- Fix devcontainer configuration to ensure Node.js and Rust toolchains are automatically installed and available in standard PATH for all terminal sessions. (#1124)
+
 ---
 
 ## [0.3.0] - 2026-08-28
