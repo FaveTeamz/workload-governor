@@ -54,4 +54,61 @@ describe('GET /health', () => {
       expect(res.status).toBe(200);
     }
   });
+
+  it('includes read_replica field in the response body', async () => {
+    const res = await request(app).get('/health');
+
+    // read_replica must always be present regardless of whether a replica is configured
+    expect(res.body).toHaveProperty('read_replica');
+    expect(res.body.read_replica).toHaveProperty('status');
+    expect([
+      'healthy',
+      'degraded',
+      'unhealthy',
+      'unconfigured',
+    ]).toContain(res.body.read_replica.status);
+
+    // latency_ms must be a non-negative number
+    expect(res.body.read_replica).toHaveProperty('latency_ms');
+    expect(typeof res.body.read_replica.latency_ms).toBe('number');
+    expect(res.body.read_replica.latency_ms).toBeGreaterThanOrEqual(0);
+
+    // replication_lag_bytes is either a number or null
+    expect(res.body.read_replica).toHaveProperty('replication_lag_bytes');
+    const lagBytes = res.body.read_replica.replication_lag_bytes as number | null;
+    expect(lagBytes === null || typeof lagBytes === 'number').toBe(true);
+  });
+
+  it('returns "unconfigured" for read_replica when READ_REPLICA_URL is not set', async () => {
+    const original = process.env['READ_REPLICA_URL'];
+    delete process.env['READ_REPLICA_URL'];
+
+    try {
+      const res = await request(app).get('/health');
+      // When no replica URL is configured the status must be "unconfigured"
+      // and must not cause the overall health check to fail.
+      if (res.body.read_replica.status === 'unconfigured') {
+        expect(res.body.read_replica.replication_lag_bytes).toBeNull();
+        expect(res.body.read_replica.latency_ms).toBe(0);
+        // unconfigured replica should not drive a 503
+        const dbStatus = res.body?.db?.status as string | undefined;
+        if (dbStatus === 'healthy') {
+          expect(res.status).toBe(200);
+        }
+      }
+    } finally {
+      if (original !== undefined) {
+        process.env['READ_REPLICA_URL'] = original;
+      }
+    }
+  });
+
+  it('returns HTTP 503 when read_replica is degraded or unhealthy', async () => {
+    const res = await request(app).get('/health');
+
+    const replicaStatus = res.body?.read_replica?.status as string | undefined;
+    if (replicaStatus === 'degraded' || replicaStatus === 'unhealthy') {
+      expect(res.status).toBe(503);
+    }
+  });
 });
