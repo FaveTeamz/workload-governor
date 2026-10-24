@@ -14,6 +14,7 @@ import eventsRouter from './routes/events';
 import leaderboardRouter from './routes/leaderboard';
 import auditRouter from './routes/auditRoutes';
 import verifyXdrRouter from './routes/verify-xdr';
+import orgsRouter from './routes/orgs';
 import { globalLimiter, walletLimiter } from './middleware/rate-limit';
 import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
@@ -103,6 +104,7 @@ export function createApp(): express.Application {
   app.use('/api/v1/leaderboard', leaderboardRouter);
   app.use('/api/v1/audit', auditRouter);
   app.use('/webhooks', webhooksRouter);
+  app.use('/', orgsRouter);
 
   app.use(errorHandler);
 

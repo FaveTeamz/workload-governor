@@ -69,6 +69,31 @@ module.exports = {
       },
     },
     {
+      displayName: 'routes',
+      preset: 'ts-jest',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/tests/routes/**/*.test.ts'],
+      setupFilesAfterEnv: ['<rootDir>/tests/routes/setup.ts'],
+      globals: {
+        'ts-jest': {
+          tsconfig: '<rootDir>/tsconfig.dev.json',
+        },
+      },
+      moduleNameMapper: {
+        '^@stellar/stellar-sdk$': '<rootDir>/__mocks__/@stellar/stellar-sdk.js',
+        '^.*config/database$': '<rootDir>/__mocks__/src/config/database.js',
+      },
+      transform: {
+        '^.+\\.tsx?$': [
+          'ts-jest',
+          {
+            tsconfig: '<rootDir>/tsconfig.dev.json',
+            diagnostics: { ignoreCodes: ['TS2307', 'TS2305', 'TS7016', 'TS2554', 'TS7006', 'TS2339', 'TS2352'] },
+          },
+        ],
+      },
+    },
+    {
       displayName: 'contract',
       preset: 'ts-jest',
       testEnvironment: 'node',
