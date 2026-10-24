@@ -129,6 +129,12 @@ export const webhookDeliveryFailuresTotal = new Counter({
   labelNames: ["org_id", "event_type"],
   registers: [register],
 });
+
+export const sorobanMinApplicationTtlLedgers = new Gauge({
+  name: "soroban_min_application_ttl_ledgers",
+  help: "Minimum remaining application entry TTL in ledgers",
+  registers: [register],
+});
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 /**

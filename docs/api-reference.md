@@ -850,6 +850,49 @@ List indexed on-chain events for an org.
 
 ---
 
+#### `GET /api/events`
+
+List contract events with pagination and filtering across all organizations.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `org_id` | string | — | Filter by organization ID |
+| `event_type` | string | — | Filter by event type (`applied`, `withdrawn`, `assigned`, `completed`, `revoked`) |
+| `start_date` | string (ISO-8601) | — | Filter events after this timestamp |
+| `end_date` | string (ISO-8601) | — | Filter events before this timestamp |
+| `limit` | integer | `50` | Maximum number of events to return (`1`–`1000`) |
+| `offset` | integer | `0` | Number of events to skip |
+
+**Response `200`**
+```json
+{
+  "events": [
+    {
+      "id": 1,
+      "org_id": "stellar-community",
+      "event_type": "applied",
+      "issue_id": "1",
+      "contributor": "GA5W63S2GBKDV2GX2C5JJWDYYUO2WKZDPO7BAHNREUINNOAJCSOAK5EM",
+      "tx_hash": "c1f7a4...",
+      "occurred_at": "2026-10-19T12:00:00Z",
+      "created_at": "2026-10-19T12:00:01Z"
+    }
+  ],
+  "pagination": {
+    "total": 1,
+    "limit": 50,
+    "offset": 0,
+    "has_more": false
+  }
+}
+```
+
+**Errors:** `500`
+
+---
+
 ### Contributor Profiles
 
 #### `GET /contributors/{address}/stats`
@@ -1392,6 +1435,42 @@ One entry per calendar day in the requested period, oldest first. Each entry has
 | `assignments` | number | Issues assigned on this day |
 | `completions` | number | Assignments completed on this day |
 | `revocations` | number | Assignments revoked on this day |
+
+---
+
+### Contributor Leaderboard
+
+#### `GET /api/v1/leaderboard`
+
+Contributor leaderboard ranked by completed assignments.
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `timeframe` | string | `all` | Time window for ranking (`week`, `month`, `all`) |
+| `limit` | integer | `20` | Number of contributors to return (`1`–`100`) |
+| `offset` | integer | `0` | Number of contributors to skip |
+
+**Response `200`**
+```json
+{
+  "leaderboard": [
+    {
+      "rank": 1,
+      "contributor": "GA5W63S2GBKDV2GX2C5JJWDYYUO2WKZDPO7BAHNREUINNOAJCSOAK5EM",
+      "completed_assignments": 42,
+      "active_assignments": 2,
+      "total_applications": 50,
+      "organizations_count": 3
+    }
+  ],
+  "timeframe": "all",
+  "total": 1
+}
+```
+
+**Errors:** `500`
 
 ---
 
