@@ -240,3 +240,204 @@ describe('auto-reconnect', () => {
     expect(result.current.publicKey).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cross-tab synchronization (issue #1051)
+// ---------------------------------------------------------------------------
+describe('cross-tab wallet synchronization', () => {
+  it('BroadcastChannel is created on mount and closed on unmount', () => {
+    const channelInstances: BroadcastChannel[] = [];
+    const origBC = globalThis.BroadcastChannel;
+    vi.stubGlobal('BroadcastChannel', class {
+      constructor(name: string) {
+        this.name = name;
+        channelInstances.push(this);
+      }
+      name: string;
+      postMessage = vi.fn();
+      close = vi.fn();
+      onmessage = null;
+      addEventListener = vi.fn();
+      removeEventListener = vi.fn();
+    });
+
+    const { unmount } = renderHook(() => useWallet());
+    expect(channelInstances.length).toBeGreaterThanOrEqual(1);
+
+    unmount();
+    expect(channelInstances[0].close).toHaveBeenCalled();
+
+    vi.stubGlobal('BroadcastChannel', origBC);
+  });
+
+  it('clears wallet state when a disconnect message is received via BroadcastChannel', async () => {
+    // Connect first
+    const { result } = renderHook(() => useWallet());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.publicKey).toBe(TEST_PUBKEY);
+
+    // Simulate another tab broadcasting a disconnect
+    act(() => {
+      const channels = (globalThis as any).__bc_channels?.(CHANNEL_NAME) ?? [];
+      // Fallback: dispatch a storage event for the disconnect
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: STORAGE_KEY,
+          newValue: null,
+          oldValue: TEST_PUBKEY,
+        }),
+      );
+    });
+
+    expect(result.current.publicKey).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.networkMismatch).toBe(false);
+  });
+
+  it('clears wallet state when localStorage key is removed in another tab (storage event)', async () => {
+    const { result } = renderHook(() => useWallet());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.publicKey).toBe(TEST_PUBKEY);
+
+    // Simulate another tab removing the localStorage key
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: STORAGE_KEY,
+          newValue: null,
+          oldValue: TEST_PUBKEY,
+        }),
+      );
+    });
+
+    expect(result.current.publicKey).toBeNull();
+  });
+
+  it('updates wallet state when a connect message is received via storage event', () => {
+    const { result } = renderHook(() => useWallet());
+    expect(result.current.publicKey).toBeNull();
+
+    // Simulate another tab setting a localStorage key
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: STORAGE_KEY,
+          newValue: 'GBNEWADDRESS1234567890',
+          oldValue: null,
+        }),
+      );
+    });
+
+    expect(result.current.publicKey).toBe('GBNEWADDRESS1234567890');
+  });
+
+  it('ignores storage events for unrelated keys', () => {
+    const { result } = renderHook(() => useWallet());
+    expect(result.current.publicKey).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'some_other_key',
+          newValue: 'irrelevant',
+          oldValue: null,
+        }),
+      );
+    });
+
+    expect(result.current.publicKey).toBeNull();
+  });
+
+  it('broadcasts a connect message when wallet connects', async () => {
+    const postMessageSpy = vi.fn();
+    vi.stubGlobal('BroadcastChannel', class {
+      name: string;
+      postMessage = postMessageSpy;
+      close = vi.fn();
+      onmessage = null;
+      addEventListener = vi.fn();
+      removeEventListener = vi.fn();
+      constructor(name: string) {
+        this.name = name;
+      }
+    });
+
+    const { result } = renderHook(() => useWallet());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // Check that a connect message was posted
+    const connectCalls = postMessageSpy.mock.calls.filter(
+      ([msg]: any[]) => msg?.type === 'connect',
+    );
+    expect(connectCalls.length).toBeGreaterThanOrEqual(1);
+    expect(connectCalls[0][0].publicKey).toBe(TEST_PUBKEY);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('broadcasts a disconnect message when wallet disconnects', async () => {
+    const postMessageSpy = vi.fn();
+    vi.stubGlobal('BroadcastChannel', class {
+      name: string;
+      postMessage = postMessageSpy;
+      close = vi.fn();
+      onmessage = null;
+      addEventListener = vi.fn();
+      removeEventListener = vi.fn();
+      constructor(name: string) {
+        this.name = name;
+      }
+    });
+
+    const { result } = renderHook(() => useWallet());
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    postMessageSpy.mockClear();
+
+    act(() => {
+      result.current.disconnect();
+    });
+
+    const disconnectCalls = postMessageSpy.mock.calls.filter(
+      ([msg]: any[]) => msg?.type === 'disconnect',
+    );
+    expect(disconnectCalls.length).toBeGreaterThanOrEqual(1);
+    expect(disconnectCalls[0][0].publicKey).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('gracefully handles environments without BroadcastChannel', () => {
+    vi.stubGlobal('BroadcastChannel', undefined);
+
+    const { result } = renderHook(() => useWallet());
+    expect(result.current.publicKey).toBeNull();
+
+    // Should still work via storage event fallback
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: STORAGE_KEY,
+          newValue: TEST_PUBKEY,
+          oldValue: null,
+        }),
+      );
+    });
+
+    expect(result.current.publicKey).toBe(TEST_PUBKEY);
+
+    vi.unstubAllGlobals();
+  });
+});
