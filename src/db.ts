@@ -1,6 +1,9 @@
 import { Pool, PoolClient, PoolConfig } from 'pg';
 import path from 'path';
 import { logger } from './logger';
+import { initTelemetry } from './telemetry';
+
+initTelemetry();
 // node-pg-migrate exposes `default` in CJS interop; use dynamic require to handle both
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pgMigrateRun: typeof import('node-pg-migrate').default = require('node-pg-migrate').default ?? require('node-pg-migrate');

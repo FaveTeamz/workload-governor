@@ -29,10 +29,43 @@ interface GitHubWebhookBody {
   contributor?: string;
 }
 
+export function isValidGitHubApiUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:') return false;
+    const allowedHosts = ['api.github.com', 'github.com'];
+    if (!allowedHosts.includes(parsed.hostname.toLowerCase())) return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host.startsWith('127.') ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('172.16.') ||
+      host === '0.0.0.0'
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const GOOD_FIRST_ISSUE = 'good first issue';
 
 // POST /webhooks/github
 router.post('/github', async (req: Request, res: Response) => {
+  const rawBody = req.body as Record<string, unknown>;
+  const issueUrl = rawBody.issue_url || (rawBody.issue as Record<string, unknown> | undefined)?.url;
+  const repoUrl = rawBody.repository_url || (rawBody.repository as Record<string, unknown> | undefined)?.url;
+
+  if (typeof issueUrl === 'string' && !isValidGitHubApiUrl(issueUrl)) {
+    return res.status(400).json({ error: 'invalid or disallowed issue URL domain' });
+  }
+  if (typeof repoUrl === 'string' && !isValidGitHubApiUrl(repoUrl)) {
+    return res.status(400).json({ error: 'invalid or disallowed repository URL domain' });
+  }
   const signature = req.headers['x-hub-signature-256'] as string;
 
   if (!signature) {

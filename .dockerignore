@@ -32,7 +32,9 @@ test_snapshots/
 target/
 Cargo.lock
 fuzz/
+fuzz/target
 mutants.out/
+mutants.out*
 mutants.out.old/
 build.rs
 
