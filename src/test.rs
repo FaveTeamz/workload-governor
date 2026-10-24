@@ -10,7 +10,7 @@
 use std::panic;
 use std::string::String;
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
+use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
 
 use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
 
@@ -107,6 +107,52 @@ fn unit_withdraw_application() {
     t.client.withdraw_application(&contributor, &org, &7u32);
     assert!(!t.client.has_applied(&contributor, &org, &7u32));
     assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_batch_withdraw_applications() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_a = t.org("alpha");
+    let org_b = t.org("bravo");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org_a, &1u32);
+    t.client.apply_for_issue(&contributor, &org_b, &2u32);
+
+    let mut applications = Vec::new(&t.env);
+    applications.push_back((org_a.clone(), 1u32));
+    applications.push_back((org_b.clone(), 2u32));
+    t.client
+        .batch_withdraw_applications(&contributor, &applications);
+
+    assert!(!t.client.has_applied(&contributor, &org_a, &1u32));
+    assert!(!t.client.has_applied(&contributor, &org_b, &2u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_batch_withdraw_missing_application_is_atomic() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("charlie");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let mut applications = Vec::new(&t.env);
+    applications.push_back((org.clone(), 1u32));
+    applications.push_back((org.clone(), 2u32));
+    assert_eq!(
+        t.client
+            .try_batch_withdraw_applications(&contributor, &applications),
+        Err(Ok(ContractError::ApplicationNotFound))
+    );
+
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
 }
 
 #[test]

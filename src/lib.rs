@@ -269,6 +269,55 @@ impl WorkloadGovernor {
         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
     }
 
+    /// Withdraws multiple pending applications in one authenticated transaction.
+    ///
+    /// Validates the complete list before changing storage, then updates the global
+    /// application count once and emits one `ApplicationWithdrawn` event per item.
+    pub fn batch_withdraw_applications(
+        env: Env,
+        contributor: Address,
+        applications: Vec<(Symbol, u32)>,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        contributor.require_auth();
+
+        let application_count = applications.len();
+        for i in 0..application_count {
+            let (org_id, issue_id) = applications.get(i).unwrap();
+            require_valid_issue_id(&env, issue_id);
+
+            for j in 0..i {
+                let (previous_org_id, previous_issue_id) = applications.get(j).unwrap();
+                if previous_org_id == org_id && previous_issue_id == issue_id {
+                    panic_with_error!(&env, ContractError::DuplicateApplication);
+                }
+            }
+
+            if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+                panic_with_error!(&env, ContractError::ApplicationNotFound);
+            }
+        }
+
+        if application_count == 0 {
+            return;
+        }
+
+        for i in 0..application_count {
+            let (org_id, issue_id) = applications.get(i).unwrap();
+            storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+            events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
+        }
+
+        let count = storage::get_global_app_count(&env, &contributor);
+        let new_count = count.saturating_sub(application_count);
+        if new_count == 0 {
+            storage::remove_global_app_count(&env, &contributor);
+        } else {
+            storage::set_global_app_count(&env, &contributor, new_count);
+        }
+        storage::bump_instance(&env);
+    }
+
     // -----------------------------------------------------------------------
     // Maintainer functions
     // -----------------------------------------------------------------------
