@@ -12,7 +12,7 @@ use std::string::String;
 
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
-use crate::{WorkloadGovernor, WorkloadGovernorClient};
+use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -324,6 +324,27 @@ fn unit_error_assignment_not_found_complete() {
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.complete_assignment(&maintainer, &contributor, &org, &99u32); // AssignmentNotFound
+}
+
+#[test]
+fn unit_error_already_assigned() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("assigned");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    assert_eq!(
+        t.client
+            .try_assign_issue(&maintainer, &contributor, &org, &1u32),
+        Err(Ok(ContractError::AlreadyAssigned))
+    );
 }
 
 #[test]
