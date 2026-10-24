@@ -12,6 +12,10 @@ permissions:
   contents: read
   security-events: write   # required to upload SARIF to GitHub Security tab
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   semgrep:
     name: Semgrep SAST scan

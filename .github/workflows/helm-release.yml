@@ -1,6 +1,6 @@
 name: Helm Release
 
-# Publishes the vesting-backend Helm chart to GitHub Pages.
+# Publishes the workload-governor Helm chart to GitHub Pages.
 # Triggers on tags matching helm-v* (e.g. helm-v0.1.0).
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
       - name: Package chart
         run: |
           mkdir -p docs/helm-charts
-          helm package helm/vesting-backend --destination docs/helm-charts/
+          helm package helm/workload-governor --destination docs/helm-charts/
 
       - name: Update Helm repo index
         run: |

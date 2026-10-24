@@ -1,7 +1,7 @@
 apiVersion: v2
-name: vesting-backend
+name: workload-governor
 description: |
-  Helm chart for the WorkloadGovernor vesting-backend service.
+  Helm chart for the WorkloadGovernor backend service.
   Deploys the Node.js API server that proxies Soroban contract calls,
   alongside an HPA, Ingress, ConfigMap, and ExternalSecret integration.
 type: application
@@ -11,7 +11,6 @@ keywords:
   - workload-governor
   - stellar
   - soroban
-  - vesting
 home: https://github.com/FaveTeamz/workload-governor
 sources:
   - https://github.com/FaveTeamz/workload-governor

@@ -31,9 +31,9 @@ ENV NODE_ENV=${NODE_ENV}
 ENV PORT=${PORT}
 
 # Copy compiled artifacts, production dependencies, and package metadata
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
+COPY --chown=node:node --from=builder /app/dist ./dist
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
+COPY --chown=node:node --from=builder /app/package*.json ./
 
 USER node
 

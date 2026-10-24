@@ -18,6 +18,10 @@ on:
         type: choice
         options: [staging, production]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Plan for both environments on every PR/push ──────────────────────────
   plan-staging:
