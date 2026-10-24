@@ -1241,3 +1241,369 @@ fn unit_sc003_nonce_prevents_replay() {
          and therefore be rejected by the Stellar auth framework"
     );
 }
+
+// ---------------------------------------------------------------------------
+// MUTATION KILL TESTS — Issue #1062
+//
+// These tests are specifically written to catch the 7 mutants that survived
+// the previous mutation run (score 75%, 7 missed out of 28).
+//
+// Each test is named after the mutant it kills and documents exactly which
+// observable behaviour would change if the mutant were live.
+// ---------------------------------------------------------------------------
+
+/// Mutant: `replace WorkloadGovernor::upgrade with ()`
+///
+/// If `upgrade` becomes a no-op, calling it must still require initialization
+/// (the guard fires first). We verify the guard fires when uninitialized, and
+/// that it does NOT fire when initialized (i.e. the auth guard is run).
+///
+/// Note: in the Soroban test environment `update_current_contract_wasm` is a
+/// no-op stub, so we test the auth and initialization guards that surround it.
+#[test]
+fn unit_mutant_upgrade_requires_initialized() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
+
+    // Without initialize(), upgrade must panic with NotInitialized.
+    let result = t.client.try_upgrade(&new_wasm_hash);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NotInitialized.into_val(&t.env))),
+        "upgrade must panic NotInitialized when contract is not initialized"
+    );
+}
+
+/// Mutant: `replace WorkloadGovernor::upgrade with ()` — post-init path.
+///
+/// After initialization the upgrade function must not panic (the deployer stub
+/// accepts any hash in the test env). A no-op mutant would silently skip the
+/// auth check but still succeed — we verify the happy path works so that
+/// un-auth'd calls (via `try_upgrade`) are distinguishable from no-ops.
+#[test]
+fn unit_mutant_upgrade_succeeds_after_initialize() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    // upgrade with all-zero hash must not panic in the test env
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
+    t.client.upgrade(&new_wasm_hash);
+    // If the mutant (empty body) were live, this would also pass — but the
+    // NotInitialized guard test above would fail, killing the mutant.
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::assign_issue` (line 283)
+///
+/// The mutated line is:
+///   `if new_app_count == 0 { storage::remove_global_app_count(...) }`
+/// changed to:
+///   `if new_app_count != 0 { storage::remove_global_app_count(...) }`
+///
+/// With the mutant alive: after assigning the ONLY application (count 1→0),
+/// the counter key is removed when it should stay, and set when it should be
+/// removed. The observable effect: `get_global_application_count` returns the
+/// wrong value immediately after a single assign_issue.
+///
+/// This test checks that the counter is exactly 0 after assigning the only
+/// outstanding application (1 → 0 path) and that no leftover value persists.
+#[test]
+fn unit_mutant_assign_global_count_zero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutassign");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Single application then single assign — exercises new_app_count == 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+
+    // After assigning the only application, global count must be exactly 0.
+    // Mutant (== → !=) would set it to 1 instead of removing it, returning 1.
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        0,
+        "global app count must be 0 after the only application is assigned"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::assign_issue` (line 283) — multi-app path.
+///
+/// When multiple applications exist (count N > 1), assigning one must
+/// decrement to N-1, not remove the counter entirely.
+#[test]
+fn unit_mutant_assign_global_count_nonzero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutassign2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Apply for 3 issues, then assign one — exercises new_app_count != 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &10u32);
+    t.client.apply_for_issue(&contributor, &org, &11u32);
+    t.client.apply_for_issue(&contributor, &org, &12u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 3);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+
+    // Count must be 2, not 0.
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        2,
+        "global app count must be 2 (not 0) after assigning one of three applications"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::complete_assignment` (line 333)
+///
+/// The mutated line is:
+///   `if new_count == 0 { storage::remove_org_assignment_count(...) }`
+/// changed to:
+///   `if new_count != 0 { storage::remove_org_assignment_count(...) }`
+///
+/// With the mutant alive: after completing the ONLY assignment (count 1→0),
+/// the counter key would be set to 0 (not removed) or vice versa. Observable
+/// effect: `get_org_assignment_count` returns wrong value after the last
+/// complete_assignment.
+#[test]
+fn unit_mutant_complete_org_count_zero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutcomplete");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Single apply → assign → complete — exercises new_count == 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
+
+    // Org assignment count must be exactly 0.
+    // Mutant (== → !=) would set it to 1 instead of removing it.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        0,
+        "org assignment count must be 0 after completing the only assignment"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::complete_assignment` — multi-assignment path.
+///
+/// When 2 assignments exist and one is completed, count must go from 2 to 1.
+#[test]
+fn unit_mutant_complete_org_count_nonzero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutcomplete2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Two apply → assign cycles, then complete one.
+    t.client.apply_for_issue(&contributor, &org, &20u32);
+    t.client.apply_for_issue(&contributor, &org, &21u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &20u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &21u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 2);
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &20u32);
+
+    // Count must be 1, not 0.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        1,
+        "org assignment count must be 1 (not 0) after completing one of two assignments"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::revoke_assignment` (line 382)
+///
+/// Same as the complete_assignment mutant but for revoke. Observable effect:
+/// `get_org_assignment_count` returns wrong value after the last revoke.
+#[test]
+fn unit_mutant_revoke_org_count_zero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutrevoke");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Single apply → assign → revoke — exercises new_count == 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
+
+    // Org assignment count must be exactly 0.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        0,
+        "org assignment count must be 0 after revoking the only assignment"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::revoke_assignment` — multi-assignment path.
+#[test]
+fn unit_mutant_revoke_org_count_nonzero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutrevoke2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Two apply → assign cycles, then revoke one.
+    t.client.apply_for_issue(&contributor, &org, &30u32);
+    t.client.apply_for_issue(&contributor, &org, &31u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &30u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &31u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 2);
+
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &30u32);
+
+    // Count must be 1, not 0.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        1,
+        "org assignment count must be 1 (not 0) after revoking one of two assignments"
+    );
+}
+
+/// Mutant: `replace WorkloadGovernor::extend_application_ttl with ()` (line 425)
+///
+/// If the function becomes a no-op, calling it on a missing application would
+/// NOT panic — the ApplicationNotFound guard would be silently bypassed.
+///
+/// This test verifies that extend_application_ttl panics with ApplicationNotFound
+/// when called for a non-existent application.
+#[test]
+fn unit_mutant_extend_ttl_guard_fires_on_missing_application() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutextend");
+
+    t.client.initialize(&admin);
+
+    // No apply_for_issue — calling extend must return ApplicationNotFound.
+    let result = t.client.try_extend_application_ttl(&contributor, &org, &99u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env))),
+        "extend_application_ttl must panic ApplicationNotFound when no application exists"
+    );
+}
+
+/// Mutant: `delete ! in WorkloadGovernor::extend_application_ttl` (line 425:12)
+///
+/// The mutated condition flips `!has_app_entry` → `has_app_entry`, meaning the
+/// panic fires when the entry DOES exist (the opposite of the intended guard).
+/// Observable effect: extend_application_ttl panics when called on a VALID
+/// application instead of succeeding.
+///
+/// This test verifies the happy path: extend succeeds when the application exists.
+#[test]
+fn unit_mutant_extend_ttl_succeeds_when_application_exists() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutextend2");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &55u32);
+
+    // Calling extend on an existing application must NOT panic.
+    // If the `!` were deleted, this would panic with ApplicationNotFound.
+    t.client.extend_application_ttl(&contributor, &org, &55u32);
+
+    // Application must still be present after the TTL extension.
+    assert!(
+        t.client.has_applied(&contributor, &org, &55u32),
+        "application must still exist after extend_application_ttl"
+    );
+}
+
+/// Mutant: `replace > with == in WorkloadGovernor::extend_application_ttl` (line 429)
+///
+/// The mutated condition:
+///   `if storage::get_global_app_count(&env, &contributor) > 0`
+/// becomes:
+///   `if storage::get_global_app_count(&env, &contributor) == 0`
+///
+/// With the mutant alive: the global app count TTL is extended when the counter
+/// is ZERO (no applications) instead of when it is positive. This means the
+/// counter TTL is not bumped for normal applications (count > 0).
+///
+/// To catch this: verify that after applying and then calling extend_application_ttl,
+/// the application remains accessible after advancing the ledger beyond the initial
+/// TTL window (proving the global count TTL was extended).
+#[test]
+fn unit_mutant_extend_ttl_bumps_global_count_when_positive() {
+    use soroban_sdk::testutils::Ledger;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutextend3");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &77u32);
+
+    // Count must be 1 (> 0) after applying.
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    let ttl_ledgers = crate::storage::APP_TTL_LEDGERS;
+
+    // Advance to just before expiry, then extend.
+    t.env.ledger().set_sequence_number(ttl_ledgers - 1);
+    assert!(t.client.has_applied(&contributor, &org, &77u32));
+
+    // Extend TTL while the count is > 0 — this should bump the global count TTL.
+    // Mutant (> → ==) would skip this bump because count (1) != 0.
+    t.client.extend_application_ttl(&contributor, &org, &77u32);
+
+    // Advance well past the original TTL — count should still be accessible.
+    t.env.ledger().set_sequence_number(ttl_ledgers + 1000);
+    assert!(
+        t.client.has_applied(&contributor, &org, &77u32),
+        "application must survive past original TTL after extend_application_ttl"
+    );
+
+    // Global count must also still be accessible (TTL was bumped).
+    // With the mutant alive the count key expires and returns 0.
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        1,
+        "global app count must still be 1 after TTL extension (count TTL must have been bumped)"
+    );
+}
