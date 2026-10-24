@@ -62,6 +62,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+          targets: wasm32v1-none
 
       - name: Restore cargo cache
         uses: actions/cache@v4
@@ -75,6 +76,9 @@ jobs:
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Build WASM for upgrade tests
+        run: cargo build --target wasm32v1-none --release
 
       - name: Run tests with coverage
         run: |

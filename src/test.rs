@@ -181,6 +181,27 @@ fn unit_ttl_constant_in_range() {
     );
 }
 
+#[cfg(wasm_available)]
+#[test]
+fn unit_upgrade_updates_contract_wasm_and_preserves_state() {
+    const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/workload_governor.wasm");
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(WASM, ());
+    let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+    let client = WorkloadGovernorClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    client.initialize(&admin);
+    assert_eq!(client.get_admin_nonce(), 0u32);
+
+    let new_wasm_hash = env.deployer().upload_contract_wasm(WASM);
+    client.upgrade(&new_wasm_hash);
+
+    assert_eq!(client.get_admin_nonce(), 1u32);
+    assert_eq!(client.get_global_cap(), crate::storage::GLOBAL_APP_LIMIT);
+}
+
 #[test]
 fn unit_extend_application_ttl_emits_event_without_global_count() {
     use soroban_sdk::{testutils::Events, TryIntoVal};
