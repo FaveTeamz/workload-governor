@@ -12,6 +12,8 @@
  *   cache_hits_total (counter) — cache hits/misses by cache name, result
  *   db_pool_active (gauge) — active database connections
  *   db_pool_idle (gauge) — idle database connections
+ *   indexer_last_processed_ledger (gauge) — last ledger committed by the indexer
+ *   indexer_ledger_lag (gauge) — difference between latest and processed ledgers
  *
  * Secured with METRICS_TOKEN environment variable (optional).
  * If METRICS_TOKEN is set, requests must include "Authorization: Bearer <token>" header.
@@ -141,6 +143,18 @@ export const webhookDeliveryFailuresTotal = new Counter({
 export const sorobanMinApplicationTtlLedgers = new Gauge({
   name: "soroban_min_application_ttl_ledgers",
   help: "Minimum remaining application entry TTL in ledgers",
+  registers: [register],
+});
+
+export const indexerLastProcessedLedger = new Gauge({
+  name: "indexer_last_processed_ledger",
+  help: "Last ledger committed by the event indexer",
+  registers: [register],
+});
+
+export const indexerLedgerLag = new Gauge({
+  name: "indexer_ledger_lag",
+  help: "Number of ledgers between the latest and last processed ledger",
   registers: [register],
 });
 // ─── Middleware ───────────────────────────────────────────────────────────────

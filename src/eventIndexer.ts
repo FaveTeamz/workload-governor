@@ -31,6 +31,7 @@
 import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
 import { pool, getCheckpoint, saveCheckpoint, IndexerCheckpoint } from './db';
 import { logger } from './logger';
+import { indexerLastProcessedLedger, indexerLedgerLag } from './metrics';
 import { publishLiveEvent } from './services/event-bus';
 import { getCache, setCache } from './services/redis';
 
@@ -590,6 +591,7 @@ export class EventIndexer {
         const events = response.events as unknown as RpcEvent[];
 
         if (events.length > 0) {
+<<<<<<< HEAD
           let persisted = 0;
           let skipped = 0;
           let reorgAbortedBatch = false;
@@ -632,6 +634,11 @@ export class EventIndexer {
               persisted,
               skipped,
             });
+
+            indexerLastProcessedLedger.set(lastLedger);
+            if (typeof response.latestLedger === 'number') {
+              indexerLedgerLag.set(Math.max(0, response.latestLedger - lastLedger));
+            }
 
             // Commit checkpoint every 5 seconds or upon every 100 ledgers
             const now = Date.now();
@@ -813,6 +820,7 @@ export class EventIndexer {
     }
 
     return inserted;
+  }
   }
 }
 
