@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { pool } from '../db';
 import redis from '../services/redis';
 
@@ -32,6 +32,20 @@ function hashKey(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
 }
 
+/**
+ * Safely compares two strings in constant time to prevent timing attacks.
+ * Handles unequal lengths safely without leaking timing information.
+ */
+export function timingSafeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
 function getIp(req: Request): string {
   const fwd = req.headers['x-forwarded-for'];
   return (typeof fwd === 'string' ? fwd.split(',')[0] : req.socket.remoteAddress) ?? 'unknown';
@@ -43,11 +57,12 @@ function getIp(req: Request): string {
  */
 async function getApiKeyTier(raw: string): Promise<ApiKeyTier | null> {
   const h = hashKey(raw);
-  const { rows } = await pool.query<{ tier: ApiKeyTier }>(
-    `SELECT COALESCE(tier, 'contributor') AS tier FROM api_keys WHERE key_hash = $1`,
+  const { rows } = await pool.query<{ tier: ApiKeyTier; key_hash: string }>(
+    `SELECT COALESCE(tier, 'contributor') AS tier, key_hash FROM api_keys WHERE key_hash = $1`,
     [h],
   );
   if (rows.length === 0) return null;
+  if (!timingSafeCompare(rows[0].key_hash, h)) return null;
   const tier = rows[0].tier as ApiKeyTier;
   return TIER_LIMITS[tier] !== undefined ? tier : 'contributor';
 }

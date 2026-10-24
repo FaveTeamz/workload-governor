@@ -14,6 +14,9 @@ processors:
 exporters:
   debug:
     verbosity: detailed
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: workload_governor
 
 service:
   pipelines:
@@ -21,3 +24,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]

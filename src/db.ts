@@ -107,6 +107,22 @@ export function getPool(): Pool {
     // Log unexpected idle-client disconnections (issues #561, #1035)
     pool.on('error', (err) => handlePoolError(err, pool));
 
+    // Pool event telemetry for active gauges
+    const notifyPoolGauges = () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { updatePgPoolGauges } = require('./metrics');
+        updatePgPoolGauges();
+      } catch {
+        // Ignore if metrics module not yet initialized
+      }
+    };
+
+    _pool.on('connect', notifyPoolGauges);
+    _pool.on('acquire', notifyPoolGauges);
+    _pool.on('release', notifyPoolGauges);
+    _pool.on('remove', notifyPoolGauges);
+
     // Optionally log new connections in non-production environments for
     // visibility into pool churn during development/staging.
     if (process.env['NODE_ENV'] !== 'production') {
