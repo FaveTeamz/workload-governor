@@ -126,6 +126,34 @@ impl WorkloadGovernor {
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
+    /// Configures the threshold and target used to extend application TTLs.
+    ///
+    /// Both values must be nonzero, the threshold must not exceed the target,
+    /// and the target must not exceed the Soroban TTL platform cap.
+    pub fn set_application_ttl_config(
+        env: Env,
+        threshold_ledgers: u32,
+        extend_to_ledgers: u32,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_admin_auth(&env);
+        if threshold_ledgers < storage::APP_TTL_MIN
+            || extend_to_ledgers < threshold_ledgers
+            || extend_to_ledgers > storage::APP_TTL_MAX
+        {
+            panic_with_error!(&env, ContractError::InvalidApplicationTtl);
+        }
+        storage::set_app_ttl_config(&env, threshold_ledgers, extend_to_ledgers);
+        storage::bump_instance(&env);
+        let admin = storage::get_admin(&env).unwrap();
+        events::emit_app_ttl_config_updated(
+            &env,
+            &admin,
+            threshold_ledgers,
+            extend_to_ledgers,
+        );
+    }
+
     /// Upgrades the contract WASM (admin-only).
     ///
     /// This is a required production function — it allows the contract to be patched
@@ -619,6 +647,16 @@ impl WorkloadGovernor {
     /// compile-time default (`GLOBAL_APP_LIMIT` = 15).
     pub fn get_global_cap(env: Env) -> u32 {
         storage::get_effective_global_cap(&env)
+    }
+
+    /// Returns the configured application TTL extension threshold.
+    pub fn get_app_ttl_threshold_ledgers(env: Env) -> u32 {
+        storage::get_app_ttl_threshold_ledgers(&env)
+    }
+
+    /// Returns the configured application TTL extension target.
+    pub fn get_app_ttl_extend_to_ledgers(env: Env) -> u32 {
+        storage::get_app_ttl_extend_to_ledgers(&env)
     }
 
     // -----------------------------------------------------------------------

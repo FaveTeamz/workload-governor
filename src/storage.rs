@@ -18,9 +18,13 @@ use crate::errors::ContractError;
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Ledgers for ~24 h at 5 s/ledger. Set to match the current Wave duration.
+/// Default application-entry TTL target: ~24 h at 5 s/ledger.
 /// Must be within [APP_TTL_MIN, APP_TTL_MAX].
 pub const APP_TTL_LEDGERS: u32 = 17_280;
+
+/// Default threshold and target for application-entry TTL extensions.
+pub const APP_TTL_THRESHOLD_LEDGERS: u32 = APP_TTL_LEDGERS;
+pub const APP_TTL_EXTEND_TO_LEDGERS: u32 = APP_TTL_LEDGERS;
 
 /// Minimum valid value for `APP_TTL_LEDGERS`.
 pub const APP_TTL_MIN: u32 = 1;
@@ -101,7 +105,11 @@ pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {
     let key = global_app_count_key(contributor);
     env.storage()
         .temporary()
-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+        .extend_ttl(
+            &key,
+            get_app_ttl_threshold_ledgers(env),
+            get_app_ttl_extend_to_ledgers(env),
+        );
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +178,11 @@ pub(crate) fn extend_app_entry_ttl(
     let key = app_entry_key(contributor, org_id, issue_id);
     env.storage()
         .temporary()
-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+        .extend_ttl(
+            &key,
+            get_app_ttl_threshold_ledgers(env),
+            get_app_ttl_extend_to_ledgers(env),
+        );
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +204,44 @@ pub(crate) fn get_admin(env: &Env) -> Option<Address> {
 /// Writes the admin address to persistent storage.
 pub(crate) fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&admin_key(), admin);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Application TTL configuration
+// ---------------------------------------------------------------------------
+
+fn app_ttl_threshold_key() -> Symbol {
+    symbol_short!("app_thr")
+}
+
+fn app_ttl_extend_to_key() -> Symbol {
+    symbol_short!("app_ext")
+}
+
+/// Returns the configured application TTL extension threshold, or its default.
+pub(crate) fn get_app_ttl_threshold_ledgers(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&app_ttl_threshold_key())
+        .unwrap_or(APP_TTL_THRESHOLD_LEDGERS)
+}
+
+/// Returns the configured application TTL extension target, or its default.
+pub(crate) fn get_app_ttl_extend_to_ledgers(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&app_ttl_extend_to_key())
+        .unwrap_or(APP_TTL_EXTEND_TO_LEDGERS)
+}
+
+/// Stores the application TTL extension threshold and target.
+pub(crate) fn set_app_ttl_config(env: &Env, threshold_ledgers: u32, extend_to_ledgers: u32) {
+    env.storage()
+        .persistent()
+        .set(&app_ttl_threshold_key(), &threshold_ledgers);
+    env.storage()
+        .persistent()
+        .set(&app_ttl_extend_to_key(), &extend_to_ledgers);
 }
 
 // ---------------------------------------------------------------------------

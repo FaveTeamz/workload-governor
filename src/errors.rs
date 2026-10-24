@@ -49,4 +49,8 @@ pub enum ContractError {
 
     /// Organization IDs must contain between 2 and 32 characters.
     InvalidOrgId                  = 21,
+
+    // #1007 — Application TTL configuration
+    /// Application TTL values must be nonzero, within the platform cap, and threshold <= target.
+    InvalidApplicationTtl         = 22,
 }

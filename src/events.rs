@@ -104,6 +104,21 @@ pub(crate) fn emit_app_ttl_extended(
     env.events().publish(topics, data);
 }
 
+/// Emitted when the admin changes the application TTL extension configuration.
+///
+/// topics: `(WG, Symbol::new(env, "app_ttl_cfg"), admin)`
+/// data:   `(threshold_ledgers, extend_to_ledgers)`
+pub(crate) fn emit_app_ttl_config_updated(
+    env: &Env,
+    admin: &Address,
+    threshold_ledgers: u32,
+    extend_to_ledgers: u32,
+) {
+    let topics = (WG(), Symbol::new(env, "app_ttl_cfg"), admin.clone());
+    let data = (threshold_ledgers, extend_to_ledgers);
+    env.events().publish(topics, data);
+}
+
 /// Emitted by `assign_issue`.
 ///
 /// topics: `(WG, symbol_short!("assigned"), contributor)`
