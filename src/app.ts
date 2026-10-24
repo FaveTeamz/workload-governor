@@ -82,6 +82,7 @@ export function createApp(): express.Application {
   // Routes
   app.use('/api/issues', issuesRouter);
   app.use('/api/contributors', contributorsRouter);
+  app.use('/api/v1/contributors', contributorsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/api-keys', apiKeysRouter);
   app.use('/api/transactions', walletLimiter, transactionsRouter);

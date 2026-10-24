@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { getCache, setCache } from '../services/redis';
+import { subscribeToContributorEvents } from '../services/event-bus';
 import { SorobanService } from '../soroban';
 
 const router = Router();
@@ -9,6 +10,40 @@ const router = Router();
 function isValidStellarAddress(addr: string): boolean {
   return addr.length >= 50 && addr.length <= 56 && /^G[A-Z2-7]+$/.test(addr);
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/contributors/:address/events/stream
+// Server-Sent Events (SSE) endpoint pushing real-time application and
+// assignment updates when the indexer records relevant contract events (#1017).
+// ---------------------------------------------------------------------------
+
+function streamContributorEvents(req: Request, res: Response): void {
+  const { address } = req.params;
+
+  if (!isValidStellarAddress(address)) {
+    res.status(400).json({ error: 'invalid stellar address format' });
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15000);
+  const unsubscribe = subscribeToContributorEvents(address, (event) => {
+    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
+  });
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+}
+
+router.get('/:address/events/stream', streamContributorEvents);
+router.get('/contributors/:address/events/stream', streamContributorEvents);
 
 // GET /contributors/:address/stats — global stats for a contributor
 router.get('/contributors/:address/stats', (req: Request, res: Response) => {

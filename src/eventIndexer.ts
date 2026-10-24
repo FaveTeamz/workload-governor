@@ -765,7 +765,7 @@ export class EventIndexer {
    *
    * @returns true if a new row was inserted, false if it was a duplicate.
    */
-  private async storeEvent(record: ContractEventRecord): Promise<boolean> {
+  async storeEvent(record: ContractEventRecord): Promise<boolean> {
     const result = await pool.query(
       `INSERT INTO contract_events
          (event_type, contributor, org_id, issue_id, tx_hash, event_index, ledger_seq, timestamp)
@@ -796,10 +796,18 @@ export class EventIndexer {
 
       publishLiveEvent({
         type: liveType,
+        contributor: record.contributor,
         data: {
           eventType: record.event_type,
+          contributor: record.contributor,
           orgId: record.org_id,
           issueId: record.issue_id,
+          txHash: record.tx_hash,
+          ledger: record.ledger,
+          timestamp:
+            record.timestamp instanceof Date
+              ? record.timestamp.toISOString()
+              : record.timestamp,
         },
       });
     }
