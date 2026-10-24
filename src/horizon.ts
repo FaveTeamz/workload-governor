@@ -60,6 +60,31 @@ export class HorizonService {
     return Math.min(exponentialDelay, this.maxDelayMs);
   }
 
+  private getRetryAfterMs(error: unknown): number | undefined {
+    const response = (error as { response?: { headers?: unknown } })?.response;
+    const headers = response?.headers as
+      | { get?: (name: string) => string | null; [key: string]: unknown }
+      | undefined;
+    const headerEntry = headers && Object.entries(headers).find(
+      ([name]) => name.toLowerCase() === 'retry-after',
+    );
+    const retryAfter = headers?.get?.('retry-after') ?? headerEntry?.[1];
+
+    if (typeof retryAfter !== 'string') return undefined;
+
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+
+    const retryAt = Date.parse(retryAfter);
+    return Number.isNaN(retryAt) ? undefined : Math.max(0, retryAt - Date.now());
+  }
+
+  private getRetryDelay(attempt: number, error: unknown, statusCode: number): number {
+    const jitteredBackoff = Math.random() * this.calculateDelay(attempt);
+    const retryAfter = statusCode === 429 ? this.getRetryAfterMs(error) : undefined;
+    return Math.round(jitteredBackoff + (retryAfter ?? 0));
+  }
+
   async fetchAccount(accountId: string): Promise<AccountData> {
     let lastError: Error | undefined;
 
@@ -93,20 +118,7 @@ export class HorizonService {
         // Retry on rate limit (429) or service unavailable (503)
         if (statusCode === 429 || statusCode === 503) {
           if (attempt < this.maxRetries - 1) {
-            // Use Retry-After header if present (429 responses)
-            const retryAfter = errorResponse?.headers?.['retry-after'];
-            let delay: number;
-            if (statusCode === 429 && retryAfter) {
-              const retryAfterMs = parseInt(retryAfter, 10) * 1000;
-              delay = isNaN(retryAfterMs)
-                ? this.calculateDelay(attempt)
-                : retryAfterMs;
-            } else {
-              delay = this.calculateDelay(attempt);
-            }
-            // Add ±20% jitter
-            const jitter = delay * 0.2 * (Math.random() * 2 - 1);
-            const finalDelay = Math.max(0, Math.round(delay + jitter));
+            const finalDelay = this.getRetryDelay(attempt, error, statusCode);
             console.warn(`[horizon] Retrying after ${statusCode} (attempt ${attempt + 1}/${this.maxRetries}, delay ${finalDelay}ms)`);
             await this.sleep(finalDelay);
             continue;
@@ -156,19 +168,7 @@ export class HorizonService {
         // Retry on rate limit (429) or service unavailable (503)
         if (statusCode === 429 || statusCode === 503) {
           if (attempt < this.maxRetries - 1) {
-            const retryAfter = errorResponse?.headers?.['retry-after'];
-            let delay: number;
-            if (statusCode === 429 && retryAfter) {
-              const retryAfterMs = parseInt(retryAfter, 10) * 1000;
-              delay = isNaN(retryAfterMs)
-                ? this.calculateDelay(attempt)
-                : retryAfterMs;
-            } else {
-              delay = this.calculateDelay(attempt);
-            }
-            // Add ±20% jitter
-            const jitter = delay * 0.2 * (Math.random() * 2 - 1);
-            const finalDelay = Math.max(0, Math.round(delay + jitter));
+            const finalDelay = this.getRetryDelay(attempt, error, statusCode);
             console.warn(`[horizon] Retrying after ${statusCode} (attempt ${attempt + 1}/${this.maxRetries}, delay ${finalDelay}ms)`);
             await this.sleep(finalDelay);
             continue;
