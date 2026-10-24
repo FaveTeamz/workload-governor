@@ -11,6 +11,7 @@ import { MemoryRouter } from "react-router-dom";
 import { IssueCard } from "./IssueCard";
 import { AssignmentCard } from "./AssignmentCard";
 import { Gauge } from "./Gauge";
+import { WorkloadGauge } from "./WorkloadGauge";
 import { EventHistoryTable, type EventRow } from "./EventHistoryTable";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -138,6 +139,50 @@ describe("Gauge accessibility", () => {
   it("with tooltip has no a11y violations", async () => {
     const { container } = render(
       <Gauge value={7} max={15} label="Global applications" tooltip="You have 7 of 15 applications used" />
+    );
+    await noViolations(container);
+  });
+});
+
+// ─── WorkloadGauge ────────────────────────────────────────────────────────────
+
+describe("WorkloadGauge accessibility", () => {
+  it("empty state (0/15) has no a11y violations", async () => {
+    const { container } = render(
+      <WorkloadGauge current={0} max={15} label="Global applications" />
+    );
+    await noViolations(container);
+  });
+
+  it("partial state (7/15) has no a11y violations", async () => {
+    const { container } = render(
+      <WorkloadGauge current={7} max={15} label="Global applications" />
+    );
+    await noViolations(container);
+  });
+
+  it("full state (15/15) has no a11y violations", async () => {
+    const { container } = render(
+      <WorkloadGauge current={15} max={15} label="Global applications" />
+    );
+    await noViolations(container);
+  });
+
+  it("org gauge (2/4) has no a11y violations", async () => {
+    const { container } = render(
+      <WorkloadGauge current={2} max={4} label="Org: stellar-org" />
+    );
+    await noViolations(container);
+  });
+
+  it("without a label has no a11y violations", async () => {
+    const { container } = render(<WorkloadGauge current={3} max={15} />);
+    await noViolations(container);
+  });
+
+  it("overflow (clamped) has no a11y violations", async () => {
+    const { container } = render(
+      <WorkloadGauge current={20} max={15} label="Global applications" />
     );
     await noViolations(container);
   });
