@@ -240,6 +240,25 @@ fn unit_error_unauthorized_maintainer() {
 }
 
 #[test]
+fn unit_error_unauthorized_maintainer_complete_assignment() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let stranger = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    assert_eq!(
+        t.client
+            .try_complete_assignment(&stranger, &contributor, &org, &1u32),
+        Err(Ok(ContractError::UnauthorizedMaintainer))
+    );
+}
+
+#[test]
 #[should_panic]
 fn unit_error_global_application_limit_reached() {
     let t = TestEnv::new();
