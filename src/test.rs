@@ -211,7 +211,7 @@ fn unit_error_already_initialized() {
 fn unit_error_not_initialized_apply() {
     let t = TestEnv::new();
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
     t.client.apply_for_issue(&contributor, &org, &1u32); // NotInitialized
 }
 
@@ -221,7 +221,7 @@ fn unit_error_not_initialized_register() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
     t.client.register_maintainer(&admin, &maintainer, &org); // NotInitialized
 }
 
@@ -232,7 +232,7 @@ fn unit_error_unauthorized_maintainer() {
     let admin = Address::generate(&t.env);
     let stranger = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
@@ -264,7 +264,7 @@ fn unit_error_global_application_limit_reached() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     for i in 1u32..=15 {
@@ -280,7 +280,7 @@ fn unit_error_org_assignment_limit_reached() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
@@ -298,7 +298,7 @@ fn unit_error_duplicate_application() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
@@ -311,7 +311,7 @@ fn unit_error_application_not_found_withdraw() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.withdraw_application(&contributor, &org, &99u32); // ApplicationNotFound
@@ -324,7 +324,7 @@ fn unit_error_application_not_found_assign() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
@@ -338,7 +338,7 @@ fn unit_error_assignment_not_found_complete() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
@@ -373,11 +373,33 @@ fn unit_error_assignment_not_found_revoke() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
     t.client.revoke_assignment(&maintainer, &contributor, &org, &99u32); // AssignmentNotFound
+}
+
+#[test]
+fn unit_error_invalid_org_id() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let empty_org = Symbol::new(&t.env, "");
+    let one_character_org = t.org("a");
+
+    t.client.initialize(&admin);
+
+    assert_eq!(
+        t.client
+            .try_apply_for_issue(&contributor, &empty_org, &1u32),
+        Err(Ok(ContractError::InvalidOrgId))
+    );
+    assert_eq!(
+        t.client
+            .try_apply_for_issue(&contributor, &one_character_org, &2u32),
+        Err(Ok(ContractError::InvalidOrgId))
+    );
 }
 
 #[test]
@@ -386,7 +408,7 @@ fn unit_error_already_assigned() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
@@ -858,7 +880,7 @@ fn unit_governance_default_cap_is_15() {
 use proptest::prelude::*;
 
 fn arb_org_name() -> impl Strategy<Value = String> {
-    "[a-z]{1,9}".prop_map(|s: String| s)
+    "[a-z]{2,9}".prop_map(|s: String| s)
 }
 
 fn fresh_client(
