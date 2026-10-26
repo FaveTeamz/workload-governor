@@ -38,7 +38,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -70,7 +70,7 @@ jobs:
           targets: wasm32v1-none
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -119,7 +119,7 @@ jobs:
           targets: wasm32v1-none, wasm32-unknown-unknown
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -183,7 +183,7 @@ jobs:
           targets: wasm32v1-none
 
       - name: Restore cargo and target cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -240,7 +240,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
