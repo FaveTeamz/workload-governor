@@ -8,15 +8,20 @@
 #   suppressions — known false positives with documented justification
 
 rules:
-  # ── Custom rule: Detect hardcoded Stellar secret keys ────────────────────────
-  - id: detect-hardcoded-stellar-secret-key
+  # ── Custom rule: Detect hardcoded Stellar Ed25519 secret seeds ───────────────
+  - id: hardcoded-stellar-secret-seed
     patterns:
-      - pattern-regex: "S[A-Z0-9]{55}"
+      - pattern-regex: '(?<![A-Za-z0-9])S[A-Z2-7]{55}(?![A-Za-z0-9])'
     message: >
-      Hardcoded Stellar private secret key detected matching pattern S[A-Z0-9]{55}.
-      Never commit secret seed keys to source control.
-    languages: [generic]
+      Potential hardcoded Stellar secret key detected! Never commit private keys.
+      Store secret seeds in environment variables or a secrets manager and rotate
+      any seed that has been committed to source control.
+    languages: [javascript, typescript, python, rust, yaml, json]
     severity: ERROR
+    paths:
+      exclude:
+        - "**/__mocks__/**"
+        - "**/test_data/**"
 
   # ── Custom rule: Detect hardcoded secrets in TypeScript/JS ──────────────────
   - id: no-hardcoded-secrets-ts
@@ -25,11 +30,7 @@ rules:
           const $VAR = "..."
       - metavariable-regex:
           metavariable: $VAR
-          regex: (?i)(secret|password|token|api_key|apikey|private_key|auth)
-      - metavariable-regex:
-          metavariable: $VAR
-          # Allow empty strings and obvious placeholders
-          regex-not: (?i)(example|placeholder|test|dummy|fake|your_)
+          regex: (?i)^(?!.*(?:example|placeholder|test|dummy|fake|your_)).*(?:secret|password|token|api_key|apikey|private_key|auth)
     message: >
       Potential hardcoded secret in variable '$VAR'. Use environment variables
       or AWS Secrets Manager instead.

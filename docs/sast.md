@@ -9,7 +9,7 @@ and the mapping of each rule category to threats in the
 
 ## Rule Inventory
 
-The project ships three custom rules in `.semgrep.yml`, applied on top of three
+The project ships custom rules in `.semgrep.yml`, applied on top of three
 shared Semgrep rule packs (`p/rust`, `p/typescript`, `p/nodejs`).
 
 ### Custom Rules
@@ -19,6 +19,49 @@ shared Semgrep rule packs (`p/rust`, `p/typescript`, `p/nodejs`).
 | `no-hardcoded-secrets-ts` | TypeScript / JavaScript | ERROR | `const` declarations whose variable name matches `secret`, `password`, `token`, `api_key`, `apikey`, `private_key`, or `auth` with a non-placeholder string literal value |
 | `no-console-log-production` | TypeScript / JavaScript | WARNING | Bare `console.log(...)` calls in production source files |
 | `no-sql-string-concat` | TypeScript / JavaScript | ERROR | `pool.query()` calls where the query string is built by `+` concatenation or a template literal containing an interpolated variable |
+| `hardcoded-stellar-secret-seed` | JavaScript, TypeScript, Python, Rust, YAML, JSON | ERROR | 56-character Stellar Ed25519 secret seeds (`S` followed by 55 RFC 4648 base32 characters), with surrounding identifier boundaries enforced |
+
+---
+
+#### `hardcoded-stellar-secret-seed`
+
+**What it detects:** A Stellar Ed25519 secret seed (StrKey) — the letter `S`
+followed by 55 base32 characters (`A`–`Z`, `2`–`7`). The boundary checks stop a
+match inside a longer identifier, and the restricted alphabet avoids flagging
+generic 56-character uppercase strings containing `0`, `1`, `8`, or `9`. Gitleaks
+applies the equivalent pattern across the repository via `.gitleaks.toml`,
+including file types outside these languages.
+
+**Why it matters for this codebase:** Anyone holding a secret seed controls the
+corresponding Stellar account. A seed committed to git is exposed in every
+clone and fork and must be treated as compromised, even if the commit is later
+rewritten.
+
+**Excluded paths:** `**/__mocks__/**`, `**/test_data/**` — reserved for
+non-sensitive test fixtures. Never place real seeds in these directories.
+
+**Resolution:** Remove the value from source, read it from an environment
+variable or a secrets manager, and rotate the exposed account:
+
+```typescript
+// Bad
+const seed = process.env.STELLAR_SECRET_SEED || "S...";
+
+// Good
+const seed = process.env.STELLAR_SECRET_SEED;
+if (!seed) throw new Error("STELLAR_SECRET_SEED is required");
+```
+
+**Verify locally** without committing a key-like string:
+
+```bash
+SEED="S$(python3 -c 'print("A" * 55)')"
+printf 'const seed = "%s";\n' "$SEED" > /tmp/stellar-seed-check.ts
+semgrep --config .semgrep.yml /tmp/stellar-seed-check.ts
+```
+
+Semgrep reports one ERROR finding for `hardcoded-stellar-secret-seed`. Delete
+the temporary file when done.
 
 ---
 
@@ -157,7 +200,11 @@ Ran X rules on Y files: 0 findings.
 
 ## CI Integration
 
-Semgrep runs automatically via `.github/workflows/sast.yml`.
+Semgrep runs automatically via `.github/workflows/sast.yml`, the repository's
+SAST/security gate. There is no separate `security.yml` workflow: this is the
+workflow that scans pull requests. It passes `--config .semgrep.yml`, so every
+rule in this file — including `hardcoded-stellar-secret-seed` — runs on each PR
+targeting `main`.
 
 ### Trigger conditions
 
@@ -298,6 +345,7 @@ Each rule and pack maps to one or more threats defined in
 
 | Rule / Pack | Threat | Mapping |
 |---|---|---|
+| `hardcoded-stellar-secret-seed` | Stellar account takeover | A leaked Ed25519 seed gives full control of the account. This rule catches seeds in source, config, and scripts before they reach git history; Gitleaks covers the remaining file types. |
 | `no-hardcoded-secrets-ts` | Compromised Admin Key | A hardcoded secret is equivalent to a publicly exposed credential. This rule catches API keys, tokens, and private-key material before they reach the repository, directly mitigating the admin key compromise scenario. |
 | `no-sql-string-concat` | Backend data integrity | The backend proxies contributor and maintainer data to PostgreSQL. SQL injection via unparameterized queries could allow data exfiltration or tampering with assignment records. Mitigates malformed-input injection at the backend layer. |
 | `no-console-log-production` | Passive network observer / information leakage | Unstructured `console.log` output can expose contributor addresses, issue IDs, and internal state to anyone with log access. Enforcing the structured pino logger keeps sensitive fields out of default output and behind log-level gates. |
@@ -310,7 +358,8 @@ Each rule and pack maps to one or more threats defined in
 ## References
 
 - [`.semgrep.yml`](../.semgrep.yml) — project rule file with custom rules and suppressions
-- [`.github/workflows/sast.yml`](../.github/workflows/sast.yml) — CI workflow definition
+- [`.gitleaks.toml`](../.gitleaks.toml) — secret-scanning patterns aligned with the Semgrep rules
+- [`.github/workflows/sast.yml`](../.github/workflows/sast.yml) — security gate that runs the rules on every PR
 - [Security Model](./security-model.md) — threat model, attack surfaces, and mitigations
 - [Security Checklist](./security-checklist.md) — per-function authentication audit
 - [Semgrep documentation](https://semgrep.dev/docs/) — rule syntax, metavariables, test format
