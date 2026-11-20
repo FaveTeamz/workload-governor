@@ -26,7 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # ── Run Semgrep with project rule packs ────────────────────────────────
+      # ── Run Semgrep with project rules and rule packs ─────────────────────
+      # Project rules (.semgrep.yml) include hardcoded-stellar-secret-seed.
       # Rule packs:
       #   p/rust       — Rust memory safety, unsafe usage, injection patterns
       #   p/typescript — TS/JS injection, prototype pollution, XSS, etc.
