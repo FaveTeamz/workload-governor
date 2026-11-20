@@ -7,7 +7,8 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "aws-xray-sdk-core": "3.6.0"
+    "aws-xray-sdk-core": "3.6.0",
+    "helmet": "7.1.0"
   },
   "devDependencies": {
     "@types/aws-xray-sdk": "2.3.6",
