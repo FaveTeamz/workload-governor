@@ -316,3 +316,44 @@ licences, banned crates, and approved crate sources.
   new advisories against the pinned dependency tree.
 - `cargo update` must be gated on a clean `cargo audit` and `cargo deny check`
   pass before the updated `Cargo.lock` may be merged.
+
+---
+
+## 6. HTTP Response Header Compliance (Issue #1314)
+
+The standalone backend service (`backend/src/app.ts`) applies `helmet` to every
+response, including the health endpoint and the 404 fallback. The main API
+(`src/app.ts`) applies its own helmet configuration; both must keep the headers
+below present on all HTTP responses.
+
+| Header | Expected value | Enforced by | Status |
+|---|---|---|---|
+| `Content-Security-Policy` | `default-src 'self'`; scripts/styles `'self'` + `'unsafe-inline'`; images `'self'`, `data:`, `https://avatars.githubusercontent.com`; connections `'self'`, Stellar Horizon testnet/public; `frame-ancestors 'none'`; `object-src 'none'` | `helmet({ contentSecurityPolicy })` | **PASS** |
+| `X-Frame-Options` | `DENY` | `helmet({ xFrameOptions: { action: "deny" } })` | **PASS** |
+| `X-Content-Type-Options` | `nosniff` | `helmet({ xContentTypeOptions: true })` | **PASS** |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | `helmet({ referrerPolicy })` | **PASS** |
+
+The CSP allows inline script/style so Swagger UI assets load without violations
+when documentation is mounted; no third-party script origins are permitted.
+
+### Verification
+
+Start the backend and inspect a response — the headers must appear on success
+and error responses alike:
+
+```bash
+curl -I http://localhost:3000/api/health
+curl -I http://localhost:3000/does-not-exist
+```
+
+Expected excerpt:
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; ...
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+External scanners (Mozilla Observatory, securityheaders.com) should be run
+against a deployed instance to confirm the configuration in production.
