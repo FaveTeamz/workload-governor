@@ -19,8 +19,39 @@ import { setupSwagger } from './swagger';
 export function createApp(): express.Application {
   const app = express();
 
-  // Security middleware
-  app.use(helmet());
+  // ── Reverse-proxy trust (#1318) ─────────────────────────────────────────
+  // Trust the first hop (ALB / Cloudflare) so that req.protocol and
+  // req.header('x-forwarded-proto') reflect the original client protocol.
+  app.set('trust proxy', 1);
+
+  // ── HTTPS enforcement (#1318) ────────────────────────────────────────────
+  // In production, any request that arrived over plain HTTP must be
+  // permanently redirected to the HTTPS equivalent.  The ALB / CDN sets
+  // X-Forwarded-Proto before forwarding to the container.
+  if (process.env.NODE_ENV === 'production') {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.header('x-forwarded-proto') !== 'https') {
+        return res.redirect(301, `https://${req.header('host')}${req.url}`);
+      }
+      next();
+    });
+  }
+
+  // ── Security headers (#1318) ─────────────────────────────────────────────
+  // helmet() sets safe defaults for all headers.  We override hsts to match
+  // the browser preload list requirements: max-age ≥ 1 year, includeSubDomains,
+  // preload.  HSTS is applied in all environments so staging also validates the
+  // header; the redirect guard above is production-only because staging traffic
+  // may legitimately arrive over HTTP from internal tooling.
+  app.use(
+    helmet({
+      hsts: {
+        maxAge: 31_536_000,      // 1 year in seconds
+        includeSubDomains: true,
+        preload: true,
+      },
+    }),
+  );
 
   // CORS middleware
   const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',');
