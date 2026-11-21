@@ -16,6 +16,7 @@ import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
+import { xrayMiddleware } from "./tracing.js";
 import logger from "./logger.js";
 
 // ─── Application factory ──────────────────────────────────────────────────────

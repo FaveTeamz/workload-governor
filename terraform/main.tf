@@ -17,7 +17,7 @@ terraform {
     bucket         = "workload-governor-tfstate"
     key            = "workload-governor/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "workload-governor-tfstate-lock"
+    dynamodb_table = "workload-governor-terraform-locks"
     encrypt        = true
     # kms_key_id is intentionally omitted here so the backend block stays
     # static. Pass it at init time via -backend-config if you want a
@@ -29,11 +29,16 @@ terraform {
 provider "aws" {
   region = var.aws_region
 
+  # Cost allocation tags applied to every AWS resource managed by this provider.
+  # These tags must be activated as user-defined cost allocation tags in the
+  # AWS Billing console before they appear in Cost Explorer reports.
+  # See docs/cost-management.md for the manual activation step.
   default_tags {
     tags = {
-      project     = "workload-governor"
-      environment = terraform.workspace
-      managed_by  = "terraform"
+      Project     = "workload-governor"
+      Environment = terraform.workspace
+      Team        = "platform"
+      ManagedBy   = "terraform"
     }
   }
 }
@@ -74,6 +79,8 @@ module "compute" {
   redis_url_secret    = module.cache.connection_url_secret_arn
   github_token_secret = module.secrets.github_token_arn
   jwt_secret_arn      = module.secrets.jwt_secret_arn
+  cpu                 = var.cpu
+  memory              = var.memory
 }
 
 module "secrets" {

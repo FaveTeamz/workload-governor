@@ -39,7 +39,7 @@ grep "^BENCH" benchmarks.txt
 | `complete_assignment` | ~1,800 | ~1,200 | 4 | 3 | Removes persistent assignment + counter |
 | `revoke_assignment` | ~1,800 | ~1,200 | 4 | 3 | Identical cost to `complete_assignment` |
 | `extend_application_ttl` | ~1,500 | ~1,000 | 2 | 0 | TTL-only updates; no value writes |
-| `transfer_admin` | ~1,200 | ~800 | 1 | 2 | 1 persistent write + instance bump |
+| `propose_admin` + `accept_admin` | ~2,400 | ~1,600 | 2 | 4 | propose: 1 pending write; accept: admin overwrite + remove pending + instance bump |
 | `get_global_application_count` | ~400 | ~200 | 1 | 0 | Single temp read |
 | `get_org_assignment_count` | ~400 | ~200 | 1 | 0 | Single persistent read |
 | `has_applied` | ~400 | ~200 | 1 | 0 | Single temp read |
@@ -61,7 +61,7 @@ The test `bench_<function>` **panics and fails CI** if either dimension exceeds 
 | `complete_assignment` | 500,000 | 200,000 |
 | `revoke_assignment` | 500,000 | 200,000 |
 | `extend_application_ttl` | 400,000 | 150,000 |
-| `transfer_admin` | 400,000 | 150,000 |
+| `transfer_admin` | 800,000 | 300,000 |
 
 All thresholds are ≤ 0.6% of the 100,000,000 CPU instruction per-transaction limit.
 
@@ -92,7 +92,8 @@ each function:
 | `complete_assignment` | admin(P), maintainer(P), asgn(P), o_asgn(P) | asgn(P), o_asgn(P), instance(I) | P, I |
 | `revoke_assignment` | admin(P), maintainer(P), asgn(P), o_asgn(P) | asgn(P), o_asgn(P), instance(I) | P, I |
 | `extend_application_ttl` | app_entry(T), g_apps(T) | TTL only — no value write | T |
-| `transfer_admin` | admin(P) | admin(P), instance(I) | P, I |
+| `propose_admin` | admin(P) | p_admin(P), instance(I) | P, I |
+| `accept_admin` | admin(P), p_admin(P) | admin(P), p_admin(P), instance(I) | P, I |
 | `get_global_application_count` | g_apps(T) | — | T |
 | `get_org_assignment_count` | o_asgn(P) | — | P |
 | `has_applied` | app_entry(T) | — | T |
@@ -114,3 +115,95 @@ BENCH <function_name> cpu_insns=<n> mem_bytes=<n>
 ```
 
 This format is consumed by the CI artifact step in `.github/workflows/contract-ci.yml`.
+
+---
+
+## WASM Binary Size
+
+The optimized WASM binary must stay **below 20 KB** for mainnet deployment. The CI/CD
+pipeline enforces a hard **22 KB gate** — any PR that pushes the binary above this
+threshold will fail the `optimize` job and be blocked from merging.
+
+### Size Targets
+
+| Build | Target | CI Gate | Network Limit |
+|---|---|---|---|
+| `cargo build --release` (unoptimized) | ~28 KB | — | 64 KB |
+| `stellar contract optimize` (optimized) | **< 20 KB** | ≤ 22 KB | 64 KB |
+
+> CI converts KB to bytes: 22 KB = 22 528 bytes, 64 KB = 65 536 bytes.
+
+### How the Binary is Measured
+
+The CI `optimize` job runs `wc -c` on the `.optimized.wasm` output from
+`stellar contract optimize` and posts the result to the GitHub Actions step summary.
+
+```bash
+# Reproduce locally
+stellar contract build
+stellar contract optimize \
+  --wasm target/wasm32v1-none/release/workload_governor.wasm \
+  --wasm-out target/wasm32v1-none/release/workload_governor.optimized.wasm
+wc -c target/wasm32v1-none/release/workload_governor.optimized.wasm
+```
+
+### Size Reduction Techniques Applied
+
+The following changes were made to bring the optimized binary below the 20 KB target:
+
+| Technique | File | Impact |
+|---|---|---|
+| `opt-level = "z"` (minimize size) | `Cargo.toml` | High — prevents code size expansion from inlining |
+| `lto = true` (link-time optimisation) | `Cargo.toml` | High — dead-strips unused code across crate boundaries |
+| `codegen-units = 1` | `Cargo.toml` | Medium — enables whole-crate optimisation |
+| `panic = "abort"` | `Cargo.toml` | Medium — removes panic unwinding machinery |
+| `strip = "symbols"` | `Cargo.toml` | Medium — removes debug symbol table from binary |
+| Removed `get_org_assignment_capacity` | `src/lib.rs` | Low — one fewer contract-exported function |
+| Removed `get_global_application_capacity` | `src/lib.rs` | Low — one fewer contract-exported function |
+| Removed `is_org_assignment_limit_reached` | `src/lib.rs` | Low — one fewer contract-exported function |
+| Removed `is_global_app_limit_reached` | `src/lib.rs` | Low — one fewer contract-exported function |
+| Fixed duplicate `global_cap_key`/`get_global_cap`/`set_global_cap` in `storage.rs` | `src/storage.rs` | Fix — was a compile error; also eliminates duplicated code |
+| `soroban_sdk::Vec` (not `std::collections`) | `src/lib.rs` | Already in place — no std heap allocator overhead |
+| Single dependency: `soroban-sdk 22.0.0` | `Cargo.toml` | Already optimal — no transitive bloat |
+
+### Removed Convenience Functions
+
+The four functions below were pure read-only wrappers with no logic beyond
+calling an existing query function plus a single subtraction or comparison.
+Each exported function adds to the WASM binary because the Soroban SDK
+generates a dispatch entry and type descriptors for every `pub fn` on the
+`#[contractimpl]` block.
+
+| Removed function | Equivalent expression using retained functions |
+|---|---|
+| `get_org_assignment_capacity(c, org)` | `get_org_cap(org) - get_org_assignment_count(c, org)` |
+| `get_global_application_capacity(c)` | `15 - get_global_application_count(c)` |
+| `is_org_assignment_limit_reached(c, org)` | `get_org_assignment_count(c, org) >= get_org_cap(org)` |
+| `is_global_app_limit_reached(c)` | `get_global_application_count(c) >= 15` |
+
+Callers (frontends, scripts) that previously used these functions should
+compute the result from the underlying query functions instead. All four
+were already absent from the public API table in `README.md`.
+
+### Profiling Guidance
+
+If the binary drifts above the 20 KB target in future, use these tools to
+identify bloat:
+
+```bash
+# Inspect WASM section sizes (requires wasm-opt from binaryen)
+wasm-opt --print target/wasm32v1-none/release/workload_governor.optimized.wasm 2>&1 | head -60
+
+# twiggy: find largest contributors to binary size
+cargo install twiggy
+twiggy top target/wasm32v1-none/release/workload_governor.wasm | head -30
+
+# Check for unexpected std symbols
+wasm-objdump -x target/wasm32v1-none/release/workload_governor.wasm | grep -i "alloc\|std::"
+```
+
+Common sources of unexpected size growth:
+- Adding a new `pub fn` to `#[contractimpl]` (each adds ~100–300 bytes)
+- Using `String` or `Vec<T>` from `std` instead of `soroban_sdk`
+- Enabling a dependency feature that pulls in `std`
+- Removing `#[no_std]` from `src/lib.rs`
