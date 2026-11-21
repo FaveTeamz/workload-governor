@@ -1,6 +1,7 @@
 # =============================================================================
 # logs_and_alarms.tf — CloudWatch log groups, Logs Insights queries, dashboard
 # Issue #397: structured query support for operational observability
+# Issue #1311: ALB HTTPS redirect verification alarm
 # =============================================================================
 #
 # Log format (src/logger.ts — pino JSON):
@@ -41,6 +42,12 @@ variable "ecs_cluster_name" {
 
 variable "rds_instance_identifier" {
   description = "RDS instance identifier for RDS connections metric in dashboard"
+  type        = string
+  default     = ""
+}
+
+variable "alb_arn_suffix" {
+  description = "ALB ARN suffix used to scope the HTTPS redirect metric filter (leave empty to skip)"
   type        = string
   default     = ""
 }
@@ -212,6 +219,57 @@ resource "aws_cloudwatch_metric_alarm" "soroban_rpc_failover_alarm" {
   insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
 }
 
+# ── Metric filter: HTTP (non-HTTPS) requests reaching the app (#1311) ────────
+# backend/src/app.ts logs a debug line for every incoming request including
+# the x-forwarded-proto header value.  This filter counts lines where that
+# value equals "http" so we can alert when the ALB redirect rule is broken
+# and plain-HTTP traffic reaches the container.
+
+resource "aws_cloudwatch_log_metric_filter" "http_plaintext" {
+  name           = "${var.service_name}-http-plaintext"
+  pattern        = "{ $.headers[\"x-forwarded-proto\"] = \"http\" }"
+  log_group_name = aws_cloudwatch_log_group.ecs.name
+
+  metric_transformation {
+    name          = "HttpPlaintextCount"
+    namespace     = "${var.service_name}/Application"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
+# In a correctly configured deployment the ALB redirect rule terminates all
+# plain-HTTP at the load balancer; a non-zero HttpPlaintextCount means the
+# redirect rule is broken or traffic is reaching the container directly.
+resource "aws_cloudwatch_metric_alarm" "http_plaintext_alarm" {
+  alarm_name          = "${var.service_name}-http-plaintext-bypass"
+  alarm_description   = "Plain HTTP reached the backend container — ALB HTTPS redirect may be misconfigured. Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/security.md#https-enforcement"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HttpPlaintextCount"
+  namespace           = "${var.service_name}/Application"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching" # absence of plain-HTTP traffic is healthy
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
+# Saved Insights query for forensic investigation of plaintext arrivals.
+resource "aws_cloudwatch_query_definition" "http_plaintext_requests" {
+  name = "${var.service_name}-http-plaintext-requests"
+  query_string = <<-EOT
+    fields @timestamp, correlationId, method, path, status
+    | filter headers["x-forwarded-proto"] = "http"
+    | sort @timestamp desc
+    | limit 50
+  EOT
+}
+
 # ── CloudWatch Dashboard ──────────────────────────────────────────────────────
 # Single view: all 3 alarms + ECS CPU/memory + RDS connections.
 
@@ -271,11 +329,24 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
         }
       },
 
+      # ── Security Alarm: HTTP Plaintext Bypass (#1311) ──────────────────────
+      {
+        type   = "alarm"
+        x      = 0
+        y      = 4
+        width  = 12
+        height = 3
+        properties = {
+          title  = "Security: HTTP Plaintext Bypass"
+          alarms = [aws_cloudwatch_metric_alarm.http_plaintext_alarm.arn]
+        }
+      },
+
       # ── Error Count metric (time series) ──────────────────────────────────
       {
         type   = "metric"
         x      = 0
-        y      = 4
+        y      = 7
         width  = 12
         height = 6
         properties = {
@@ -285,7 +356,8 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
           metrics = [
             ["${var.service_name}/Application", "ErrorCount", { stat = "Sum", color = "#d62728" }],
             ["${var.service_name}/Application", "Http5xxCount", { stat = "Sum", color = "#ff7f0e" }],
-            ["${var.service_name}/Application", "SorobanRpcFailover", { stat = "Sum", color = "#9467bd" }]
+            ["${var.service_name}/Application", "SorobanRpcFailover", { stat = "Sum", color = "#9467bd" }],
+            ["${var.service_name}/Application", "HttpPlaintextCount", { stat = "Sum", color = "#e377c2" }]
           ]
         }
       },
@@ -294,7 +366,7 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
       {
         type   = "metric"
         x      = 12
-        y      = 4
+        y      = 7
         width  = 12
         height = 6
         properties = {
@@ -312,7 +384,7 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
       {
         type   = "metric"
         x      = 0
-        y      = 10
+        y      = 13
         width  = 12
         height = 6
         properties = {
@@ -348,4 +420,9 @@ output "operational_dashboard_name" {
 output "operational_dashboard_arn" {
   description = "ARN of the operational CloudWatch dashboard (share this with the team)"
   value       = aws_cloudwatch_dashboard.service_dashboard.dashboard_arn
+}
+
+output "http_plaintext_alarm_arn" {
+  description = "ARN of the HTTP plaintext bypass security alarm (#1311)"
+  value       = aws_cloudwatch_metric_alarm.http_plaintext_alarm.arn
 }
