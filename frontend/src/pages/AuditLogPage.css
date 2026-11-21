@@ -1,0 +1,226 @@
+/* ============================================================
+   AuditLogPage Styles — Issue #855 / FE-020
+   ============================================================ */
+
+.audit-log-page {
+  padding: var(--space-6, 1.5rem);
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.audit-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-6, 1.5rem);
+  flex-wrap: wrap;
+  gap: var(--space-4, 1rem);
+}
+
+.audit-log-title {
+  font-size: var(--text-2xl, 1.5rem);
+  font-weight: var(--font-bold, 700);
+  color: var(--color-text, #0f172a);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.audit-log-badge-count {
+  font-size: var(--text-xs, 0.75rem);
+  background: var(--color-primary-100, #e0e7ff);
+  color: var(--color-primary-800, #3730a3);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-weight: var(--font-semibold, 600);
+}
+
+/* ── 6-Column Desktop Table (min-width: 769px) ─────────────── */
+.audit-log-table-container {
+  display: block;
+  overflow-x: auto;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.audit-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.audit-log-table th {
+  background: var(--color-bg, #f8fafc);
+  color: var(--color-muted, #64748b);
+  font-weight: var(--font-semibold, 600);
+  text-transform: uppercase;
+  font-size: var(--text-xs, 0.75rem);
+  letter-spacing: 0.05em;
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.audit-log-table td {
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text, #334155);
+  vertical-align: top;
+}
+
+.audit-log-table tr:hover {
+  background: var(--color-bg-hover, #f1f5f9);
+}
+
+.audit-log-mono {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.audit-log-diff-cell {
+  max-width: 280px;
+}
+
+.audit-log-diff-preview {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 80px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* ── Mobile Stacked Cards (max-width: 768px) ────────────────── */
+.audit-log-cards-container {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+.audit-log-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-4, 1rem);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+.audit-log-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  padding-bottom: var(--space-2, 0.5rem);
+}
+
+.audit-log-card__action {
+  font-weight: var(--font-bold, 700);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #0f172a);
+}
+
+.audit-log-card__timestamp {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-muted, #64748b);
+}
+
+.audit-log-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audit-log-card__label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.audit-log-card__value {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #1e293b);
+  word-break: break-all;
+}
+
+.audit-log-card__diff {
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--space-2, 0.5rem);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  margin: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.audit-log-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  text-transform: capitalize;
+}
+
+.audit-log-status-badge--success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.audit-log-status-badge--failure {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.audit-log-status-badge--pending {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.audit-log-empty {
+  padding: var(--space-8, 2rem);
+  text-align: center;
+  color: var(--color-muted, #64748b);
+  background: var(--color-surface, #ffffff);
+  border: 1px dashed var(--color-border, #cbd5e1);
+  border-radius: var(--radius-md, 8px);
+}
+
+/* ── Media Queries ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .audit-log-table-container {
+    display: none !important;
+  }
+
+  .audit-log-cards-container {
+    display: flex !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .audit-log-table-container {
+    display: block !important;
+  }
+
+  .audit-log-cards-container {
+    display: none !important;
+  }
+}

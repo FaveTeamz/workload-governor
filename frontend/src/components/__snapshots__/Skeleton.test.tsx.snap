@@ -1,0 +1,250 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Skeleton snapshots > AssignmentRowSkeleton renders correctly 1`] = `
+<DocumentFragment>
+  <ul>
+    <li
+      aria-busy="true"
+      aria-label="Loading assignment"
+      class="panel-row skeleton-row"
+    >
+      <div
+        class="row-info"
+      >
+        <span
+          aria-hidden="true"
+          class="skeleton"
+          role="presentation"
+          style="width: 96px; height: 14px; border-radius: 4px;"
+        />
+        <span
+          aria-hidden="true"
+          class="skeleton"
+          role="presentation"
+          style="width: 72px; height: 14px; border-radius: 4px;"
+        />
+        <span
+          aria-hidden="true"
+          class="skeleton issue-title"
+          role="presentation"
+          style="width: 160px; height: 14px; border-radius: 4px;"
+        />
+      </div>
+      <div
+        class="row-actions"
+      >
+        <span
+          aria-hidden="true"
+          class="skeleton"
+          role="presentation"
+          style="width: 76px; height: 36px; border-radius: 6px;"
+        />
+        <span
+          aria-hidden="true"
+          class="skeleton"
+          role="presentation"
+          style="width: 64px; height: 36px; border-radius: 6px;"
+        />
+      </div>
+    </li>
+  </ul>
+</DocumentFragment>
+`;
+
+exports[`Skeleton snapshots > EventHistoryRowSkeleton renders correctly 1`] = `
+<DocumentFragment>
+  <ol>
+    <li
+      aria-busy="true"
+      aria-label="Loading event"
+      class="af-event skeleton-row"
+    >
+      <span
+        aria-hidden="true"
+        class="skeleton"
+        role="presentation"
+        style="width: 64px; height: 20px; border-radius: 9999px;"
+      />
+      <span
+        class="af-event__body"
+      >
+        <span
+          aria-hidden="true"
+          class="skeleton"
+          role="presentation"
+          style="width: 80px; height: 14px; border-radius: 4px;"
+        />
+        <span
+          aria-hidden="true"
+          class="skeleton"
+          role="presentation"
+          style="width: 100px; height: 14px; border-radius: 4px; margin-left: 8px;"
+        />
+      </span>
+      <span
+        aria-hidden="true"
+        class="skeleton"
+        role="presentation"
+        style="width: 48px; height: 12px; border-radius: 4px;"
+      />
+    </li>
+  </ol>
+</DocumentFragment>
+`;
+
+exports[`Skeleton snapshots > IssueCardSkeleton renders correctly 1`] = `
+<article
+  aria-busy="true"
+  aria-label="Loading issue"
+  class="issue-card skeleton-card"
+>
+  <div
+    class="issue-card__meta"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 72px; height: 20px; border-radius: 9999px;"
+    />
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 56px; height: 20px; border-radius: 9999px;"
+    />
+  </div>
+  <span
+    aria-hidden="true"
+    class="skeleton"
+    role="presentation"
+    style="width: 85%; height: 18px; border-radius: 4px;"
+  />
+  <span
+    aria-hidden="true"
+    class="skeleton"
+    role="presentation"
+    style="width: 55%; height: 18px; border-radius: 4px;"
+  />
+  <div
+    class="issue-card__actions"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 80px; height: 36px; border-radius: 6px;"
+    />
+  </div>
+</article>
+`;
+
+exports[`Skeleton snapshots > OrgSelectorSkeleton renders 5 items 1`] = `
+<ul
+  aria-busy="true"
+  aria-label="Loading organisations"
+  class="org-list skeleton-org-list"
+>
+  <li
+    class="org-list__item"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 90%; height: 20px; border-radius: 4px; margin: 6px 0px;"
+    />
+  </li>
+  <li
+    class="org-list__item"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 90%; height: 20px; border-radius: 4px; margin: 6px 0px;"
+    />
+  </li>
+  <li
+    class="org-list__item"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 90%; height: 20px; border-radius: 4px; margin: 6px 0px;"
+    />
+  </li>
+  <li
+    class="org-list__item"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 90%; height: 20px; border-radius: 4px; margin: 6px 0px;"
+    />
+  </li>
+  <li
+    class="org-list__item"
+  >
+    <span
+      aria-hidden="true"
+      class="skeleton"
+      role="presentation"
+      style="width: 90%; height: 20px; border-radius: 4px; margin: 6px 0px;"
+    />
+  </li>
+</ul>
+`;
+
+exports[`Skeleton snapshots > Skeleton base renders correctly 1`] = `
+<span
+  aria-hidden="true"
+  class="skeleton"
+  role="presentation"
+  style="width: 200px; height: 20px;"
+/>
+`;
+
+exports[`Skeleton snapshots > WorkloadGaugeSkeleton renders correctly at custom size 1`] = `
+<figure
+  aria-busy="true"
+  aria-label="Loading gauge"
+  class="gauge skeleton-gauge"
+>
+  <span
+    aria-hidden="true"
+    class="skeleton"
+    role="presentation"
+    style="width: 80px; height: 80px; border-radius: 50%;"
+  />
+  <span
+    aria-hidden="true"
+    class="skeleton"
+    role="presentation"
+    style="width: 72px; height: 12px; border-radius: 4px; margin-top: 6px;"
+  />
+</figure>
+`;
+
+exports[`Skeleton snapshots > WorkloadGaugeSkeleton renders correctly at default size 1`] = `
+<figure
+  aria-busy="true"
+  aria-label="Loading gauge"
+  class="gauge skeleton-gauge"
+>
+  <span
+    aria-hidden="true"
+    class="skeleton"
+    role="presentation"
+    style="width: 120px; height: 120px; border-radius: 50%;"
+  />
+  <span
+    aria-hidden="true"
+    class="skeleton"
+    role="presentation"
+    style="width: 72px; height: 12px; border-radius: 4px; margin-top: 6px;"
+  />
+</figure>
+`;

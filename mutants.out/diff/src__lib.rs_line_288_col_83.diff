@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace + with - in WorkloadGovernor::assign_issue
+@@ -280,17 +280,17 @@
+         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+         let app_count = storage::get_global_app_count(&env, &contributor);
+         let new_app_count = app_count.saturating_sub(1);
+         if new_app_count == 0 {
+             storage::remove_global_app_count(&env, &contributor);
+         } else {
+             storage::set_global_app_count(&env, &contributor, new_app_count);
+         }
+-        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
++        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count - /* ~ changed by cargo-mutants ~ */ 1);
+         storage::set_assignment(&env, &org_id, issue_id, &contributor);
+         storage::bump_instance(&env);
+         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);
+     }
+ 
+     /// Marks an active assignment as completed and frees the assignment slot (maintainer-only).
+     ///
+     /// Removes the assignment sentinel and decrements the contributor's org-level

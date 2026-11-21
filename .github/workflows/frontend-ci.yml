@@ -1,0 +1,100 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend*.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend*.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Cache Vitest results
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules/.vitest
+          key: ${{ runner.os }}-vitest-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('frontend/package-lock.json') }}-
+            ${{ runner.os }}-vitest-
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Audit dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Test
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  notify-on-failure:
+    name: Slack — Frontend CI failed
+    needs: [frontend-ci]
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.frontend-ci.result == 'failure'
+    uses: ./.github/workflows/notify-slack.yml
+    secrets: inherit
+    with:
+      workflow_name: "Frontend CI"
+      status: "failure"
+      commit_sha: ${{ github.sha }}
+      actor: ${{ github.actor }}
+      commit_message: ${{ github.event.head_commit.message }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  notify-on-restored:
+    name: Slack — Frontend CI restored
+    needs: [frontend-ci]
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.frontend-ci.result == 'success'
+    uses: ./.github/workflows/notify-slack.yml
+    secrets: inherit
+    with:
+      workflow_name: "Frontend CI"
+      status: "success"
+      commit_sha: ${{ github.sha }}
+      actor: ${{ github.actor }}
+      commit_message: ${{ github.event.head_commit.message }}
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

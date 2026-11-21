@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 – Page Not Found | AlignmentDrips</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100dvh; display: flex; flex-direction: column; }
+
+    /* ── Nav (inlined from _nav.html for server-render self-containment) ── */
+    .ag-nav { display:flex; align-items:center; gap:1.5rem; padding:.75rem 1.5rem; background:#0f172a; color:#f1f5f9; }
+    .ag-nav-brand { font-weight:700; font-size:1.1rem; color:#38bdf8; text-decoration:none; margin-right:auto; }
+    .ag-nav-links { display:flex; gap:1.25rem; list-style:none; }
+    .ag-nav-links a { color:#cbd5e1; text-decoration:none; font-size:.9rem; }
+    .ag-nav-links a:hover { color:#f1f5f9; }
+
+    /* ── 404 body ── */
+    main { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; text-align:center; gap:1.5rem; }
+    .ag-404-illustration { font-size:6rem; line-height:1; user-select:none; aria-hidden:true; }
+    h1 { font-size:2rem; font-weight:700; }
+    p  { color:#475569; max-width:38ch; line-height:1.6; }
+    .ag-btn { display:inline-block; padding:.6rem 1.5rem; background:#0ea5e9; color:#fff; border-radius:6px; text-decoration:none; font-weight:600; font-size:.95rem; }
+    .ag-btn:hover { background:#0284c7; }
+  </style>
+</head>
+<body>
+  <nav class="ag-nav" aria-label="Main navigation">
+    <a class="ag-nav-brand" href="/">AlignmentDrips</a>
+    <ul class="ag-nav-links" role="list">
+      <li><a href="/dashboard">Dashboard</a></li>
+      <li><a href="/issues">Issues</a></li>
+      <li><a href="/history">History</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <div class="ag-404-illustration" role="img" aria-label="Lost astronaut illustration">🚀</div>
+    <h1>404 – Page Not Found</h1>
+    <p>Looks like this page drifted into deep space. The route you requested doesn't exist.</p>
+    <a class="ag-btn" href="/dashboard">Back to Dashboard</a>
+  </main>
+</body>
+</html>

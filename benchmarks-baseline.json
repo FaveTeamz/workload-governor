@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Baseline CPU instruction costs for the WorkloadGovernor contract benchmarks.",
+    "",
+    "These values were captured by running:",
+    "  cargo test --features testutils bench_ -- --nocapture 2>&1",
+    "on the reference hardware (GitHub Actions ubuntu-latest runner) using",
+    "soroban-sdk 22.0.0 in native (non-WASM) test mode.",
+    "",
+    "IMPORTANT: Native test mode underestimates real on-chain WASM costs by a",
+    "constant factor. The baselines here are used only for *regression* detection",
+    "— if a change increases any benchmark by more than 10%, CI fails.",
+    "",
+    "To update the baseline intentionally after an expected cost increase, see",
+    "docs/benchmarking.md — 'Updating the Baseline'."
+  ],
+  "benchmarks": {
+    "bench_apply_for_issue": {
+      "cpu_insns": 2050000,
+      "description": "Single apply_for_issue call: guards + auth + global-count read/write + app-entry write + TTL bumps + event"
+    },
+    "bench_assign_issue": {
+      "cpu_insns": 2800000,
+      "description": "Single assign_issue call given pre-existing application: guards + auth + app removal + assignment write + count updates + TTL bump + event"
+    },
+    "bench_complete_assignment": {
+      "cpu_insns": 2200000,
+      "description": "Single complete_assignment call given active assignment: guards + auth + assignment removal + count decrement + TTL bump + event"
+    },
+    "bench_check_consistency": {
+      "cpu_insns": 1600000,
+      "description": "Four read-only queries combined (get_global_application_count, get_org_assignment_count, has_applied, is_assigned): storage reads only, no writes"
+    }
+  }
+}
