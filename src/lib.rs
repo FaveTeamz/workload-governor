@@ -69,6 +69,33 @@ impl WorkloadGovernor {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
+    /// Sets the application TTL duration used by `apply_for_issue` and
+    /// `extend_application_ttl` (admin-only).
+    ///
+    /// - Panics with `NotInitialized` if the contract has not been initialised.
+    /// - Panics with `UnauthorizedAdmin` if caller does not match the stored admin.
+    /// - Panics with `TtlOutOfBounds` if `ttl_ledgers` is outside [MIN_TTL, MAX_TTL].
+    /// - Emits `AdminConfigUpdated` event on success.
+    pub fn set_application_ttl_duration(
+        env: Env,
+        admin: Address,
+        ttl_ledgers: u32,
+    ) -> Result<(), ContractError> {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        if admin != stored_admin {
+            panic_with_error!(env, ContractError::UnauthorizedAdmin);
+        }
+        stored_admin.require_auth();
+        if ttl_ledgers < storage::MIN_TTL || ttl_ledgers > storage::MAX_TTL {
+            panic_with_error!(env, ContractError::TtlOutOfBounds);
+        }
+        storage::set_app_ttl_ledgers(&env, ttl_ledgers);
+        storage::bump_instance(&env);
+        events::emit_admin_config_updated(&env, &admin, ttl_ledgers);
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Contributor functions
     // -----------------------------------------------------------------------
@@ -86,10 +113,11 @@ impl WorkloadGovernor {
         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::DuplicateApplication);
         }
+        let ttl = storage::get_app_ttl_ledgers(&env);
         storage::set_global_app_count(&env, &contributor, count + 1);
         storage::set_app_entry(&env, &contributor, &org_id, issue_id);
-        storage::extend_global_app_count_ttl(&env, &contributor);
-        storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+        storage::extend_global_app_count_ttl_with(&env, &contributor, ttl);
+        storage::extend_app_entry_ttl_with(&env, &contributor, &org_id, issue_id, ttl);
         storage::bump_instance(&env);
         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);
     }
@@ -232,9 +260,10 @@ impl WorkloadGovernor {
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::ApplicationNotFound);
         }
-        storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+        let ttl = storage::get_app_ttl_ledgers(&env);
+        storage::extend_app_entry_ttl_with(&env, &contributor, &org_id, issue_id, ttl);
         if storage::get_global_app_count(&env, &contributor) > 0 {
-            storage::extend_global_app_count_ttl(&env, &contributor);
+            storage::extend_global_app_count_ttl_with(&env, &contributor, ttl);
         }
     }
 

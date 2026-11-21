@@ -27,6 +27,12 @@ pub const APP_TTL_MIN: u32 = 1;
 /// Maximum valid value for `APP_TTL_LEDGERS` (Soroban platform cap).
 pub const APP_TTL_MAX: u32 = 535_000;
 
+/// Governance-enforced minimum for the configurable application TTL.
+pub const MIN_TTL: u32 = 1_000;
+
+/// Governance-enforced maximum for the configurable application TTL (~30 days).
+pub const MAX_TTL: u32 = 518_400;
+
 /// Maximum number of pending applications a contributor may hold globally.
 pub const GLOBAL_APP_LIMIT: u32 = 15;
 
@@ -97,6 +103,13 @@ pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
 }
 
+/// Extends the TTL of the contributor's global pending-application count entry
+/// using a caller-supplied ledger count.
+pub(crate) fn extend_global_app_count_ttl_with(env: &Env, contributor: &Address, ttl: u32) {
+    let key = global_app_count_key(contributor);
+    env.storage().temporary().extend_ttl(&key, ttl, ttl);
+}
+
 // ---------------------------------------------------------------------------
 // Temporary storage — Per-Issue Application Entry
 // ---------------------------------------------------------------------------
@@ -164,6 +177,18 @@ pub(crate) fn extend_app_entry_ttl(
     env.storage()
         .temporary()
         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+}
+
+/// Extends the TTL of the per-issue application entry using a caller-supplied ledger count.
+pub(crate) fn extend_app_entry_ttl_with(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+    issue_id: u32,
+    ttl: u32,
+) {
+    let key = app_entry_key(contributor, org_id, issue_id);
+    env.storage().temporary().extend_ttl(&key, ttl, ttl);
 }
 
 // ---------------------------------------------------------------------------
@@ -309,4 +334,28 @@ pub(crate) fn remove_assignment(
 ) {
     let key = assignment_entry_key(org_id, issue_id, contributor);
     env.storage().persistent().remove(&key);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage — Configurable Application TTL
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("app_ttl")`
+// Value: `u32`  (ledger count; defaults to APP_TTL_LEDGERS if unset)
+
+/// Returns the currently configured application TTL in ledgers.
+/// Falls back to `APP_TTL_LEDGERS` if the admin has not set a custom value.
+pub(crate) fn get_app_ttl_ledgers(env: &Env) -> u32 {
+    let key = symbol_short!("app_ttl");
+    env.storage()
+        .persistent()
+        .get::<_, u32>(&key)
+        .unwrap_or(APP_TTL_LEDGERS)
+}
+
+/// Persists a new application TTL duration (ledger count).
+/// The caller is responsible for bounds-checking before calling this.
+pub(crate) fn set_app_ttl_ledgers(env: &Env, ledgers: u32) {
+    let key = symbol_short!("app_ttl");
+    env.storage().persistent().set(&key, &ledgers);
 }

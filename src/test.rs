@@ -618,6 +618,97 @@ proptest! {
     }
 }
 
+// ---------------------------------------------------------------------------
+// UNIT TESTS — set_application_ttl_duration (issue #1223)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unit_admin_can_set_valid_ttl() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    // Valid mid-range value
+    t.client.set_application_ttl_duration(&admin, &50_000u32);
+}
+
+#[test]
+fn unit_admin_can_set_min_ttl() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.set_application_ttl_duration(&admin, &1_000u32);
+}
+
+#[test]
+fn unit_admin_can_set_max_ttl() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.set_application_ttl_duration(&admin, &518_400u32);
+}
+
+#[test]
+#[should_panic]
+fn unit_ttl_below_min_rejected() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.set_application_ttl_duration(&admin, &999u32); // TtlOutOfBounds
+}
+
+#[test]
+#[should_panic]
+fn unit_ttl_above_max_rejected() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.set_application_ttl_duration(&admin, &518_401u32); // TtlOutOfBounds
+}
+
+#[test]
+#[should_panic]
+fn unit_non_admin_cannot_set_ttl() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let stranger = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.set_application_ttl_duration(&stranger, &10_000u32); // UnauthorizedAdmin
+}
+
+#[test]
+fn unit_new_applications_use_updated_ttl() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("dynttl");
+
+    t.client.initialize(&admin);
+    // Set a custom TTL and confirm apply_for_issue still works (uses dynamic value)
+    t.client.set_application_ttl_duration(&admin, &5_000u32);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+#[test]
+fn unit_ttl_config_emits_event() {
+    use soroban_sdk::testutils::Events;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let events_before = t.env.events().all().len();
+    t.client.set_application_ttl_duration(&admin, &25_000u32);
+
+    let events = t.env.events().all();
+    assert!(events.len() > events_before, "No event emitted by set_application_ttl_duration");
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics for adm_cfg event");
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {

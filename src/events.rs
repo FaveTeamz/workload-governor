@@ -108,3 +108,13 @@ pub(crate) fn emit_assignment_revoked(
     let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `set_application_ttl_duration`.
+///
+/// topics: `(symbol_short!("adm_cfg"), admin)`
+/// data:   `(symbol_short!("app_ttl"), ttl_ledgers)`
+pub(crate) fn emit_admin_config_updated(env: &Env, admin: &Address, ttl_ledgers: u32) {
+    let topics = (symbol_short!("adm_cfg"), admin.clone());
+    let data = (symbol_short!("app_ttl"), ttl_ledgers);
+    env.events().publish(topics, data);
+}
