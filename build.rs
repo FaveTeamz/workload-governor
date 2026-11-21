@@ -1,6 +1,7 @@
 use std::path::Path;
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(wasm_available)");
     // Enable the `wasm_available` cfg when the release WASM has been built.
     // This lets upgrade tests that use include_bytes! compile only when the
     // artifact exists (local dev + CI after `cargo build --target wasm32v1-none`).

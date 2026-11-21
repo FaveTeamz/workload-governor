@@ -17,3 +17,13 @@ output "s3_bucket_arn" {
   description = "ARN of the S3 bucket."
   value       = aws_s3_bucket.frontend.arn
 }
+
+output "waf_web_acl_arn" {
+  description = "ARN of the WAF WebACL attached to the CloudFront distribution. Empty string when waf_enabled is false."
+  value       = var.waf_enabled ? aws_wafv2_web_acl.frontend_waf[0].arn : ""
+}
+
+output "waf_web_acl_arn" {
+  description = "ARN of the WAF WebACL attached to the CloudFront distribution. Empty string when waf_enabled is false."
+  value       = var.waf_enabled ? aws_wafv2_web_acl.frontend_waf[0].arn : ""
+}

@@ -75,19 +75,22 @@ describe('OrgIssuesPage withdraw flow', () => {
     mockRefresh.mockReset();
     mockSetIssueStatus.mockReset();
     mockSignTransaction.mockReset();
-    mockSignTransaction.mockResolvedValue('signed-xdr');
+    mockSignTransaction.mockResolvedValue({ signedTxXdr: 'signed-xdr' });
+    vi.stubGlobal('__freighter_api__', { signTransaction: mockSignTransaction });
     mockRefresh.mockResolvedValue(undefined);
-    window.confirm = vi.fn().mockReturnValue(true);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it('calls withdraw endpoint and refreshes when confirmed', async () => {
+  it('builds the withdraw transaction, then signs and submits only after confirmation', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ xdr: 'unsigned-xdr' }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: '12' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ xdr: 'unsigned-xdr', fee: '100' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ hash: 'tx-hash' }) });
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -104,6 +107,44 @@ describe('OrgIssuesPage withdraw flow', () => {
         expect.objectContaining({ method: 'POST' }),
       ),
     );
+    expect(screen.getByText('withdraw_application')).toBeTruthy();
+    expect(screen.getByText('0.00001 XLM')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /technical details \(xdr\)/i }));
+    expect(screen.getByText('unsigned-xdr')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockSignTransaction).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm withdrawal' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(mockSignTransaction).toHaveBeenCalledWith(
+      'unsigned-xdr',
+      expect.objectContaining({ accountToSign: mockWallet.publicKey }),
+    );
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/transactions/submit',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('does not sign or submit when the user cancels review', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: '12' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ xdr: 'unsigned-xdr', fee: '100' }) });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(
+      screen.getByRole('button', { name: /withdraw application for: fix the withdraw flow/i }),
+    );
+    await screen.findByRole('dialog');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockSignTransaction).not.toHaveBeenCalled();
   });
 
   it('shows the issue title in the list', () => {

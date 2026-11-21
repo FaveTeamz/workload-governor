@@ -67,6 +67,8 @@ export function WithdrawButton({
         className="btn btn-secondary btn-sm"
         onClick={requestWithdraw}
         disabled={isSubmitting}
+        aria-disabled={isSubmitting}
+        aria-busy={isSubmitting}
         aria-label={`Withdraw application for ${label}`}
         data-testid="withdraw-trigger"
       >

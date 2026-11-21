@@ -8,13 +8,24 @@
  *   - Last-refreshed timestamp + manual refresh button
  *   - Pending applications list with Withdraw action (on-chain via Freighter)
  */
-import { useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useDashboard, GLOBAL_CAP, ORG_CAP, type OrgUsage } from '../hooks/useDashboard';
 import { useToast, ToastContainer } from '../components/Toast';
-import { WithdrawConfirmModal } from '../components/WithdrawConfirmModal';
 import { useWithdraw } from '../hooks/useWithdraw';
 import { Gauge } from '../components/Gauge';
+
+/**
+ * Code-split: WithdrawConfirmModal is excluded from the initial bundle.
+ * The chunk is fetched on demand when the contributor first opens a
+ * withdrawal confirmation dialog.
+ */
+const WithdrawConfirmModal = lazy(
+  () =>
+    import('../components/WithdrawConfirmModal').then((m) => ({
+      default: m.WithdrawConfirmModal,
+    }))
+);
 import './DashboardPage.css';
 
 // ---------------------------------------------------------------------------
@@ -426,8 +437,16 @@ export function DashboardPage({ apiBase = '/api' }: DashboardPageProps) {
         target={withdraw.pendingTarget}
         loading={withdraw.loading}
         onConfirm={withdraw.handleConfirm}
-        onCancel={withdraw.handleCancel}
-      />
+      {/* Lazy-loaded: WithdrawConfirmModal chunk is only fetched when a
+          withdrawal confirmation is needed, keeping the initial bundle small. */}
+      <Suspense fallback={null}>
+        <WithdrawConfirmModal
+          target={withdraw.pendingTarget}
+          loading={withdraw.loading}
+          onConfirm={withdraw.handleConfirm}
+          onCancel={withdraw.handleCancel}
+        />
+      </Suspense>
 
       {/* Toast notifications */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
