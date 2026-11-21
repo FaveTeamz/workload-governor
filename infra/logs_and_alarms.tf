@@ -178,6 +178,28 @@ resource "aws_cloudwatch_metric_alarm" "http_5xx_alarm" {
   insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
 }
 
+# ── Alarm: HTTP 5xx rate spike (5-minute rolling window) ──────────────────────
+# Issue #865: fires when 5xx count exceeds 10 in any single 5-minute window.
+# Complements the per-minute alarm above with a rolling aggregate view to catch
+# sustained unhandled error spikes that stay just under the per-minute threshold.
+
+resource "aws_cloudwatch_metric_alarm" "http_5xx_spike_alarm" {
+  alarm_name          = "${var.service_name}-5xx-spike"
+  alarm_description   = "5xx response count exceeded 10 in a 5-minute window — possible unhandled error spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Http5xxCount"
+  namespace           = "${var.service_name}/Application"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 10
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
 # ── Metric filter 3: Soroban RPC failover events ──────────────────────────────
 # Triggers on any log message indicating a Soroban RPC endpoint failover.
 

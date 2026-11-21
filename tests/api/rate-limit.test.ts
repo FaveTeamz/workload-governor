@@ -503,3 +503,124 @@ describe('Test 6 – Independent counters for different IPs, keys, and wallets',
     expect(resB.status).toBe(200);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Test 7 — Maintainer limiter: keyed by (api_key + org_id), 100 req/min
+//           Authenticated requests keyed by api_key + org_id
+//           Unauthenticated requests keyed by IP + org_id
+//           Different orgs have independent counters
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import {
+  maintainerLimiter,
+  MAINTAINER_LIMIT,
+  clearMaintainerLimitStore,
+} from '../../src/middleware/rate-limit';
+
+/** Tests maintainerLimiter (in-process Map, limit=100/min). */
+function makeMaintainerApp() {
+  const app = express();
+  app.use(express.json());
+  // Mount the limiter on a route that accepts org_id as a body param
+  app.post('/assign/:org_id', maintainerLimiter, (_req: Request, res: Response) =>
+    res.json({ ok: true }),
+  );
+  return app;
+}
+
+describe('Test 7 – Maintainer limiter (issue #558)', () => {
+  beforeEach(() => {
+    clearMaintainerLimitStore();
+  });
+
+  afterEach(() => {
+    clearMaintainerLimitStore();
+  });
+
+  it('allows requests under the 100/min limit', async () => {
+    const app = makeMaintainerApp();
+    const res = await request(app).post('/assign/org-alpha').send({});
+    expect(res.status).toBe(200);
+    expect(res.headers['x-ratelimit-limit']).toBe(String(MAINTAINER_LIMIT));
+    expect(Number(res.headers['x-ratelimit-remaining'])).toBeGreaterThanOrEqual(0);
+    expect(res.headers['x-ratelimit-reset']).toBeDefined();
+  });
+
+  it('returns 429 after 100 requests from the same unauthenticated IP + org_id', async () => {
+    const app = makeMaintainerApp();
+    let lastRes: import('supertest').Response | null = null;
+
+    for (let i = 0; i < 101; i++) {
+      lastRes = await request(app)
+        .post('/assign/org-alpha')
+        .set('X-Forwarded-For', '10.1.1.1')
+        .send({});
+    }
+
+    expect(lastRes!.status).toBe(429);
+    expect(lastRes!.body.error).toMatch(/maintainer rate limit exceeded/i);
+    expect(lastRes!.headers['retry-after']).toBeDefined();
+    expect(typeof lastRes!.body.retryAfter).toBe('number');
+  });
+
+  it('different org_ids have independent counters for the same IP', async () => {
+    const app = makeMaintainerApp();
+
+    // Exhaust counter for org-alpha from IP 10.2.2.2
+    for (let i = 0; i < 100; i++) {
+      await request(app)
+        .post('/assign/org-alpha')
+        .set('X-Forwarded-For', '10.2.2.2')
+        .send({});
+    }
+    const blockedAlpha = await request(app)
+      .post('/assign/org-alpha')
+      .set('X-Forwarded-For', '10.2.2.2')
+      .send({});
+    expect(blockedAlpha.status).toBe(429);
+
+    // org-beta from the same IP should have its own independent counter
+    const betaRes = await request(app)
+      .post('/assign/org-beta')
+      .set('X-Forwarded-For', '10.2.2.2')
+      .send({});
+    expect(betaRes.status).toBe(200);
+  });
+
+  it('includes X-RateLimit-Remaining header in 429 response', async () => {
+    const app = makeMaintainerApp();
+
+    for (let i = 0; i < 101; i++) {
+      await request(app).post('/assign/org-gamma').set('X-Forwarded-For', '10.3.3.3').send({});
+    }
+
+    const res = await request(app).post('/assign/org-gamma').set('X-Forwarded-For', '10.3.3.3').send({});
+    expect(res.status).toBe(429);
+    expect(res.headers['x-ratelimit-remaining']).toBe('0');
+    expect(res.headers['x-ratelimit-limit']).toBe(String(MAINTAINER_LIMIT));
+  });
+
+  it('counter resets after the 60s window (fake timers)', async () => {
+    jest.useFakeTimers();
+    try {
+      clearMaintainerLimitStore();
+      const app = makeMaintainerApp();
+
+      // Exhaust the 100-request limit
+      for (let i = 0; i < 100; i++) {
+        await request(app).post('/assign/org-delta').set('X-Forwarded-For', '10.4.4.4').send({});
+      }
+      const blocked = await request(app).post('/assign/org-delta').set('X-Forwarded-For', '10.4.4.4').send({});
+      expect(blocked.status).toBe(429);
+
+      // Advance past the 60-second window
+      jest.advanceTimersByTime(61_000);
+
+      const afterReset = await request(app).post('/assign/org-delta').set('X-Forwarded-For', '10.4.4.4').send({});
+      expect(afterReset.status).toBe(200);
+    } finally {
+      jest.useRealTimers();
+      clearMaintainerLimitStore();
+    }
+  });
+});

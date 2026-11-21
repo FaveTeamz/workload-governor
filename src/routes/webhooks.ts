@@ -26,12 +26,46 @@ interface GitHubWebhookBody {
   issue?: GitHubIssue;
   label?: GitHubLabel;
   repository?: GitHubRepository;
+  contributor?: string;
+}
+
+export function isValidGitHubApiUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:') return false;
+    const allowedHosts = ['api.github.com', 'github.com'];
+    if (!allowedHosts.includes(parsed.hostname.toLowerCase())) return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host.startsWith('127.') ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('172.16.') ||
+      host === '0.0.0.0'
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const GOOD_FIRST_ISSUE = 'good first issue';
 
 // POST /webhooks/github
 router.post('/github', async (req: Request, res: Response) => {
+  const rawBody = req.body as Record<string, unknown>;
+  const issueUrl = rawBody.issue_url || (rawBody.issue as Record<string, unknown> | undefined)?.url;
+  const repoUrl = rawBody.repository_url || (rawBody.repository as Record<string, unknown> | undefined)?.url;
+
+  if (typeof issueUrl === 'string' && !isValidGitHubApiUrl(issueUrl)) {
+    return res.status(400).json({ error: 'invalid or disallowed issue URL domain' });
+  }
+  if (typeof repoUrl === 'string' && !isValidGitHubApiUrl(repoUrl)) {
+    return res.status(400).json({ error: 'invalid or disallowed repository URL domain' });
+  }
   const signature = req.headers['x-hub-signature-256'] as string;
 
   if (!signature) {
@@ -140,6 +174,14 @@ router.post('/github', async (req: Request, res: Response) => {
         );
         console.log(`GitHub issue #${issueNumber} unlabeled good-first-issue`);
         break;
+      }
+
+      case 'apply':
+      case 'withdraw': {
+        // Contributor applied or withdrew — invalidate their global-count cache
+        await invalidateCache('global-count:*');
+        console.log(`Webhook action '${action}': invalidated global-count cache`);
+        return res.status(200).json({ message: 'webhook processed successfully' });
       }
 
       default:
@@ -305,6 +347,38 @@ router.delete('/org/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     console.error('Database error deleting webhook:', error);
+    return res.status(500).json({ error: 'database error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /webhooks/org/:webhookId/deliveries — delivery status (issue #565)
+// ---------------------------------------------------------------------------
+
+router.get('/org/:webhookId/deliveries', async (req: Request, res: Response) => {
+  const webhookId = parseInt(req.params.webhookId, 10);
+
+  if (isNaN(webhookId) || webhookId <= 0) {
+    return res.status(400).json({ error: 'invalid webhook id' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, webhook_id, payload, last_error, attempts, created_at
+       FROM webhook_dead_letters
+       WHERE webhook_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [webhookId],
+    );
+
+    return res.json({
+      webhook_id: webhookId,
+      deliveries: result.rows,
+      total: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Database error fetching delivery status:', error);
     return res.status(500).json({ error: 'database error' });
   }
 });

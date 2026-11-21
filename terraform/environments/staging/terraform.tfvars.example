@@ -5,3 +5,5 @@ aws_region             = "us-east-1"
 image_repository       = "ghcr.io/FaveTeamz/workload-governor"
 image_tag              = "abc1234"   # replace with Git SHA or version tag
 acm_certificate_domain = "staging.example.com"   # must be issued in ACM first
+cpu                    = "512"
+memory                 = "1024"
