@@ -6,10 +6,22 @@
 //!   - **Instance**   — Contract instance entry; bumped on every state-changing call
 //!                      so the contract itself never gets archived.
 //!
-//! All key prefixes are distinct `symbol_short!` values — zero collision guarantee:
-//!   "g_apps", "app", "admin", "maint", "o_asgn", "asgn"
+//! ## Key design — compact prefixes
+//!
+//! All key prefixes are 2–3 character `symbol_short!` values, chosen to minimise
+//! XDR serialisation overhead while guaranteeing zero collision across all storage
+//! tiers.  See `docs/storage-design.md` for byte-size benchmarks.
+//!
+//! | Category               | Old prefix | New prefix | Tier       |
+//! |------------------------|------------|------------|------------|
+//! | Global app count       | `"g_apps"` | `"ga"`     | Temporary  |
+//! | Per-issue application  | `"app"`    | `"ap"`     | Temporary  |
+//! | Admin address          | `"admin"`  | `"adm"`    | Persistent |
+//! | Maintainer entry       | `"maint"`  | `"mn"`     | Persistent |
+//! | Org assignment count   | `"o_asgn"` | `"oa"`     | Persistent |
+//! | Active assignment      | `"asgn"`   | `"as"`     | Persistent |
 
-use soroban_sdk::{panic_with_error, Address, Env, Symbol, symbol_short};
+use soroban_sdk::{panic_with_error, symbol_short, Address, Env, Symbol};
 
 use crate::errors::ContractError;
 
@@ -64,11 +76,11 @@ pub(crate) fn require_initialized(env: &Env, error: &ContractError) {
 // Temporary storage — Global Application Count
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("g_apps"), contributor: Address)`
+// Key: `(symbol_short!("ga"), contributor: Address)`   [was "g_apps"]
 // Value: `u32`
 
 fn global_app_count_key(contributor: &Address) -> (Symbol, Address) {
-    (symbol_short!("g_apps"), contributor.clone())
+    (symbol_short!("ga"), contributor.clone())
 }
 
 /// Returns the contributor's current global pending-application count (0 if absent/expired).
@@ -101,7 +113,8 @@ pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {
 // Temporary storage — Per-Issue Application Entry
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("app"), contributor: Address, org_id: Symbol, issue_id: u32)`
+// Key: `(symbol_short!("ap"), contributor: Address, org_id: Symbol, issue_id: u32)`
+//      [was "app"]
 // Value: `bool` (presence sentinel — always `true`)
 
 fn app_entry_key(
@@ -110,7 +123,7 @@ fn app_entry_key(
     issue_id: u32,
 ) -> (Symbol, Address, Symbol, u32) {
     (
-        symbol_short!("app"),
+        symbol_short!("ap"),
         contributor.clone(),
         org_id.clone(),
         issue_id,
@@ -132,12 +145,7 @@ pub(crate) fn has_app_entry(
 }
 
 /// Writes the application presence sentinel (`true`).
-pub(crate) fn set_app_entry(
-    env: &Env,
-    contributor: &Address,
-    org_id: &Symbol,
-    issue_id: u32,
-) {
+pub(crate) fn set_app_entry(env: &Env, contributor: &Address, org_id: &Symbol, issue_id: u32) {
     let key = app_entry_key(contributor, org_id, issue_id);
     env.storage().temporary().set(&key, &true);
 }
@@ -170,11 +178,11 @@ pub(crate) fn extend_app_entry_ttl(
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("admin")`
+// Key: `symbol_short!("adm")`   [was "admin"]
 // Value: `Address`
 
 fn admin_key() -> Symbol {
-    symbol_short!("admin")
+    symbol_short!("adm")
 }
 
 /// Returns the stored admin address, or `None` if not yet initialized.
@@ -191,11 +199,11 @@ pub(crate) fn set_admin(env: &Env, admin: &Address) {
 // Persistent storage — Maintainer Registration
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("maint"), maintainer: Address, org_id: Symbol)`
+// Key: `(symbol_short!("mn"), maintainer: Address, org_id: Symbol)`   [was "maint"]
 // Value: `bool`
 
 fn maintainer_key(maintainer: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {
-    (symbol_short!("maint"), maintainer.clone(), org_id.clone())
+    (symbol_short!("mn"), maintainer.clone(), org_id.clone())
 }
 
 /// Returns `true` if `maintainer` is registered for `org_id`.
@@ -217,19 +225,15 @@ pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
 // Persistent storage — Org Assignment Count
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("o_asgn"), contributor: Address, org_id: Symbol)`
+// Key: `(symbol_short!("oa"), contributor: Address, org_id: Symbol)`   [was "o_asgn"]
 // Value: `u32`
 
 fn org_assignment_count_key(contributor: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {
-    (symbol_short!("o_asgn"), contributor.clone(), org_id.clone())
+    (symbol_short!("oa"), contributor.clone(), org_id.clone())
 }
 
 /// Returns the contributor's active assignment count for `org_id` (0 if absent).
-pub(crate) fn get_org_assignment_count(
-    env: &Env,
-    contributor: &Address,
-    org_id: &Symbol,
-) -> u32 {
+pub(crate) fn get_org_assignment_count(env: &Env, contributor: &Address, org_id: &Symbol) -> u32 {
     let key = org_assignment_count_key(contributor, org_id);
     env.storage().persistent().get(&key).unwrap_or(0)
 }
@@ -246,11 +250,7 @@ pub(crate) fn set_org_assignment_count(
 }
 
 /// Removes the org assignment count entry (called when count reaches 0).
-pub(crate) fn remove_org_assignment_count(
-    env: &Env,
-    contributor: &Address,
-    org_id: &Symbol,
-) {
+pub(crate) fn remove_org_assignment_count(env: &Env, contributor: &Address, org_id: &Symbol) {
     let key = org_assignment_count_key(contributor, org_id);
     env.storage().persistent().remove(&key);
 }
@@ -259,7 +259,8 @@ pub(crate) fn remove_org_assignment_count(
 // Persistent storage — Active Assignment Entry
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("asgn"), org_id: Symbol, issue_id: u32, contributor: Address)`
+// Key: `(symbol_short!("as"), org_id: Symbol, issue_id: u32, contributor: Address)`
+//      [was "asgn"]
 // Value: `bool` (presence sentinel — always `true`)
 
 fn assignment_entry_key(
@@ -268,7 +269,7 @@ fn assignment_entry_key(
     contributor: &Address,
 ) -> (Symbol, Symbol, u32, Address) {
     (
-        symbol_short!("asgn"),
+        symbol_short!("as"),
         org_id.clone(),
         issue_id,
         contributor.clone(),
@@ -290,12 +291,7 @@ pub(crate) fn has_assignment(
 }
 
 /// Writes the assignment presence sentinel (`true`).
-pub(crate) fn set_assignment(
-    env: &Env,
-    org_id: &Symbol,
-    issue_id: u32,
-    contributor: &Address,
-) {
+pub(crate) fn set_assignment(env: &Env, org_id: &Symbol, issue_id: u32, contributor: &Address) {
     let key = assignment_entry_key(org_id, issue_id, contributor);
     env.storage().persistent().set(&key, &true);
 }
