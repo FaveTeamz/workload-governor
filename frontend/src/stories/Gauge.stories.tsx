@@ -1,142 +1,159 @@
 /**
- * Gauge stories — closes #279
+ * Complete Gauge stories for the design system.
+ * Covers 0%, 50%, 100%, and over-cap states.
+ * Dark-mode variants included.
  *
- * Maps to CapacityBars, which renders progress bars (gauges) for global and
- * per-org caps.  Covers: empty (0%), 25%, 50%, 75%, full (100%) for both
- * the global (cap=15) and org (cap=4) variants.
+ * Closes #541
  */
 import type { Meta, StoryObj } from '@storybook/react';
-import { CapacityBars } from '../components/CapacityBars';
-import type { OrgCount } from '../components/CapacityBars';
+import { Gauge } from '../components/Gauge';
 
-// ── Meta ──────────────────────────────────────────────────────────────────────
-
-interface GaugeArgs {
-  globalApplications: number;
-  orgCounts:          OrgCount[];
-}
-
-const meta: Meta<GaugeArgs> = {
-  title:     'Design System/Gauge',
-  component: CapacityBars,
-  tags:      ['autodocs'],
+const meta: Meta<typeof Gauge> = {
+  title: 'Design System/Gauge',
+  component: Gauge,
+  tags: ['autodocs'],
+  parameters: { layout: 'centered' },
   argTypes: {
-    globalApplications: {
-      control: { type: 'range', min: 0, max: 15, step: 1 },
-      description: 'Global pending applications (cap: 15)',
-    },
-    orgCounts: {
-      control: 'object',
-      description: 'Per-org assignment counts (cap: 4 each)',
-    },
+    value: { control: { type: 'range', min: 0, max: 15, step: 1 } },
+    max: { control: { type: 'range', min: 1, max: 15, step: 1 } },
+    size: { control: { type: 'range', min: 60, max: 400, step: 10 } },
+    variant: { control: 'radio', options: ['global', 'org'] },
   },
-  args: {
-    globalApplications: 0,
-    orgCounts: [{ org: 'stellar-org', assignments: 0 }],
+};
+
+export default meta;
+type Story = StoryObj<typeof Gauge>;
+
+// ── Threshold states ─────────────────────────────────────────────────────────
+
+/** Empty — 0 of 15 slots used (green zone) */
+export const Empty: Story = {
+  name: '0% — Empty',
+  args: { value: 0, max: 15, label: 'Global Applications', variant: 'global' },
+};
+
+/** ~50% — 7 of 15 (green zone ≤50%) */
+export const HalfFull: Story = {
+  name: '50% — Half full',
+  args: { value: 7, max: 15, label: 'Global Applications', variant: 'global' },
+};
+
+/** ~60% — 9 of 15 (amber zone 51-80%) */
+export const MediumUsage: Story = {
+  name: '60% — Medium usage (amber)',
+  args: { value: 9, max: 15, label: 'Global Applications', variant: 'global' },
+};
+
+/** ~87% — 13 of 15 (red zone >80%) */
+export const HighUsage: Story = {
+  name: '87% — High usage (red)',
+  args: { value: 13, max: 15, label: 'Global Applications', variant: 'global' },
+};
+
+/** 100% — 15 of 15 (cap reached) */
+export const AtCap: Story = {
+  name: '100% — At cap',
+  args: { value: 15, max: 15, label: 'Global cap reached', variant: 'global' },
+};
+
+// ── Org variant ───────────────────────────────────────────────────────────────
+
+/** Org cap — 2 of 4 (50%, green) */
+export const OrgHalfFull: Story = {
+  name: 'Org — 50%',
+  args: { value: 2, max: 4, label: 'Org: stellar-org', variant: 'org' },
+};
+
+/** Org cap — 4 of 4 (100%, red) */
+export const OrgAtCap: Story = {
+  name: 'Org — at cap',
+  args: { value: 4, max: 4, label: 'Org: stellar-org', variant: 'org' },
+};
+
+// ── Size variants ────────────────────────────────────────────────────────────
+
+export const SizeSmall: Story = {
+  name: 'Small (200px)',
+  args: { value: 8, max: 15, label: 'Applications', size: 200 },
+};
+
+export const SizeLarge: Story = {
+  name: 'Large (400px)',
+  args: { value: 8, max: 15, label: 'Applications', size: 400 },
+};
+
+// ── All thresholds grid ───────────────────────────────────────────────────────
+
+export const AllThresholds: Story = {
+  name: 'All thresholds',
+  render: () => (
+    <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <Gauge value={0} max={15} label="Empty" />
+      <Gauge value={3} max={15} label="Low (3/15)" />
+      <Gauge value={9} max={15} label="Medium (9/15)" />
+      <Gauge value={13} max={15} label="High (13/15)" />
+      <Gauge value={15} max={15} label="Full (15/15)" />
+    </div>
+  ),
+};
+
+// ── Dark-mode snapshots ───────────────────────────────────────────────────────
+
+export const AllThresholdsDark: Story = {
+  name: 'All thresholds (dark)',
+  render: () => (
+    <div
+      data-theme="dark"
+      style={{
+        background: '#0f1117',
+        padding: '24px',
+        display: 'flex',
+        gap: '24px',
+        flexWrap: 'wrap',
+        alignItems: 'flex-end',
+      }}
+    >
+      <Gauge value={0} max={15} label="Empty" />
+      <Gauge value={3} max={15} label="Low (3/15)" />
+      <Gauge value={9} max={15} label="Medium (9/15)" />
+      <Gauge value={13} max={15} label="High (13/15)" />
+      <Gauge value={15} max={15} label="Full (15/15)" />
+    </div>
+  ),
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
   },
+};
+
+export const EmptyDark: Story = {
+  name: '0% — Empty (dark)',
+  args: { value: 0, max: 15, label: 'Global Applications', variant: 'global' },
   decorators: [
     (Story) => (
-      <div style={{ maxWidth: '480px', padding: '24px' }}>
+      <div data-theme="dark" style={{ background: '#0f1117', padding: '24px' }}>
         <Story />
       </div>
     ),
   ],
-};
-
-export default meta;
-type Story = StoryObj<GaugeArgs>;
-
-// ── Global gauge fill stories ─────────────────────────────────────────────────
-
-export const GlobalEmpty: Story = {
-  name: 'Global — 0% (empty)',
-  args: { globalApplications: 0, orgCounts: [] },
-};
-
-export const Global25: Story = {
-  name: 'Global — 25% (3/15)',
-  args: { globalApplications: 3, orgCounts: [] },
-};
-
-export const Global50: Story = {
-  name: 'Global — 50% (7/15)',
-  args: { globalApplications: 7, orgCounts: [] },
-};
-
-export const Global75: Story = {
-  name: 'Global — 75% (11/15) warning',
-  args: { globalApplications: 11, orgCounts: [] },
-};
-
-export const GlobalFull: Story = {
-  name: 'Global — 100% (15/15) critical',
-  args: { globalApplications: 15, orgCounts: [] },
-};
-
-// ── Org gauge fill stories ────────────────────────────────────────────────────
-
-export const OrgEmpty: Story = {
-  name: 'Org — 0% (empty)',
-  args: {
-    globalApplications: 0,
-    orgCounts: [{ org: 'stellar-org', assignments: 0 }],
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
   },
 };
 
-export const Org25: Story = {
-  name: 'Org — 25% (1/4)',
-  args: {
-    globalApplications: 1,
-    orgCounts: [{ org: 'stellar-org', assignments: 1 }],
-  },
-};
-
-export const Org50: Story = {
-  name: 'Org — 50% (2/4)',
-  args: {
-    globalApplications: 2,
-    orgCounts: [{ org: 'stellar-org', assignments: 2 }],
-  },
-};
-
-export const Org75: Story = {
-  name: 'Org — 75% (3/4) warning',
-  args: {
-    globalApplications: 3,
-    orgCounts: [{ org: 'stellar-org', assignments: 3 }],
-  },
-};
-
-export const OrgFull: Story = {
-  name: 'Org — 100% (4/4) critical',
-  args: {
-    globalApplications: 4,
-    orgCounts: [{ org: 'stellar-org', assignments: 4 }],
-  },
-};
-
-// ── Multi-org story ───────────────────────────────────────────────────────────
-
-export const MultiOrg: Story = {
-  name: 'Multi-org overview',
-  args: {
-    globalApplications: 8,
-    orgCounts: [
-      { org: 'stellar-org',  assignments: 3 },
-      { org: 'meridian-dao', assignments: 1 },
-      { org: 'soroban-labs', assignments: 0 },
-    ],
-  },
-};
-
-// ── Interactive slider ────────────────────────────────────────────────────────
-
-export const Interactive: Story = {
-  name: 'Interactive (use controls panel)',
-  args: {
-    globalApplications: 5,
-    orgCounts: [
-      { org: 'stellar-org', assignments: 2 },
-    ],
+export const AtCapDark: Story = {
+  name: '100% — At cap (dark)',
+  args: { value: 15, max: 15, label: 'Global cap reached', variant: 'global' },
+  decorators: [
+    (Story) => (
+      <div data-theme="dark" style={{ background: '#0f1117', padding: '24px' }}>
+        <Story />
+      </div>
+    ),
+  ],
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
   },
 };

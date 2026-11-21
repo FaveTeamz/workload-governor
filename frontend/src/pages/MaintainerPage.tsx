@@ -7,6 +7,7 @@ import { useBreadcrumbs } from "../hooks/useBreadcrumbs";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
+import { EmptyState } from "../components/EmptyState";
 
 const PAGE_SIZE = 20;
 
@@ -175,93 +176,109 @@ export function MaintainerPage() {
           {/* Applications table */}
           {tab === "applications" && (
             <section aria-label="Pending Applications">
-              <div className="table-wrap" role="region" aria-label="Pending applications" tabIndex={0}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Contributor</th>
-                      <th scope="col">Issue ID</th>
-                      <th scope="col">Applied Date</th>
-                      <th scope="col">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {appSlice.length === 0 ? (
-                      <tr><td colSpan={4} className="table__empty">No pending applications</td></tr>
-                    ) : appSlice.map((row) => (
-                      <tr key={`${row.contributor}:${row.issue_id}`}>
-                        <td title={row.contributor}>{truncAddr(row.contributor)}</td>
-                        <td>{row.issue_id}</td>
-                        <td><time dateTime={row.date}>{new Date(row.date).toLocaleDateString()}</time></td>
-                        <td className="table__actions">
-                          <Button
-                            size="sm"
-                            onClick={() => handleAssign(row)}
-                            disabled={busy === row.issue_id}
-                            aria-busy={busy === row.issue_id}
-                            aria-label={`Assign issue ${row.issue_id} to ${truncAddr(row.contributor)}`}
-                          >
-                            {busy === row.issue_id ? "…" : "Assign"}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination page={appPage} total={applications.length} onChange={setAppPage} />
+              {appSlice.length === 0 ? (
+                <EmptyState
+                  variant="no-issues"
+                  ctaLabel="Refresh"
+                  onCta={load}
+                />
+              ) : (
+                <>
+                  <div className="table-wrap" role="region" aria-label="Pending applications" tabIndex={0}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Contributor</th>
+                          <th scope="col">Issue ID</th>
+                          <th scope="col">Applied Date</th>
+                          <th scope="col">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {appSlice.map((row) => (
+                          <tr key={`${row.contributor}:${row.issue_id}`}>
+                            <td title={row.contributor}>{truncAddr(row.contributor)}</td>
+                            <td>{row.issue_id}</td>
+                            <td><time dateTime={row.date}>{new Date(row.date).toLocaleDateString()}</time></td>
+                            <td className="table__actions">
+                              <Button
+                                size="sm"
+                                onClick={() => handleAssign(row)}
+                                disabled={busy === row.issue_id}
+                                aria-busy={busy === row.issue_id}
+                                aria-label={`Assign issue ${row.issue_id} to ${truncAddr(row.contributor)}`}
+                              >
+                                {busy === row.issue_id ? "…" : "Assign"}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pagination page={appPage} total={applications.length} onChange={setAppPage} />
+                </>
+              )}
             </section>
           )}
 
           {/* Assignments table */}
           {tab === "assignments" && (
             <section aria-label="Active Assignments">
-              <div className="table-wrap" role="region" aria-label="Active assignments" tabIndex={0}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Contributor</th>
-                      <th scope="col">Issue ID</th>
-                      <th scope="col">Assigned Date</th>
-                      <th scope="col">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {asnSlice.length === 0 ? (
-                      <tr><td colSpan={4} className="table__empty">No active assignments</td></tr>
-                    ) : asnSlice.map((row) => (
-                      <tr key={`${row.contributor}:${row.issue_id}`}>
-                        <td title={row.contributor}>{truncAddr(row.contributor)}</td>
-                        <td>{row.issue_id}</td>
-                        <td><time dateTime={row.date}>{new Date(row.date).toLocaleDateString()}</time></td>
-                        <td className="table__actions">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => handleComplete(row)}
-                            disabled={busy === row.issue_id}
-                            aria-busy={busy === row.issue_id}
-                            aria-label={`Complete issue ${row.issue_id} for ${truncAddr(row.contributor)}`}
-                          >
-                            {busy === row.issue_id ? "…" : "Complete"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setRevokeTarget({ row })}
-                            disabled={busy === row.issue_id}
-                            className="btn-revoke"
-                            aria-label={`Revoke issue ${row.issue_id} from ${truncAddr(row.contributor)}`}
-                          >
-                            Revoke
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination page={asnPage} total={assignments.length} onChange={setAsnPage} />
+              {asnSlice.length === 0 ? (
+                <EmptyState
+                  variant="no-assignments"
+                  ctaLabel="Refresh"
+                  onCta={load}
+                />
+              ) : (
+                <>
+                  <div className="table-wrap" role="region" aria-label="Active assignments" tabIndex={0}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Contributor</th>
+                          <th scope="col">Issue ID</th>
+                          <th scope="col">Assigned Date</th>
+                          <th scope="col">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {asnSlice.map((row) => (
+                          <tr key={`${row.contributor}:${row.issue_id}`}>
+                            <td title={row.contributor}>{truncAddr(row.contributor)}</td>
+                            <td>{row.issue_id}</td>
+                            <td><time dateTime={row.date}>{new Date(row.date).toLocaleDateString()}</time></td>
+                            <td className="table__actions">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleComplete(row)}
+                                disabled={busy === row.issue_id}
+                                aria-busy={busy === row.issue_id}
+                                aria-label={`Complete issue ${row.issue_id} for ${truncAddr(row.contributor)}`}
+                              >
+                                {busy === row.issue_id ? "…" : "Complete"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setRevokeTarget({ row })}
+                                disabled={busy === row.issue_id}
+                                className="btn-revoke"
+                                aria-label={`Revoke issue ${row.issue_id} from ${truncAddr(row.contributor)}`}
+                              >
+                                Revoke
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pagination page={asnPage} total={assignments.length} onChange={setAsnPage} />
+                </>
+              )}
             </section>
           )}
         </>

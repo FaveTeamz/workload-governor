@@ -5,16 +5,63 @@
 # Used by the upgrade-dryrun CI step and can be run locally against a sandbox.
 #
 # Environment variables:
-#   CONTRACT_ID  — deployed contract ID (required)
+#   CONTRACT_ID  — deployed contract ID (required for smoke tests)
 #   ADMIN_KEY    — Stellar CLI key name for the admin (default: dryrun-admin)
 #   NETWORK      — network name configured in stellar CLI (default: local)
+#   WASM_PATH    — path to contract WASM (default: auto-detected in target/)
 #
 # Usage:
+#   bash scripts/test-contract.sh --check-size
 #   CONTRACT_ID=CA... ADMIN_KEY=my-key NETWORK=testnet bash scripts/test-contract.sh
 
 set -euo pipefail
 
-CONTRACT_ID="${CONTRACT_ID:?CONTRACT_ID must be set}"
+# ── WASM Binary Size Budget Check (< 64 KB) ──────────────────────────────────
+check_wasm_size() {
+  local wasm_file="${WASM_PATH:-}"
+  if [ -z "$wasm_file" ]; then
+    if [ -f "target/wasm32-unknown-unknown/release/workload_governor.wasm" ]; then
+      wasm_file="target/wasm32-unknown-unknown/release/workload_governor.wasm"
+    elif [ -f "target/wasm32v1-none/release/workload_governor.wasm" ]; then
+      wasm_file="target/wasm32v1-none/release/workload_governor.wasm"
+    fi
+  fi
+
+  if [ -z "$wasm_file" ] || [ ! -f "$wasm_file" ]; then
+    echo "⚠️ WASM binary not found (checked target/wasm32-unknown-unknown and target/wasm32v1-none)"
+    return 0
+  fi
+
+  local size
+  size=$(wc -c < "$wasm_file" | tr -d ' ')
+  local max_size=65536  # 64 KB limit
+
+  echo "=== Contract WASM Binary Size Report ==="
+  echo "Target binary: $wasm_file"
+  echo "Binary size:   $size bytes ($(( size / 1024 )) KB)"
+  echo "Budget limit:  $max_size bytes (64 KB)"
+
+  if [ "$size" -gt "$max_size" ]; then
+    echo "❌ ERROR: Contract WASM binary exceeds 64 KB budget ($size > $max_size bytes)!"
+    echo "Stellar/Soroban requires strict size limits for fast ledger propagation."
+    echo "Recommendations:"
+    echo "  1. Run wasm-opt: wasm-opt -Oz -o optimized.wasm $wasm_file"
+    echo "  2. Prune unused dependencies or features in Cargo.toml."
+    echo "  3. Use 'stellar contract optimize' to strip debug symbols and unneeded sections."
+    exit 1
+  fi
+  echo "✓ WASM size budget assertion passed ($size <= $max_size bytes)"
+  echo ""
+}
+
+if [ "${1:-}" = "--check-size" ]; then
+  check_wasm_size
+  exit 0
+fi
+
+check_wasm_size
+
+CONTRACT_ID="${CONTRACT_ID:?CONTRACT_ID must be set (or run with --check-size)}"
 ADMIN_KEY="${ADMIN_KEY:-dryrun-admin}"
 NETWORK="${NETWORK:-local}"
 

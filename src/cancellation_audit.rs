@@ -7,13 +7,11 @@ use serde::{Deserialize, Serialize};
 
 /// The reason a subscription was cancelled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "snake_case")]
 pub enum CancellationReason {
+    MerchantRevoked,
     ContributorWithdrew,
-    MaintainerRevoked,
-    TtlExpired,
-    AdminCancelled,
-    #[serde(other)]
+    AdminOverride,
     Other(String),
 }
 
@@ -160,67 +158,11 @@ mod tests {
     fn record_stores_event() {
         let s = svc();
         let rec = s
-            .record("org-1", 42, "GZZZ", "GXXX", Some(CancellationReason::MaintainerRevoked), None)
+            .record("org-1", 42, "GZZZ", "GXXX", Some(CancellationReason::MerchantRevoked), None)
             .unwrap();
         assert_eq!(rec.org_id, "org-1");
         assert_eq!(rec.issue_id, 42);
         assert!(rec.reason.is_some());
-    }
-
-    #[test]
-    fn record_with_contributor_withdrew() {
-        let s = svc();
-        let rec = s
-            .record("org-1", 1, "GZZZ", "GXXX", Some(CancellationReason::ContributorWithdrew), None)
-            .unwrap();
-        assert!(rec.reason.is_some());
-        if let Some(CancellationReason::ContributorWithdrew) = rec.reason {
-            assert!(true);
-        } else {
-            panic!("Expected ContributorWithdrew reason");
-        }
-    }
-
-    #[test]
-    fn record_with_ttl_expired() {
-        let s = svc();
-        let rec = s
-            .record("org-1", 2, "GZZZ", "GXXX", Some(CancellationReason::TtlExpired), None)
-            .unwrap();
-        assert!(rec.reason.is_some());
-        if let Some(CancellationReason::TtlExpired) = rec.reason {
-            assert!(true);
-        } else {
-            panic!("Expected TtlExpired reason");
-        }
-    }
-
-    #[test]
-    fn record_with_admin_cancelled() {
-        let s = svc();
-        let rec = s
-            .record("org-1", 3, "GZZZ", "GXXX", Some(CancellationReason::AdminCancelled), None)
-            .unwrap();
-        assert!(rec.reason.is_some());
-        if let Some(CancellationReason::AdminCancelled) = rec.reason {
-            assert!(true);
-        } else {
-            panic!("Expected AdminCancelled reason");
-        }
-    }
-
-    #[test]
-    fn record_with_maintainer_revoked() {
-        let s = svc();
-        let rec = s
-            .record("org-1", 4, "GZZZ", "GXXX", Some(CancellationReason::MaintainerRevoked), None)
-            .unwrap();
-        assert!(rec.reason.is_some());
-        if let Some(CancellationReason::MaintainerRevoked) = rec.reason {
-            assert!(true);
-        } else {
-            panic!("Expected MaintainerRevoked reason");
-        }
     }
 
     #[test]

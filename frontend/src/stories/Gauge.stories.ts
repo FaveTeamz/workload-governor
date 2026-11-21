@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Gauge } from '../components/Gauge'
 
 const meta: Meta<typeof Gauge> = {
