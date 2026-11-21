@@ -3,90 +3,112 @@
 **Status:** Accepted  
 **Date:** 2026-10-20  
 **Deciders:** WorkloadGovernor Core Team  
-**Issue:** [#1121](https://github.com/FaveTeamz/workload-governor/issues/1121)
+**Issue:** [#1337](https://github.com/FaveTeamz/workload-governor/issues/1337)
 
 ---
 
 ## Context
 
-The WorkloadGovernor `EventIndexer` (`src/eventIndexer.ts`) and historical backfill CLI (`src/scripts/backfill-events.ts`) poll the Soroban RPC `getEvents` endpoint to ingest on-chain smart contract events (`applied`, `withdrew`, `assigned`, `completed`, `revoked`, `maint_reg`) into the PostgreSQL `contract_events` table.
+The WorkloadGovernor `EventIndexer` (`src/eventIndexer.ts`) and historical backfill CLI (`src/scripts/backfill-events.ts`) stream on-chain smart contract events (`applied`, `withdrew`, `assigned`, `completed`, `revoked`, `maint_reg`) from the Soroban RPC `getEvents` endpoint into the PostgreSQL `contract_events` table.
 
-In production and distributed deployments, the event ingestion pipeline must handle several operational failure modes without corrupting downstream contributor statistics or emitting duplicate live notifications:
+Under high-velocity event streaming across multiple worker container replicas in ECS/Kubernetes, the ingestion pipeline must maintain strict consistency and eliminate duplicates amidst challenging operational conditions:
 
-1. **Process Restarts and Cursor Loss**: When the indexer container restarts or loses its in-memory paging cursor, it resumes from the last finalized ledger sequence (`MAX(ledger_seq)` or `indexer_checkpoints.last_ledger`), intentionally re-fetching all events in that boundary ledger.
-2. **Multiple Events Within a Single Transaction**: A single Soroban transaction can emit multiple contract events (distinguished by `event_index` in `<ledger>-<tx_index>-<event_index>`).
-3. **Synthetic / Fallback Transaction Identifiers**: Certain synthetic or test RPC events may fall back to non-hash identifiers that could collide across ledgers if `ledger_seq` is omitted from the uniqueness key.
-4. **Concurrent Indexer Replicas & Backfill Jobs**: Running a historical `backfill-events.ts` job concurrently with the live `EventIndexer` can submit overlapping event batches to PostgreSQL simultaneously.
+1. **Process Restarts and Cursor Loss**: When an indexer worker restarts, crashes, or loses its in-memory paging cursor, it resumes from the last finalized checkpoint (`indexer_checkpoints.last_ledger` or `MAX(ledger_seq)`), deliberately re-fetching boundary ledgers.
+2. **Multiple Events Within a Single Transaction**: A single Soroban transaction invocation can emit multiple contract events (distinguished by `event_index` in the coordinate `<ledger>-<tx_index>-<event_index>`).
+3. **Synthetic / Fallback Transaction Identifiers**: Certain synthetic, simulated, or test RPC events can use non-hash identifiers that could collide across distinct ledgers if `ledger_seq` is not scoped within the unique index.
+4. **Concurrent Worker Replicas & Backfill Jobs**: Running distributed indexer workers or running the historical `backfill-events.ts` script concurrently with the live indexer service submits overlapping event batches to PostgreSQL simultaneously.
+5. **Ledger Reorganizations and Network Disconnects**: Transient RPC drops, network partitions, or ledger reorgs can cause repeated event deliveries or invalidated ledger forks that require transactional recovery.
 
-Initially, `contract_events` used a two-column `UNIQUE (tx_hash, event_index)` constraint and relied on in-memory cursor state. However, cursor loss or synthetic event replay highlighted the need for a formally specified, database-enforced deduplication and checkpointing architecture (implemented in `migrations/2_event_deduplication.js` and `migrations/3_indexer_checkpoints.js`).
+Initially, `contract_events` lacked a comprehensive deduplication design and relied on in-memory cursor tracking. A formally specified, database-enforced deduplication and checkpointing architecture was required to prevent duplicate contributor stats or spurious notifications.
 
 ---
 
 ## Decision
 
-We adopt a **two-layer idempotent ingestion strategy** in PostgreSQL:
+We adopt a **two-layer idempotent ingestion and deduplication strategy** in PostgreSQL:
 
-1. **Composite Unique Constraint on `contract_events`**:
-   Enforce `UNIQUE (ledger_seq, tx_hash, event_index)` (`contract_events_ledger_tx_event_unique` backed by `idx_contract_events_dedup`) and perform all event insertions via:
+1. **Composite Unique Database Constraint on `contract_events`**:
+   We enforce a composite unique constraint on `(ledger_seq, tx_hash, event_index)` (and `(tx_hash, event_index)` compatibility index `idx_contract_events_dedup`) and execute all event insertions using atomic `ON CONFLICT DO NOTHING`:
    ```sql
    INSERT INTO contract_events
      (event_type, contributor, org_id, issue_id, tx_hash, event_index, ledger_seq, timestamp)
    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-   ON CONFLICT (ledger_seq, tx_hash, event_index) DO NOTHING
+   ON CONFLICT (ledger_seq, tx_hash, event_index) DO NOTHING;
    ```
-   Downstream real-time notifications (`publishLiveEvent`) are triggered **only** when `rowCount === 1` (i.e., when a new row was actually inserted).
+   Downstream real-time events and WebSocket/SSE notifications (`publishLiveEvent`) are emitted **only** when `rowCount === 1` (i.e., when an event was genuinely inserted).
 
-2. **Dedicated `indexer_checkpoints` Table**:
-   Persist the last processed ledger sequence and ledger hash per contract (`contract_id PRIMARY KEY, last_ledger INTEGER NOT NULL, last_ledger_hash TEXT, updated_at TIMESTAMPTZ`) using atomic upserts (`ON CONFLICT (contract_id) DO UPDATE`) so the indexer can bound its replay window on startup without scanning the entire `contract_events` history.
+2. **Dedicated Checkpoint Tracking Table (`indexer_checkpoints`)**:
+   We persist the last processed ledger sequence and block hash per contract using atomic upserts:
+   ```sql
+   INSERT INTO indexer_checkpoints (contract_id, last_ledger, last_ledger_hash, updated_at)
+   VALUES ($1, $2, $3, NOW())
+   ON CONFLICT (contract_id) DO UPDATE SET
+     last_ledger = EXCLUDED.last_ledger,
+     last_ledger_hash = EXCLUDED.last_ledger_hash,
+     updated_at = NOW();
+   ```
+
+3. **Transactional Cursor and Rollback Handlers**:
+   Rollback handlers ensure that if an error or ledger fork occurs during batch processing, checkpoint transactions roll back cleanly, and ledger boundary rewinds can prune unfinalized records before re-indexing.
 
 ---
 
 ## Reasons
 
-### 1. Database-Level Idempotency Under Replay and Concurrency
+### 1. Database-Level ACID Guarantees & Concurrency Safety
+Enforcing uniqueness directly inside PostgreSQL guarantees atomic conflict resolution even when multiple worker replicas or backfill jobs process the same block or transaction concurrently. PostgreSQL row-level locks on index insertion handle contention deterministically without requiring application-level distributed locks.
 
-By enforcing `UNIQUE (ledger_seq, tx_hash, event_index)` inside PostgreSQL and using `INSERT ... ON CONFLICT DO NOTHING`, deduplication is atomic even when multiple indexer workers or a concurrent `backfill-events.ts` process write overlapping ledger ranges at the same time.
+### 2. Unambiguous Event Identity and Canonical Coordinates
+In Soroban RPC, every event is uniquely identified by the 3-tuple `(ledger_seq, tx_hash, event_index)`. Scoping uniqueness by both transaction hash and ledger sequence prevents collisions even when synthetic transaction identifiers are present, while accurately tracking multi-event transactions via `event_index`.
 
-### 2. Unambiguous Event Identity Across Ledgers
+### 3. High-Velocity Streaming with O(1) Startup Recovery
+Querying `indexer_checkpoints` provides immediate $O(1)$ cursor resumption upon container startup, eliminating the need to execute expensive `SELECT MAX(ledger_seq)` full-table scans across millions of historical events.
 
-In Soroban RPC, an event's canonical coordinate is the 3-tuple `(ledger_seq, tx_hash, event_index)`. Including `ledger_seq` alongside `tx_hash` and `event_index` eliminates any possibility of cross-ledger collisions when fallback identifiers are used, while supporting multiple events within the same transaction (`event_index = 0, 1, ...`).
+### 4. Exactly-Once Downstream Notifications
+Inspecting `result.rowCount === 1` guarantees that downstream triggers (WebSocket broadcasts, contributor ranking recalculations, webhooks) only fire on fresh event ingestion, avoiding duplicate alerts during historical backfills or restart replays.
 
-### 3. Fast O(1) Startup Recovery via `indexer_checkpoints`
+---
 
-Storing `(contract_id, last_ledger, last_ledger_hash)` in `indexer_checkpoints` allows the indexer to immediately determine its resume cursor even when no new events have been emitted for thousands of ledgers, avoiding repeated re-scans of empty ledger ranges while recording `last_ledger_hash` for divergence detection.
+## Failure Recovery Modes
 
-### 4. Exact-Once Live Event Broadcast
-
-Checking `(result.rowCount === 1)` after `INSERT ... ON CONFLICT DO NOTHING` ensures that `publishLiveEvent` is only invoked for genuinely new events, preventing duplicate WebSocket/SSE broadcasts during restart catch-up.
+1. **Worker Crash & Container Restart Recovery**:
+   On container startup, the indexer queries `indexer_checkpoints` for the contract's `last_ledger`. It resumes indexing from `last_ledger + 1` (or replays `last_ledger` to guarantee boundary coverage). Overlapping events from the replayed boundary are silently ignored by `ON CONFLICT DO NOTHING`.
+2. **Ledger Reorganization / Fork Recovery**:
+   When the indexer detects a hash mismatch between the recorded `last_ledger_hash` and the upstream RPC provider's ledger header, a rollback handler is invoked:
+   - Checkpoint cursor rolls back to the common ancestor ledger sequence.
+   - Any provisional event records above the fork point are pruned within a transaction (`DELETE FROM contract_events WHERE ledger_seq > $1`).
+   - The indexer resumes streaming from the validated chain tip.
+3. **Network Disconnects & RPC Timeout Recovery**:
+   Network disconnects trigger exponential backoff with jitter (initial backoff 1s, max 30s). Checkpoints are committed only after an entire ledger's event batch has been processed, ensuring no gaps are left in the event log.
+4. **Concurrent Replicas & Backfill Collisions**:
+   If an operator executes `npm run backfill` while the live indexer service is running, both processes can safely execute concurrent `INSERT` statements; duplicate events result in no-op conflict suppression without transaction deadlocks.
 
 ---
 
 ## Consequences
 
 ### Positive
-
-- **Zero Duplicate Rows**: Full-history or partial-ledger replays are completely safe and idempotent.
-- **Safe Concurrent Backfills**: Operators can run `npm run backfill` alongside the live `event-indexer` service without race conditions or unique constraint crashes.
-- **Fast Restart Catch-Up**: `indexer_checkpoints` tracks progress across empty ledgers so restarts do not re-poll already-scanned empty ledgers.
+- **Strong ACID Consistency**: Guarantees zero duplicate event entries in PostgreSQL.
+- **Idempotent Replays**: Any ledger range can be safely re-indexed without corrupting application state.
+- **Safe Concurrent Backfills**: Backfill jobs and live streaming workers operate concurrently without coordination bottlenecks.
+- **Low Operational Overhead**: Uses standard PostgreSQL relational primitives rather than auxiliary messaging clusters.
 
 ### Negative
-
-- **Slightly Larger B-Tree Index**: The 3-column unique index `(ledger_seq, tx_hash, event_index)` consumes marginally more storage and write I/O than a single surrogate key, though negligible at Soroban event throughput (< 1 KB per event).
+- **Index Write Overhead**: Maintaining the composite unique B-Tree index `(ledger_seq, tx_hash, event_index)` incurs slight write and storage overhead per inserted row, which is well within Soroban throughput budgets (< 1 KB per row).
 
 ### Neutral
-
-- Schema migrations (`migrations/2_event_deduplication.js` and `migrations/3_indexer_checkpoints.js`) must be applied prior to running the indexer in production.
+- **Migration Dependency**: Requires applying `migrations/2_event_deduplication.js` and `migrations/3_indexer_checkpoints.js` prior to starting indexer workers.
 
 ---
 
 ## Alternatives Considered
 
-| Alternative | Reason rejected |
-|-------------|----------------|
-| **Application-Memory Set / Redis Bloom Filter** | Volatile across restarts; introduces TOCTOU race conditions between check and insert when multiple processes or backfills run concurrently. |
-| **Two-Column `UNIQUE (tx_hash, event_index)` Only** | Does not scope uniqueness by `ledger_seq`, leaving theoretical collision risk for synthetic/fallback transaction identifiers and slower ledger-scoped index lookups. |
-| **File-Based Cursor Only (`.backfill-checkpoint.json`)** | Ephemeral container filesystems in ECS/Kubernetes lose local files on pod reschedule, forcing expensive genesis replays. |
-| **`SELECT` Before `INSERT` Without Unique Constraint** | Vulnerable to race conditions under concurrent writes and incurs an extra network round-trip per event. |
+1. **In-Memory Deduplication Cache (e.g. Set / LRU / Redis Bloom Filter)**:
+   *Rejected.* An in-memory cache is lost whenever indexer worker containers restart or reschedule. Furthermore, Redis introduces Time-Of-Check to Time-Of-Use (TOCTOU) race conditions between key lookup and database insertion unless wrapped in complex Lua scripts or distributed locks.
+2. **Distributed Message Queue (Kafka, RabbitMQ, or Redis Streams)**:
+   *Rejected.* Introducing a distributed message broker cluster (e.g., Apache Kafka or RabbitMQ) adds substantial infrastructure operational complexity, cluster provisioning, topic partition management, and network hops. At our current and forecasted scale, PostgreSQL provides superior durability, simpler operations, and transactional coupling with our existing relational data.
+3. **Periodic Batch Reconciliation / Block Polling**:
+   *Rejected.* Batch reconciliation suffers from high ingestion latency (minutes to hours), violates real-time UI notification requirements, and introduces complex two-phase diffing logic compared to immediate stream ingestion.
 
 ---
 
@@ -95,4 +117,6 @@ Checking `(result.rowCount === 1)` after `INSERT ... ON CONFLICT DO NOTHING` ens
 - [`migrations/2_event_deduplication.js`](../../migrations/2_event_deduplication.js)
 - [`migrations/3_indexer_checkpoints.js`](../../migrations/3_indexer_checkpoints.js)
 - [`src/eventIndexer.ts`](../../src/eventIndexer.ts)
+- [`docs/architecture.md`](../architecture.md#event-ingestion--deduplication-architecture)
 - [ADR-004: Use PostgreSQL Instead of SQLite for the Backend Database](ADR-004-postgresql-over-sqlite.md)
+- [Issue #1337](https://github.com/FaveTeamz/workload-governor/issues/1337)

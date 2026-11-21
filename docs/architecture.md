@@ -209,3 +209,15 @@ Maintainer (browser)
   │
   └─11► UI marks the issue as completed
 ```
+
+---
+
+## Event Ingestion & Deduplication Architecture
+
+The backend event indexer (`src/eventIndexer.ts`) streams on-chain events from Soroban RPC into PostgreSQL. To support high-velocity streaming across distributed worker replicas, handle network disconnects, and survive ledger reorganizations, the indexer relies on:
+- **Composite Unique Database Constraint**: Enforced on `(ledger_seq, tx_hash, event_index)` in `contract_events` with atomic `INSERT ... ON CONFLICT DO NOTHING`.
+- **Persistent Checkpoints**: Dedicated `indexer_checkpoints` table tracking finalized ledger sequence and ledger hash per contract.
+- **Rollback and Recovery Handlers**: Bounded replays on startup and fork rollbacks without duplicate event processing or spurious WebSocket/SSE notifications.
+
+For architectural decisions, rationale, trade-offs, and evaluated alternatives (Kafka, Redis streams, in-memory caching), see [ADR-009: Composite Unique Constraint and Checkpoint Table for Event Indexer Deduplication](adr/ADR-009-indexer-event-deduplication.md).
+
