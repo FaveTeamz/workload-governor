@@ -29,7 +29,7 @@ Complete reference for running every test layer in the WorkloadGovernor project.
 | Rust + Cargo | stable ≥ 1.78 | `curl https://sh.rustup.rs -sSf \| sh` |
 | `wasm32v1-none` target | — | `rustup target add wasm32v1-none` |
 | Nightly Rust (fuzz only) | latest nightly | `rustup install nightly` |
-| Stellar CLI | ≥ 21.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
+| Stellar CLI | ≥ 22.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
 | Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
 | Docker + Compose | ≥ 24 | [docker.com](https://www.docker.com/get-started) |
 | `cargo-fuzz` (fuzz only) | latest | `cargo install cargo-fuzz --locked` |

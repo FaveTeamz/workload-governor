@@ -28,7 +28,7 @@ Install each tool and verify the version before continuing.
 |---|---|---|
 | Rust + Cargo | stable ≥ 1.78 | `curl https://sh.rustup.rs -sSf \| sh` |
 | `wasm32v1-none` target | — | `rustup target add wasm32v1-none` |
-| Stellar CLI | ≥ 21.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
+| Stellar CLI | ≥ 22.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
 | Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
 | Docker + Compose | ≥ 24 | [docker.com](https://www.docker.com/get-started) |
 | Freighter wallet | latest | [Chrome extension](https://www.freighter.app/) |
@@ -37,7 +37,7 @@ Verify all tools are on your PATH:
 
 ```bash
 rustc --version        # rustc 1.78.0 (or later)
-stellar --version      # stellar 21.x.x (or later)
+stellar --version      # stellar 22.x.x (or later)
 node --version         # v20.x.x (or later)
 docker compose version # Docker Compose version 2.x.x
 ```
