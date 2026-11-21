@@ -22,33 +22,33 @@ pub enum ContractError {
     /// `migrate_v1_to_v2` was already called; migration cannot run twice.
     MigrationAlreadyDone          = 12,
 
+    // #1224 — Organization ID validation
+    InvalidOrgId                  = 13,
+
     // #601 — issue_id validation
     /// `issue_id` must be > 0 and < u32::MAX (GitHub IDs start at 1; u32::MAX is reserved).
-    InvalidIssueId                = 13,
+    InvalidIssueId                = 14,
 
     // #603 — Multi-sig admin
     /// Threshold must be >= 1 and <= the number of signers.
-    InvalidThreshold              = 14,
+    InvalidThreshold              = 15,
 
     // #600 — Governance proposals
     /// No proposal exists with the given proposal_id.
-    ProposalNotFound              = 15,
+    ProposalNotFound              = 16,
     /// Proposal TTL has elapsed; it can no longer be voted on or executed.
-    ProposalExpired               = 16,
+    ProposalExpired               = 17,
     /// Caller has already voted on this proposal.
-    AlreadyVoted                  = 17,
+    AlreadyVoted                  = 18,
     /// Fewer than 3 orgs have voted; quorum is not met.
-    QuorumNotMet                  = 18,
+    QuorumNotMet                  = 19,
     /// Less than 50 % of votes are approvals; proposal is rejected.
-    InsufficientApproval          = 19,
+    InsufficientApproval          = 20,
 
     // #828 SC-003 — Admin nonce / replay protection
     /// The provided expected_nonce does not match the current on-chain admin nonce.
     /// This indicates a stale or replayed authorisation attempt.
-    StaleAdminNonce               = 20,
-
-    /// Organization IDs must contain between 2 and 32 characters.
-    InvalidOrgId                  = 21,
+    StaleAdminNonce               = 21,
 
     // #1007 — Application TTL configuration
     /// Application TTL values must be nonzero, within the platform cap, and threshold <= target.

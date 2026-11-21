@@ -12,6 +12,7 @@
 mod errors;
 mod events;
 mod storage;
+mod validation;
 
 #[cfg(test)]
 mod test;
@@ -26,6 +27,7 @@ extern crate std;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::ContractError;
+use crate::validation::validate_org_id;
 
 // ---------------------------------------------------------------------------
 // Internal helper: validate issue_id  (#601)
@@ -44,9 +46,7 @@ fn require_valid_issue_id(env: &Env, issue_id: u32) {
 
 #[inline]
 fn require_valid_org_id(env: &Env, org_id: &Symbol) {
-    if org_id.len() < 2 || org_id.len() > 32 {
-        panic_with_error!(env, ContractError::InvalidOrgId);
-    }
+    validate_org_id(env, org_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +124,16 @@ impl WorkloadGovernor {
         storage::set_maintainer(&env, &maintainer, &org_id);
         storage::bump_instance(&env);
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
+    }
+
+    /// Deregisters a maintainer for an organisation (idempotent).
+    pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        require_admin_auth(&env);
+        storage::remove_maintainer(&env, &maintainer, &org_id);
+        storage::bump_instance(&env);
+        events::emit_maintainer_deregistered(&env, &admin, &maintainer, &org_id);
     }
 
     /// Configures the threshold and target used to extend application TTLs.
