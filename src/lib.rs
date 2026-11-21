@@ -228,6 +228,7 @@ impl WorkloadGovernor {
     ///
     /// Panics with `ApplicationNotFound` if no pending application exists.
     /// Silently skips the global count TTL if that key is absent.
+    /// Emits `app_ttl_extended` event on success.
     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::ApplicationNotFound);
@@ -236,6 +237,13 @@ impl WorkloadGovernor {
         if storage::get_global_app_count(&env, &contributor) > 0 {
             storage::extend_global_app_count_ttl(&env, &contributor);
         }
+        events::emit_app_ttl_extended(
+            &env,
+            &contributor,
+            &org_id,
+            issue_id,
+            storage::APP_TTL_LEDGERS,
+        );
     }
 
     // -----------------------------------------------------------------------

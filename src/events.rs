@@ -108,3 +108,19 @@ pub(crate) fn emit_assignment_revoked(
     let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `extend_application_ttl`.
+///
+/// topics: `(symbol_short!("ttl_ext"), contributor, org_id)`
+/// data:   `(issue_id, new_ttl)`
+pub(crate) fn emit_app_ttl_extended(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+    issue_id: u32,
+    new_ttl: u32,
+) {
+    let topics = (symbol_short!("ttl_ext"), contributor.clone(), org_id.clone());
+    let data = (issue_id, new_ttl);
+    env.events().publish(topics, data);
+}
