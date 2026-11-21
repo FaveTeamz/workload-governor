@@ -3,3 +3,9 @@ dist/
 .env
 *.log
 coverage/
+
+# Compiled frontend/JavaScript artifacts
+*.js
+*.js.map
+*.jsx.js
+*.tsx.js

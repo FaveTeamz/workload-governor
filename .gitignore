@@ -31,3 +31,9 @@ Thumbs.db
 # Test coverage
 coverage/
 __pycache__/
+
+# Compiled frontend artifacts accidentally placed under backend source
+/src/**/*.js
+/src/**/*.jsx
+/src/**/*.tsx
+src/**/*.js.map
