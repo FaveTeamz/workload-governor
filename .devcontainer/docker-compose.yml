@@ -1,0 +1,11 @@
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    volumes:
+      - .:/workspaces/workload-governor:cached
+    working_dir: /workspaces/workload-governor
+    networks:
+      - workload-governor-network

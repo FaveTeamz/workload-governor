@@ -1,6 +1,5 @@
 {
   "name": "WorkloadGovernor Dev",
-  "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
 
   // Forward all service ports to the host
   "forwardPorts": [3000, 5173, 5432, 6379, 5050],
@@ -13,9 +12,9 @@
   },
 
   // Start PostgreSQL and Redis via Docker Compose inside the container
-  "dockerComposeFile": ["../docker-compose.yml"],
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.yml"],
   "service": "devcontainer",
-  "runServices": ["postgres", "redis"],
+  "runServices": ["devcontainer", "postgres", "redis"],
 
   "features": {
     // Rust toolchain with stable channel and wasm targets
@@ -28,27 +27,23 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "20",
       "nodeGypDependencies": true
-    },
-    // Stellar CLI (latest released version)
-    "ghcr.io/devcontainers-contrib/features/stellar-cli:1": {}
+    }
   },
 
   // Ensure node, npm, cargo, and rustup binaries are in standard PATH across all terminal sessions
   "containerEnv": {
     "CARGO_HOME": "/usr/local/cargo",
     "RUSTUP_HOME": "/usr/local/rustup",
-    "NVM_DIR": "/usr/local/share/nvm",
-    "PATH": "/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:${containerEnv:PATH}"
+    "NVM_DIR": "/usr/local/share/nvm"
   },
   "remoteEnv": {
     "CARGO_HOME": "/usr/local/cargo",
     "RUSTUP_HOME": "/usr/local/rustup",
-    "NVM_DIR": "/usr/local/share/nvm",
-    "PATH": "/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:${containerEnv:PATH}"
+    "NVM_DIR": "/usr/local/share/nvm"
   },
 
   // Install project dependencies and copy env files the first time the container starts
-  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postCreateCommand": "echo Devcontainer started successfully",
 
   // VS Code / cursor extensions that improve the Rust + TypeScript experience
   "customizations": {
