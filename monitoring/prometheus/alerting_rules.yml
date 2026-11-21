@@ -1,0 +1,84 @@
+---
+# =============================================================================
+# alerting_rules.yml — Prometheus alerting rules
+# Issue #1322: add SLO error-rate and latency alerts
+# =============================================================================
+#
+# Validate with:
+#   promtool check rules monitoring/prometheus/alerting_rules.yml
+# =============================================================================
+
+groups:
+  # ---------------------------------------------------------------------------
+  # Infrastructure: CPU & memory saturation
+  # ---------------------------------------------------------------------------
+  - name: infrastructure
+    rules:
+      - alert: HighCpuUtilization
+        expr: >
+          (sum by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m]))
+           / sum by (instance) (rate(node_cpu_seconds_total[5m]))) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU utilization on {{ $labels.instance }}"
+          description: >
+            CPU utilization has exceeded 85% for the last 5 minutes
+            (current: {{ $value | humanizePercentage }}).
+            Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/runbooks/incident-response.md
+
+      - alert: HighMemoryUtilization
+        expr: >
+          1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory utilization on {{ $labels.instance }}"
+          description: >
+            Memory utilization has exceeded 90% for the last 5 minutes
+            (current: {{ $value | humanizePercentage }}).
+            Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/runbooks/incident-response.md
+
+  # ---------------------------------------------------------------------------
+  # SLO: HTTP error rate and latency  (#1322)
+  # ---------------------------------------------------------------------------
+  - name: slo
+    rules:
+      # ── Error rate ──────────────────────────────────────────────────────────
+      # Fires when the ratio of 5xx responses to total HTTP traffic exceeds 5%
+      # over a 3-minute window.  Covers scenarios (e.g. unhandled database
+      # exceptions) that never surface as CPU/memory pressure.
+      - alert: HighHttp5xxErrorRate
+        expr: >
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(http_requests_total[5m])) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP 5xx error rate on {{ $labels.service }}"
+          description: >
+            5xx error rate has exceeded 5% for the last 3 minutes
+            (current: {{ $value | humanizePercentage }}).
+            Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/observability.md#highhttp5xxerrorrate
+
+      # ── P95 latency ─────────────────────────────────────────────────────────
+      # Fires when the 95th-percentile request duration exceeds 500 ms over a
+      # 5-minute window, indicating user-visible slowness before errors occur.
+      - alert: HighHttpLatencyP95
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 HTTP latency above 500 ms on {{ $labels.service }}"
+          description: >
+            The 95th-percentile request latency has exceeded 500 ms for the
+            last 5 minutes (current: {{ $value | humanizeDuration }}).
+            Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/observability.md#highhttplatencyp95

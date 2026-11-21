@@ -212,6 +212,90 @@ resource "aws_cloudwatch_metric_alarm" "soroban_rpc_failover_alarm" {
   insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
 }
 
+# ── Metric filter 4: HTTP request total count (all responses) ────────────────
+# Used to compute the 5xx error ratio in the SLO alarm below.
+
+resource "aws_cloudwatch_log_metric_filter" "http_total" {
+  name           = "${var.service_name}-http-total"
+  pattern        = "[..., status_code, ...]"
+  log_group_name = aws_cloudwatch_log_group.ecs.name
+
+  metric_transformation {
+    name          = "HttpTotalCount"
+    namespace     = "${var.service_name}/Application"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
+# ── SLO alarm: HTTP 5xx error ratio (#1322) ───────────────────────────────────
+# Mirrors HighHttp5xxErrorRate in monitoring/prometheus/alerting_rules.yml.
+# CloudWatch math expression computes the ratio; fires when it exceeds 5% for
+# two consecutive 3-minute evaluation periods.
+
+resource "aws_cloudwatch_metric_alarm" "http_5xx_ratio_alarm" {
+  alarm_name          = "${var.service_name}-slo-5xx-error-ratio"
+  alarm_description   = "SLO: HTTP 5xx error ratio exceeded 5% for 2 × 3-minute periods. Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/observability.md#highhttp5xxerrorrate"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  threshold           = 5 # percentage
+  treat_missing_data  = "breaching"
+
+  metric_query {
+    id          = "e1"
+    expression  = "IF(m2 > 0, (m1 / m2) * 100, 0)"
+    label       = "5xx Error Ratio (%)"
+    return_data = true
+  }
+
+  metric_query {
+    id = "m1"
+    metric {
+      metric_name = "Http5xxCount"
+      namespace   = "${var.service_name}/Application"
+      period      = 180
+      stat        = "Sum"
+    }
+  }
+
+  metric_query {
+    id = "m2"
+    metric {
+      metric_name = "HttpTotalCount"
+      namespace   = "${var.service_name}/Application"
+      period      = 180
+      stat        = "Sum"
+    }
+  }
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
+# ── SLO alarm: P95 latency (#1322) ────────────────────────────────────────────
+# Mirrors HighHttpLatencyP95 in monitoring/prometheus/alerting_rules.yml.
+# Requires a custom metric published by the backend (p95RequestDurationMs).
+# Fires when the value exceeds 500 ms for two consecutive 5-minute periods.
+
+resource "aws_cloudwatch_metric_alarm" "http_p95_latency_alarm" {
+  alarm_name          = "${var.service_name}-slo-p95-latency"
+  alarm_description   = "SLO: P95 request latency exceeded 500 ms for 2 × 5-minute periods. Runbook: https://github.com/FaveTeamz/workload-governor/blob/main/docs/observability.md#highhttplatencyp95"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "p95RequestDurationMs"
+  namespace           = "${var.service_name}/Application"
+  period              = 300
+  extended_statistic  = "p95"
+  threshold           = 500
+  treat_missing_data  = "missing"
+
+  alarm_actions             = [aws_sns_topic.devops_alerts.arn]
+  ok_actions                = [aws_sns_topic.devops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.devops_alerts.arn]
+}
+
 # ── CloudWatch Dashboard ──────────────────────────────────────────────────────
 # Single view: all 3 alarms + ECS CPU/memory + RDS connections.
 
@@ -271,11 +355,37 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
         }
       },
 
+      # ── SLO Alarm: HTTP 5xx Error Ratio (#1322) ────────────────────────────
+      {
+        type   = "alarm"
+        x      = 0
+        y      = 4
+        width  = 12
+        height = 3
+        properties = {
+          title  = "SLO: HTTP 5xx Error Ratio"
+          alarms = [aws_cloudwatch_metric_alarm.http_5xx_ratio_alarm.arn]
+        }
+      },
+
+      # ── SLO Alarm: P95 Latency (#1322) ────────────────────────────────────
+      {
+        type   = "alarm"
+        x      = 12
+        y      = 4
+        width  = 12
+        height = 3
+        properties = {
+          title  = "SLO: P95 Request Latency"
+          alarms = [aws_cloudwatch_metric_alarm.http_p95_latency_alarm.arn]
+        }
+      },
+
       # ── Error Count metric (time series) ──────────────────────────────────
       {
         type   = "metric"
         x      = 0
-        y      = 4
+        y      = 7
         width  = 12
         height = 6
         properties = {
@@ -294,7 +404,7 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
       {
         type   = "metric"
         x      = 12
-        y      = 4
+        y      = 7
         width  = 12
         height = 6
         properties = {
@@ -312,7 +422,7 @@ resource "aws_cloudwatch_dashboard" "service_dashboard" {
       {
         type   = "metric"
         x      = 0
-        y      = 10
+        y      = 13
         width  = 12
         height = 6
         properties = {
@@ -348,4 +458,14 @@ output "operational_dashboard_name" {
 output "operational_dashboard_arn" {
   description = "ARN of the operational CloudWatch dashboard (share this with the team)"
   value       = aws_cloudwatch_dashboard.service_dashboard.dashboard_arn
+}
+
+output "slo_5xx_ratio_alarm_arn" {
+  description = "ARN of the SLO HTTP 5xx error-ratio CloudWatch alarm (#1322)"
+  value       = aws_cloudwatch_metric_alarm.http_5xx_ratio_alarm.arn
+}
+
+output "slo_p95_latency_alarm_arn" {
+  description = "ARN of the SLO P95 latency CloudWatch alarm (#1322)"
+  value       = aws_cloudwatch_metric_alarm.http_p95_latency_alarm.arn
 }
