@@ -1492,15 +1492,20 @@ List contract events with pagination and filtering.
 
 #### `GET /api/v1/leaderboard`
 
-Contributor leaderboard ranked by completed assignments.
+Returns aggregated contributor rankings, completed task counts, and organization activity scores for active Waves. Community hackathon organizers can integrate this endpoint to display live leaderboard widgets on external websites.
+
+**Caching semantics**
+
+`Cache-Control: public, max-age=60` — Responses are cached for 60 seconds at edge and CDN layers to minimise backend database load under heavy polling.
 
 **Query parameters**
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `timeframe` | string | `all` | Time window for ranking (`week`, `month`, `all`) |
-| `limit` | integer | `20` | Number of contributors to return (`1`–`100`) |
-| `offset` | integer | `0` | Number of contributors to skip |
+| `timeframe` | string | `all_time` | Time window for ranking (`all_time`, `monthly`, `weekly`; also accepts `all`, `month`, `week`) |
+| `limit` | integer | `20` | Number of contributors to return (`1`–`50`, max 50) |
+| `offset` | integer | `0` | Number of contributors to skip for pagination |
+| `org_id` | string | — | Optional filter by organization identifier |
 
 **Response `200`**
 ```json
@@ -1509,18 +1514,51 @@ Contributor leaderboard ranked by completed assignments.
     {
       "rank": 1,
       "contributor": "GA5W63S2GBKDV2GX2C5JJWDYYUO2WKZDPO7BAHNREUINNOAJCSOAK5EM",
-      "completed_assignments": 42,
-      "active_assignments": 2,
-      "total_applications": 50,
-      "organizations_count": 3
+      "completed_count": 42,
+      "avatar_url": "https://avatars.githubusercontent.com/u/1010101?v=4",
+      "org_id": "stellar-core"
+    },
+    {
+      "rank": 2,
+      "contributor": "GBXXX1ABCDEFGHIJKLMNO123456789PQRSTUVWXYZA23456789B",
+      "completed_count": 28,
+      "avatar_url": "https://avatars.githubusercontent.com/u/2020202?v=4",
+      "org_id": "rust-foundation"
     }
   ],
-  "timeframe": "all",
-  "total": 1
+  "timeframe": "all_time",
+  "limit": 20,
+  "offset": 0,
+  "total": 2
 }
 ```
 
 **Errors:** `500`
+
+**Example: cURL**
+
+```bash
+curl -X GET "https://api.workload-governor.org/api/v1/leaderboard?timeframe=monthly&limit=10&offset=0" \
+  -H "Accept: application/json"
+```
+
+**Example: JavaScript / TypeScript (`fetch`)**
+
+```typescript
+const response = await fetch("https://api.workload-governor.org/api/v1/leaderboard?timeframe=all_time&limit=20", {
+  method: "GET",
+  headers: {
+    "Accept": "application/json",
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`Failed to fetch leaderboard: ${response.status}`);
+}
+
+const data = await response.json();
+console.log(`Leader: ${data.leaderboard[0]?.contributor} with ${data.leaderboard[0]?.completed_count} completions`);
+```
 
 ---
 

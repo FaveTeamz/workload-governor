@@ -309,17 +309,24 @@ paths:
           in: query
           schema:
             type: string
-            enum: [week, month, all]
-            default: all
-          description: Time window for ranking (week = last 7 days, month = last 30 days, all = all time)
+            enum: [week, month, all, weekly, monthly, all_time]
+            default: all_time
+          description: Time window for ranking (all_time, monthly, weekly, or aliases all, month, week)
         - name: limit
           in: query
           schema:
             type: integer
             minimum: 1
-            maximum: 100
+            maximum: 50
             default: 20
-          description: Maximum number of leaderboard entries to return
+          description: Maximum number of leaderboard entries to return (default 20, max 50)
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of entries to skip for pagination
         - name: org_id
           in: query
           schema:
@@ -328,6 +335,12 @@ paths:
       responses:
         '200':
           description: Leaderboard results
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=60
+              description: Caching header (public, max-age=60)
           content:
             application/json:
               schema:
@@ -339,11 +352,16 @@ paths:
                       $ref: '#/components/schemas/LeaderboardEntry'
                   timeframe:
                     type: string
-                    enum: [week, month, all]
                     description: Applied timeframe filter
                   limit:
                     type: integer
                     description: Applied limit
+                  offset:
+                    type: integer
+                    description: Applied offset
+                  total:
+                    type: integer
+                    description: Total matching contributors
                 required:
                   - leaderboard
                   - timeframe
@@ -984,18 +1002,26 @@ components:
     LeaderboardEntry:
       type: object
       properties:
+        rank:
+          type: integer
+          description: Contributor leaderboard rank position
         contributor:
           type: string
           description: Contributor Stellar address
-        org_id:
-          type: string
-          description: Organization ID
         completed_count:
           type: integer
-          description: Number of completed assignments in the given timeframe
+          description: Number of completed tasks / assignments in the given timeframe
+        avatar_url:
+          type: string
+          nullable: true
+          description: Contributor avatar URL
+        org_id:
+          type: string
+          nullable: true
+          description: Organization ID
       required:
+        - rank
         - contributor
-        - org_id
         - completed_count
 
     AuditLogEntry:
