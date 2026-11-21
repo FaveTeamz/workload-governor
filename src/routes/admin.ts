@@ -4,7 +4,7 @@ import { SorobanService } from '../soroban';
 import { GitHubService } from '../github';
 import { verifySignature, parseAuthHeader } from '../signature';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
-import { logger } from '../logger';
+import { logger, logAuditEvent } from '../logger';
 import { validateBody } from '../middleware/validation';
 import {
   registerMaintainerBodySchema,
@@ -32,10 +32,12 @@ async function signatureAuthMiddleware(
   }
 
   if (!verifySignature(signed.adminAddress, signed.message, signed.signature)) {
-    logger.warn({
-      correlationId: req.correlationId,
-      message: 'Invalid admin signature',
-      adminAddress: signed.adminAddress,
+    logAuditEvent({
+      action: 'admin_auth',
+      actor: { type: 'admin', id: signed.adminAddress, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+      target: { type: 'contract', id: 'admin' },
+      outcome: 'failure',
+      details: { correlationId: req.correlationId, reason: 'invalid_signature' },
     });
     res.status(401).json({ error: 'unauthorized' });
     return;
@@ -126,12 +128,15 @@ router.delete(
         args,
       );
 
-      logger.info({
-        correlationId: adminReq.correlationId,
-        message: 'deregister_maintainer XDR built',
-        maintainer_address,
-        org_id,
-        admin: account,
+      logAuditEvent({
+        action: 'deregister_maintainer',
+        actor: { type: 'admin', id: account, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+        target: { type: 'org', id: org_id },
+        outcome: 'success',
+        details: {
+          correlationId: adminReq.correlationId,
+          maintainer_address,
+        },
       });
 
       res.status(200).json({
@@ -244,12 +249,17 @@ router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response
       }
 
       const msg = err instanceof Error ? err.message : 'contract error';
-      logger.error({
-        correlationId: adminReq.correlationId,
-        message: 'register_maintainer contract call failed — DB rolled back',
-        maintainer,
-        org_id,
-        error: msg,
+      logAuditEvent({
+        action: 'register_maintainer',
+        actor: { type: 'admin', id: adminReq.adminAddress, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+        target: { type: 'org', id: org_id },
+        outcome: 'failure',
+        details: {
+          correlationId: adminReq.correlationId,
+          maintainer,
+          error: msg,
+          db_rolled_back: true,
+        },
       });
       res.status(502).json({
         error: 'contract_error',
@@ -260,14 +270,17 @@ router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response
     }
   }
 
-  logger.info({
-    correlationId: adminReq.correlationId,
-    message: 'Org registered',
-    org_id,
-    github_org,
-    maintainers,
-    org_cap,
-    registeredBy: adminReq.adminAddress,
+  logAuditEvent({
+    action: 'register_org',
+    actor: { type: 'admin', id: adminReq.adminAddress, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+    target: { type: 'org', id: org_id },
+    outcome: 'success',
+    details: {
+      correlationId: adminReq.correlationId,
+      github_org,
+      maintainers,
+      org_cap,
+    },
   });
 
   res.status(201).json({
