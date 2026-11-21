@@ -108,3 +108,17 @@ pub(crate) fn emit_assignment_revoked(
     let data = (maintainer.clone(), contributor.clone(), org_id.clone(), issue_id);
     env.events().publish(topics, data);
 }
+
+/// Emitted by `batch_withdraw_applications`.
+///
+/// topics: `(symbol_short!("b_wdw"), contributor)`
+/// data:   `(withdrawn_count,)`
+pub(crate) fn emit_batch_applications_withdrawn(
+    env: &Env,
+    contributor: &Address,
+    withdrawn_count: u32,
+) {
+    let topics = (symbol_short!("b_wdw"), contributor.clone());
+    let data = (withdrawn_count,);
+    env.events().publish(topics, data);
+}

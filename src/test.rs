@@ -618,6 +618,144 @@ proptest! {
     }
 }
 
+// ---------------------------------------------------------------------------
+// UNIT TESTS — batch_withdraw_applications
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unit_batch_withdraw_single() {
+    use soroban_sdk::vec;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("batchone");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    let withdrawals = vec![&t.env, (org.clone(), 1u32)];
+    let count = t.client.batch_withdraw_applications(&contributor, &withdrawals);
+    assert_eq!(count, 1);
+    assert!(!t.client.has_applied(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_batch_withdraw_five() {
+    use soroban_sdk::vec;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("batchfiv");
+
+    t.client.initialize(&admin);
+    for i in 0u32..5 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+    }
+    assert_eq!(t.client.get_global_application_count(&contributor), 5);
+
+    let withdrawals = vec![
+        &t.env,
+        (org.clone(), 0u32),
+        (org.clone(), 1u32),
+        (org.clone(), 2u32),
+        (org.clone(), 3u32),
+        (org.clone(), 4u32),
+    ];
+    let count = t.client.batch_withdraw_applications(&contributor, &withdrawals);
+    assert_eq!(count, 5);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_batch_withdraw_fifteen() {
+    use soroban_sdk::vec;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("btchfif");
+
+    t.client.initialize(&admin);
+    for i in 0u32..15 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+    }
+    assert_eq!(t.client.get_global_application_count(&contributor), 15);
+
+    let mut withdrawals = soroban_sdk::Vec::new(&t.env);
+    for i in 0u32..15 {
+        withdrawals.push_back((org.clone(), i));
+    }
+    let count = t.client.batch_withdraw_applications(&contributor, &withdrawals);
+    assert_eq!(count, 15);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_batch_withdraw_skips_nonexistent() {
+    use soroban_sdk::vec;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("bskip");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    // Issue 99 does not exist — should be skipped, not panic
+    let withdrawals = vec![&t.env, (org.clone(), 1u32), (org.clone(), 99u32)];
+    let count = t.client.batch_withdraw_applications(&contributor, &withdrawals);
+    assert_eq!(count, 1);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+#[should_panic]
+fn unit_batch_withdraw_exceeds_limit() {
+    use soroban_sdk::vec;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("blimit");
+
+    t.client.initialize(&admin);
+
+    // Build a Vec of 16 entries — exceeds GLOBAL_APP_LIMIT of 15
+    let mut withdrawals = soroban_sdk::Vec::new(&t.env);
+    for i in 0u32..16 {
+        withdrawals.push_back((org.clone(), i));
+    }
+    t.client.batch_withdraw_applications(&contributor, &withdrawals); // BatchSizeExceeded
+}
+
+#[test]
+fn unit_batch_withdraw_emits_event() {
+    use soroban_sdk::{testutils::Events, vec};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("bevt");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let events_before = t.env.events().all().len();
+    let withdrawals = vec![&t.env, (org.clone(), 1u32)];
+    t.client.batch_withdraw_applications(&contributor, &withdrawals);
+
+    let events = t.env.events().all();
+    assert!(events.len() > events_before);
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2, "Expected 2-element topics for b_wdw event");
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {

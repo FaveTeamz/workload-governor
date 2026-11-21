@@ -16,7 +16,7 @@ mod storage;
 #[cfg(test)]
 mod test;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::ContractError;
 use crate::events;
@@ -113,6 +113,48 @@ impl WorkloadGovernor {
         }
         storage::bump_instance(&env);
         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
+    }
+
+    /// Withdraws multiple pending applications in a single atomic transaction.
+    ///
+    /// - Panics with `BatchSizeExceeded` if `withdrawals.len() > 15`.
+    /// - Skips entries that do not exist (graceful degradation).
+    /// - Returns the count of applications actually withdrawn.
+    ///
+    /// Guards (in order): NotInitialized → auth → BatchSizeExceeded
+    pub fn batch_withdraw_applications(
+        env: Env,
+        contributor: Address,
+        withdrawals: Vec<(Symbol, u32)>,
+    ) -> Result<u32, ContractError> {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        contributor.require_auth();
+        if withdrawals.len() > storage::GLOBAL_APP_LIMIT {
+            panic_with_error!(env, ContractError::BatchSizeExceeded);
+        }
+
+        let mut withdrawn: u32 = 0;
+        for item in withdrawals.iter() {
+            let (org_id, issue_id) = item;
+            if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+                storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+                withdrawn += 1;
+            }
+        }
+
+        if withdrawn > 0 {
+            let count = storage::get_global_app_count(&env, &contributor);
+            let new_count = count.saturating_sub(withdrawn);
+            if new_count == 0 {
+                storage::remove_global_app_count(&env, &contributor);
+            } else {
+                storage::set_global_app_count(&env, &contributor, new_count);
+            }
+            storage::bump_instance(&env);
+        }
+
+        events::emit_batch_applications_withdrawn(&env, &contributor, withdrawn);
+        Ok(withdrawn)
     }
 
     // -----------------------------------------------------------------------
