@@ -8,7 +8,7 @@
 
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
-use crate::{WorkloadGovernor, WorkloadGovernorClient};
+use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -390,6 +390,105 @@ fn unit_event_application_submitted_has_two_topics() {
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+}
+
+// ---------------------------------------------------------------------------
+// UNIT TESTS — #1219: revoke_assignment state checks
+// ---------------------------------------------------------------------------
+
+/// Revoking an issue that was never assigned must fail with AssignmentNotFound
+/// (error code 10). This kills the mutant at src/lib.rs:382:22 where
+/// bypassing the has_assignment check would allow revocation of ghost entries.
+#[test]
+fn test_revoke_nonexistent_assignment_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // issue_id 999 was never applied for or assigned
+    let result = t
+        .client
+        .try_revoke_assignment(&maintainer, &contributor, &org, &999u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AssignmentNotFound)),
+        "revoking a non-existent assignment must return AssignmentNotFound (error code 10)"
+    );
+}
+
+/// Revoking an assignment that was already successfully revoked must fail with
+/// AssignmentNotFound. This confirms the assignment record is removed on the
+/// first revocation and cannot be double-decremented.
+#[test]
+fn test_revoke_already_revoked_assignment_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revorg2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &50u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &50u32);
+
+    // First revocation succeeds
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &50u32);
+    assert!(!t.client.is_assigned(&contributor, &org, &50u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    // Second revocation must fail with AssignmentNotFound
+    let result = t
+        .client
+        .try_revoke_assignment(&maintainer, &contributor, &org, &50u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AssignmentNotFound)),
+        "double-revoking an assignment must return AssignmentNotFound"
+    );
+
+    // Count must still be 0 — not underflowed to a negative value
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+}
+
+/// Attempting to revoke a completed assignment must fail with AssignmentNotFound
+/// because complete_assignment already removed the assignment record.
+/// This prevents the o_asgn counter from being double-decremented after completion.
+#[test]
+fn test_revoke_completed_assignment_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revorg3");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &75u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &75u32);
+
+    // Complete the assignment
+    t.client.complete_assignment(&maintainer, &contributor, &org, &75u32);
+    assert!(!t.client.is_assigned(&contributor, &org, &75u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    // Attempting to revoke the now-completed assignment must fail
+    let result = t
+        .client
+        .try_revoke_assignment(&maintainer, &contributor, &org, &75u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AssignmentNotFound)),
+        "revoking a completed assignment must return AssignmentNotFound"
+    );
+
+    // Count must remain 0 — not decremented below zero
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
 }
 
 // ---------------------------------------------------------------------------
