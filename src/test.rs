@@ -1011,6 +1011,8 @@ fn unit_governance_default_cap_is_15() {
 
 use proptest::prelude::*;
 
+use std::collections::BTreeSet;
+
 fn arb_org_name() -> impl Strategy<Value = String> {
     "[a-z]{2,9}".prop_map(|s: String| s)
 }
@@ -1357,6 +1359,77 @@ proptest! {
         let (_, client, admin, _, _, _) = fresh_client(&org_name);
         client.initialize(&admin);
         prop_assert_eq!(client.get_global_cap(), 15u32);
+    }
+}
+
+// Feature: workload-governor, Issue #1226: Global application counter state machine
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(500))]
+
+    #[test]
+    fn prop_global_cap_invariants(
+        actions in proptest::collection::vec(
+            (0u8..3u8, 1u32..30u32, 0u8..2u8),
+            1..80,
+        )
+    ) {
+        let (env, client, admin, maintainer, contributor, org_a) =
+            fresh_client("orga");
+        let org_b = Symbol::new(&env, "orgb");
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org_a);
+        client.register_maintainer(&admin, &maintainer, &org_b);
+
+        let mut shadow: BTreeSet<(u8, u32)> = BTreeSet::new();
+
+        for (action, issue_id, org_index) in actions {
+            let org = if org_index == 0 { org_a.clone() } else { org_b.clone() };
+            let key = (org_index, issue_id);
+
+            match action {
+                0 => {
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    if result.is_ok() {
+                        shadow.insert(key);
+                    }
+                }
+                1 => {
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        client.withdraw_application(&contributor, &org, &issue_id);
+                    }));
+                    if result.is_ok() {
+                        shadow.remove(&key);
+                    }
+                }
+                _ => {
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                    }));
+                    if result.is_ok() {
+                        shadow.remove(&key);
+                    }
+                }
+            }
+
+            let count = client.get_global_application_count(&contributor);
+            prop_assert!(count <= 15, "global application count exceeded 15");
+            prop_assert_eq!(count as usize, shadow.len(), "counter drift");
+
+            for (indexed_org, indexed_issue) in &shadow {
+                let checked_org = if *indexed_org == 0 {
+                    org_a.clone()
+                } else {
+                    org_b.clone()
+                };
+                prop_assert!(
+                    client.has_applied(&contributor, &checked_org, indexed_issue),
+                    "shadow application is missing on-chain"
+                );
+            }
+        }
     }
 }
 
