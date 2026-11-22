@@ -9,11 +9,27 @@ import pino from "pino";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+export const REDACT_PATHS = [
+  "req.headers.authorization",
+  'req.headers["x-api-key"]',
+  "req.headers.cookie",
+  "*.secretKey",
+  "*.privateKey",
+  "*.apiKey",
+  "*.token",
+  "*.email",
+  "*.password",
+];
+
 export const logger = pino(
   {
     level: process.env.LOG_LEVEL ?? (isDev ? "debug" : "info"),
     base: { service: "workload-governor" },
     timestamp: pino.stdTimeFunctions.isoTime,
+    redact: {
+      paths: REDACT_PATHS,
+      censor: "[REDACTED]",
+    },
   },
   isDev
     ? pino.transport({ target: "pino-pretty", options: { colorize: true } })

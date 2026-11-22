@@ -1,6 +1,30 @@
 # Observability
 
-This document describes the distributed tracing setup, X-Ray service map, and operational runbooks for the WorkloadGovernor backend.
+This document describes the distributed tracing setup, X-Ray service map, operational runbooks, and log privacy guidelines for the WorkloadGovernor backend.
+
+---
+
+## Log Privacy & Redaction (GDPR & SOC 2 Compliance)
+
+To comply with data privacy regulations (GDPR, SOC 2) and protect sensitive contributor metadata and credentials from exposure in centralized log aggregation platforms (e.g. AWS CloudWatch), deep redaction rules are configured in `backend/src/logger.ts`.
+
+### Redacted Fields and Paths
+
+Pino log serializers recursively sanitize and censor all sensitive properties with `[REDACTED]`:
+
+- `req.headers.authorization` — Bearer tokens and HTTP Authorization headers
+- `req.headers["x-api-key"]` — API key authentication headers
+- `req.headers.cookie` — Session cookies and auth state
+- `*.secretKey` — Secret cryptographic keys and seeds
+- `*.privateKey` — Ed25519 or RSA private keys
+- `*.apiKey` — Service or contributor API keys
+- `*.token` — Auth, session, and webhook tokens
+- `*.email` — Contributor email addresses and PII
+- `*.password` — Passwords and shared secrets
+
+In production mode, all log output streams enforce this redaction policy to ensure zero plaintext secrets or PII are emitted to stdout or AWS CloudWatch.
+
+---
 
 ---
 

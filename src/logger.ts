@@ -11,7 +11,18 @@ const logger = pino({
     return context ? { requestId: context.requestId } : {};
   },
   redact: {
-    paths: ['req.headers.authorization', 'req.headers.cookie', 'body.secret'],
+    paths: [
+      'req.headers.authorization',
+      'req.headers["x-api-key"]',
+      'req.headers.cookie',
+      '*.secretKey',
+      '*.privateKey',
+      '*.apiKey',
+      '*.token',
+      '*.email',
+      '*.password',
+      'body.secret',
+    ],
     censor: '[REDACTED]',
   },
   },
