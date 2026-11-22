@@ -120,6 +120,9 @@ On-chain effect: identical to `complete_assignment` in terms of storage mutation
 | 10 | `AssignmentNotFound` | No active assignment exists for this contributor/issue | Verify with `is_assigned`; it may have already been completed or revoked |
 | 11 | `AlreadyAssigned` | Another contributor is already assigned to this issue | Query `is_assigned` to identify who holds the assignment |
 | 7 | `OrgAssignmentLimitReached` | Contributor already has 4 active assignments in this org | Wait for one of their existing assignments to be completed or revoked |
+| 14 | `DeadlineInPast` | The `deadline` ledger passed before `assign_issue` was called | Use a future ledger number or omit the deadline |
+| 15 | `DeadlineNotPassed` | `expire_assignment` called before the deadline ledger | Wait until the current ledger exceeds the stored deadline |
+| 18 | `NoDeadlineSet` | `expire_assignment` called on an assignment with no deadline | Use `revoke_assignment` instead, or set a deadline when assigning |
 
 ## Guard Order
 
@@ -132,3 +135,71 @@ Every maintainer function checks preconditions in this order before mutating sta
 5. Capacity/uniqueness checks — only on `assign_issue` (`OrgAssignmentLimitReached`, `AlreadyAssigned`)
 
 If any check fails the transaction reverts with no state changes.
+
+---
+
+## Assignment Deadlines (Issue #604)
+
+Assignments can optionally carry a **deadline** — a ledger sequence number by which
+the work must be completed. Deadlines are set at assignment time and enforced by
+`expire_assignment`.
+
+### Setting a Deadline
+
+Pass the `deadline` argument (a future ledger number) when calling `assign_issue`:
+
+```bash
+stellar contract invoke --id <CONTRACT_ID> \
+  --network testnet --source <maintainer-account> \
+  -- assign_issue \
+  --maintainer <MAINTAINER_ADDRESS> \
+  --contributor <CONTRIBUTOR_ADDRESS> \
+  --org_id my_org --issue_id 42 \
+  --deadline 2500000
+```
+
+To assign without a deadline, pass `null`:
+
+```bash
+  --deadline null
+```
+
+The deadline must be strictly greater than the current ledger sequence number.
+Passing a deadline in the past returns `DeadlineInPast` (error 14).
+
+### Querying a Deadline
+
+```bash
+stellar contract invoke --id <CONTRACT_ID> \
+  --network testnet \
+  -- get_assignment_deadline \
+  --org_id my_org --issue_id 42 \
+  --contributor <CONTRIBUTOR_ADDRESS>
+```
+
+Returns the deadline ledger as a `u32`, or `null` if no deadline was set.
+
+### Expiring an Overdue Assignment
+
+Once the current ledger exceeds the stored deadline you can call `expire_assignment`
+to free the assignment slot and emit an `expired` event:
+
+```bash
+stellar contract invoke --id <CONTRACT_ID> \
+  --network testnet --source <maintainer-account> \
+  -- expire_assignment \
+  --maintainer <MAINTAINER_ADDRESS> \
+  --contributor <CONTRIBUTOR_ADDRESS> \
+  --org_id my_org --issue_id 42
+```
+
+On-chain effect: identical to `revoke_assignment` — removes the assignment entry,
+decrements the org assignment counter, and cleans up the deadline entry. Emits
+`expired` instead of `revoked` so monitors can distinguish deadline-driven expiries.
+
+**`expire_assignment` will fail if:**
+
+- No assignment exists (`AssignmentNotFound` — error 10).
+- No deadline was set on the assignment (`NoDeadlineSet` — error 18). Use
+  `revoke_assignment` for no-deadline assignments.
+- The current ledger has not yet passed the deadline (`DeadlineNotPassed` — error 15).

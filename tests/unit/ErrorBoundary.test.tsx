@@ -1,17 +1,17 @@
 /**
  * tests/unit/ErrorBoundary.test.tsx
  *
- * Issue #376 — ErrorBoundary unit tests
+ * Issue #554 — ErrorBoundary unit tests (updated from #376)
  *
  * Covers:
  *  1. Component that throws renders fallback UI instead of crashing
- *  2. Fallback UI shows the Retry button
- *  3. Clicking Retry resets boundary and re-renders child
+ *  2. Fallback UI shows the "Try again" button
+ *  3. Clicking "Try again" resets boundary and re-renders child
  *  4. Thrown error is logged to POST /api/errors (mock fetch)
  *  5. Navigation (route change via resetKey prop) resets the boundary
  *  6. Nested boundary catches error in its own subtree without affecting siblings
- *
- * Tests use Vitest + @testing-library/react.
+ *  7. Error ID is displayed in the fallback UI (contains 'ERR-')
+ *  8. "Report issue" link is present with the correct GitHub href
  */
 
 import React, { useState } from 'react';
@@ -41,7 +41,7 @@ function ThrowingChild({ shouldThrow = false }: { shouldThrow?: boolean }) {
 
 // ── Test suite ────────────────────────────────────────────────────────────────
 
-describe('ErrorBoundary component (Issue #376)', () => {
+describe('ErrorBoundary component (Issue #554)', () => {
 
   // ── Test 1: throws → fallback UI rendered ──────────────────────────────────
 
@@ -59,22 +59,22 @@ describe('ErrorBoundary component (Issue #376)', () => {
     expect(screen.queryByTestId('child-content')).not.toBeInTheDocument();
   });
 
-  // ── Test 2: fallback shows the Retry button ────────────────────────────────
+  // ── Test 2: fallback shows the Try again button ───────────────────────────
 
-  it('2. fallback UI includes a "Retry" button', () => {
+  it('2. fallback UI includes a "Try again" button', () => {
     render(
       <ErrorBoundary>
         <ThrowingChild shouldThrow />
       </ErrorBoundary>,
     );
 
-    const retryBtn = screen.getByRole('button', { name: /retry/i });
+    const retryBtn = screen.getByRole('button', { name: /try again/i });
     expect(retryBtn).toBeInTheDocument();
   });
 
-  // ── Test 3: Retry resets boundary and re-renders child ─────────────────────
+  // ── Test 3: Try again resets boundary and re-renders child ────────────────
 
-  it('3. clicking Retry resets the boundary and shows child content again', () => {
+  it('3. clicking "Try again" resets the boundary and shows child content again', () => {
     const { rerender } = render(
       <ErrorBoundary>
         <ThrowingChild shouldThrow={false} />
@@ -93,13 +93,13 @@ describe('ErrorBoundary component (Issue #376)', () => {
 
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
-    // Fix child first, then click Retry to reset the boundary
+    // Fix child first, then click Try again to reset the boundary
     rerender(
       <ErrorBoundary>
         <ThrowingChild shouldThrow={false} />
       </ErrorBoundary>,
     );
-    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
 
     expect(screen.getByTestId('child-content')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -185,5 +185,37 @@ describe('ErrorBoundary component (Issue #376)', () => {
 
     // The healthy sibling is still rendered
     expect(screen.getByTestId('child-content')).toBeInTheDocument();
+  });
+
+  // ── Test 7: error ID displayed in fallback UI ─────────────────────────────
+
+  it('7. fallback UI displays a support error ID containing "ERR-"', () => {
+    render(
+      <ErrorBoundary>
+        <ThrowingChild shouldThrow />
+      </ErrorBoundary>,
+    );
+
+    // The error ID element should contain the ERR- prefix
+    const errorIdEl = screen.getByText(/ERR-/i);
+    expect(errorIdEl).toBeInTheDocument();
+    expect(errorIdEl.textContent).toMatch(/^ERR-[0-9A-Z]+$/);
+  });
+
+  // ── Test 8: "Report issue" link with correct href ─────────────────────────
+
+  it('8. fallback UI includes a "Report issue" link pointing to the GitHub issues page', () => {
+    render(
+      <ErrorBoundary>
+        <ThrowingChild shouldThrow />
+      </ErrorBoundary>,
+    );
+
+    const reportLink = screen.getByRole('link', { name: /report issue/i });
+    expect(reportLink).toBeInTheDocument();
+    expect(reportLink).toHaveAttribute(
+      'href',
+      'https://github.com/FaveTeamz/workload-governor/issues/new',
+    );
   });
 });

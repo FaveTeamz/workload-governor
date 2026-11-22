@@ -215,6 +215,9 @@ export function verifyTransactionXdr(signedXdr: string): VerificationResult {
   // 1. Decode XDR
   let tx: Transaction;
   try {
+    if (signedXdr.length > 65_536) {
+      return { ok: false, reason: 'MALFORMED_XDR', detail: 'XDR payload exceeds 64 KB size limit' };
+    }
     const envelope = xdr.TransactionEnvelope.fromXDR(signedXdr, 'base64');
     const txObj = new Transaction(envelope, NETWORK_PASSPHRASE);
 

@@ -191,9 +191,9 @@ No state changes. Invariants trivially preserved. ∎
 
 ---
 
-### `initialize`, `register_maintainer`, `upgrade`, `transfer_admin`
+### `initialize`, `register_maintainer`, `upgrade`, `propose_admin`, `accept_admin`
 
-These functions modify the admin/maintainer/contract-wasm storage but do not
+These functions modify the admin/maintainer/pending-admin/contract-wasm storage but do not
 touch S, A, g_apps, or o_asgn. Invariants trivially preserved. ∎
 
 ---
