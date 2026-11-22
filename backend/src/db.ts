@@ -82,4 +82,27 @@ pool.on("error", (err: Error, client?: any) => {
   }
 });
 
+// Periodic Prometheus metric collection for PostgreSQL connection pool (closes #1324)
+import { updateDbPoolMetrics } from "./tracing.js";
+
+export function collectDbPoolMetrics(): void {
+  try {
+    const total = pool.totalCount ?? 0;
+    const idle = pool.idleCount ?? 0;
+    const waiting = pool.waitingCount ?? 0;
+    updateDbPoolMetrics(total, idle, waiting);
+  } catch (err: any) {
+    // Avoid unhandled errors during shutdown/testing
+  }
+}
+
+// Initial metric record
+collectDbPoolMetrics();
+
+// Collect metrics periodically every 5 seconds
+const poolMetricsInterval = setInterval(collectDbPoolMetrics, 5000);
+if (poolMetricsInterval && typeof poolMetricsInterval.unref === "function") {
+  poolMetricsInterval.unref();
+}
+
 export default pool;

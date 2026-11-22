@@ -430,3 +430,38 @@ export function getTracer(name: string = SERVICE_NAME): Tracer {
 
 export const tracer: Tracer = getTracer(SERVICE_NAME);
 
+// ─── PostgreSQL Connection Pool Prometheus Metrics ──────────────────────────
+import { Gauge, register } from "prom-client";
+
+export const dbPoolTotalConnections = new Gauge({
+  name: "db_pool_total_connections",
+  help: "Total connections in the PostgreSQL connection pool",
+  registers: [register],
+});
+
+export const dbPoolIdleConnections = new Gauge({
+  name: "db_pool_idle_connections",
+  help: "Idle connections available in the PostgreSQL connection pool",
+  registers: [register],
+});
+
+export const dbPoolActiveConnections = new Gauge({
+  name: "db_pool_active_connections",
+  help: "In-use connections currently executing queries in the PostgreSQL connection pool",
+  registers: [register],
+});
+
+export const dbPoolWaitingRequests = new Gauge({
+  name: "db_pool_waiting_requests",
+  help: "Number of queued requests waiting for a free database connection",
+  registers: [register],
+});
+
+export function updateDbPoolMetrics(totalCount: number, idleCount: number, waitingCount: number): void {
+  dbPoolTotalConnections.set(totalCount);
+  dbPoolIdleConnections.set(idleCount);
+  dbPoolActiveConnections.set(Math.max(0, totalCount - idleCount));
+  dbPoolWaitingRequests.set(waitingCount);
+}
+
+

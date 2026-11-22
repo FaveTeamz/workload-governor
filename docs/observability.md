@@ -147,3 +147,24 @@ XRAY_ENABLED=true AWS_XRAY_DAEMON_ADDRESS=127.0.0.1:2000 npm run dev
 ```
 
 Segments appear in the [X-Ray console](https://console.aws.amazon.com/xray/home) within ~30 seconds.
+
+---
+
+## Database Connection Pool Metrics
+
+The backend exposes real-time PostgreSQL connection pool metrics via the `/metrics` endpoint for Prometheus:
+
+| Metric Name | Type | Description |
+|---|---|---|
+| `db_pool_total_connections` | Gauge | Total active and idle connections allocated in the pool |
+| `db_pool_idle_connections` | Gauge | Idle connections ready to serve new queries immediately |
+| `db_pool_active_connections` | Gauge | Connections currently executing SQL queries (`totalCount - idleCount`) |
+| `db_pool_waiting_requests` | Gauge | Number of queued client requests waiting for an available connection |
+
+### Alerting Thresholds
+
+- **Alert: `DatabasePoolWaitingRequestsHigh`**
+  - Trigger: `db_pool_waiting_requests > 5` for > 1 minute.
+  - Severity: `warning`
+  - Action: Inspect long-running transactions or increase `DB_POOL_MAX` sizing.
+

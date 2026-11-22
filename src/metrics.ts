@@ -93,6 +93,42 @@ export const dbPoolIdle = new Gauge({
   },
 });
 
+export const dbPoolTotalConnections = new Gauge({
+  name: "db_pool_total_connections",
+  help: "Total connections in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.totalCount ?? 0);
+  },
+});
+
+export const dbPoolIdleConnections = new Gauge({
+  name: "db_pool_idle_connections",
+  help: "Idle connections available in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.idleCount ?? 0);
+  },
+});
+
+export const dbPoolActiveConnections = new Gauge({
+  name: "db_pool_active_connections",
+  help: "In-use connections currently executing queries in the PostgreSQL pool",
+  registers: [register],
+  collect() {
+    this.set(Math.max(0, (pool.totalCount ?? 0) - (pool.idleCount ?? 0)));
+  },
+});
+
+export const dbPoolWaitingRequests = new Gauge({
+  name: "db_pool_waiting_requests",
+  help: "Number of queued requests waiting for a free database connection",
+  registers: [register],
+  collect() {
+    this.set(pool.waitingCount ?? 0);
+  },
+});
+
 export const pgPoolTotalConnections = new Gauge({
   name: "pg_pool_total_connections",
   help: "Total connections in the PostgreSQL connection pool",

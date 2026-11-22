@@ -9,3 +9,13 @@ groups:
         annotations:
           summary: "High HTTP 5xx error rate detected"
           description: "HTTP 5xx error rate has exceeded 1% of total requests over a 5-minute rolling window (current: {{ $value | humanizePercentage }})."
+
+      - alert: DatabasePoolWaitingRequestsHigh
+        expr: db_pool_waiting_requests > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection pool has high waiting requests"
+          description: "Database connection pool waiting requests is {{ $value }} (> 5) for more than 1 minute, indicating connection pool starvation."
+
