@@ -15,6 +15,8 @@ import express from "express";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
+import { adminAuth } from "./middleware/adminAuth.js";
+import adminRouter from "./routes/admin.js";
 import logger from "./logger.js";
 
 // ─── Express app ─────────────────────────────────────────────────────────────
@@ -35,6 +37,9 @@ app.use((req, _res, next) => {
 
 // Health check
 app.get("/api/health", healthHandler);
+
+// Admin routes protected by adminAuth middleware
+app.use("/api/admin", adminAuth, adminRouter);
 
 // 404 fallback
 app.use((_req, res) => {

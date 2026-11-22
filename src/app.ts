@@ -17,6 +17,7 @@ import verifyXdrRouter from './routes/verify-xdr';
 import orgsRouter from './routes/orgs';
 import { globalLimiter, walletLimiter } from './middleware/rate-limit';
 import { apiKeyAuth } from './middleware/api-key-auth';
+import { adminAuth } from './middleware/adminAuth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
@@ -95,7 +96,7 @@ export function createApp(): express.Application {
   app.use('/api/issues', issuesRouter);
   app.use('/api/contributors', contributorsRouter);
   app.use('/api/v1/contributors', contributorsRouter);
-  app.use('/api/admin', adminRouter);
+  app.use('/api/admin', adminAuth, adminRouter);
   app.use('/api/api-keys', apiKeysRouter);
   app.use('/api/transactions', walletLimiter, transactionsRouter);
   app.use('/api/events', eventsRouter);
