@@ -9,3 +9,12 @@ groups:
         annotations:
           summary: "High HTTP 5xx error rate detected"
           description: "HTTP 5xx error rate has exceeded 1% of total requests over a 5-minute rolling window (current: {{ $value | humanizePercentage }})."
+
+      - alert: ApplicationTtlNearExpiration
+        expr: contract_min_application_remaining_ledgers < 2000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Application TTL near expiration"
+          description: "Minimum remaining application entry TTL is {{ $value }} ledgers (< 2000 ledgers / ~2.5 hours remaining). Extend TTL immediately to prevent state eviction."

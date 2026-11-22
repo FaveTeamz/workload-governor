@@ -146,6 +146,18 @@ export const sorobanMinApplicationTtlLedgers = new Gauge({
   registers: [register],
 });
 
+export const contractMinApplicationRemainingLedgers = new Gauge({
+  name: "contract_min_application_remaining_ledgers",
+  help: "Minimum remaining TTL across all active pending applications",
+  registers: [register],
+});
+
+export const contractApplicationTtlExtensionsTotal = new Counter({
+  name: "contract_application_ttl_extensions_total",
+  help: "Total successful TTL extensions executed",
+  registers: [register],
+});
+
 export const indexerLastProcessedLedger = new Gauge({
   name: "indexer_last_processed_ledger",
   help: "Last ledger committed by the event indexer",
