@@ -257,6 +257,12 @@ stellar contract invoke \
   --new_wasm_hash <WASM_HASH>
 ```
 
+### Database schema rollback
+
+If a deploy introduced a migration that must be reversed, see the dedicated
+runbook: [docs/runbooks/db-rollback.md](runbooks/db-rollback.md). It covers
+stopping the ECS service, running `npm run migrate:down`, verifying schema
+integrity, and redeploying the previous app version.
 
 ---
 

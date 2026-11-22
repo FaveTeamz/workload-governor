@@ -88,9 +88,9 @@ function FormField({
 
 // ─── CapWarning ───────────────────────────────────────────────────────────────
 
-function CapWarning({ message }: { message: string }) {
+function CapWarning({ message, id }: { message: string; id: string }) {
   return (
-    <div className="form-cap-warning" role="alert" aria-live="assertive">
+    <div id={id} className="form-cap-warning" role="alert" aria-live="assertive">
       <span className="form-cap-warning__icon" aria-hidden="true">⛔</span>
       <p className="form-cap-warning__text">{message}</p>
     </div>
@@ -134,6 +134,7 @@ export function ApplyForm({
   const orgIdError   = showError('orgId')   ? validate('orgId')   : null
   const issueIdError = showError('issueId') ? validate('issueId') : null
   const capError     = capStatus ? validateCapStatus(capStatus) : null
+  const hasValidationErrors = Boolean(orgIdError || issueIdError || capError)
 
   const isValid = !validate('orgId') && !validate('issueId') && !capError
 
@@ -153,7 +154,7 @@ export function ApplyForm({
     <form className="tx-form" onSubmit={handleSubmit} noValidate>
       <h3 className="tx-form__title">Apply for Issue</h3>
 
-      {capError && <CapWarning message={capError.message} />}
+      {capError && <CapWarning id={`${uid}-cap-err`} message={capError.message} />}
 
       <FormField
         label="Organisation ID"
@@ -182,7 +183,7 @@ export function ApplyForm({
       <button
         type="submit"
         className="btn btn-primary"
-        disabled={busy || !!capError}
+        disabled={busy || hasValidationErrors}
         aria-busy={busy}
         aria-describedby={capError ? `${uid}-cap-err` : undefined}
       >
@@ -220,6 +221,7 @@ export function AssignForm({ registeredOrgs = [], onSubmit }: AssignFormProps) {
   const contributorError = showError('contributor') ? validate('contributor') : null
   const orgIdError       = showError('orgId')       ? validate('orgId')       : null
   const issueIdError     = showError('issueId')     ? validate('issueId')     : null
+  const hasValidationErrors = Boolean(contributorError || orgIdError || issueIdError)
 
   const isValid = !validate('contributor') && !validate('orgId') && !validate('issueId')
 
@@ -278,7 +280,7 @@ export function AssignForm({ registeredOrgs = [], onSubmit }: AssignFormProps) {
       <button
         type="submit"
         className="btn btn-primary"
-        disabled={busy}
+        disabled={busy || hasValidationErrors}
         aria-busy={busy}
       >
         {busy ? 'Assigning…' : 'Assign'}
@@ -315,6 +317,7 @@ export function CompleteForm({ registeredOrgs = [], onSubmit }: CompleteFormProp
   const contributorError = showError('contributor') ? validate('contributor') : null
   const orgIdError       = showError('orgId')       ? validate('orgId')       : null
   const issueIdError     = showError('issueId')     ? validate('issueId')     : null
+  const hasValidationErrors = Boolean(contributorError || orgIdError || issueIdError)
 
   const isValid = !validate('contributor') && !validate('orgId') && !validate('issueId')
 
@@ -342,7 +345,7 @@ export function CompleteForm({ registeredOrgs = [], onSubmit }: CompleteFormProp
       <FormField label="Issue ID" name={`${uid}-issue-id`} value={issueId}
         onChange={setIssueId} onBlur={() => setTouched(t => ({ ...t, issueId: true }))}
         error={issueIdError} errorId={`${uid}-issue-id-err`} placeholder="e.g. 42" />
-      <button type="submit" className="btn btn-complete" disabled={busy} aria-busy={busy}>
+      <button type="submit" className="btn btn-complete" disabled={busy || hasValidationErrors} aria-busy={busy}>
         {busy ? 'Completing…' : 'Complete'}
       </button>
     </form>
@@ -377,6 +380,7 @@ export function RevokeForm({ registeredOrgs = [], onSubmit }: RevokeFormProps) {
   const contributorError = showError('contributor') ? validate('contributor') : null
   const orgIdError       = showError('orgId')       ? validate('orgId')       : null
   const issueIdError     = showError('issueId')     ? validate('issueId')     : null
+  const hasValidationErrors = Boolean(contributorError || orgIdError || issueIdError)
 
   const isValid = !validate('contributor') && !validate('orgId') && !validate('issueId')
 
@@ -404,7 +408,7 @@ export function RevokeForm({ registeredOrgs = [], onSubmit }: RevokeFormProps) {
       <FormField label="Issue ID" name={`${uid}-issue-id`} value={issueId}
         onChange={setIssueId} onBlur={() => setTouched(t => ({ ...t, issueId: true }))}
         error={issueIdError} errorId={`${uid}-issue-id-err`} placeholder="e.g. 42" />
-      <button type="submit" className="btn btn-revoke" disabled={busy} aria-busy={busy}>
+      <button type="submit" className="btn btn-revoke" disabled={busy || hasValidationErrors} aria-busy={busy}>
         {busy ? 'Revoking…' : 'Revoke'}
       </button>
     </form>

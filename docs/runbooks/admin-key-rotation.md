@@ -1,31 +1,53 @@
 # Runbook: Admin Key Rotation
 
-Transfers admin authority from the current keypair to a new one and updates all
-dependent secrets and backend services. Use this runbook for both emergency
-rotations (suspected key compromise) and scheduled 90-day key hygiene.
+Transfers admin authority from the current keypair to a new one using the
+two-step `propose_admin` / `accept_admin` contract functions.
 
-Estimated time: 30–45 minutes for a prepared operator.
+- **Step 1 (`propose_admin`)**: the current admin nominates a new admin address
+  and signs the transaction. The proposal is stored on-chain; the current admin
+  retains all privileges until Step 2 is complete.
+- **Step 2 (`accept_admin`)**: the new admin signs a separate transaction to
+  accept the proposal. On confirmation, the old admin loses all on-chain authority
+  atomically.
 
-**On-chain mechanism:** `transfer_admin` atomically replaces the stored admin
-address in a single transaction. Both the current admin and the new admin must
-sign — a compromised old key alone cannot hijack authority, and the new key
-alone cannot pull authority to itself.
-
-For the automated Phase 1–4 script, see
-[`scripts/rotate-admin-key.sh`](../../scripts/rotate-admin-key.sh).
+Estimated time: 20–40 minutes for a prepared operator. The two-step design
+eliminates the race window of single-step rotation: the old key remains active
+until the new key explicitly proves ownership.
 
 ---
 
 ## Background
 
-The `transfer_admin` contract function (available from contract v0.2.0):
+The `propose_admin` / `accept_admin` functions (added in contract v0.3.0) implement
+a secure two-step admin transfer. Their security properties are:
 
-- **Dual authorisation**: both `current_admin` and `new_admin` must sign the
-  same transaction. Neither party can complete the transfer unilaterally.
-- **Atomic replacement**: the new admin is active in the next ledger. There is
-  no pending state or cooldown.
-- **Audit event**: emits `AdminTransferred { old_admin, new_admin }` so
-  off-chain monitors can detect unexpected rotations.
+- **Dual authorisation**: the current admin must sign `propose_admin`; the new
+  admin must sign `accept_admin`. A compromised old key alone cannot complete a
+  transfer to an attacker address (Step 2 still requires the new key), and a
+  stolen new key alone cannot claim authority without a prior `propose_admin` from
+  the current admin.
+- **Old admin stays active**: the current admin retains full authority between
+  Steps 1 and 2, including the ability to overwrite the proposal by calling
+  `propose_admin` again with a corrected address.
+- **Atomic completion**: on-chain confirmation of `accept_admin` makes the new
+  admin active in the same ledger. There is no cooldown or time-lock.
+- **Events emitted**:
+  - `AdminTransferProposed { current_admin, new_admin }` on `propose_admin`
+  - `AdminTransferred { old_admin, new_admin }` on `accept_admin`
+
+For why the contract uses this pattern instead of a one-step `set_admin`, a
+multisig guardian, or a timelock, see
+[ADR-006: Two-Step Admin Transfer](../adr/ADR-006-two-step-admin-transfer.md).
+
+---
+
+## Error Codes
+
+| Code | Variant | When raised |
+|------|---------|-------------|
+| 2 | `NotInitialized` | Called before `initialize` |
+| 3 | `UnauthorizedAdmin` | Wrong caller on `propose_admin`, or `new_admin` mismatch on `accept_admin` |
+| 15 | `NoPendingAdminTransfer` | `accept_admin` called with no active proposal |
 
 ---
 
@@ -42,6 +64,19 @@ Confirm every item before starting:
 - [ ] You have ECS access to restart the backend service (Phase 6).
 - [ ] An incident ticket or change-management record is open (production
       rotations only).
+
+## Zero-Downtime Rollover Checklist
+
+To ensure zero downtime during key rollover across backend API and event indexer services:
+
+- [ ] **Dual-Key Compatibility Mode**: Pre-deploy backend services configured to recognize both `OLD_ADMIN_KEY` and `NEW_ADMIN_KEY` as valid callers.
+- [ ] **On-Chain Proposal Execution**: Execute `propose_admin` on-chain using current admin keypair.
+- [ ] **On-Chain Acceptance Confirmation**: Execute `accept_admin` on-chain using new admin keypair; wait for ledger confirmation.
+- [ ] **Secrets Manager Update**: Update `STELLAR_ADMIN_SECRET` in AWS Secrets Manager / Vault to the new keypair with automated version staging.
+- [ ] **Rolling Service Restart**: Trigger zero-downtime rolling restart (Kubernetes Deployment rollout) of backend and indexer workloads.
+- [ ] **Health & Metric Probes**: Verify all HTTP `/health` and `/ready` probes return 200 OK.
+- [ ] **Audit Trail Verification**: Verify `AdminTransferred` event is ingested into PostgreSQL database and emitted to audit log.
+- [ ] **Decommission Old Key**: Revoke and archive `OLD_ADMIN_SECRET` from active configuration stores.
 
 ---
 
@@ -72,7 +107,15 @@ stellar account show "$NEW_ADMIN_ADDRESS" --network "$NETWORK"
 # Expected: account exists with non-zero XLM balance
 ```
 
-### 3. Check for in-flight transactions
+### 3. Check for an existing pending proposal
+
+```bash
+# If a previous rotation attempt left a pending proposal, investigate before
+# proceeding. The pending admin key is stored at storage key "p_admin".
+# A new propose_admin call will overwrite any existing proposal.
+```
+
+### 4. Check for in-flight transactions
 
 Review recent activity on both accounts in the Stellar explorer before
 proceeding. Do not rotate during a high-traffic wave window.
@@ -101,56 +144,63 @@ curl -s "https://friendbot.stellar.org/?addr=$NEW_ADMIN_ADDRESS" | jq .
 #   --source "$FUNDING_KEY" --network mainnet
 ```
 
----
-
-## Phase 2 — Execute `transfer_admin` (dual-signature)
-
-Both the old admin and the new admin must authorise the transaction.
-
-**Option A — Sequential signing (recommended for production):**
-
-```bash
-export NETWORK=testnet         # or mainnet
-export CONTRACT_ID=<CONTRACT_ID>
-export OLD_ADMIN_KEY=<old-stellar-cli-identity-name>
-export OLD_ADMIN_ADDRESS=$(stellar keys address "$OLD_ADMIN_KEY")
-
-stellar tx new invoke \
-  --id "$CONTRACT_ID" \
-  --network "$NETWORK" \
-  -- transfer_admin \
-  --current_admin "$OLD_ADMIN_ADDRESS" \
-  --new_admin     "$NEW_ADMIN_ADDRESS" \
-  | stellar tx sign --sign-with-key "$OLD_ADMIN_KEY" \
-  | stellar tx sign --sign-with-key "$NEW_ADMIN_KEY" \
-  | stellar tx send
-# Expected: transaction hash + null return value
-```
-
-**Option B — Single invocation (testnet / both keys on the same machine):**
+### Step 2 — Propose the transfer (current admin signs)
 
 ```bash
 stellar contract invoke \
   --id "$CONTRACT_ID" \
   --network "$NETWORK" \
   --source "$OLD_ADMIN_KEY" \
-  -- transfer_admin \
+  -- propose_admin \
   --current_admin "$OLD_ADMIN_ADDRESS" \
-  --new_admin     "$NEW_ADMIN_ADDRESS"
-# The CLI satisfies both require_auth calls via auth simulation when
-# both identities are present locally.
+  --new_admin "$NEW_ADMIN_ADDRESS"
+# Expected: null
+# Event emitted: AdminTransferProposed { current_admin, new_admin }
 ```
 
-> **Important**: On mainnet, always use Option A. It produces an explicit second
-> signature from the incoming admin and leaves a verifiable audit trail in the
-> transaction envelope.
+Record the transaction hash. The proposal is now stored on-chain. The current
+admin retains all privileges.
 
----
+> **Note:** If you provided the wrong `new_admin` address, call `propose_admin`
+> again with the correct address. The previous proposal will be overwritten.
 
-## Phase 3 — Verify the New Admin on Chain
+### Step 3 — Verify the proposal is recorded
 
 ```bash
-# New admin: register a canary maintainer (idempotent, safe to repeat)
+# Confirm the pending admin is stored by attempting an accept with a dummy address.
+# This should fail with NoPendingAdminTransfer (error 15) if no proposal exists,
+# or with UnauthorizedAdmin (error 3) if the proposal is present but the address
+# does not match — confirming the proposal was written.
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network "$NETWORK" \
+  -- accept_admin \
+  --new_admin "GDUMMYADDRESS000000000000000000000000000000000000000000000" 2>&1 || true
+# Expected: Error(Contract, #3) UnauthorizedAdmin  ← proposal exists
+# If you see: Error(Contract, #15) NoPendingAdminTransfer ← proposal missing, re-run Step 2
+```
+
+### Step 4 — Accept the transfer (new admin signs)
+
+This step must be performed by the operator holding the **new** admin key.
+
+```bash
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --network "$NETWORK" \
+  --source "$NEW_ADMIN_KEY" \
+  -- accept_admin \
+  --new_admin "$NEW_ADMIN_ADDRESS"
+# Expected: null
+# Event emitted: AdminTransferred { old_admin, new_admin }
+```
+
+The new admin is now active. The old admin has no on-chain authority from this
+ledger forward.
+
+### Step 5 — Verify the new admin is active
+
+```bash
 stellar contract invoke \
   --id "$CONTRACT_ID" \
   --network "$NETWORK" \
@@ -162,9 +212,7 @@ stellar contract invoke \
 # Expected: null
 ```
 
----
-
-## Phase 4 — Confirm the Old Admin Is Rejected
+### Step 6 — Confirm the old admin is rejected
 
 ```bash
 stellar contract invoke \
@@ -206,18 +254,9 @@ aws secretsmanager put-secret-value \
 echo "Secret updated."
 ```
 
-> If the secret `${SERVICE_NAME}-ADMIN_SECRET` does not yet exist, create it
-> first:
->
-> ```bash
-> aws secretsmanager create-secret \
->   --region "$AWS_REGION" \
->   --name "${SERVICE_NAME}-ADMIN_SECRET" \
->   --description "WorkloadGovernor admin keypair secret key" \
->   --secret-string "$NEW_ADMIN_SECRET_VALUE"
-> ```
+### Step 7 — Rotate the secret in the secrets manager
 
-### 5b. Verify the write succeeded
+Immediately after on-chain confirmation of Step 4:
 
 ```bash
 aws secretsmanager describe-secret \
@@ -239,15 +278,7 @@ aws secretsmanager describe-secret \
      --query 'Versions[?contains(VersionStages, `AWSPREVIOUS`)].VersionId' \
      --output text)
 
-   # Remove all staging labels from the previous version
-   if [[ -n "$OLD_VERSION_ID" ]]; then
-     aws secretsmanager update-secret-version-stage \
-       --region "$AWS_REGION" \
-       --secret-id "${SERVICE_NAME}-ADMIN_SECRET" \
-       --version-stage AWSPREVIOUS \
-       --remove-from-version-id "$OLD_VERSION_ID"
-   fi
-   ```
+### Step 8 — Update the `.github/workflows/contract-ci.yml` secret reference
 
 2. Update any CI/CD pipelines that reference `CI_ADMIN_SECRET`:
    - Go to **Settings → Secrets and variables → Actions** in the GitHub repo.
@@ -304,61 +335,36 @@ timeout is 10 minutes (ECS CLI); if it times out see Troubleshooting below.
 
 ### 6d. Verify backend health
 
-```bash
-# Replace with your actual health endpoint
-HEALTH_URL="${HEALTH_URL:-https://api.workload-governor.example.com/api/health}"
-
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
-if [[ "$HTTP_STATUS" != "200" ]]; then
-  echo "ERROR: health check returned $HTTP_STATUS" >&2
-  exit 1
-fi
-echo "Health check passed: $HTTP_STATUS"
-```
-
-Also verify the Horizon network connectivity sub-check:
-
-```bash
-curl -s "$HEALTH_URL/network" | jq .status
-# Expected: "ok"
-```
-
----
-
-## Verification Checklist
-
-After completing all phases, confirm every item:
-
-- [ ] `register_maintainer` succeeds with the new admin key (Phase 3).
-- [ ] `register_maintainer` fails with `UnauthorizedAdmin` using the old admin
-      key (Phase 4).
-- [ ] `AdminTransferred` event visible in the Stellar explorer for the contract.
-- [ ] AWS Secrets Manager shows a recent `LastChangedDate` for
-      `${SERVICE_NAME}-ADMIN_SECRET`.
-- [ ] Old version staging labels removed from the secret.
-- [ ] All ECS tasks running on the new task definition revision.
-- [ ] `GET /api/health` returns `200` from the backend.
-- [ ] `GET /api/health/network` returns `{ "status": "ok" }`.
-- [ ] CI pipeline passes with the updated `CI_ADMIN_SECRET`.
-- [ ] Change-management record updated and closed.
+- [ ] `register_maintainer` succeeds with the new admin key.
+- [ ] `register_maintainer` fails with `UnauthorizedAdmin` using the old admin key.
+- [ ] `AdminTransferred` event is visible in the transaction explorer.
+- [ ] `AdminTransferProposed` event from Step 2 is also visible.
+- [ ] Old admin secret has been revoked in the secrets manager.
+- [ ] CI pipeline passes with the updated secret.
+- [ ] Change-management record is updated and closed.
 
 ---
 
 ## Rollback
 
-`transfer_admin` is **irreversible by design** — once confirmed, the old admin
-has no on-chain authority.
+The two-step design provides a narrow recovery window:
 
-| Scenario | Recovery path |
-|----------|--------------|
-| Phase 2 transaction failed before submission | No on-chain change. Retry with corrected parameters. |
-| Phase 2 succeeded but new key is immediately lost | Use whatever access you have to the new key (even briefly) to call `transfer_admin` again to a recovery key. |
-| Phase 5 write failed | Re-run Phase 5. The on-chain rotation is complete regardless — the backend will fail auth until the secret is updated. |
-| Phase 6 health check failing after restart | Verify the task definition references the correct secret ARN; check ECS task logs in CloudWatch for secret injection errors. Roll back the ECS service to the previous task definition revision if needed: `aws ecs update-service --task-definition <PREV_ARN> ...` |
-| No new admin key and no recovery key | No rollback path without a contract upgrade. Contact the team to initiate an emergency contract upgrade that sets a new admin via the `initialize` replacement path. |
+1. **If Step 2 (`propose_admin`) failed before submission**: no on-chain change
+   occurred. Retry with the corrected parameters.
+2. **If Step 2 succeeded but Step 4 (`accept_admin`) has not been called yet**:
+   the old admin is still active. You can overwrite the proposal by calling
+   `propose_admin` again with a different `new_admin` address. This invalidates
+   the previous proposal.
+3. **If Step 4 succeeded**: the old admin has no authority. Rollback options:
+   - Call `propose_admin` from the **new** admin, then `accept_admin` from the
+     old admin keypair to reverse the transfer — but only if you still hold the
+     old admin private key.
+   - If the new admin key is lost immediately after Step 4, there is no on-chain
+     rollback path without the new admin key.
 
-> **Prevention**: generate and fund the new keypair, and confirm the account
-> exists on-chain, before initiating the transfer.
+> **Recovery tip**: Always generate and secure the new keypair _before_ starting
+> Step 2. Keeping the old keypair accessible until Step 4 is confirmed gives you
+> the overwrite option if anything goes wrong between Steps 2 and 4.
 
 ---
 
@@ -399,13 +405,11 @@ single party ever holds the full private key.
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `Error(Contract, #3) UnauthorizedAdmin` on `transfer_admin` | Old admin key not signing | Confirm `--source "$OLD_ADMIN_KEY"` and that the address matches the stored admin |
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Error(Contract, #3) UnauthorizedAdmin` on `propose_admin` | Old admin key not signing | Pass `--source "$OLD_ADMIN_KEY"` and confirm the address matches the stored admin |
+| `Error(Contract, #3) UnauthorizedAdmin` on `accept_admin` | `--new_admin` does not match the pending proposal | Check the address used in `propose_admin`; re-run `propose_admin` if needed |
+| `Error(Contract, #15) NoPendingAdminTransfer` | `accept_admin` called before `propose_admin` | Run Step 2 (`propose_admin`) first |
 | `Error(Contract, #2) NotInitialized` | Contract was not initialised | Run `initialize` first |
-| `HostError: auth` / auth simulation failure on new admin | New admin did not countersign | Use Option A (explicit dual signing with `stellar tx sign`) |
-| `transaction failed: insufficient balance` | New admin account not funded | Fund with Friendbot (testnet) or XLM transfer (mainnet) |
-| Old admin still passes auth after Phase 2 | Transaction not yet confirmed | Wait for ledger confirmation (~5 s) then re-run Phase 4 |
-| `aws ecs wait services-stable` times out | Tasks not reaching RUNNING state | Check ECS task logs in CloudWatch for secret injection failures or OOM |
-| `GET /api/health` returns non-200 | Backend misconfigured or still restarting | Re-run 6c wait; if still failing, check task definition and secret ARNs |
-| `CI_ADMIN_SECRET` CI job fails after update | Old jobs cached the old secret | Re-run the failing job; GitHub re-reads secrets on each workflow run |
+| `transaction failed: insufficient balance` | New admin account not funded | Fund the new account with Friendbot (testnet) or XLM transfer (mainnet) before proceeding |
+| Old admin still passes auth after Step 4 | Step 4 transaction is still pending / not confirmed | Wait for ledger confirmation, then re-run Step 6 |

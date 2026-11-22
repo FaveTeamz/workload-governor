@@ -1,0 +1,44 @@
+/* SlideOutRow animation and container styles — FE-019 / #854 */
+
+.slide-out-row-container {
+  overflow-x: hidden;
+  width: 100%;
+  position: relative;
+  contain: paint;
+}
+
+.slide-out {
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  animation: slideOutRow 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+@keyframes slideOutRow {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    max-height: 500px;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+    max-height: 0;
+    overflow: hidden;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-out {
+    animation: none !important;
+    opacity: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+  }
+}
