@@ -1,146 +1,165 @@
 # Security Model
 
-This document describes the abuse-prevention controls applied to the
-WorkloadGovernor backend API, with particular attention to the
-CPU-intensive `POST /api/verify-xdr` endpoint.
+## Checks-Effects-Interactions (CEI) Pattern
+
+WorkloadGovernor enforces a strict **Checks → Effects → Interactions** ordering in every
+state-changing function. This pattern is a well-established defense against reentrancy and
+ensures that all invariants are validated before any storage is mutated, and that external
+interactions (event emission) only occur after storage commits are complete.
 
 ---
 
-## Threat Model
+### Why CEI Matters in Soroban Contracts
 
-The `POST /api/verify-xdr` endpoint accepts Stellar transaction XDR strings
-from unauthenticated frontend clients and parses them before broadcasting.
-XDR parsing involves base64 decoding, ASN.1-style deserialization, and
-Ed25519 signature verification — all CPU-bound work. Without controls, a
-single hostile client can submit a continuous stream of large, malformed XDR
-payloads and saturate a Node.js process's event loop, making the entire
-service unresponsive.
+Soroban supports cross-contract invocations. An event emitted mid-function could, in a
+future composition, trigger a callback into the same contract before the current invocation
+finishes. CEI ordering eliminates this class of vulnerability by ensuring:
 
-The controls below address three distinct attack vectors:
-
-| Vector | Control | Response code |
-|--------|---------|---------------|
-| Request flood (volumetric) | Per-IP rate limit | 429 |
-| Oversized body | Body parser size cap | 413 |
-| Oversized / pathological XDR | XDR string length check | 413 |
-| Event-loop starvation via slow parse | Worker thread + timeout | 503 |
+1. **All checks run first** — no storage is touched until every precondition and consistency
+   guard passes.
+2. **All effects complete next** — storage writes are committed atomically relative to the
+   logical operation.
+3. **External interactions happen last** — events are emitted only after all writes are final,
+   so any observer or callback sees a fully consistent state.
 
 ---
 
-## Controls
+### Verified Interaction Ordering
 
-### 1. Rate Limiting — `POST /api/verify-xdr`
-
-**Limit:** 15 requests per minute per originating IP address.  
-**Implementation:** [`express-rate-limit`](https://github.com/express-rate-limit/express-rate-limit)
-v7, applied as dedicated middleware before the route handler.
+#### `complete_assignment`
 
 ```
-windowMs : 60 000 ms
-max      : 15 requests
-headers  : RateLimit (draft-7 standard headers)
+CHECKS
+  require_initialized(env, NotInitialized)
+  maintainer.require_auth()
+  is_maintainer(maintainer, org_id)           → UnauthorizedMaintainer if false
+  has_assignment(org_id, issue_id, contributor) → AssignmentNotFound if false
+  get_org_assignment_count(contributor, org_id)
+    if count == 0 → CounterInconsistency       ← consistency guard BEFORE any write
+
+EFFECTS
+  remove_assignment(org_id, issue_id, contributor)
+  if new_count == 0:
+    remove_org_assignment_count(contributor, org_id)
+  else:
+    set_org_assignment_count(contributor, org_id, count - 1)
+  bump_instance()
+
+INTERACTIONS
+  emit_assignment_completed(maintainer, contributor, org_id, issue_id)
 ```
 
-A client that exceeds the threshold receives:
+**Key property:** The counter consistency check (`count == 0` guard) is performed in the
+**CHECK phase**, reading the stored counter and comparing it before `remove_assignment` is
+called. If the counter is inconsistent, the function panics without touching storage.
+
+#### `revoke_assignment`
 
 ```
-HTTP 429 Too Many Requests
-{ "error": "Too many requests, please try again later." }
+CHECKS
+  require_initialized(env, NotInitialized)
+  maintainer.require_auth()
+  is_maintainer(maintainer, org_id)           → UnauthorizedMaintainer if false
+  has_assignment(org_id, issue_id, contributor) → AssignmentNotFound if false
+  get_org_assignment_count(contributor, org_id)
+    if count == 0 → CounterInconsistency       ← consistency guard BEFORE any write
+
+EFFECTS
+  remove_assignment(org_id, issue_id, contributor)
+  if new_count == 0:
+    remove_org_assignment_count(contributor, org_id)
+  else:
+    set_org_assignment_count(contributor, org_id, count - 1)
+  bump_instance()
+
+INTERACTIONS
+  emit_assignment_revoked(maintainer, contributor, org_id, issue_id)
 ```
 
-The window resets on a rolling basis. Standard `RateLimit-*` headers inform
-well-behaved clients of their remaining quota and reset time.
+**Key property (SC-006 fix):** Before SC-006, `revoke_assignment` called `remove_assignment`
+*before* reading the counter, which meant a `CounterInconsistency` panic would leave the
+assignment entry permanently deleted with no counter to match. The fix moves the counter read
+and the `CounterInconsistency` guard into the CHECK phase, before any storage mutation.
 
 ---
 
-### 2. Body Size Cap — 64 KB
+### SC-006 Regression: Pre-Fix vs Post-Fix
 
-**Implementation:** `express.json({ limit: '64kb' })` scoped exclusively to
-`/api/verify-xdr`. The global body parser on other routes retains its default
-limit.
+| Phase | Pre-SC-006 (`revoke_assignment`) | Post-SC-006 (`revoke_assignment`) |
+|---|---|---|
+| Checks | `require_initialized`, `require_auth`, `is_maintainer`, `has_assignment` | `require_initialized`, `require_auth`, `is_maintainer`, `has_assignment`, **`get_org_assignment_count` + zero check** |
+| Effects | `remove_assignment` ← *write happened here* | `remove_assignment`, counter update |
+| Inconsistency check | Read counter, panic if 0 ← *after the write!* | Moved to checks phase |
+| Interactions | `emit_assignment_revoked` | `emit_assignment_revoked` |
 
-A Stellar transaction with the maximum operation count is well under 10 KB of
-raw XDR. The 64 KB cap provides a generous margin for base64 overhead while
-preventing multi-megabyte payloads from ever being buffered into memory.
+**Observable difference:** With the pre-fix code, if storage was in a corrupted state
+(assignment exists but counter is 0), calling `revoke_assignment` would:
+1. Delete the assignment sentinel (storage write).
+2. Read the counter (returns 0).
+3. Panic with `CounterInconsistency`.
 
-Payloads exceeding 64 KB are rejected by Express before the route handler
-runs:
-
-```
-HTTP 413 Payload Too Large
-```
-
----
-
-### 3. XDR String Length Check — 32 KB
-
-Inside the route handler, the submitted `xdr` string is checked before any
-parse attempt:
-
-```typescript
-if (xdrString.length > 32 * 1024) {
-  res.status(413).json({ error: 'XDR string exceeds maximum allowed length ...' });
-}
-```
-
-This is a belt-and-suspenders guard. Even if the body parser were misconfigured
-or the content-type were misidentified, an oversized XDR string is rejected
-before it reaches the CPU-intensive parse step.
+The assignment was gone — with no counter entry — leaving storage in a **worse** corrupted
+state than before. Post-fix, the panic fires before any write, leaving storage untouched.
 
 ---
 
-### 4. Worker Thread Offload with 50 ms Timeout
+### Counter Atomicity Guarantee
 
-XDR parsing runs in a [Node.js worker thread](https://nodejs.org/api/worker_threads.html),
-keeping the main event loop free regardless of parse duration.
+The `org_assignment_count` counter and the `("asgn", org_id, issue_id, contributor)` sentinel
+are always kept in sync:
 
-A 50 ms wall-clock timeout is enforced on each parse job:
+- **`assign_issue`**: counter incremented *and* sentinel written in the same effects phase.
+- **`complete_assignment`**: sentinel removed *and* counter decremented in the same effects phase.
+- **`revoke_assignment`**: sentinel removed *and* counter decremented in the same effects phase.
 
-```
-timeout  : 50 ms
-on breach: worker.terminate() → HTTP 503
-```
+Because Soroban's storage operations within a single contract invocation are committed
+atomically (the host either applies all writes or none on panic), the counter and sentinel
+will never diverge during normal operation.
 
-Legitimate well-formed transactions parse in under 2 ms on commodity hardware.
-The 50 ms budget is 25× that — ample for any valid input while tightly
-bounding the worst-case CPU exposure from pathological inputs.
-
-If the timeout fires:
-
-```
-HTTP 503 Service Unavailable
-{ "error": "XDR parsing timed out — transaction may be malformed or oversized" }
-```
+The `CounterInconsistency` guard exists to detect *externally introduced* corruption (e.g.
+post-migration data anomalies or direct storage manipulation in test environments) and reject
+any operation that would act on corrupt data.
 
 ---
 
-## Other Endpoints
+### Test Coverage
 
-All other API routes (`/api/issues`, `/api/contributors`, `/api/admin`,
-`/api/transactions`) inherit the global `express.json()` body parser. They
-perform lightweight database lookups and Soroban RPC calls that do not involve
-local CPU-intensive cryptographic work, so the XDR-specific controls do not
-apply.
+The CEI ordering is verified by the following test suite in `src/test.rs`:
 
-Rate limiting for those routes should be applied at the ingress layer (e.g.
-ALB / CloudFront WAF rules) rather than in-process.
+| Test | What it verifies |
+|---|---|
+| `unit_cei_revoke_counter_inconsistency_leaves_assignment_intact` | Regression: revoke panics in CHECK phase; assignment sentinel remains |
+| `unit_cei_complete_counter_inconsistency_leaves_assignment_intact` | complete panics in CHECK phase; assignment sentinel remains |
+| `unit_cei_complete_effects_precede_event` | All storage writes committed before `assignment_completed` event |
+| `unit_cei_revoke_effects_precede_event` | All storage writes committed before `assignment_revoked` event |
+| `unit_cei_complete_slot_freed_for_reuse` | Counter decrement is durable; freed slot accepts new assignment |
+| `unit_cei_revoke_slot_freed_for_reuse` | Counter decrement is durable; freed slot accepts new assignment |
+| `unit_cei_complete_sentinel_and_counter_atomic` | Sentinel and counter removed atomically on complete |
+| `unit_cei_revoke_sentinel_and_counter_atomic` | Sentinel and counter removed atomically on revoke |
 
 ---
 
-## Testing
+### Auth Ordering
 
-The controls are exercised by automated tests in `tests/unit/xdr.test.ts`:
+Authentication (`require_auth`) is enforced as the **first** user-supplied input check,
+immediately after the initialization guard. This prevents any computation from being
+performed on behalf of an unauthorized caller before the call is rejected:
 
-| Test | Expected status |
-|------|----------------|
-| 30 rapid requests (same IP) | 15 × 200, then 429 |
-| Body larger than 64 KB | 413 |
-| `xdr` string longer than 32 KB | 413 |
-| Valid XDR | 200 with `{ valid, type, operations }` |
-| Malformed XDR | 400 |
-
-Run with:
-
-```bash
-npm test -- --testPathPattern=xdr
 ```
+require_initialized(env, NotInitialized)   ← contract liveness guard
+caller.require_auth()                       ← auth check (second)
+role/permission checks                      ← business logic checks
+```
+
+This ordering ensures that:
+- No storage reads reveal information to unauthenticated callers.
+- No CPU budget is consumed on behalf of an impersonator.
+- Auth failures produce a clean, uninformative rejection with no side effects.
+
+---
+
+### References
+
+- [OWASP Smart Contract Top 10 — Reentrancy](https://owasp.org/www-project-smart-contract-security-top-10/)
+- [Soroban Authorization Model](https://developers.stellar.org/docs/smart-contracts/guides/authorization/)
+- SC-006 issue: *Enforce checks-effects-interactions order on complete and revoke handlers*

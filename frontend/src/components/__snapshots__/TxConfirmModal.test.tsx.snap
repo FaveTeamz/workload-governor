@@ -1,0 +1,440 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`TxConfirmModal > matches snapshot for confirming state 1`] = `
+<div>
+  <div
+    aria-hidden="true"
+    data-testid="txmodal-backdrop"
+    style="position: fixed; inset: 0; z-index: 40; background-color: rgba(0, 0, 0, 0.5);"
+  />
+  <div
+    aria-describedby="txmodal-subtitle"
+    aria-labelledby="txmodal-title"
+    aria-modal="true"
+    class="txmodal"
+    data-testid="txmodal-dialog"
+    role="dialog"
+    style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; background: rgb(255, 255, 255); border-radius: 0.75rem; padding: 1.5rem; max-width: 480px; width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,0.25);"
+  >
+    <div
+      style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;"
+    >
+      <span
+        aria-hidden="true"
+        style="font-size: 2rem;"
+      >
+        📝
+      </span>
+      <div>
+        <h2
+          id="txmodal-title"
+          style="margin: 0px; font-size: 1.1rem; font-weight: 600;"
+        >
+          Apply for issue #42 in stellar-org
+        </h2>
+        <p
+          id="txmodal-subtitle"
+          style="margin: 0px; font-size: 0.875rem; color: rgb(102, 102, 102);"
+        >
+          Review carefully before signing with Freighter
+        </p>
+      </div>
+    </div>
+    <dl
+      style="margin: 0px 0px 1rem; padding: 0px;"
+    >
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Target
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          org: stellar-org / issue: #42
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Est. fee
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          0.00001 XLM
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Confirmation
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          ~5 seconds
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Network
+        </dt>
+        <dd
+          style="margin: 0px;"
+        >
+          <span
+            data-testid="txmodal-network-badge"
+            style="display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: rgb(29, 78, 216); color: rgb(255, 255, 255);"
+          >
+            TESTNET
+          </span>
+        </dd>
+      </div>
+    </dl>
+    <div
+      style="margin-bottom: 1rem;"
+    >
+      <button
+        aria-controls="txmodal-xdr"
+        aria-expanded="false"
+        data-testid="txmodal-xdr-toggle"
+        style="background: none; border: 1px solid rgb(221, 221, 221); border-radius: 0.25rem; padding: 0.25rem 0.75rem; cursor: pointer; font-size: 0.875rem;"
+        type="button"
+      >
+        Technical details (XDR) 
+        ▼
+      </button>
+    </div>
+    <div
+      style="display: flex; justify-content: flex-end; gap: 0.75rem;"
+    >
+      <button
+        data-testid="txmodal-cancel"
+        style="padding: 0.5rem 1rem; border-radius: 0.375rem; border: 1px solid rgb(221, 221, 221); background: rgb(255, 255, 255); cursor: pointer;"
+        type="button"
+      >
+        Cancel
+      </button>
+      <button
+        aria-busy="false"
+        data-testid="txmodal-confirm"
+        style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 0.375rem; background: rgb(29, 78, 216); color: rgb(255, 255, 255); cursor: pointer; font-weight: 600;"
+        type="button"
+      >
+        Confirm & Sign
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`TxConfirmModal > matches snapshot for error state 1`] = `
+<div>
+  <div
+    aria-hidden="true"
+    data-testid="txmodal-backdrop"
+    style="position: fixed; inset: 0; z-index: 40; background-color: rgba(0, 0, 0, 0.5);"
+  />
+  <div
+    aria-describedby="txmodal-subtitle"
+    aria-labelledby="txmodal-title"
+    aria-modal="true"
+    class="txmodal"
+    data-testid="txmodal-dialog"
+    role="dialog"
+    style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; background: rgb(255, 255, 255); border-radius: 0.75rem; padding: 1.5rem; max-width: 480px; width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,0.25);"
+  >
+    <div
+      style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;"
+    >
+      <span
+        aria-hidden="true"
+        style="font-size: 2rem;"
+      >
+        📝
+      </span>
+      <div>
+        <h2
+          id="txmodal-title"
+          style="margin: 0px; font-size: 1.1rem; font-weight: 600;"
+        >
+          Apply for issue #42 in stellar-org
+        </h2>
+        <p
+          id="txmodal-subtitle"
+          style="margin: 0px; font-size: 0.875rem; color: rgb(102, 102, 102);"
+        >
+          Review carefully before signing with Freighter
+        </p>
+      </div>
+    </div>
+    <dl
+      style="margin: 0px 0px 1rem; padding: 0px;"
+    >
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Target
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          org: stellar-org / issue: #42
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Est. fee
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          0.00001 XLM
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Confirmation
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          ~5 seconds
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Network
+        </dt>
+        <dd
+          style="margin: 0px;"
+        >
+          <span
+            data-testid="txmodal-network-badge"
+            style="display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: rgb(29, 78, 216); color: rgb(255, 255, 255);"
+          >
+            TESTNET
+          </span>
+        </dd>
+      </div>
+    </dl>
+    <div
+      style="margin-bottom: 1rem;"
+    >
+      <button
+        aria-controls="txmodal-xdr"
+        aria-expanded="false"
+        data-testid="txmodal-xdr-toggle"
+        style="background: none; border: 1px solid rgb(221, 221, 221); border-radius: 0.25rem; padding: 0.25rem 0.75rem; cursor: pointer; font-size: 0.875rem;"
+        type="button"
+      >
+        Technical details (XDR) 
+        ▼
+      </button>
+    </div>
+    <div
+      data-testid="txmodal-error"
+      role="alert"
+      style="background: rgb(254, 242, 242); border: 1px solid rgb(252, 165, 165); border-radius: 0.375rem; padding: 0.75rem; margin-bottom: 1rem; color: rgb(220, 38, 38); font-size: 0.875rem;"
+    >
+      Freighter rejected the transaction
+    </div>
+    <div
+      style="display: flex; justify-content: flex-end; gap: 0.75rem;"
+    >
+      <button
+        data-testid="txmodal-dismiss"
+        style="padding: 0.5rem 1rem; border-radius: 0.375rem; border: 1px solid rgb(221, 221, 221); background: rgb(255, 255, 255); cursor: pointer;"
+        type="button"
+      >
+        Dismiss
+      </button>
+      <button
+        data-testid="txmodal-retry"
+        style="padding: 0.5rem 1rem; border-radius: 0.375rem; background: rgb(29, 78, 216); color: rgb(255, 255, 255); cursor: pointer;"
+        type="button"
+      >
+        Retry
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`TxConfirmModal > matches snapshot for loading state 1`] = `
+<div>
+  <div
+    aria-hidden="true"
+    data-testid="txmodal-backdrop"
+    style="position: fixed; inset: 0; z-index: 40; background-color: rgba(0, 0, 0, 0.5);"
+  />
+  <div
+    aria-describedby="txmodal-subtitle"
+    aria-labelledby="txmodal-title"
+    aria-modal="true"
+    class="txmodal"
+    data-testid="txmodal-dialog"
+    role="dialog"
+    style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; background: rgb(255, 255, 255); border-radius: 0.75rem; padding: 1.5rem; max-width: 480px; width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,0.25);"
+  >
+    <div
+      style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;"
+    >
+      <span
+        aria-hidden="true"
+        style="font-size: 2rem;"
+      >
+        📝
+      </span>
+      <div>
+        <h2
+          id="txmodal-title"
+          style="margin: 0px; font-size: 1.1rem; font-weight: 600;"
+        >
+          Apply for issue #42 in stellar-org
+        </h2>
+        <p
+          id="txmodal-subtitle"
+          style="margin: 0px; font-size: 0.875rem; color: rgb(102, 102, 102);"
+        >
+          Review carefully before signing with Freighter
+        </p>
+      </div>
+    </div>
+    <dl
+      style="margin: 0px 0px 1rem; padding: 0px;"
+    >
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Target
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          org: stellar-org / issue: #42
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Est. fee
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          0.00001 XLM
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Confirmation
+        </dt>
+        <dd
+          style="margin: 0px; font-size: 0.875rem;"
+        >
+          ~5 seconds
+        </dd>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;"
+      >
+        <dt
+          style="font-weight: 600; font-size: 0.875rem;"
+        >
+          Network
+        </dt>
+        <dd
+          style="margin: 0px;"
+        >
+          <span
+            data-testid="txmodal-network-badge"
+            style="display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: rgb(29, 78, 216); color: rgb(255, 255, 255);"
+          >
+            TESTNET
+          </span>
+        </dd>
+      </div>
+    </dl>
+    <div
+      style="margin-bottom: 1rem;"
+    >
+      <button
+        aria-controls="txmodal-xdr"
+        aria-expanded="false"
+        data-testid="txmodal-xdr-toggle"
+        style="background: none; border: 1px solid rgb(221, 221, 221); border-radius: 0.25rem; padding: 0.25rem 0.75rem; cursor: pointer; font-size: 0.875rem;"
+        type="button"
+      >
+        Technical details (XDR) 
+        ▼
+      </button>
+    </div>
+    <div
+      style="display: flex; justify-content: flex-end; gap: 0.75rem;"
+    >
+      <button
+        data-testid="txmodal-cancel"
+        disabled=""
+        style="padding: 0.5rem 1rem; border-radius: 0.375rem; border: 1px solid rgb(221, 221, 221); background: rgb(255, 255, 255); cursor: not-allowed;"
+        type="button"
+      >
+        Cancel
+      </button>
+      <button
+        aria-busy="true"
+        data-testid="txmodal-confirm"
+        disabled=""
+        style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 0.375rem; background: rgb(29, 78, 216); color: rgb(255, 255, 255); cursor: not-allowed; font-weight: 600;"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          data-testid="txmodal-spinner"
+          style="display: inline-block; width: 1em; height: 1em; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: rgb(255, 255, 255); border-radius: 50%; animation: spin 0.6s linear infinite;"
+        />
+        Signing…
+      </button>
+    </div>
+  </div>
+</div>
+`;

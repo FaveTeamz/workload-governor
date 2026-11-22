@@ -1,3 +1,11 @@
+[workspace]
+members = [
+    ".",
+    "contracts",
+]
+# The fuzz sub-crate manages its own workspace (cargo-fuzz requirement).
+exclude = ["fuzz"]
+
 [package]
 name = "workload-governor"
 version = "0.1.0"

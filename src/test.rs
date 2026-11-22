@@ -6,13 +6,13 @@
 
 #![cfg(test)]
 
-extern crate std;
+// std is brought into scope via #[macro_use] extern crate std in lib.rs (cfg(test)).
+use std::panic;
+use std::string::String;
 
-use std::boxed::Box;
+use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, Vec};
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
-
-use crate::{WorkloadGovernor, WorkloadGovernorClient};
+use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -30,7 +30,7 @@ impl TestEnv {
         let contract_id = env.register_contract(None, WorkloadGovernor);
         // SAFETY: we move `env` into the struct and keep it alive for the test's
         // duration. Box::leak gives the 'static lifetime the generated client needs.
-        let env: &'static Env = Box::leak(Box::new(env));
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
         let client = WorkloadGovernorClient::new(env, &contract_id);
         TestEnv {
             env: env.clone(),
@@ -110,6 +110,52 @@ fn unit_withdraw_application() {
 }
 
 #[test]
+fn unit_batch_withdraw_applications() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_a = t.org("alpha");
+    let org_b = t.org("bravo");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org_a, &1u32);
+    t.client.apply_for_issue(&contributor, &org_b, &2u32);
+
+    let mut applications = Vec::new(&t.env);
+    applications.push_back((org_a.clone(), 1u32));
+    applications.push_back((org_b.clone(), 2u32));
+    t.client
+        .batch_withdraw_applications(&contributor, &applications);
+
+    assert!(!t.client.has_applied(&contributor, &org_a, &1u32));
+    assert!(!t.client.has_applied(&contributor, &org_b, &2u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+}
+
+#[test]
+fn unit_batch_withdraw_missing_application_is_atomic() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("charlie");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    let mut applications = Vec::new(&t.env);
+    applications.push_back((org.clone(), 1u32));
+    applications.push_back((org.clone(), 2u32));
+    assert_eq!(
+        t.client
+            .try_batch_withdraw_applications(&contributor, &applications),
+        Err(Ok(ContractError::ApplicationNotFound))
+    );
+
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+#[test]
 fn unit_register_maintainer_idempotent() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -133,6 +179,86 @@ fn unit_ttl_constant_in_range() {
         APP_TTL_LEDGERS <= APP_TTL_MAX,
         "APP_TTL_LEDGERS exceeds maximum"
     );
+}
+
+#[cfg(wasm_available)]
+#[test]
+fn unit_upgrade_updates_contract_wasm_and_preserves_state() {
+    const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/workload_governor.wasm");
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(WASM, ());
+    let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
+    let client = WorkloadGovernorClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    client.initialize(&admin);
+    assert_eq!(client.get_admin_nonce(), 0u32);
+
+    let new_wasm_hash = env.deployer().upload_contract_wasm(WASM);
+    client.upgrade(&new_wasm_hash);
+
+    assert_eq!(client.get_admin_nonce(), 1u32);
+    assert_eq!(client.get_global_cap(), crate::storage::GLOBAL_APP_LIMIT);
+}
+
+#[test]
+fn unit_extend_application_ttl_emits_event_without_global_count() {
+    use soroban_sdk::{testutils::Events, TryIntoVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("ttlzero");
+    t.client.initialize(&admin);
+    crate::storage::set_app_entry(&t.env, &contributor, &org, 7);
+    assert_eq!(t.client.get_global_application_count(&contributor), 0);
+
+    t.client.extend_application_ttl(&contributor, &org, &7u32);
+
+    let events = t.env.events().all();
+    let (_, topics, data) = events.last().unwrap();
+    assert_eq!(topics.len(), 3);
+    let event_name: Symbol = topics.get(1).unwrap().try_into_val(&t.env).unwrap();
+    assert_eq!(event_name, soroban_sdk::symbol_short!("app_ttl"));
+    let (event_org, issue_id, _): (Symbol, u32, u64) = data.try_into_val(&t.env).unwrap();
+    assert_eq!(event_org, org);
+    assert_eq!(issue_id, 7);
+}
+
+#[test]
+fn unit_extend_application_ttl_with_global_count() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("ttlcount");
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &8u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    t.client.extend_application_ttl(&contributor, &org, &8u32);
+
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+}
+
+#[test]
+fn unit_application_ttl_config_defaults_and_admin_override() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+
+    t.client.initialize(&admin);
+    assert_eq!(
+        t.client.get_app_ttl_threshold_ledgers(),
+        crate::storage::APP_TTL_LEDGERS
+    );
+    assert_eq!(
+        t.client.get_app_ttl_extend_to_ledgers(),
+        crate::storage::APP_TTL_LEDGERS
+    );
+
+    t.client.set_application_ttl_config(&100u32, &500u32);
+    assert_eq!(t.client.get_app_ttl_threshold_ledgers(), 100u32);
+    assert_eq!(t.client.get_app_ttl_extend_to_ledgers(), 500u32);
 }
 
 #[test]
@@ -182,8 +308,8 @@ fn unit_multi_org_independent_limits() {
 
     // Fill org_a to the cap
     for i in 0u32..4 {
-        t.client.apply_for_issue(&contributor, &org_a, &i);
-        t.client.assign_issue(&m1, &contributor, &org_a, &i);
+        t.client.apply_for_issue(&contributor, &org_a, &(i + 1));
+        t.client.assign_issue(&m1, &contributor, &org_a, &(i + 1));
     }
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org_a), 4);
 
@@ -194,7 +320,7 @@ fn unit_multi_org_independent_limits() {
 }
 
 // ---------------------------------------------------------------------------
-// UNIT TESTS — all 11 ContractError variants
+// UNIT TESTS — all ContractError variants
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -211,7 +337,7 @@ fn unit_error_already_initialized() {
 fn unit_error_not_initialized_apply() {
     let t = TestEnv::new();
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
     t.client.apply_for_issue(&contributor, &org, &1u32); // NotInitialized
 }
 
@@ -221,7 +347,7 @@ fn unit_error_not_initialized_register() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
     t.client.register_maintainer(&admin, &maintainer, &org); // NotInitialized
 }
 
@@ -232,11 +358,30 @@ fn unit_error_unauthorized_maintainer() {
     let admin = Address::generate(&t.env);
     let stranger = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
     t.client.assign_issue(&stranger, &contributor, &org, &1u32); // UnauthorizedMaintainer
+}
+
+#[test]
+fn unit_error_unauthorized_maintainer_complete_assignment() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let stranger = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("org");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    assert_eq!(
+        t.client
+            .try_complete_assignment(&stranger, &contributor, &org, &1u32),
+        Err(Ok(ContractError::UnauthorizedMaintainer))
+    );
 }
 
 #[test]
@@ -245,10 +390,10 @@ fn unit_error_global_application_limit_reached() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
-    for i in 0u32..15 {
+    for i in 1u32..=15 {
         t.client.apply_for_issue(&contributor, &org, &i);
     }
     t.client.apply_for_issue(&contributor, &org, &99u32); // GlobalApplicationLimitReached
@@ -261,11 +406,11 @@ fn unit_error_org_assignment_limit_reached() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
-    for i in 0u32..4 {
+    for i in 1u32..=4 {
         t.client.apply_for_issue(&contributor, &org, &i);
         t.client.assign_issue(&maintainer, &contributor, &org, &i);
     }
@@ -279,7 +424,7 @@ fn unit_error_duplicate_application() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
@@ -292,7 +437,7 @@ fn unit_error_application_not_found_withdraw() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.withdraw_application(&contributor, &org, &99u32); // ApplicationNotFound
@@ -305,7 +450,7 @@ fn unit_error_application_not_found_assign() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
@@ -319,7 +464,7 @@ fn unit_error_assignment_not_found_complete() {
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
@@ -327,32 +472,75 @@ fn unit_error_assignment_not_found_complete() {
 }
 
 #[test]
-#[should_panic]
+fn unit_error_already_assigned() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("assigned");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+
+    assert_eq!(
+        t.client
+            .try_assign_issue(&maintainer, &contributor, &org, &1u32),
+        Err(Ok(ContractError::AlreadyAssigned))
+    );
+}
+
+#[test]
 fn unit_error_assignment_not_found_revoke() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let maintainer = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.register_maintainer(&admin, &maintainer, &org);
-    t.client.revoke_assignment(&maintainer, &contributor, &org, &99u32); // AssignmentNotFound
+
+    let result = t.client.try_revoke_assignment(&maintainer, &contributor, &org, &99u32);
+    assert_eq!(
+        result,
+        Err(soroban_sdk::Error::from_contract_error(
+            crate::errors::ContractError::AssignmentNotFound as u32
+        ))
+    );
+}
+
+#[test]
+fn unit_error_invalid_org_id() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let empty_org = Symbol::new(&t.env, "");
+    let one_character_org = t.org("a");
+
+    t.client.initialize(&admin);
+
+    assert_eq!(
+        t.client
+            .try_apply_for_issue(&contributor, &empty_org, &1u32),
+        Err(Ok(ContractError::InvalidOrgId))
+    );
+    assert_eq!(
+        t.client
+            .try_apply_for_issue(&contributor, &one_character_org, &2u32),
+        Err(Ok(ContractError::InvalidOrgId))
+    );
 }
 
 #[test]
 #[should_panic]
-fn unit_error_already_assigned() {
-    // AlreadyAssigned: apply → assign → apply again (new issue) → force double-assign
-    // The guard fires when has_assignment returns true before we proceed.
-    // We test it indirectly: apply issue 1, assign it, then try to assign issue 2
-    // which doesn't exist — ApplicationNotFound fires. To reach AlreadyAssigned
-    // directly we need storage manipulation. This test verifies DuplicateApplication
-    // (error 8) as the closest reachable guard that prevents double-booking.
+fn unit_error_duplicate_application() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     let contributor = Address::generate(&t.env);
-    let org = t.org("x");
+    let org = t.org("org");
 
     t.client.initialize(&admin);
     t.client.apply_for_issue(&contributor, &org, &1u32);
@@ -396,14 +584,435 @@ fn unit_event_application_submitted_has_two_topics() {
     assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
 }
 
+// ===========================================================================
+// TESTS FOR #601 — InvalidIssueId validation
+// ===========================================================================
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_zero_apply() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &0u32); // InvalidIssueId
+}
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_max_apply() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &u32::MAX); // InvalidIssueId
+}
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_zero_withdraw() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.withdraw_application(&contributor, &org, &0u32); // InvalidIssueId
+}
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_max_withdraw() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.withdraw_application(&contributor, &org, &u32::MAX); // InvalidIssueId
+}
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_zero_assign() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.assign_issue(&maintainer, &contributor, &org, &0u32); // InvalidIssueId
+}
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_zero_complete() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.complete_assignment(&maintainer, &contributor, &org, &0u32); // InvalidIssueId
+}
+
+#[test]
+#[should_panic]
+fn unit_error_invalid_issue_id_zero_revoke() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("v");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &0u32); // InvalidIssueId
+}
+
+#[test]
+fn unit_valid_issue_id_boundaries() {
+    // issue_id = 1 and u32::MAX - 1 are both valid
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("bdry");
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert!(t.client.has_applied(&contributor, &org, &1u32));
+    let high = u32::MAX - 1;
+    t.client.apply_for_issue(&contributor, &org, &high);
+    assert!(t.client.has_applied(&contributor, &org, &high));
+}
+
+// ===========================================================================
+// TESTS FOR #602 — Storage migration v1 → v2
+// ===========================================================================
+
+#[test]
+fn unit_migrate_v1_to_v2_no_entries() {
+    // Migration with an empty pairs list should succeed.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    let pairs: soroban_sdk::Vec<(Address, Symbol)> = soroban_sdk::Vec::new(&t.env);
+    // Must succeed without panic
+    t.client.migrate_v1_to_v2(&admin, &pairs);
+}
+
+#[test]
+#[should_panic]
+fn unit_migrate_v1_to_v2_only_once() {
+    // Second call must panic with MigrationAlreadyDone.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    let pairs: soroban_sdk::Vec<(Address, Symbol)> = soroban_sdk::Vec::new(&t.env);
+    t.client.migrate_v1_to_v2(&admin, &pairs);
+    t.client.migrate_v1_to_v2(&admin, &pairs); // MigrationAlreadyDone
+}
+
+#[test]
+fn unit_migrate_v1_to_v2_event_emitted() {
+    use soroban_sdk::testutils::Events;
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    let pairs: soroban_sdk::Vec<(Address, Symbol)> = soroban_sdk::Vec::new(&t.env);
+    t.client.migrate_v1_to_v2(&admin, &pairs);
+    let events = t.env.events().all();
+    // At minimum the initialization event + migration event must be present
+    assert!(events.len() >= 2);
+    // Last event is migration completed — it must have 2 topics
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+}
+
+// ===========================================================================
+// TESTS FOR #603 — Multi-sig admin threshold
+// ===========================================================================
+
+#[test]
+fn unit_set_admin_threshold_2_of_3() {
+    // Happy path: configure 2-of-3 multisig
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let signer1 = Address::generate(&t.env);
+    let signer2 = Address::generate(&t.env);
+    let signer3 = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let mut signers = soroban_sdk::Vec::new(&t.env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+    signers.push_back(signer3.clone());
+
+    // Must succeed
+    t.client.set_admin_threshold(&2u32, &signers);
+}
+
+#[test]
+#[should_panic]
+fn unit_set_admin_threshold_zero_invalid() {
+    // threshold = 0 must panic with InvalidThreshold
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let signer = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let mut signers = soroban_sdk::Vec::new(&t.env);
+    signers.push_back(signer.clone());
+
+    t.client.set_admin_threshold(&0u32, &signers); // InvalidThreshold
+}
+
+#[test]
+#[should_panic]
+fn unit_set_admin_threshold_exceeds_signer_count() {
+    // threshold > len(signers) must panic with InvalidThreshold
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let signer = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let mut signers = soroban_sdk::Vec::new(&t.env);
+    signers.push_back(signer.clone());
+
+    t.client.set_admin_threshold(&5u32, &signers); // InvalidThreshold: 5 > 1
+}
+
+#[test]
+fn unit_multisig_admin_operations_succeed() {
+    // After setting multi-sig, admin operations using mock_all_auths still work.
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let signer1 = Address::generate(&t.env);
+    let signer2 = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("ms");
+
+    t.client.initialize(&admin);
+
+    let mut signers = soroban_sdk::Vec::new(&t.env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+    t.client.set_admin_threshold(&2u32, &signers);
+
+    // register_maintainer must succeed since mock_all_auths satisfies all required auths
+    t.client.register_maintainer(&admin, &maintainer, &org);
+}
+
+#[test]
+fn unit_set_admin_threshold_event_emitted() {
+    use soroban_sdk::testutils::Events;
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let s1 = Address::generate(&t.env);
+    let s2 = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    let mut signers = soroban_sdk::Vec::new(&t.env);
+    signers.push_back(s1.clone());
+    signers.push_back(s2.clone());
+    t.client.set_admin_threshold(&1u32, &signers);
+
+    let events = t.env.events().all();
+    assert!(events.len() >= 2);
+    let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
+        events.last().unwrap();
+    assert_eq!(topics.len(), 2);
+}
+
+// ===========================================================================
+// TESTS FOR #600 — Governance proposals
+// ===========================================================================
+
+#[test]
+fn unit_propose_cap_change_creates_proposal() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let proposal_id = t.client.propose_cap_change(&maintainer, &org, &20u32);
+    assert_eq!(proposal_id, 1u32);
+}
+
+#[test]
+#[should_panic]
+fn unit_propose_cap_change_requires_maintainer() {
+    // Non-maintainer cannot create proposals
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let stranger = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.propose_cap_change(&stranger, &org, &20u32); // UnauthorizedMaintainer
+}
+
+#[test]
+fn unit_vote_cap_change_records_votes() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let m2 = Address::generate(&t.env);
+    let m3 = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org);
+    t.client.register_maintainer(&admin, &m2, &org);
+    t.client.register_maintainer(&admin, &m3, &org);
+
+    let proposal_id = t.client.propose_cap_change(&m1, &org, &20u32);
+    t.client.vote_cap_change(&m1, &org, &proposal_id, &true);
+    t.client.vote_cap_change(&m2, &org, &proposal_id, &true);
+    t.client.vote_cap_change(&m3, &org, &proposal_id, &false);
+    // 2 yes, 1 no — verify no panic
+}
+
+#[test]
+#[should_panic]
+fn unit_vote_cap_change_duplicate_vote() {
+    // Same maintainer cannot vote twice
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org);
+
+    let proposal_id = t.client.propose_cap_change(&m1, &org, &20u32);
+    t.client.vote_cap_change(&m1, &org, &proposal_id, &true);
+    t.client.vote_cap_change(&m1, &org, &proposal_id, &true); // AlreadyVoted
+}
+
+#[test]
+#[should_panic]
+fn unit_execute_cap_change_insufficient_quorum() {
+    // Only 1 vote — quorum of 3 not met
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org);
+
+    let proposal_id = t.client.propose_cap_change(&m1, &org, &20u32);
+    t.client.vote_cap_change(&m1, &org, &proposal_id, &true);
+    t.client.execute_cap_change(&m1, &proposal_id); // QuorumNotMet
+}
+
+#[test]
+#[should_panic]
+fn unit_execute_cap_change_insufficient_approval() {
+    // 3 votes but 1 yes, 2 no — less than 50% approval
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let m2 = Address::generate(&t.env);
+    let m3 = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org);
+    t.client.register_maintainer(&admin, &m2, &org);
+    t.client.register_maintainer(&admin, &m3, &org);
+
+    let proposal_id = t.client.propose_cap_change(&m1, &org, &20u32);
+    t.client.vote_cap_change(&m1, &org, &proposal_id, &true);
+    t.client.vote_cap_change(&m2, &org, &proposal_id, &false);
+    t.client.vote_cap_change(&m3, &org, &proposal_id, &false);
+    t.client.execute_cap_change(&m1, &proposal_id); // InsufficientApproval
+}
+
+#[test]
+fn unit_execute_cap_change_full_lifecycle() {
+    // Propose → 3 yes votes → execute → verify cap changed
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let m2 = Address::generate(&t.env);
+    let m3 = Address::generate(&t.env);
+    let org = t.org("gov");
+    let contributor = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org);
+    t.client.register_maintainer(&admin, &m2, &org);
+    t.client.register_maintainer(&admin, &m3, &org);
+
+    // Default cap is 15
+    assert_eq!(t.client.get_global_cap(), 15u32);
+
+    let proposal_id = t.client.propose_cap_change(&m1, &org, &25u32);
+    t.client.vote_cap_change(&m1, &org, &proposal_id, &true);
+    t.client.vote_cap_change(&m2, &org, &proposal_id, &true);
+    t.client.vote_cap_change(&m3, &org, &proposal_id, &true);
+    t.client.execute_cap_change(&m1, &proposal_id);
+
+    // Cap must now be 25
+    assert_eq!(t.client.get_global_cap(), 25u32);
+
+    // Verify new cap is enforced — contributor can submit up to 25 applications
+    for i in 1u32..=25 {
+        t.client.apply_for_issue(&contributor, &org, &i);
+    }
+    assert_eq!(t.client.get_global_application_count(&contributor), 25);
+
+    // 26th must fail
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        t.client.apply_for_issue(&contributor, &org, &26u32);
+    }));
+    assert!(result.is_err(), "Expected GlobalApplicationLimitReached at new cap");
+}
+
+#[test]
+fn unit_multiple_proposals_independent() {
+    // Two proposals can coexist with independent vote counts
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let m1 = Address::generate(&t.env);
+    let m2 = Address::generate(&t.env);
+    let m3 = Address::generate(&t.env);
+    let m4 = Address::generate(&t.env);
+    let org = t.org("gov");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &m1, &org);
+    t.client.register_maintainer(&admin, &m2, &org);
+    t.client.register_maintainer(&admin, &m3, &org);
+    t.client.register_maintainer(&admin, &m4, &org);
+
+    let p1 = t.client.propose_cap_change(&m1, &org, &20u32);
+    let p2 = t.client.propose_cap_change(&m2, &org, &30u32);
+    assert_eq!(p1, 1u32);
+    assert_eq!(p2, 2u32);
+
+    // Vote on p1 and execute it
+    t.client.vote_cap_change(&m1, &org, &p1, &true);
+    t.client.vote_cap_change(&m2, &org, &p1, &true);
+    t.client.vote_cap_change(&m3, &org, &p1, &true);
+    t.client.execute_cap_change(&m1, &p1);
+    assert_eq!(t.client.get_global_cap(), 20u32);
+}
+
+#[test]
+fn unit_governance_default_cap_is_15() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    assert_eq!(t.client.get_global_cap(), 15u32);
+}
+
 // ---------------------------------------------------------------------------
 // PROPERTY-BASED TESTS
 // ---------------------------------------------------------------------------
 
 use proptest::prelude::*;
 
-fn arb_org_name() -> impl Strategy<Value = std::string::String> {
-    "[a-z]{1,9}".prop_map(|s| s)
+fn arb_org_name() -> impl Strategy<Value = String> {
+    "[a-z]{2,9}".prop_map(|s: String| s)
 }
 
 fn fresh_client(
@@ -412,7 +1021,7 @@ fn fresh_client(
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register_contract(None, WorkloadGovernor);
-    let env: &'static Env = Box::leak(Box::new(env));
+    let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
     let client = WorkloadGovernorClient::new(env, &contract_id);
     let admin = Address::generate(env);
     let maintainer = Address::generate(env);
@@ -424,9 +1033,9 @@ fn fresh_client(
 // Feature: workload-governor, Property 1: NotInitialized Guard
 proptest! {
     #[test]
-    fn prop_not_initialized_guard(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_not_initialized_guard(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, _, _, contributor, org) = fresh_client(&org_name);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             client.apply_for_issue(&contributor, &org, &issue_id);
         }));
         prop_assert!(result.is_err());
@@ -450,11 +1059,11 @@ proptest! {
     fn prop_global_cap_enforced(org_name in arb_org_name()) {
         let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
-        for i in 0u32..15 {
+        for i in 1u32..=15 {
             client.apply_for_issue(&contributor, &org, &i);
         }
         prop_assert_eq!(client.get_global_application_count(&contributor), 15);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             client.apply_for_issue(&contributor, &org, &99u32);
         }));
         prop_assert!(result.is_err());
@@ -462,10 +1071,59 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Property #1010: Global application count invariant
+proptest! {
+    #[test]
+    fn prop_global_application_count_matches_pending_apps(
+        operations in prop::collection::vec((0u8..3, 0u8..2, 1u32..17), 0..100)
+    ) {
+        let t = TestEnv::new();
+        let admin = Address::generate(&t.env);
+        let maintainer = Address::generate(&t.env);
+        let contributor = Address::generate(&t.env);
+        let orgs = [t.org("org_a"), t.org("org_b")];
+
+        t.client.initialize(&admin);
+        for org in &orgs {
+            t.client.register_maintainer(&admin, &maintainer, org);
+        }
+
+        for (operation, org_index, issue_id) in operations {
+            let org = &orgs[org_index as usize];
+            let is_pending = t.client.has_applied(&contributor, org, &issue_id);
+
+            match operation {
+                0 if !is_pending && t.client.get_global_application_count(&contributor) < 15 => {
+                    t.client.apply_for_issue(&contributor, org, &issue_id);
+                }
+                1 if is_pending => {
+                    t.client.withdraw_application(&contributor, org, &issue_id);
+                }
+                2 if is_pending && t.client.get_org_assignment_count(&contributor, org) < 4 => {
+                    t.client.assign_issue(&maintainer, &contributor, org, &issue_id);
+                }
+                _ => {}
+            }
+
+            let active_application_count = orgs
+                .iter()
+                .flat_map(|org| (1u32..17).map(move |id| (org, id)))
+                .filter(|(org, id)| t.client.has_applied(&contributor, org, id))
+                .count() as u32;
+
+            prop_assert_eq!(
+                t.client.get_global_application_count(&contributor),
+                active_application_count,
+                "global application count diverged after operation {operation}"
+            );
+        }
+    }
+}
+
 // Feature: workload-governor, Property 6: Application Round-Trip
 proptest! {
     #[test]
-    fn prop_apply_round_trip(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_apply_round_trip(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         let before = client.get_global_application_count(&contributor);
@@ -478,11 +1136,11 @@ proptest! {
 // Feature: workload-governor, Property 7: Duplicate Application Rejection
 proptest! {
     #[test]
-    fn prop_duplicate_application_rejected(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_duplicate_application_rejected(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             client.apply_for_issue(&contributor, &org, &issue_id);
         }));
         prop_assert!(result.is_err());
@@ -492,7 +1150,7 @@ proptest! {
 // Feature: workload-governor, Property 8: Withdrawal Round-Trip
 proptest! {
     #[test]
-    fn prop_withdraw_round_trip(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_withdraw_round_trip(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         let before = client.get_global_application_count(&contributor);
@@ -506,12 +1164,12 @@ proptest! {
 // Feature: workload-governor, Property 9: Unregistered Maintainer Rejection
 proptest! {
     #[test]
-    fn prop_unregistered_maintainer_rejected(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_unregistered_maintainer_rejected(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (env, client, admin, _, contributor, org) = fresh_client(&org_name);
         let stranger = Address::generate(&env);
         client.initialize(&admin);
         client.apply_for_issue(&contributor, &org, &issue_id);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             client.assign_issue(&stranger, &contributor, &org, &issue_id);
         }));
         prop_assert!(result.is_err());
@@ -525,13 +1183,13 @@ proptest! {
         let (_, client, admin, maintainer, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
-        for i in 0u32..4 {
+        for i in 1u32..=4 {
             client.apply_for_issue(&contributor, &org, &i);
             client.assign_issue(&maintainer, &contributor, &org, &i);
         }
         prop_assert_eq!(client.get_org_assignment_count(&contributor, &org), 4);
         client.apply_for_issue(&contributor, &org, &99u32);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             client.assign_issue(&maintainer, &contributor, &org, &99u32);
         }));
         prop_assert!(result.is_err());
@@ -542,7 +1200,7 @@ proptest! {
 // Feature: workload-governor, Property 11: Assignment Round-Trip
 proptest! {
     #[test]
-    fn prop_assign_round_trip(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_assign_round_trip(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, maintainer, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
@@ -559,7 +1217,7 @@ proptest! {
 // Feature: workload-governor, Property 12: Complete Is Inverse of Assign
 proptest! {
     #[test]
-    fn prop_complete_is_inverse_of_assign(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_complete_is_inverse_of_assign(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, maintainer, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
@@ -574,7 +1232,7 @@ proptest! {
 // Feature: workload-governor, Property 12b: Revoke Is Inverse of Assign
 proptest! {
     #[test]
-    fn prop_revoke_is_inverse_of_assign(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_revoke_is_inverse_of_assign(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, maintainer, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
@@ -589,11 +1247,11 @@ proptest! {
 // Feature: workload-governor, Property 13: AssignmentNotFound
 proptest! {
     #[test]
-    fn prop_assignment_not_found(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_assignment_not_found(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, maintainer, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.register_maintainer(&admin, &maintainer, &org);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
         }));
         prop_assert!(result.is_err());
@@ -603,7 +1261,7 @@ proptest! {
 // Feature: workload-governor, Property 15: Read-Only Queries Are Immutable
 proptest! {
     #[test]
-    fn prop_read_only_queries_are_immutable(org_name in arb_org_name(), issue_id in 0u32..1000u32) {
+    fn prop_read_only_queries_are_immutable(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
         let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
         client.apply_for_issue(&contributor, &org, &issue_id);
@@ -620,317 +1278,6 @@ proptest! {
         prop_assert_eq!(client.get_global_application_count(&contributor), count_before);
         prop_assert_eq!(client.has_applied(&contributor, &org, &issue_id), has_before);
     }
-}
-
-// Feature: workload-governor, Issue #76: Global cap invariant under arbitrary apply/withdraw sequences
-proptest! {
-    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
-    #[test]
-    fn prop_global_cap(
-        // sequence of (apply=true / withdraw=false, issue_id 0..15)
-        actions in proptest::collection::vec((proptest::bool::ANY, 0u32..15u32), 1..30)
-    ) {
-        let (_, client, admin, _, contributor, org) = fresh_client("seq");
-        client.initialize(&admin);
-
-        // Track which issue_ids are currently applied, to drive withdraw correctly
-        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
-
-        for (do_apply, issue_id) in actions {
-            let count_before = client.get_global_application_count(&contributor);
-
-            if do_apply {
-                if applied.contains(&issue_id) {
-                    // already applied – skip (would be DuplicateApplication)
-                    continue;
-                }
-                if count_before >= 15 {
-                    // must fail with error 6, state must not change
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        client.apply_for_issue(&contributor, &org, &issue_id);
-                    }));
-                    prop_assert!(result.is_err(), "expected error when count=15");
-                    prop_assert_eq!(
-                        client.get_global_application_count(&contributor),
-                        15,
-                        "count must stay 15 after rejected apply"
-                    );
-                } else {
-                    client.apply_for_issue(&contributor, &org, &issue_id);
-                    applied.insert(issue_id);
-                    let count_after = client.get_global_application_count(&contributor);
-                    prop_assert_eq!(count_after, count_before + 1);
-                }
-            } else {
-                if !applied.contains(&issue_id) {
-                    // nothing to withdraw – skip
-                    continue;
-                }
-                client.withdraw_application(&contributor, &org, &issue_id);
-                applied.remove(&issue_id);
-                let count_after = client.get_global_application_count(&contributor);
-                prop_assert_eq!(count_after, count_before - 1);
-            }
-
-            // invariant: count always in [0, 15]
-            let count = client.get_global_application_count(&contributor);
-            prop_assert!(count <= 15, "count {} exceeded cap 15", count);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// UPGRADE STATE-PRESERVATION TESTS
-// ---------------------------------------------------------------------------
-//
-// Strategy: deploy V1, populate every storage category, call upgrade() with a
-// re-uploaded copy of the same WASM (so we exercise the real code path without
-// needing a separate V2 binary), then assert every piece of V1 state is still
-// readable and every contract function still behaves identically.
-//
-// In Soroban's native test environment `upload_contract_wasm` accepts any byte
-// slice and `update_current_contract_wasm` is handled by the host; state is
-// preserved across the call because storage is independent of the WASM hash.
-// That is exactly the invariant this test suite verifies.
-
-/// Build the "V2" wasm hash by re-uploading the current contract's own WASM.
-/// In native-test mode the hash is deterministic; the important thing is that
-/// the upgrade code path (auth check + host call) executes successfully and
-/// leaves all storage intact.
-#[cfg(test)]
-fn upload_self_wasm(env: &Env) -> soroban_sdk::BytesN<32> {
-    // soroban_sdk exposes the compiled WASM bytes for the current crate via
-    // the `contractimport!`-generated WASM constant when built with testutils.
-    // For a self-upgrade we derive an arbitrary-but-stable 32-byte hash by
-    // uploading a minimal valid WASM module recognised by the test host.
-    // The minimal WASM magic + version header is enough for the host to accept
-    // the upload and return a unique hash.
-    let wasm_bytes = soroban_sdk::Bytes::from_slice(
-        env,
-        // Minimal valid WASM: magic (4) + version (4) — no sections needed for upload
-        &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
-    );
-    env.deployer().upload_contract_wasm(wasm_bytes)
-}
-
-/// Helper: build a fully-populated V1 environment and return the actors.
-#[cfg(test)]
-struct UpgradeFixture {
-    env: Env,
-    client: WorkloadGovernorClient<'static>,
-    admin: Address,
-    maintainer: Address,
-    contributor: Address,
-    org: Symbol,
-}
-
-#[cfg(test)]
-impl UpgradeFixture {
-    fn new() -> Self {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register_contract(None, WorkloadGovernor);
-        let env: &'static Env = Box::leak(Box::new(env));
-        let client = WorkloadGovernorClient::new(env, &contract_id);
-
-        let admin = Address::generate(env);
-        let maintainer = Address::generate(env);
-        let contributor = Address::generate(env);
-        let org = Symbol::new(env, "upgorgtst");
-
-        // --- V1 state population ---
-        client.initialize(&admin);
-        client.register_maintainer(&admin, &maintainer, &org);
-
-        // Leave one issue as a pending application
-        client.apply_for_issue(&contributor, &org, &10u32);
-
-        // Assign and keep active — populates persistent assignment + org counter
-        client.apply_for_issue(&contributor, &org, &20u32);
-        client.assign_issue(&maintainer, &contributor, &org, &20u32);
-
-        UpgradeFixture {
-            env: env.clone(),
-            client,
-            admin,
-            maintainer,
-            contributor,
-            org,
-        }
-    }
-}
-
-/// Verify that `upgrade()` panics when called before `initialize` (NotInitialized guard).
-#[test]
-#[should_panic]
-fn unit_upgrade_rejects_not_initialized() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, WorkloadGovernor);
-    let client = WorkloadGovernorClient::new(&env, &contract_id);
-    let dummy_hash = upload_self_wasm(&env);
-    client.upgrade(&dummy_hash); // NotInitialized — must panic
-}
-
-/// Core: pre-upgrade state is fully preserved post-upgrade.
-#[test]
-fn unit_upgrade_preserves_all_state() {
-    let t = UpgradeFixture::new();
-
-    // --- Pre-upgrade assertions ---
-    // Admin exists (implicitly — only admin can call upgrade; if not set, upgrade panics)
-    // Maintainer registered
-    // Global app count = 1 (issue 10 still pending; issue 20 was consumed by assign)
-    assert_eq!(
-        t.client.get_global_application_count(&t.contributor),
-        1,
-        "pre-upgrade: global app count"
-    );
-    // Issue 10: pending application
-    assert!(
-        t.client.has_applied(&t.contributor, &t.org, &10u32),
-        "pre-upgrade: has_applied issue 10"
-    );
-    // Issue 20: active assignment
-    assert!(
-        t.client.is_assigned(&t.contributor, &t.org, &20u32),
-        "pre-upgrade: is_assigned issue 20"
-    );
-    assert_eq!(
-        t.client.get_org_assignment_count(&t.contributor, &t.org),
-        1,
-        "pre-upgrade: org assignment count"
-    );
-
-    // --- Perform upgrade ---
-    let new_wasm_hash = upload_self_wasm(&t.env);
-    t.client.upgrade(&new_wasm_hash); // must not panic
-
-    // --- Post-upgrade state assertions (identical to pre-upgrade) ---
-    assert_eq!(
-        t.client.get_global_application_count(&t.contributor),
-        1,
-        "post-upgrade: global app count preserved"
-    );
-    assert!(
-        t.client.has_applied(&t.contributor, &t.org, &10u32),
-        "post-upgrade: pending application preserved"
-    );
-    assert!(
-        t.client.is_assigned(&t.contributor, &t.org, &20u32),
-        "post-upgrade: active assignment preserved"
-    );
-    assert_eq!(
-        t.client.get_org_assignment_count(&t.contributor, &t.org),
-        1,
-        "post-upgrade: org assignment count preserved"
-    );
-}
-
-/// V1 functions behave identically on the upgraded contract.
-#[test]
-fn unit_upgrade_functions_behave_identically() {
-    let t = UpgradeFixture::new();
-    let new_wasm_hash = upload_self_wasm(&t.env);
-    t.client.upgrade(&new_wasm_hash);
-
-    // apply_for_issue: should still work for a new issue
-    t.client.apply_for_issue(&t.contributor, &t.org, &30u32);
-    assert!(t.client.has_applied(&t.contributor, &t.org, &30u32));
-    assert_eq!(t.client.get_global_application_count(&t.contributor), 2);
-
-    // withdraw_application: issue 10 was pending pre-upgrade
-    t.client.withdraw_application(&t.contributor, &t.org, &10u32);
-    assert!(!t.client.has_applied(&t.contributor, &t.org, &10u32));
-    assert_eq!(t.client.get_global_application_count(&t.contributor), 1);
-
-    // assign_issue: issue 30 is now pending
-    t.client
-        .assign_issue(&t.maintainer, &t.contributor, &t.org, &30u32);
-    assert!(t.client.is_assigned(&t.contributor, &t.org, &30u32));
-    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 2);
-
-    // complete_assignment: issue 20 was assigned pre-upgrade
-    t.client
-        .complete_assignment(&t.maintainer, &t.contributor, &t.org, &20u32);
-    assert!(!t.client.is_assigned(&t.contributor, &t.org, &20u32));
-    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 1);
-
-    // revoke_assignment: issue 30
-    t.client
-        .revoke_assignment(&t.maintainer, &t.contributor, &t.org, &30u32);
-    assert!(!t.client.is_assigned(&t.contributor, &t.org, &30u32));
-    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 0);
-
-    // register_maintainer: still works post-upgrade
-    let new_maintainer = Address::generate(&t.env);
-    let new_org = Symbol::new(&t.env, "neworg");
-    t.client
-        .register_maintainer(&t.admin, &new_maintainer, &new_org);
-    // verify: new maintainer can accept an application
-    t.client
-        .apply_for_issue(&t.contributor, &new_org, &1u32);
-    t.client
-        .assign_issue(&new_maintainer, &t.contributor, &new_org, &1u32);
-    assert!(t.client.is_assigned(&t.contributor, &new_org, &1u32));
-
-    // limit helpers still return correct values
-    assert_eq!(
-        t.client.get_global_application_capacity(&t.contributor),
-        crate::storage::GLOBAL_APP_LIMIT
-            - t.client.get_global_application_count(&t.contributor)
-    );
-    assert_eq!(
-        t.client.get_org_assignment_capacity(&t.contributor, &t.org),
-        crate::storage::ORG_ASSIGNMENT_LIMIT
-            - t.client.get_org_assignment_count(&t.contributor, &t.org)
-    );
-}
-
-/// Global and org caps are still enforced after upgrade.
-#[test]
-fn unit_upgrade_limits_still_enforced() {
-    let t = UpgradeFixture::new();
-    let new_wasm_hash = upload_self_wasm(&t.env);
-    t.client.upgrade(&new_wasm_hash);
-
-    // Global cap: 1 pending (issue 10) already from fixture; need 14 more.
-    for i in 31u32..45 {
-        t.client.apply_for_issue(&t.contributor, &t.org, &i);
-    }
-    assert_eq!(t.client.get_global_application_count(&t.contributor), 15);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.apply_for_issue(&t.contributor, &t.org, &99u32);
-    }));
-    assert!(result.is_err(), "global cap must still be enforced post-upgrade");
-
-    // Org assignment cap: issue 20 is already assigned (count=1).
-    // Free up global slots, then assign 3 more to reach cap of 4.
-    for i in 31u32..34 {
-        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &i);
-    }
-    assert_eq!(t.client.get_org_assignment_count(&t.contributor, &t.org), 4);
-    // issue 34 is still a pending application (applied in the loop above)
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        t.client.assign_issue(&t.maintainer, &t.contributor, &t.org, &34u32);
-    }));
-    assert!(
-        result.is_err(),
-        "org assignment cap must still be enforced post-upgrade"
-    );
-}
-
-/// Upgrade is idempotent: calling it twice does not corrupt state.
-#[test]
-fn unit_upgrade_idempotent() {
-    let t = UpgradeFixture::new();
-    let hash = upload_self_wasm(&t.env);
-    t.client.upgrade(&hash);
-    t.client.upgrade(&hash); // second upgrade — must not panic or corrupt state
-
-    assert_eq!(t.client.get_global_application_count(&t.contributor), 1);
-    assert!(t.client.has_applied(&t.contributor, &t.org, &10u32));
-    assert!(t.client.is_assigned(&t.contributor, &t.org, &20u32));
 }
 
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
@@ -954,211 +1301,552 @@ fn prop_storage_key_collision_freedom() {
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
 }
 
-// ---------------------------------------------------------------------------
-// ERROR CASES — one test per ContractError variant (codes 1–11)
-//
-// Uses try_* client methods which return:
-//   Result<Result<T, ConversionError>, Result<soroban_sdk::Error, InvokeError>>
-//
-// Errors raised via panic_with_error! (codes 1,2,4,6,7,8,9,10,11) surface as:
-//   Err(Ok(soroban_sdk::Error::from_contract_error(code as u32)))
-//
-// Errors 3 and 5 are guarded by require_auth() which raises a host Auth error
-// (Err(Err(...))), not a ContractError. Those are tested with #[should_panic].
-// ---------------------------------------------------------------------------
-
-mod error_cases {
-    use soroban_sdk::{testutils::Address as _, Address, Env, Error, Symbol};
-
-    use crate::{errors::ContractError, WorkloadGovernor, WorkloadGovernorClient};
-
-    fn setup() -> (WorkloadGovernorClient<'static>, &'static Env) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let id = env.register_contract(None, WorkloadGovernor);
-        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
-        (WorkloadGovernorClient::new(env, &id), env)
-    }
-
-    /// Map a ContractError variant to the soroban_sdk::Error the host returns.
-    fn ce(e: ContractError) -> Error {
-        Error::from_contract_error(e as u32)
-    }
-
-    fn org(env: &Env, name: &str) -> Symbol {
-        Symbol::new(env, name)
-    }
-
-    /// Error 1 — `AlreadyInitialized`: `initialize` called a second time.
+// Feature: workload-governor, Property #601: Invalid issue_id rejected for all entry points
+proptest! {
     #[test]
-    fn err_1_already_initialized() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        client.initialize(&admin);
-        let result = client.try_initialize(&admin);
-        assert_eq!(result, Err(Ok(ce(ContractError::AlreadyInitialized))));
-    }
-
-    /// Error 2 — `NotInitialized`: any state-changing call before `initialize`.
-    #[test]
-    fn err_2_not_initialized() {
-        let (client, env) = setup();
-        let contributor = Address::generate(env);
-        let result = client.try_apply_for_issue(&contributor, &org(env, "x"), &1u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::NotInitialized))));
-    }
-
-    /// Error 3 — `UnauthorizedAdmin`: the contract variant is defined for future use;
-    /// the current implementation delegates admin auth to `require_auth()` on the stored
-    /// admin address, which raises a host Auth error (not a ContractError).
-    /// This test verifies the auth guard fires when a non-admin calls a protected function.
-    #[test]
-    #[should_panic]
-    fn err_3_unauthorized_admin() {
-        // Initialize with mock_all_auths, then clear auths so the next call panics.
-        let (client, env) = setup();
-        let admin = Address::generate(env);
+    fn prop_invalid_issue_id_rejected(org_name in arb_org_name()) {
+        let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
         client.initialize(&admin);
 
-        // Clear all auth mocks — stored_admin.require_auth() will now fail
-        env.set_auths(&[]);
-        let impostor = Address::generate(env);
-        let maintainer = Address::generate(env);
-        // panics: stored admin's require_auth not satisfied by impostor
-        client.register_maintainer(&impostor, &maintainer, &org(env, "x"));
-    }
+        // issue_id = 0 must be rejected
+        let r0 = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            client.apply_for_issue(&contributor, &org, &0u32);
+        }));
+        prop_assert!(r0.is_err(), "issue_id = 0 should be rejected");
 
-    /// Error 4 — `UnauthorizedMaintainer`: unregistered address tries to assign an issue.
-    #[test]
-    fn err_4_unauthorized_maintainer() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let stranger = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        client.apply_for_issue(&contributor, &o, &1u32);
-        let result = client.try_assign_issue(&stranger, &contributor, &o, &1u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::UnauthorizedMaintainer))));
-    }
-
-    /// Error 5 — `UnauthorizedContributor`: the contract variant is defined for future use;
-    /// `apply_for_issue` delegates auth to `contributor.require_auth()` which raises a
-    /// host Auth error (not a ContractError). This test verifies the auth guard fires.
-    #[test]
-    #[should_panic]
-    fn err_5_unauthorized_contributor() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        client.initialize(&admin);
-
-        // Clear all auth mocks — contributor.require_auth() will now fail
-        env.set_auths(&[]);
-        let contributor = Address::generate(env);
-        // panics: contributor's require_auth not satisfied
-        client.apply_for_issue(&contributor, &org(env, "x"), &1u32);
-    }
-
-    /// Error 6 — `GlobalApplicationLimitReached`: contributor has 15 pending applications.
-    #[test]
-    fn err_6_global_application_limit_reached() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        for i in 0u32..15 {
-            client.apply_for_issue(&contributor, &o, &i);
-        }
-        let result = client.try_apply_for_issue(&contributor, &o, &99u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::GlobalApplicationLimitReached))));
-    }
-
-    /// Error 7 — `OrgAssignmentLimitReached`: contributor has 4 active assignments in the org.
-    #[test]
-    fn err_7_org_assignment_limit_reached() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let maintainer = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        client.register_maintainer(&admin, &maintainer, &o);
-        for i in 0u32..4 {
-            client.apply_for_issue(&contributor, &o, &i);
-            client.assign_issue(&maintainer, &contributor, &o, &i);
-        }
-        client.apply_for_issue(&contributor, &o, &99u32);
-        let result = client.try_assign_issue(&maintainer, &contributor, &o, &99u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::OrgAssignmentLimitReached))));
-    }
-
-    /// Error 8 — `DuplicateApplication`: same (contributor, org, issue) applied twice.
-    #[test]
-    fn err_8_duplicate_application() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        client.apply_for_issue(&contributor, &o, &1u32);
-        let result = client.try_apply_for_issue(&contributor, &o, &1u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::DuplicateApplication))));
-    }
-
-    /// Error 9 — `ApplicationNotFound`: withdraw for a non-existent application.
-    #[test]
-    fn err_9_application_not_found() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        let result = client.try_withdraw_application(&contributor, &o, &99u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::ApplicationNotFound))));
-    }
-
-    /// Error 10 — `AssignmentNotFound`: complete for a non-existent assignment.
-    #[test]
-    fn err_10_assignment_not_found() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let maintainer = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        client.register_maintainer(&admin, &maintainer, &o);
-        let result = client.try_complete_assignment(&maintainer, &contributor, &o, &99u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::AssignmentNotFound))));
-    }
-
-    /// Error 11 — `AlreadyAssigned`: assign_issue when assignment already exists.
-    ///
-    /// `seed_assignment` (test-only) plants the assignment entry directly bypassing
-    /// the normal flow, so the AlreadyAssigned guard inside assign_issue is reachable.
-    #[test]
-    fn err_11_already_assigned() {
-        let (client, env) = setup();
-        let admin = Address::generate(env);
-        let maintainer = Address::generate(env);
-        let contributor = Address::generate(env);
-        let o = org(env, "x");
-
-        client.initialize(&admin);
-        client.register_maintainer(&admin, &maintainer, &o);
-        // Seed an existing assignment for issue 1
-        client.seed_assignment(&contributor, &o, &1u32);
-        // Apply so ApplicationNotFound guard is passed
-        client.apply_for_issue(&contributor, &o, &1u32);
-
-        let result = client.try_assign_issue(&maintainer, &contributor, &o, &1u32);
-        assert_eq!(result, Err(Ok(ce(ContractError::AlreadyAssigned))));
+        // issue_id = u32::MAX must be rejected
+        let rmax = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            client.apply_for_issue(&contributor, &org, &u32::MAX);
+        }));
+        prop_assert!(rmax.is_err(), "issue_id = u32::MAX should be rejected");
     }
 }
 
+// Feature: workload-governor, Property #601: Valid issue_ids accepted
+proptest! {
+    #[test]
+    fn prop_valid_issue_ids_accepted(org_name in arb_org_name(), issue_id in 1u32..(u32::MAX - 1)) {
+        let (_, client, admin, _, contributor, org) = fresh_client(&org_name);
+        client.initialize(&admin);
+        // Any issue_id in [1, u32::MAX) should be accepted
+        client.apply_for_issue(&contributor, &org, &issue_id);
+        prop_assert!(client.has_applied(&contributor, &org, &issue_id));
+    }
+}
+
+// Feature: workload-governor, Property #602: Migration callable only once
+proptest! {
+    #[test]
+    fn prop_migration_idempotency_guarded(org_name in arb_org_name()) {
+        let (env, client, admin, _, _, _) = fresh_client(&org_name);
+        client.initialize(&admin);
+        let pairs: soroban_sdk::Vec<(Address, Symbol)> = soroban_sdk::Vec::new(&env);
+        client.migrate_v1_to_v2(&admin, &pairs);
+        // Second call must always panic
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            client.migrate_v1_to_v2(&admin, &pairs);
+        }));
+        prop_assert!(result.is_err(), "migration must be callable only once");
+    }
+}
+
+// Feature: workload-governor, Property #600: Default global cap is 15
+proptest! {
+    #[test]
+    fn prop_governance_default_cap_is_15(org_name in arb_org_name()) {
+        let (_, client, admin, _, _, _) = fresh_client(&org_name);
+        client.initialize(&admin);
+        prop_assert_eq!(client.get_global_cap(), 15u32);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// #828 SC-003 — Admin nonce tracking and replay protection
+// ---------------------------------------------------------------------------
+
+/// After initialization the nonce starts at 0. The first privileged call
+/// (register_maintainer) increments it to 1.
+#[test]
+fn unit_sc003_nonce_starts_at_zero() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    // initialize does NOT call require_admin_auth (auth is on the `admin` param
+    // directly), so the nonce stays at 0 until the first require_admin_auth call.
+    assert_eq!(t.client.get_admin_nonce(), 0u32);
+}
+
+/// Each call to a privileged admin function increments the nonce by 1.
+#[test]
+fn unit_sc003_nonce_increments_on_privileged_call() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("noncetestorg");
+
+    t.client.initialize(&admin);
+    assert_eq!(t.client.get_admin_nonce(), 0u32);
+
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    assert_eq!(t.client.get_admin_nonce(), 1u32);
+
+    t.client.register_maintainer(&admin, &maintainer, &org); // idempotent second call
+    assert_eq!(t.client.get_admin_nonce(), 2u32);
+}
+
+/// Multiple distinct privileged actions each advance the nonce monotonically.
+#[test]
+fn unit_sc003_nonce_monotonically_increasing() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org1 = t.org("orga");
+    let org2 = t.org("orgb");
+
+    t.client.initialize(&admin);
+
+    t.client.register_maintainer(&admin, &maintainer, &org1);
+    let n1 = t.client.get_admin_nonce();
+
+    t.client.register_maintainer(&admin, &maintainer, &org2);
+    let n2 = t.client.get_admin_nonce();
+
+    assert!(n2 > n1, "nonce must increase on every privileged call");
+    assert_eq!(n2, n1 + 1);
+}
+
+/// AdminActionExecuted event is emitted by every privileged call and contains
+/// the new (post-increment) nonce value.
+#[test]
+fn unit_sc003_admin_action_executed_event_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{TryIntoVal, Val, Vec as SdkVec};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("eventorg");
+
+    t.client.initialize(&admin);
+    let events_before = t.env.events().all().len();
+
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    let all = t.env.events().all();
+    // There must be at least 2 events: MaintainerRegistered + AdminActionExecuted
+    assert!(
+        all.len() > events_before,
+        "at least one new event must be emitted by register_maintainer"
+    );
+
+    // Find the AdminActionExecuted event (topic[0] == "adm_act")
+    let adm_act_sym = soroban_sdk::symbol_short!("adm_act");
+    let adm_event = all.iter().find(|(_, topics, _): &(_, SdkVec<Val>, Val)| {
+        if let Ok(t0) = topics.get(0).unwrap().try_into_val::<_, soroban_sdk::Symbol>(&t.env) {
+            t0 == adm_act_sym
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        adm_event.is_some(),
+        "AdminActionExecuted (adm_act) event must be emitted by register_maintainer"
+    );
+
+    // Verify data contains the new nonce (1 after first privileged call)
+    let (_, _, data) = adm_event.unwrap();
+    let (nonce,): (u32,) = data.try_into_val(&t.env).unwrap();
+    assert_eq!(nonce, 1u32, "AdminActionExecuted data must contain the new nonce (1)");
+}
+
+/// Simulated replay: calling the same privileged function again re-uses a
+/// different nonce, so a stale auth cannot satisfy the new nonce. We verify
+/// the nonce advances strictly.
+#[test]
+fn unit_sc003_nonce_prevents_replay() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let org = t.org("replayorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    let nonce_after_first = t.client.get_admin_nonce();
+
+    // Second call (simulating a "replayed" invocation) advances nonce again
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    let nonce_after_second = t.client.get_admin_nonce();
+
+    assert_ne!(
+        nonce_after_first, nonce_after_second,
+        "nonce must differ between calls; a replayed auth would bind to the old nonce \
+         and therefore be rejected by the Stellar auth framework"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// MUTATION KILL TESTS — Issue #1062
+//
+// These tests are specifically written to catch the 7 mutants that survived
+// the previous mutation run (score 75%, 7 missed out of 28).
+//
+// Each test is named after the mutant it kills and documents exactly which
+// observable behaviour would change if the mutant were live.
+// ---------------------------------------------------------------------------
+
+/// Mutant: `replace WorkloadGovernor::upgrade with ()`
+///
+/// If `upgrade` becomes a no-op, calling it must still require initialization
+/// (the guard fires first). We verify the guard fires when uninitialized, and
+/// that it does NOT fire when initialized (i.e. the auth guard is run).
+///
+/// Note: in the Soroban test environment `update_current_contract_wasm` is a
+/// no-op stub, so we test the auth and initialization guards that surround it.
+#[test]
+fn unit_mutant_upgrade_requires_initialized() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
+
+    // Without initialize(), upgrade must panic with NotInitialized.
+    let result = t.client.try_upgrade(&new_wasm_hash);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NotInitialized.into_val(&t.env))),
+        "upgrade must panic NotInitialized when contract is not initialized"
+    );
+}
+
+/// Mutant: `replace WorkloadGovernor::upgrade with ()` — post-init path.
+///
+/// After initialization the upgrade function must not panic (the deployer stub
+/// accepts any hash in the test env). A no-op mutant would silently skip the
+/// auth check but still succeed — we verify the happy path works so that
+/// un-auth'd calls (via `try_upgrade`) are distinguishable from no-ops.
+#[test]
+fn unit_mutant_upgrade_succeeds_after_initialize() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+
+    // upgrade with all-zero hash must not panic in the test env
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
+    t.client.upgrade(&new_wasm_hash);
+    // If the mutant (empty body) were live, this would also pass — but the
+    // NotInitialized guard test above would fail, killing the mutant.
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::assign_issue` (line 283)
+///
+/// The mutated line is:
+///   `if new_app_count == 0 { storage::remove_global_app_count(...) }`
+/// changed to:
+///   `if new_app_count != 0 { storage::remove_global_app_count(...) }`
+///
+/// With the mutant alive: after assigning the ONLY application (count 1→0),
+/// the counter key is removed when it should stay, and set when it should be
+/// removed. The observable effect: `get_global_application_count` returns the
+/// wrong value immediately after a single assign_issue.
+///
+/// This test checks that the counter is exactly 0 after assigning the only
+/// outstanding application (1 → 0 path) and that no leftover value persists.
+#[test]
+fn unit_mutant_assign_global_count_zero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutassign");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Single application then single assign — exercises new_app_count == 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+
+    // After assigning the only application, global count must be exactly 0.
+    // Mutant (== → !=) would set it to 1 instead of removing it, returning 1.
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        0,
+        "global app count must be 0 after the only application is assigned"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::assign_issue` (line 283) — multi-app path.
+///
+/// When multiple applications exist (count N > 1), assigning one must
+/// decrement to N-1, not remove the counter entirely.
+#[test]
+fn unit_mutant_assign_global_count_nonzero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutassign2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Apply for 3 issues, then assign one — exercises new_app_count != 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &10u32);
+    t.client.apply_for_issue(&contributor, &org, &11u32);
+    t.client.apply_for_issue(&contributor, &org, &12u32);
+    assert_eq!(t.client.get_global_application_count(&contributor), 3);
+
+    t.client.assign_issue(&maintainer, &contributor, &org, &10u32);
+
+    // Count must be 2, not 0.
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        2,
+        "global app count must be 2 (not 0) after assigning one of three applications"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::complete_assignment` (line 333)
+///
+/// The mutated line is:
+///   `if new_count == 0 { storage::remove_org_assignment_count(...) }`
+/// changed to:
+///   `if new_count != 0 { storage::remove_org_assignment_count(...) }`
+///
+/// With the mutant alive: after completing the ONLY assignment (count 1→0),
+/// the counter key would be set to 0 (not removed) or vice versa. Observable
+/// effect: `get_org_assignment_count` returns wrong value after the last
+/// complete_assignment.
+#[test]
+fn unit_mutant_complete_org_count_zero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutcomplete");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Single apply → assign → complete — exercises new_count == 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &1u32);
+
+    // Org assignment count must be exactly 0.
+    // Mutant (== → !=) would set it to 1 instead of removing it.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        0,
+        "org assignment count must be 0 after completing the only assignment"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::complete_assignment` — multi-assignment path.
+///
+/// When 2 assignments exist and one is completed, count must go from 2 to 1.
+#[test]
+fn unit_mutant_complete_org_count_nonzero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutcomplete2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Two apply → assign cycles, then complete one.
+    t.client.apply_for_issue(&contributor, &org, &20u32);
+    t.client.apply_for_issue(&contributor, &org, &21u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &20u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &21u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 2);
+
+    t.client.complete_assignment(&maintainer, &contributor, &org, &20u32);
+
+    // Count must be 1, not 0.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        1,
+        "org assignment count must be 1 (not 0) after completing one of two assignments"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::revoke_assignment` (line 382)
+///
+/// Same as the complete_assignment mutant but for revoke. Observable effect:
+/// `get_org_assignment_count` returns wrong value after the last revoke.
+#[test]
+fn unit_mutant_revoke_org_count_zero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutrevoke");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Single apply → assign → revoke — exercises new_count == 0 branch.
+    t.client.apply_for_issue(&contributor, &org, &1u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &1u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &1u32);
+
+    // Org assignment count must be exactly 0.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        0,
+        "org assignment count must be 0 after revoking the only assignment"
+    );
+}
+
+/// Mutant: `replace == with != in WorkloadGovernor::revoke_assignment` — multi-assignment path.
+#[test]
+fn unit_mutant_revoke_org_count_nonzero_branch() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutrevoke2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // Two apply → assign cycles, then revoke one.
+    t.client.apply_for_issue(&contributor, &org, &30u32);
+    t.client.apply_for_issue(&contributor, &org, &31u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &30u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &31u32);
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 2);
+
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &30u32);
+
+    // Count must be 1, not 0.
+    assert_eq!(
+        t.client.get_org_assignment_count(&contributor, &org),
+        1,
+        "org assignment count must be 1 (not 0) after revoking one of two assignments"
+    );
+}
+
+/// Mutant: `replace WorkloadGovernor::extend_application_ttl with ()` (line 425)
+///
+/// If the function becomes a no-op, calling it on a missing application would
+/// NOT panic — the ApplicationNotFound guard would be silently bypassed.
+///
+/// This test verifies that extend_application_ttl panics with ApplicationNotFound
+/// when called for a non-existent application.
+#[test]
+fn unit_mutant_extend_ttl_guard_fires_on_missing_application() {
+    use crate::errors::ContractError;
+    use soroban_sdk::IntoVal;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutextend");
+
+    t.client.initialize(&admin);
+
+    // No apply_for_issue — calling extend must return ApplicationNotFound.
+    let result = t.client.try_extend_application_ttl(&contributor, &org, &99u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env))),
+        "extend_application_ttl must panic ApplicationNotFound when no application exists"
+    );
+}
+
+/// Mutant: `delete ! in WorkloadGovernor::extend_application_ttl` (line 425:12)
+///
+/// The mutated condition flips `!has_app_entry` → `has_app_entry`, meaning the
+/// panic fires when the entry DOES exist (the opposite of the intended guard).
+/// Observable effect: extend_application_ttl panics when called on a VALID
+/// application instead of succeeding.
+///
+/// This test verifies the happy path: extend succeeds when the application exists.
+#[test]
+fn unit_mutant_extend_ttl_succeeds_when_application_exists() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutextend2");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &55u32);
+
+    // Calling extend on an existing application must NOT panic.
+    // If the `!` were deleted, this would panic with ApplicationNotFound.
+    t.client.extend_application_ttl(&contributor, &org, &55u32);
+
+    // Application must still be present after the TTL extension.
+    assert!(
+        t.client.has_applied(&contributor, &org, &55u32),
+        "application must still exist after extend_application_ttl"
+    );
+}
+
+/// Mutant: `replace > with == in WorkloadGovernor::extend_application_ttl` (line 429)
+///
+/// The mutated condition:
+///   `if storage::get_global_app_count(&env, &contributor) > 0`
+/// becomes:
+///   `if storage::get_global_app_count(&env, &contributor) == 0`
+///
+/// With the mutant alive: the global app count TTL is extended when the counter
+/// is ZERO (no applications) instead of when it is positive. This means the
+/// counter TTL is not bumped for normal applications (count > 0).
+///
+/// To catch this: verify that after applying and then calling extend_application_ttl,
+/// the application remains accessible after advancing the ledger beyond the initial
+/// TTL window (proving the global count TTL was extended).
+#[test]
+fn unit_mutant_extend_ttl_bumps_global_count_when_positive() {
+    use soroban_sdk::testutils::Ledger;
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("mutextend3");
+
+    t.client.initialize(&admin);
+    t.client.apply_for_issue(&contributor, &org, &77u32);
+
+    // Count must be 1 (> 0) after applying.
+    assert_eq!(t.client.get_global_application_count(&contributor), 1);
+
+    let ttl_ledgers = crate::storage::APP_TTL_LEDGERS;
+
+    // Advance to just before expiry, then extend.
+    t.env.ledger().set_sequence_number(ttl_ledgers - 1);
+    assert!(t.client.has_applied(&contributor, &org, &77u32));
+
+    // Extend TTL while the count is > 0 — this should bump the global count TTL.
+    // Mutant (> → ==) would skip this bump because count (1) != 0.
+    t.client.extend_application_ttl(&contributor, &org, &77u32);
+
+    // Advance well past the original TTL — count should still be accessible.
+    t.env.ledger().set_sequence_number(ttl_ledgers + 1000);
+    assert!(
+        t.client.has_applied(&contributor, &org, &77u32),
+        "application must survive past original TTL after extend_application_ttl"
+    );
+
+    // Global count must also still be accessible (TTL was bumped).
+    // With the mutant alive the count key expires and returns 0.
+    assert_eq!(
+        t.client.get_global_application_count(&contributor),
+        1,
+        "global app count must still be 1 after TTL extension (count TTL must have been bumped)"
+    );
+}

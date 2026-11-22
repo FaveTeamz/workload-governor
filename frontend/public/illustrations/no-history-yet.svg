@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 160" fill="none">
+  <!-- Clock face -->
+  <circle cx="100" cy="78" r="42" stroke="currentColor" stroke-width="2.5" fill="none"/>
+  <circle cx="100" cy="78" r="36" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.15"/>
+  <!-- Clock center dot -->
+  <circle cx="100" cy="78" r="3" fill="currentColor"/>
+  <!-- Hour hand pointing to ~10 o'clock -->
+  <line x1="100" y1="78" x2="86" y2="58" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Minute hand pointing to 12 -->
+  <line x1="100" y1="78" x2="100" y2="50" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <!-- Hour markers -->
+  <line x1="100" y1="40" x2="100" y2="46" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <line x1="100" y1="110" x2="100" y2="116" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <line x1="62" y1="78" x2="68" y2="78" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <line x1="132" y1="78" x2="138" y2="78" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <!-- Timeline dots below clock -->
+  <circle cx="68" cy="136" r="5" stroke="currentColor" stroke-width="2" fill="none" opacity="0.5"/>
+  <line x1="73" y1="136" x2="87" y2="136" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.3"/>
+  <circle cx="100" cy="136" r="5" stroke="currentColor" stroke-width="2" fill="none" opacity="0.35"/>
+  <line x1="105" y1="136" x2="119" y2="136" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.3"/>
+  <circle cx="132" cy="136" r="5" stroke="currentColor" stroke-width="2" fill="none" opacity="0.2"/>
+</svg>

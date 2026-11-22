@@ -1,0 +1,27 @@
+--- src/lib.rs
++++ replace WorkloadGovernor::initialize with ()
+@@ -47,23 +47,17 @@
+     ///
+     /// # Examples
+     /// ```text
+     /// stellar contract invoke --id <CONTRACT_ID> \
+     ///   --network testnet --source <admin-account> \
+     ///   -- initialize --admin <ADMIN_ADDRESS>
+     /// ```
+     pub fn initialize(env: Env, admin: Address) {
+-        if storage::get_admin(&env).is_some() {
+-            panic_with_error!(env, ContractError::AlreadyInitialized);
+-        }
+-        admin.require_auth();
+-        storage::set_admin(&env, &admin);
+-        storage::bump_instance(&env);
+-        events::emit_initialized(&env, &admin);
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Authorises a maintainer to manage issues within a specific organisation.
+     /// The operation is idempotent — calling it twice for the same pair is safe.
+     ///
+     /// # Who can call
+     /// The stored admin address only.
+     ///

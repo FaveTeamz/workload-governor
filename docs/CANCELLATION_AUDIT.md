@@ -1,116 +1,91 @@
-# Cancellation Audit Trail — Design Document
+# Cancellation Audit API
 
-**Issue**: [#146](https://github.com/Chrisland58/SorobanPay/issues/146)  
-**Date**: 2026-06-24  
-**Status**: Implemented
+## Overview
+The cancellation audit API provides access to logs of all revoked and withdrawn applications.
 
----
+## Endpoints
 
-## Problem
+### GET /api/audit/cancellations
 
-Subscription cancellations on **AlignmentDrips Wave** are only visible on-chain via Stellar events.  
-Merchants have no off-chain query interface to see when a subscription ended, who triggered it, or why.
+Get paginated cancellation audit records.
 
----
+#### Headers
+| Header | Description |
+|--------|-------------|
+| `Authorization` | Bearer token with `audit:read` scope |
 
-## Solution
+#### Query Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `org_id` | string | Required (non-admin) | Organization ID |
+| `page` | integer | No | Page number (default: 1) |
+| `page_size` | integer | No | Records per page (default: 50, max: 200) |
+| `start_date` | date | No | Filter by start date (ISO 8601) |
+| `end_date` | date | No | Filter by end date (ISO 8601) |
 
-A backend audit service (`CancellationAuditService`) persists every cancellation event to an off-chain store, giving merchants a queryable history of all cancellations with timestamps, subscription metadata, and optional reason text.
+#### Response Headers
+| Header | Description |
+|--------|-------------|
+| `X-Total-Count` | Total number of records |
+| `X-Page` | Current page number |
+| `X-Page-Size` | Records per page |
+| `X-Total-Pages` | Total number of pages |
 
----
+#### Response Body
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "event_type": "revoke",
+      "actor": "GABC...",
+      "contributor": "GDEF...",
+      "org_id": "org-123",
+      "issue_id": 456,
+      "reason": "Violation of terms",
+      "timestamp": "2024-01-01T00:00:00.000Z",
+      "tx_hash": "0x123..."
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 50,
+    "total": 100,
+    "totalPages": 2
+  }
+}
+{
+  "success": true,
+  "data": {
+    "total": 25,
+    "byEventType": {
+      "revoke": 15,
+      "withdraw": 10
+    },
+    "byActor": {
+      "GABC...": 12,
+      "GDEF...": 8,
+      "GHIJ...": 5
+    }
+  }
+}
+{
+  "error": "Unauthorized",
+  "message": "API key required with audit:read scope"
+}
+{
+  "error": "Bad Request",
+  "message": "org_id filter is required for non-admin users"
+}
+{
+  "error": "Internal Server Error",
+  "message": "Failed to fetch cancellation audit records"
+}
+curl -X GET \
+  "https://api.workload-governor.com/api/audit/cancellations?org_id=org-123&page=1&page_size=50" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+# Run audit tests
+npm test -- audit.test.ts
 
-## Data Model
-
-### `CancellationRecord`
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | `String` (UUID v4) | Unique audit record identifier |
-| `org_id` | `String` | On-chain organization identifier |
-| `issue_id` | `u64` | On-chain issue / subscription identifier |
-| `contributor` | `String` | Stellar address of the subscriber |
-| `cancelled_by` | `String` | Stellar address of the actor who cancelled |
-| `cancelled_at` | `DateTime<Utc>` | UTC timestamp of the cancellation |
-| `reason` | `Option<CancellationReason>` | Optional structured reason |
-| `tx_hash` | `Option<String>` | Stellar transaction hash (if available) |
-
-### `CancellationReason` (enum)
-
-| Variant | When used |
-|---|---|
-| `MerchantRevoked` | Maintainer called `revoke_assignment` |
-| `ContributorWithdrew` | Contributor called `withdraw_application` |
-| `AdminOverride` | Admin intervention |
-| `Other(String)` | Free-text fallback |
-
----
-
-## Architecture
-
-```
-On-chain event (Stellar)
-        │
-        ▼
-  Event Listener / Webhook
-        │
-        ▼
-CancellationAuditService::record(...)
-        │
-        ▼
-   AuditStore::insert(record)
-        │
-  ┌─────┴──────┐
-  │  Postgres  │  (production)
-  │  DynamoDB  │  (alternative)
-  │  MemStore  │  (tests)
-  └────────────┘
-```
-
-The `AuditStore` trait decouples the service from the storage backend, keeping all database details out of business logic and making the service fully testable in-process.
-
----
-
-## API Surface
-
-```rust
-// Record a new cancellation
-service.record(org_id, issue_id, contributor, cancelled_by, reason, tx_hash)
-  -> Result<CancellationRecord, AuditError>
-
-// Merchant queries
-service.history_for_org(org_id)           -> Result<Vec<CancellationRecord>, AuditError>
-service.history_for_contributor(address)  -> Result<Vec<CancellationRecord>, AuditError>
-```
-
----
-
-## Integration Points
-
-The service should be called from the backend whenever any of these on-chain functions execute:
-
-| On-chain function | Reason variant |
-|---|---|
-| `revoke_assignment` | `CancellationReason::MerchantRevoked` |
-| `withdraw_application` | `CancellationReason::ContributorWithdrew` |
-
-Hook into the existing Stellar event listener and call `service.record(...)` after parsing the relevant contract event.
-
----
-
-## Production Notes
-
-- **Idempotency**: use `tx_hash` as a deduplication key to avoid double-writes on event replay.
-- **Retention**: retain records for at least 12 months to satisfy merchant audit requirements.
-- **Access control**: expose `history_for_org` only to authenticated merchants of that org.
-
----
-
-## Testing
-
-Three unit tests cover the core behaviour (see `src/cancellation_audit.rs`):
-
-| Test | What it checks |
-|---|---|
-| `record_stores_event` | A record is persisted with correct fields |
-| `history_for_org_filters_correctly` | Queries return only records for the requested org |
-| `history_for_contributor_filters_correctly` | Queries return only records for the requested contributor |
+# Run with coverage
+npm test -- audit.test.ts --coverage
