@@ -81,6 +81,36 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/contributors/{address}:
+    get:
+      summary: Get contributor profile and workload status
+      description: Returns a contributor's current application workload, global cap, remaining quota, active assignments, per-organization workload, and completed tasks total.
+      operationId: getContributorProfile
+      tags:
+        - Contributors
+      parameters:
+        - name: address
+          in: path
+          required: true
+          description: Stellar G-address of the contributor
+          schema:
+            type: string
+            pattern: '^G[A-Z2-7]{55}$'
+            example: GB7B5432ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX
+      responses:
+        '200':
+          description: Contributor profile and workload state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributorProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/admin/maintainers:
     post:
       summary: Register a maintainer (admin only)
@@ -747,6 +777,64 @@ components:
       required:
         - address
         - org_id
+
+    ContributorProfile:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Stellar G-address of the contributor
+          example: GB7B5432ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX
+        globalPendingApplications:
+          type: integer
+          description: Current count of pending applications globally
+          example: 7
+        globalCap:
+          type: integer
+          description: Global maximum limit for pending applications
+          example: 15
+        remainingQuota:
+          type: integer
+          description: Remaining quota before reaching the global application cap
+          example: 8
+        activeAssignmentsCount:
+          type: integer
+          description: Total count of active issue assignments across all organizations
+          example: 2
+        organizations:
+          type: array
+          description: Breakdown of active assignments and caps by organization
+          items:
+            type: object
+            properties:
+              orgId:
+                type: string
+                description: Organization identifier
+                example: stellar
+              activeAssignments:
+                type: integer
+                description: Count of active assignments within this organization
+                example: 1
+              orgCap:
+                type: integer
+                description: Organization active assignment cap
+                example: 4
+            required:
+              - orgId
+              - activeAssignments
+              - orgCap
+        completedAssignmentsTotal:
+          type: integer
+          description: Lifetime total of completed issue assignments
+          example: 14
+      required:
+        - address
+        - globalPendingApplications
+        - globalCap
+        - remainingQuota
+        - activeAssignmentsCount
+        - organizations
+        - completedAssignmentsTotal
 
     Maintainer:
       type: object
