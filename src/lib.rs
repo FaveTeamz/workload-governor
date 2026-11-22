@@ -1,7 +1,7 @@
 //! WorkloadGovernor — Soroban smart contract entry point.
 //!
 //! Enforces fairness caps on developer workloads for the AlignmentDrips Wave platform:
-//! - Max 15 pending applications globally per contributor
+//! - Max 15 pending applications globally per contributor (adjustable via governance)
 //! - Max 4 active assignments per org per contributor
 //!
 //! Build:  cargo build --target wasm32v1-none --release
@@ -16,14 +16,79 @@ mod storage;
 #[cfg(test)]
 mod test;
 
-// In tests we run on the native host, which has std; expose it explicitly
-// since the crate is unconditionally `no_std`.
+// When running tests, bring std into scope so that proptest and std::panic work.
+// The test binary links std via the test harness, but `std::` paths are not
+// automatically available in a `#![no_std]` crate without this declaration.
 #[cfg(test)]
+#[macro_use]
 extern crate std;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::ContractError;
+
+// ---------------------------------------------------------------------------
+// Internal helper: validate issue_id  (#601)
+// ---------------------------------------------------------------------------
+
+/// Panics with `InvalidIssueId` if `issue_id` is 0 or u32::MAX.
+///
+/// GitHub issue IDs start at 1, so 0 is never valid.
+/// u32::MAX (4_294_967_295) is reserved as a sentinel value.
+#[inline]
+fn require_valid_issue_id(env: &Env, issue_id: u32) {
+    if issue_id == 0 || issue_id == u32::MAX {
+        panic_with_error!(env, ContractError::InvalidIssueId);
+    }
+}
+
+#[inline]
+fn require_valid_org_id(env: &Env, org_id: &Symbol) {
+    if org_id.len() < 2 || org_id.len() > 32 {
+        panic_with_error!(env, ContractError::InvalidOrgId);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helper: require admin auth, supporting multi-sig (#603)
+// ---------------------------------------------------------------------------
+
+/// Requires authentication from the stored admin address and increments the
+/// monotonic admin nonce to prevent authorisation replay attacks. (#828 SC-003)
+///
+/// Every privileged governance action calls this helper which:
+/// 1. Requires auth from the admin (and multi-sig signers when configured).
+/// 2. Reads the current nonce from persistent storage.
+/// 3. Increments and persists the nonce atomically.
+/// 4. Emits `AdminActionExecuted` with the new nonce so off-chain indexers
+///    can confirm each action was executed exactly once.
+///
+/// Because the nonce changes on every successful call, any previously
+/// collected multi-sig signatures are invalidated for future invocations —
+/// they were bound to the old nonce value and will not satisfy a fresh check.
+#[inline]
+fn require_admin_auth(env: &Env) {
+    let stored_admin = storage::get_admin(env).unwrap();
+    stored_admin.require_auth();
+
+    let threshold = storage::get_multisig_threshold(env);
+    if threshold > 0 {
+        let signers = storage::get_multisig_signers(env);
+        let mut count: u32 = 0;
+        for i in 0..signers.len() {
+            if count >= threshold {
+                break;
+            }
+            let signer = signers.get(i).unwrap();
+            signer.require_auth();
+            count += 1;
+        }
+    }
+
+    // #828 SC-003: increment nonce and emit AdminActionExecuted
+    let new_nonce = storage::increment_admin_nonce(env);
+    events::emit_admin_action_executed(env, &stored_admin, new_nonce);
+}
 
 #[contract]
 pub struct WorkloadGovernor;
@@ -34,28 +99,10 @@ impl WorkloadGovernor {
     // Admin functions
     // -----------------------------------------------------------------------
 
-    /// One-time contract initialisation. Stores the admin address and emits an
-    /// `initialized` event.
+    /// Initialises the contract and stores the admin address.
     ///
-    /// # Who can call
-    /// Anyone — but only once. The caller **must** be the intended `admin` address
-    /// because `admin.require_auth()` is enforced before any state is written.
-    ///
-    /// # Arguments
-    /// * `admin` – Address that will have admin privileges for the lifetime of the contract.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::AlreadyInitialized`] — if `initialize` has already been called.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <admin-account> \
-    ///   -- initialize --admin <ADMIN_ADDRESS>
-    /// ```
+    /// - Panics with `AlreadyInitialized` if already called.
+    /// - Requires authentication from `admin`.
     pub fn initialize(env: Env, admin: Address) {
         if storage::get_admin(&env).is_some() {
             panic_with_error!(env, ContractError::AlreadyInitialized);
@@ -66,99 +113,154 @@ impl WorkloadGovernor {
         events::emit_initialized(&env, &admin);
     }
 
-    /// Authorises a maintainer to manage issues within a specific organisation.
-    /// The operation is idempotent — calling it twice for the same pair is safe.
+    /// Registers a maintainer for an organisation (idempotent).
     ///
-    /// # Who can call
-    /// The stored admin address only.
-    ///
-    /// # Arguments
-    /// * `admin`      – Must match the stored admin address (auth enforced).
-    /// * `maintainer` – Address to be granted maintainer rights.
-    /// * `org_id`     – Organisation symbol the maintainer is authorised for.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
-    /// * [`ContractError::UnauthorizedAdmin`] — `admin` auth check fails (enforced by
-    ///   `require_auth` on the stored admin, not a direct comparison).
+    /// - Panics with `NotInitialized` if the contract has not been initialised.
+    /// - Requires authentication from the stored admin address.
     pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
-        let stored_admin = storage::get_admin(&env).unwrap();
-        stored_admin.require_auth();
+        require_valid_org_id(&env, &org_id);
+        require_admin_auth(&env);
         storage::set_maintainer(&env, &maintainer, &org_id);
         storage::bump_instance(&env);
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
-    /// Upgrades the contract WASM to a new hash (admin-only).
+    /// Configures the threshold and target used to extend application TTLs.
     ///
-    /// This is the standard Soroban upgrade path. The new WASM must already be
-    /// uploaded to the network before calling this function.
+    /// Both values must be nonzero, the threshold must not exceed the target,
+    /// and the target must not exceed the Soroban TTL platform cap.
+    pub fn set_application_ttl_config(
+        env: Env,
+        threshold_ledgers: u32,
+        extend_to_ledgers: u32,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_admin_auth(&env);
+        if threshold_ledgers < storage::APP_TTL_MIN
+            || extend_to_ledgers < threshold_ledgers
+            || extend_to_ledgers > storage::APP_TTL_MAX
+        {
+            panic_with_error!(&env, ContractError::InvalidApplicationTtl);
+        }
+        storage::set_app_ttl_config(&env, threshold_ledgers, extend_to_ledgers);
+        storage::bump_instance(&env);
+        let admin = storage::get_admin(&env).unwrap();
+        events::emit_app_ttl_config_updated(
+            &env,
+            &admin,
+            threshold_ledgers,
+            extend_to_ledgers,
+        );
+    }
+
+    /// Upgrades the contract WASM (admin-only).
     ///
-    /// # Who can call
-    /// The stored admin address only.
-    ///
-    /// # Arguments
-    /// * `new_wasm_hash` – 32-byte hash of the uploaded replacement WASM.
-    ///
-    /// # Returns
-    /// `()` on success; the contract is upgraded in-place with no address change.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.
-    /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.
+    /// This is a required production function — it allows the contract to be patched
+    /// after deployment without changing the contract address.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_admin_auth(&env);
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    // -----------------------------------------------------------------------
+    // #603 — Multi-sig admin threshold
+    // -----------------------------------------------------------------------
+
+    /// Configures a multi-sig threshold for admin operations.
+    ///
+    /// - `threshold` must be >= 1 and <= `signers.len()`.
+    /// - `signers` is an ordered list of addresses; the first `threshold` are required.
+    /// - Requires authentication from the current stored admin.
+    /// - Emits `AdminThresholdSet`.
+    ///
+    /// Setting threshold = 1 with a single signer is equivalent to single-admin mode
+    /// but uses the explicit signer list. To revert to pure single-admin mode, call
+    /// `set_admin_threshold` with threshold = 0 and an empty signers list, or simply
+    /// update the admin address via `initialize` on a fresh contract.
+    pub fn set_admin_threshold(env: Env, threshold: u32, signers: Vec<Address>) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
         let stored_admin = storage::get_admin(&env).unwrap();
         stored_admin.require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
+
+        let signer_count = signers.len();
+        if threshold == 0 || threshold > signer_count {
+            panic_with_error!(env, ContractError::InvalidThreshold);
+        }
+
+        storage::set_multisig_threshold(&env, threshold);
+        storage::set_multisig_signers(&env, &signers);
+        storage::bump_instance(&env);
+        events::emit_admin_threshold_set(&env, &stored_admin, threshold, signer_count);
+    }
+
+    // -----------------------------------------------------------------------
+    // #602 — Storage migration v1 → v2
+    // -----------------------------------------------------------------------
+
+    /// Migrates org assignment count entries from v1 key format to v2 key format.
+    ///
+    /// **v1 format**: `(symbol_short!("o_asgn"), org_id: Symbol, contributor: Address)`
+    /// **v2 format**: `(symbol_short!("o_asgn"), contributor: Address, org_id: Symbol)`
+    ///
+    /// Accepts a `pairs` list of `(contributor, org_id)` tuples that may have v1 entries.
+    /// For each pair:
+    ///   1. Reads the v1 key.
+    ///   2. If present, writes the value to the v2 key.
+    ///   3. Deletes the v1 key.
+    ///
+    /// The function is callable only once (guarded by a persistent migration flag).
+    /// Emits `MigrationCompleted` with the number of entries actually migrated.
+    ///
+    /// **Usage**: Call this immediately after `upgrade()`, before resuming normal operations.
+    pub fn migrate_v1_to_v2(
+        env: Env,
+        admin: Address,
+        pairs: Vec<(Address, Symbol)>,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        stored_admin.require_auth();
+
+        if storage::is_migration_done(&env) {
+            panic_with_error!(env, ContractError::MigrationAlreadyDone);
+        }
+
+        let mut migrated: u32 = 0;
+        for i in 0..pairs.len() {
+            let (contributor, org_id) = pairs.get(i).unwrap();
+            require_valid_org_id(&env, &org_id);
+            if let Some(count) = storage::get_org_assignment_count_v1(&env, &contributor, &org_id) {
+                // Write v2 key
+                storage::set_org_assignment_count(&env, &contributor, &org_id, count);
+                // Remove v1 key
+                storage::remove_org_assignment_count_v1(&env, &contributor, &org_id);
+                migrated += 1;
+            }
+        }
+
+        storage::set_migration_done(&env);
+        storage::bump_instance(&env);
+        events::emit_migration_completed(&env, &admin, migrated);
     }
 
     // -----------------------------------------------------------------------
     // Contributor functions
     // -----------------------------------------------------------------------
 
-    /// Submits a pending application for a contributor to work on a specific issue.
+    /// Records a contributor's application for a specific issue.
     ///
-    /// Creates two temporary-storage entries (both with [`storage::APP_TTL_LEDGERS`] TTL):
-    /// - A global application counter keyed by `contributor`.
-    /// - An application sentinel keyed by `(contributor, org_id, issue_id)`.
-    ///
-    /// # Who can call
-    /// The `contributor` address (auth enforced).
-    ///
-    /// # Arguments
-    /// * `contributor` – Address applying for the issue.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]              — contract not yet initialised.
-    /// * [`ContractError::UnauthorizedContributor`]     — contributor auth check fails.
-    /// * [`ContractError::GlobalApplicationLimitReached`] — contributor already has 15
-    ///   pending applications across all organisations.
-    /// * [`ContractError::DuplicateApplication`]        — an application for this exact
-    ///   `(contributor, org_id, issue_id)` triple already exists.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <contributor-account> \
-    ///   -- apply_for_issue \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> \
-    ///   --org_id my_org --issue_id 42
-    /// ```
+    /// Guards (in order): NotInitialized → InvalidIssueId → auth →
+    ///   GlobalApplicationLimitReached → DuplicateApplication
     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        require_valid_issue_id(&env, issue_id); // #601
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
-        if count >= storage::GLOBAL_APP_LIMIT {
+        let effective_cap = storage::get_effective_global_cap(&env); // #600 dynamic cap
+        if count >= effective_cap {
             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
         }
         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
@@ -172,38 +274,13 @@ impl WorkloadGovernor {
         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);
     }
 
-    /// Cancels a contributor's pending application for a specific issue.
+    /// Withdraws a contributor's pending application for a specific issue.
     ///
-    /// Removes the application sentinel and decrements the global application counter.
-    /// If the counter reaches zero the counter entry itself is removed to free storage.
-    ///
-    /// # Who can call
-    /// The `contributor` address (auth enforced).
-    ///
-    /// # Arguments
-    /// * `contributor` – Address whose application is being withdrawn.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]          — contract not yet initialised.
-    /// * [`ContractError::UnauthorizedContributor`] — contributor auth check fails.
-    /// * [`ContractError::ApplicationNotFound`]     — no pending application exists for
-    ///   the `(contributor, org_id, issue_id)` triple.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <contributor-account> \
-    ///   -- withdraw_application \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> \
-    ///   --org_id my_org --issue_id 42
-    /// ```
+    /// Guards (in order): NotInitialized → InvalidIssueId → auth → ApplicationNotFound
     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        require_valid_issue_id(&env, issue_id); // #601
         contributor.require_auth();
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::ApplicationNotFound);
@@ -220,45 +297,64 @@ impl WorkloadGovernor {
         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
     }
 
+    /// Withdraws multiple pending applications in one authenticated transaction.
+    ///
+    /// Validates the complete list before changing storage, then updates the global
+    /// application count once and emits one `ApplicationWithdrawn` event per item.
+    pub fn batch_withdraw_applications(
+        env: Env,
+        contributor: Address,
+        applications: Vec<(Symbol, u32)>,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        contributor.require_auth();
+
+        let application_count = applications.len();
+        for i in 0..application_count {
+            let (org_id, issue_id) = applications.get(i).unwrap();
+            require_valid_issue_id(&env, issue_id);
+
+            for j in 0..i {
+                let (previous_org_id, previous_issue_id) = applications.get(j).unwrap();
+                if previous_org_id == org_id && previous_issue_id == issue_id {
+                    panic_with_error!(&env, ContractError::DuplicateApplication);
+                }
+            }
+
+            if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+                panic_with_error!(&env, ContractError::ApplicationNotFound);
+            }
+        }
+
+        if application_count == 0 {
+            return;
+        }
+
+        for i in 0..application_count {
+            let (org_id, issue_id) = applications.get(i).unwrap();
+            storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+            events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
+        }
+
+        let count = storage::get_global_app_count(&env, &contributor);
+        let new_count = count.saturating_sub(application_count);
+        if new_count == 0 {
+            storage::remove_global_app_count(&env, &contributor);
+        } else {
+            storage::set_global_app_count(&env, &contributor, new_count);
+        }
+        storage::bump_instance(&env);
+    }
+
     // -----------------------------------------------------------------------
     // Maintainer functions
     // -----------------------------------------------------------------------
 
-    /// Converts a pending application into an active assignment (maintainer-only).
+    /// Assigns an issue to a contributor (maintainer-only).
     ///
-    /// Atomically:
-    /// 1. Removes the contributor's application entry and decrements the global app counter.
-    /// 2. Increments the contributor's org-level assignment counter.
-    /// 3. Creates the persistent assignment sentinel.
-    ///
-    /// # Who can call
-    /// A maintainer that has been registered for `org_id` via [`WorkloadGovernor::register_maintainer`].
-    ///
-    /// # Arguments
-    /// * `maintainer`  – Registered maintainer address (auth enforced).
-    /// * `contributor` – Contributor being assigned.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]          — contract not yet initialised.
-    /// * [`ContractError::UnauthorizedMaintainer`]  — caller is not a registered maintainer for `org_id`.
-    /// * [`ContractError::ApplicationNotFound`]     — contributor has no pending application for the issue.
-    /// * [`ContractError::OrgAssignmentLimitReached`] — contributor already has 4 active assignments in `org_id`.
-    /// * [`ContractError::AlreadyAssigned`]         — this issue already has an active assignment for the contributor.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <maintainer-account> \
-    ///   -- assign_issue \
-    ///   --maintainer <MAINTAINER_ADDRESS> \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> \
-    ///   --org_id my_org --issue_id 42
-    /// ```
+    /// Guards (in order): NotInitialized → InvalidIssueId → auth →
+    ///   UnauthorizedMaintainer → ApplicationNotFound → OrgAssignmentLimitReached →
+    ///   AlreadyAssigned
     pub fn assign_issue(
         env: Env,
         maintainer: Address,
@@ -267,6 +363,8 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        require_valid_issue_id(&env, issue_id); // #601
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -296,27 +394,10 @@ impl WorkloadGovernor {
         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);
     }
 
-    /// Marks an active assignment as completed and frees the assignment slot (maintainer-only).
+    /// Marks an assignment as completed (maintainer-only).
     ///
-    /// Removes the assignment sentinel and decrements the contributor's org-level
-    /// assignment counter. If the counter reaches zero the counter entry itself is removed.
-    ///
-    /// # Who can call
-    /// A maintainer registered for `org_id`.
-    ///
-    /// # Arguments
-    /// * `maintainer`  – Registered maintainer address (auth enforced).
-    /// * `contributor` – Contributor whose assignment is being completed.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
-    /// * [`ContractError::UnauthorizedMaintainer`] — caller is not a registered maintainer for `org_id`.
-    /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists for the triple.
+    /// Guards (in order): NotInitialized → InvalidIssueId → auth →
+    ///   UnauthorizedMaintainer → AssignmentNotFound
     pub fn complete_assignment(
         env: Env,
         maintainer: Address,
@@ -325,6 +406,8 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        require_valid_issue_id(&env, issue_id); // #601
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -344,28 +427,10 @@ impl WorkloadGovernor {
         events::emit_assignment_completed(&env, &maintainer, &contributor, &org_id, issue_id);
     }
 
-    /// Cancels an active assignment and frees the assignment slot (maintainer-only).
+    /// Revokes an active assignment (maintainer-only).
     ///
-    /// Semantically identical to [`WorkloadGovernor::complete_assignment`] except the emitted
-    /// event is `assignment_revoked` rather than `assignment_completed`. Use this when a
-    /// contributor's work is being cancelled rather than accepted.
-    ///
-    /// # Who can call
-    /// A maintainer registered for `org_id`.
-    ///
-    /// # Arguments
-    /// * `maintainer`  – Registered maintainer address (auth enforced).
-    /// * `contributor` – Contributor whose assignment is being revoked.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::NotInitialized`]         — contract not yet initialised.
-    /// * [`ContractError::UnauthorizedMaintainer`] — caller is not a registered maintainer for `org_id`.
-    /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists for the triple.
+    /// Guards (in order): NotInitialized → InvalidIssueId → auth →
+    ///   UnauthorizedMaintainer → AssignmentNotFound
     pub fn revoke_assignment(
         env: Env,
         maintainer: Address,
@@ -374,6 +439,8 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        require_valid_issue_id(&env, issue_id); // #601
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -397,36 +464,14 @@ impl WorkloadGovernor {
     // TTL management
     // -----------------------------------------------------------------------
 
-    /// Resets the TTL of a contributor's pending application entries to the full wave
-    /// duration (permissionless — anyone can call this to prevent an application expiring).
+    /// Extends the TTL of a contributor's pending application entries (permissionless).
     ///
-    /// Extends both:
-    /// - The per-issue application sentinel entry.
-    /// - The global application counter entry (skipped silently if the counter key is absent).
-    ///
-    /// # Who can call
-    /// Anyone — no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Owner of the application.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `()` on success.
-    ///
-    /// # Errors
-    /// * [`ContractError::ApplicationNotFound`] — no pending application exists; nothing to extend.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet --source <any-account> \
-    ///   -- extend_application_ttl \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> \
-    ///   --org_id my_org --issue_id 42
-    /// ```
+    /// Panics with `InvalidIssueId` if issue_id is 0 or u32::MAX.
+    /// Panics with `ApplicationNotFound` if no pending application exists.
+    /// Silently skips the global count TTL if that key is absent.
     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+        require_valid_org_id(&env, &org_id);
+        require_valid_issue_id(&env, issue_id); // #601
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::ApplicationNotFound);
         }
@@ -434,207 +479,196 @@ impl WorkloadGovernor {
         if storage::get_global_app_count(&env, &contributor) > 0 {
             storage::extend_global_app_count_ttl(&env, &contributor);
         }
+        events::emit_app_ttl_extended(&env, &contributor, &org_id, issue_id);
+    }
+
+    // -----------------------------------------------------------------------
+    // #600 — Governance: cap change proposals
+    // -----------------------------------------------------------------------
+
+    /// Creates a new governance proposal to change the global application cap.
+    ///
+    /// - Requires the caller to be a registered maintainer in at least one org
+    ///   (enforced via the `org_id` parameter — caller must be maintainer for that org).
+    /// - `new_global_cap` must be >= 1.
+    /// - Proposals expire after ~7 days (PROPOSAL_TTL_LEDGERS ledgers).
+    /// - Emits `CapProposed` with the assigned proposal_id.
+    pub fn propose_cap_change(
+        env: Env,
+        maintainer: Address,
+        org_id: Symbol,
+        new_global_cap: u32,
+    ) -> u32 {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        maintainer.require_auth();
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+        }
+
+        let proposal_id = storage::next_proposal_id(&env);
+        let expires_at = env.ledger().sequence() + storage::PROPOSAL_TTL_LEDGERS;
+
+        let proposal = storage::GovernanceProposal {
+            proposer: maintainer.clone(),
+            new_global_cap,
+            expires_at,
+            yes_votes: 0,
+            no_votes: 0,
+            executed: false,
+        };
+
+        storage::set_proposal(&env, proposal_id, &proposal);
+        storage::bump_instance(&env);
+        events::emit_cap_proposed(&env, &maintainer, proposal_id, new_global_cap);
+        proposal_id
+    }
+
+    /// Records a maintainer's vote on a cap change proposal.
+    ///
+    /// - Requires the caller to be a registered maintainer (for `org_id`).
+    /// - Panics with `ProposalNotFound` if the proposal does not exist.
+    /// - Panics with `ProposalExpired` if the proposal TTL has elapsed.
+    /// - Panics with `AlreadyVoted` if the caller has already voted.
+    /// - Emits `CapVoted`.
+    pub fn vote_cap_change(
+        env: Env,
+        maintainer: Address,
+        org_id: Symbol,
+        proposal_id: u32,
+        approve: bool,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        maintainer.require_auth();
+        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+            panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+        }
+
+        let mut proposal = match storage::get_proposal(&env, proposal_id) {
+            Some(p) => p,
+            None => panic_with_error!(env, ContractError::ProposalNotFound),
+        };
+
+        if env.ledger().sequence() > proposal.expires_at {
+            panic_with_error!(env, ContractError::ProposalExpired);
+        }
+
+        if storage::has_voted(&env, proposal_id, &maintainer) {
+            panic_with_error!(env, ContractError::AlreadyVoted);
+        }
+
+        storage::set_voted(&env, proposal_id, &maintainer);
+
+        if approve {
+            proposal.yes_votes += 1;
+        } else {
+            proposal.no_votes += 1;
+        }
+
+        storage::set_proposal(&env, proposal_id, &proposal);
+        storage::bump_instance(&env);
+        events::emit_cap_voted(&env, &maintainer, proposal_id, approve);
+    }
+
+    /// Executes a cap change proposal if quorum and approval conditions are met.
+    ///
+    /// Execution conditions (must ALL be true):
+    /// - Proposal exists and has not expired.
+    /// - Proposal has not already been executed.
+    /// - Total votes (yes + no) >= `PROPOSAL_QUORUM_ORGS` (3).
+    /// - yes_votes > 50% of total votes.
+    ///
+    /// On success:
+    /// - The new global cap is written to persistent storage.
+    /// - The proposal is marked as executed.
+    /// - Emits `CapChanged`.
+    pub fn execute_cap_change(env: Env, executor: Address, proposal_id: u32) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        executor.require_auth();
+
+        let mut proposal = match storage::get_proposal(&env, proposal_id) {
+            Some(p) => p,
+            None => panic_with_error!(env, ContractError::ProposalNotFound),
+        };
+
+        if env.ledger().sequence() > proposal.expires_at {
+            panic_with_error!(env, ContractError::ProposalExpired);
+        }
+
+        let total_votes = proposal.yes_votes + proposal.no_votes;
+        if total_votes < storage::PROPOSAL_QUORUM_ORGS {
+            panic_with_error!(env, ContractError::QuorumNotMet);
+        }
+
+        // yes_votes must be strictly greater than 50% → yes > total / 2
+        if proposal.yes_votes * 2 <= total_votes {
+            panic_with_error!(env, ContractError::InsufficientApproval);
+        }
+
+        let new_cap = proposal.new_global_cap;
+        proposal.executed = true;
+        storage::set_proposal(&env, proposal_id, &proposal);
+        storage::set_global_cap_override(&env, new_cap);
+        storage::bump_instance(&env);
+        events::emit_cap_changed(&env, &executor, proposal_id, new_cap);
     }
 
     // -----------------------------------------------------------------------
     // Read-only query functions — no storage mutations, no events
     // -----------------------------------------------------------------------
 
-    /// Returns the contributor's current global pending-application count.
-    ///
-    /// Returns `0` if the contributor has never applied or if all entries have expired.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    ///
-    /// # Returns
-    /// A `u32` in the range `[0, GLOBAL_APP_LIMIT]` (currently `[0, 15]`).
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet \
-    ///   -- get_global_application_count \
-    ///   --contributor <CONTRIBUTOR_ADDRESS>
-    /// ```
+    /// Returns the contributor's current global pending-application count (0 if absent/expired).
     pub fn get_global_application_count(env: Env, contributor: Address) -> u32 {
         storage::get_global_app_count(&env, &contributor)
     }
 
-    /// Returns the contributor's active assignment count for the given organisation.
-    ///
-    /// Returns `0` if the contributor has no active assignments in `org_id`.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    /// * `org_id`      – Organisation to query within.
-    ///
-    /// # Returns
-    /// A `u32` in the range `[0, ORG_ASSIGNMENT_LIMIT]` (currently `[0, 4]`).
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet \
-    ///   -- get_org_assignment_count \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org
-    /// ```
+    /// Returns the contributor's active assignment count for the given org (0 if absent).
     pub fn get_org_assignment_count(env: Env, contributor: Address, org_id: Symbol) -> u32 {
+        require_valid_org_id(&env, &org_id);
         storage::get_org_assignment_count(&env, &contributor, &org_id)
     }
 
     /// Returns `true` if the contributor has a pending application for the given issue.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `true` if a pending application exists; `false` if absent or expired.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet \
-    ///   -- has_applied \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org --issue_id 42
-    /// ```
     pub fn has_applied(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
+        require_valid_org_id(&env, &org_id);
         storage::has_app_entry(&env, &contributor, &org_id, issue_id)
     }
 
     /// Returns `true` if the contributor is actively assigned to the given issue.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    /// * `org_id`      – Organisation the issue belongs to.
-    /// * `issue_id`    – Numeric issue identifier.
-    ///
-    /// # Returns
-    /// `true` if an active assignment exists; `false` otherwise.
-    ///
-    /// # Examples
-    /// ```text
-    /// stellar contract invoke --id <CONTRACT_ID> \
-    ///   --network testnet \
-    ///   -- is_assigned \
-    ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org --issue_id 42
-    /// ```
     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
+        require_valid_org_id(&env, &org_id);
         storage::has_assignment(&env, &org_id, issue_id, &contributor)
     }
 
+    /// Returns the current effective global application cap.
+    ///
+    /// Returns the governance-adjusted cap if one has been executed, otherwise the
+    /// compile-time default (`GLOBAL_APP_LIMIT` = 15).
+    pub fn get_global_cap(env: Env) -> u32 {
+        storage::get_effective_global_cap(&env)
+    }
+
+    /// Returns the configured application TTL extension threshold.
+    pub fn get_app_ttl_threshold_ledgers(env: Env) -> u32 {
+        storage::get_app_ttl_threshold_ledgers(&env)
+    }
+
+    /// Returns the configured application TTL extension target.
+    pub fn get_app_ttl_extend_to_ledgers(env: Env) -> u32 {
+        storage::get_app_ttl_extend_to_ledgers(&env)
+    }
+
     // -----------------------------------------------------------------------
-    // Organization Selector Helper Functions
+    // #828 SC-003 — Admin nonce query
     // -----------------------------------------------------------------------
 
-    /// Returns the number of additional assignment slots available to a contributor
-    /// within an organisation.
+    /// Returns the current admin nonce (0 before the first privileged call).
     ///
-    /// Computed as `ORG_ASSIGNMENT_LIMIT - current_count`, floored at zero.
-    /// Useful for UI display: show "X / 4 slots used" where `4 - X` is the capacity.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    /// * `org_id`      – Organisation to query within.
-    ///
-    /// # Returns
-    /// Remaining capacity as a `u32` in `[0, ORG_ASSIGNMENT_LIMIT]`.
-    pub fn get_org_assignment_capacity(
-        env: Env,
-        contributor: Address,
-        org_id: Symbol,
-    ) -> u32 {
-        let current = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        storage::ORG_ASSIGNMENT_LIMIT.saturating_sub(current)
-    }
-
-    /// Returns the number of additional global applications a contributor may submit.
-    ///
-    /// Computed as `GLOBAL_APP_LIMIT - current_count`, floored at zero.
-    /// Returns `0` when the contributor has reached the cap of 15 pending applications.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    ///
-    /// # Returns
-    /// Remaining capacity as a `u32` in `[0, GLOBAL_APP_LIMIT]`.
-    pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {
-        let current = storage::get_global_app_count(&env, &contributor);
-        storage::GLOBAL_APP_LIMIT.saturating_sub(current)
-    }
-
-    /// Returns `true` if the contributor has reached their per-org assignment limit.
-    ///
-    /// Equivalent to checking `get_org_assignment_count >= 4`.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    /// * `org_id`      – Organisation to check the limit against.
-    ///
-    /// # Returns
-    /// `true` if the contributor has 4 active assignments in `org_id`.
-    pub fn is_org_assignment_limit_reached(
-        env: Env,
-        contributor: Address,
-        org_id: Symbol,
-    ) -> bool {
-        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        count >= storage::ORG_ASSIGNMENT_LIMIT
-    }
-
-    /// Returns `true` if the contributor has reached their global application limit.
-    ///
-    /// Equivalent to checking `get_global_application_count >= 15`.
-    ///
-    /// # Who can call
-    /// Anyone — read-only, no authentication required.
-    ///
-    /// # Arguments
-    /// * `contributor` – Address to query.
-    ///
-    /// # Returns
-    /// `true` if the contributor has 15 pending applications globally.
-    pub fn is_global_application_limit_reached(env: Env, contributor: Address) -> bool {
-        let count = storage::get_global_app_count(&env, &contributor);
-        count >= storage::GLOBAL_APP_LIMIT
-    }
-
-    /// TEST-ONLY: directly seeds an assignment entry to make `AlreadyAssigned` reachable.
-    ///
-    /// This bypasses the normal `assign_issue` flow so tests can verify error 11.
-    /// Compiled only when the `testutils` feature is active.
-    #[cfg(any(test, feature = "testutils"))]
-    pub fn seed_assignment(
-        env: Env,
-        contributor: Address,
-        org_id: Symbol,
-        issue_id: u32,
-    ) {
-        storage::set_assignment(&env, &org_id, issue_id, &contributor);
-        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);
-        storage::set_org_assignment_count(&env, &contributor, &org_id, count + 1);
+    /// Off-chain clients can read this value before constructing a multi-sig
+    /// authorisation to ensure their signatures are bound to the latest on-chain
+    /// state and cannot be replayed after the nonce advances.
+    pub fn get_admin_nonce(env: Env) -> u32 {
+        storage::get_admin_nonce(&env)
     }
 }

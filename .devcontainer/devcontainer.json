@@ -1,0 +1,75 @@
+{
+  "name": "WorkloadGovernor Dev",
+
+  // Forward all service ports to the host
+  "forwardPorts": [3000, 5173, 5432, 6379, 5050],
+  "portsAttributes": {
+    "3000": { "label": "Backend API" },
+    "5173": { "label": "Frontend (Vite)" },
+    "5432": { "label": "PostgreSQL" },
+    "6379": { "label": "Redis" },
+    "5050": { "label": "pgAdmin" }
+  },
+
+  // Start PostgreSQL and Redis via Docker Compose inside the container
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.yml"],
+  "service": "devcontainer",
+  "runServices": ["devcontainer", "postgres", "redis"],
+
+  "features": {
+    // Rust toolchain with stable channel and wasm targets
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "stable",
+      "profile": "default",
+      "targets": "wasm32v1-none,wasm32-unknown-unknown"
+    },
+    // Node.js 20 LTS with npm and build dependencies
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20",
+      "nodeGypDependencies": true
+    }
+  },
+
+  // Ensure node, npm, cargo, and rustup binaries are in standard PATH across all terminal sessions
+  "containerEnv": {
+    "CARGO_HOME": "/usr/local/cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "NVM_DIR": "/usr/local/share/nvm"
+  },
+  "remoteEnv": {
+    "CARGO_HOME": "/usr/local/cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "NVM_DIR": "/usr/local/share/nvm"
+  },
+
+  // Install project dependencies and copy env files the first time the container starts
+  "postCreateCommand": "echo Devcontainer started successfully",
+
+  // VS Code / cursor extensions that improve the Rust + TypeScript experience
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "fill-labs.dependi",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-azuretools.vscode-docker",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "cweijan.vscode-redis-client"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": ["testutils"],
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+
+  // Run as the non-root vscode user that ships in the base image
+  "remoteUser": "vscode"
+}

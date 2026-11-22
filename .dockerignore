@@ -1,54 +1,67 @@
-# ── Version control ──────────────────────────────────────────
+# ── Version control ──────────────────────────────────────────────────────────
 .git
-.github
+.gitignore
 
-# ── Environment & secrets ────────────────────────────────────
-.env*
-!.env.example
-
-# ── Dependencies (re-installed in-image) ─────────────────────
+# ── Node dependencies (reinstalled inside the container) ─────────────────────
 node_modules
 frontend/node_modules
+backend/node_modules
 
-# ── Build artefacts ──────────────────────────────────────────
+# ── Build outputs (generated inside the container) ───────────────────────────
 dist
 
-# ── Rust / Cargo artefacts ───────────────────────────────────
-target/
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
 
-# ── Test artefacts ───────────────────────────────────────────
-coverage
-.nyc_output
-tests/
-test_snapshots
-mutants.out
-mutants.out.old
-
-# ── Fuzzing corpus ───────────────────────────────────────────
-fuzz/corpus
-fuzz/artifacts
-
-# ── Logs ─────────────────────────────────────────────────────
+# ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
-npm-debug.log*
+logs/
 
-# ── Test source files ────────────────────────────────────────
+# ── Test files & coverage ─────────────────────────────────────────────────────
+coverage/
 *.test.ts
 *.spec.ts
+tests/
+test_snapshots/
 
-# ── Infrastructure & IaC (not needed at runtime) ─────────────
+# ── Rust / WASM build artifacts ───────────────────────────────────────────────
+target/
+Cargo.lock
+fuzz/
+fuzz/target
+mutants.out/
+mutants.out*
+mutants.out.old/
+build.rs
+
+# ── Terraform / infrastructure ────────────────────────────────────────────────
 terraform/
 infra/
 
-# ── Documentation ────────────────────────────────────────────
+# ── Documentation ─────────────────────────────────────────────────────────────
 docs/
 *.md
+!README.md
 
-# ── Dev tooling & IDE config ─────────────────────────────────
-.devcontainer
-.claude
-.vscode
-.idea
-
-# ── Frontend (served separately, not part of backend image) ──
+# ── Frontend (separate build pipeline) ───────────────────────────────────────
 frontend/
+
+# ── CI/CD ─────────────────────────────────────────────────────────────────────
+.github/
+
+# ── Editor / tooling ──────────────────────────────────────────────────────────
+.vscode/
+.claude/
+.cargo/
+.nsprc
+.eslintrc.json
+jest.config.js
+vitest.config.ts
+playwright.config.ts
+tsconfig.json
+openapi.yaml
+docker-compose.yml

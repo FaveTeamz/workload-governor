@@ -1,0 +1,619 @@
+# Storage Design
+
+WorkloadGovernor uses three Soroban storage tiers and compact, distinct key prefixes to manage contract state.
+
+> **Why this design?** The rationale for the compact prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
+
+## Storage Tiers
+
+| Tier | Purpose | Survival |
+|---|---|---|
+| **Temporary** | Application state scoped to the current Wave | Expires when TTL reaches 0; can be bumped |
+| **Persistent** | Admin, maintainer authorisation, assignment state, org caps | Survives until contract is archived |
+| **Instance** | Contract instance entry | Bumped on every state-changing call (~30 days) |
+
+## Key Patterns
+
+## XDR Prefix Footprint
+
+An XDR-encoded `ScVal::Symbol` contains a 4-byte discriminant, a 4-byte string length, and string data padded to a 4-byte boundary. Therefore a 1–4 character prefix occupies 12 bytes, while a 5–8 character prefix occupies 16 bytes. Other tuple fields and tuple framing are unchanged by these prefix substitutions.
+
+| Storage key | Previous prefix | Previous bytes | Active prefix | Active bytes | Saved per key |
+|---|---:|---:|---:|---:|---:|
+| Global application count | `g_apps` | 16 | `g` | 12 | 4 |
+| Application entry | `app` | 12 | `a` | 12 | 0 |
+| Admin | `admin` | 16 | `d` | 12 | 4 |
+| Maintainer | `maint` | 16 | `m` | 12 | 4 |
+| Org assignment count | `o_asgn` | 16 | `o` | 12 | 4 |
+| Assignment entry | `asgn` | 12 | `s` | 12 | 0 |
+| Migration flag | `mig_v2` | 16 | `v` | 12 | 4 |
+| Multi-sig threshold | `ms_thr` | 16 | `t` | 12 | 4 |
+| Multi-sig signers | `ms_sig` | 16 | `u` | 12 | 4 |
+| Governance proposal | `prop` | 12 | `p` | 12 | 0 |
+| Governance vote | `vote` | 12 | `w` | 12 | 0 |
+| Global cap override | `g_cap` | 16 | `c` | 12 | 4 |
+| Proposal counter | `p_ctr` | 16 | `r` | 12 | 4 |
+| Admin action nonce | `adm_nc` | 16 | `n` | 12 | 4 |
+
+The profile measures the serialized prefix component, not the entire ledger-key envelope. The maximum saving is 4 bytes per key because XDR padding makes every symbol from 1 through 4 characters the same encoded size. Shorter names than four characters do not reduce the serialized size further.
+
+**Upgrade compatibility:** A prefix is part of the storage key identity. This change is not compatible with existing deployed state by itself: persistent entries written with the old prefixes require an explicit storage migration before upgrading, and pending temporary entries must be allowed to expire or migrated consistently. Do not upgrade a live instance to this schema without that migration.
+
+### 1 — Global Application Count
+
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address)` |
+| Prefix | `"g"` |
+| Value | `u32` |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
+
+**Purpose:** Tracks how many pending applications a contributor holds across all organisations. Capped at `GLOBAL_APP_LIMIT = 15`.
+
+**Example key:**
+```
+("g", GBFZB...XK2Q)
+```
+
+**Example value:** `3`
+
+When the count drops to zero the entry is removed. On every application submission or TTL-extension call the TTL is refreshed to `APP_TTL_LEDGERS`.
+
+---
+
+### 2 — Per-Issue Application Entry
+
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address, Symbol, u32)` |
+| Prefix | `"a"` |
+| Value | `bool` (always `true`, presence sentinel) |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
+
+**Purpose:** Records that contributor `C` has applied to issue `I` in org `O`. Reading the key and getting `None` / `false` means no pending application exists.
+
+**Example key:**
+```
+("a", GBFZB...XK2Q, "stellar-org", 42)
+```
+
+**Example value:** `true`
+
+---
+
+### 3 — Application Index
+
+| Field | Value |
+|---|---|
+| Tier | Temporary |
+| Key type | `(Symbol, Address)` |
+| Prefix | `"app_idx"` |
+| Value | `Vec<(Symbol, u32)>` |
+| TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
+
+**Purpose:** Maintains an enumerable list of all `(org_id, issue_id)` pairs for which a contributor has a pending application. Enables the `get_pending_applications` query to return a complete list without requiring an off-chain event index.
+
+The index is updated atomically with the per-issue application entry on every `apply_for_issue`, `withdraw_application`, and `assign_issue` call. It shares the same TTL as the per-issue entries and is extended by `extend_application_ttl` — the three temporary entries for a contributor always expire together.
+
+**Example key:**
+```
+("app_idx", GBFZB...XK2Q)
+```
+
+**Example value:** `[("stellar-org", 42), ("rust_libs", 7)]`
+
+When the contributor's last application is withdrawn or assigned, the index entry is removed entirely rather than left as an empty Vec.
+
+---
+
+### 4 — Admin Address
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `Symbol` |
+| Prefix | `"d"` |
+| Value | `Address` |
+
+**Purpose:** Stores the single admin `Address` set during `initialize`. Reading `None` is the initialisation guard — it means the contract has not been set up yet.
+
+**Example key:**
+```
+"d"
+```
+
+**Example value:** `GCEZW...SJ3P` (Stellar address)
+
+---
+
+### 5 — Maintainer Registration
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Address, Symbol)` |
+| Prefix | `"m"` |
+| Value | `bool` (always `true`, presence sentinel) |
+
+**Purpose:** Records that address `M` is an authorised maintainer for org `O`. The write is idempotent.
+
+**Example key:**
+```
+("m", GABC1...9KLM, "stellar-org")
+```
+
+**Example value:** `true`
+
+---
+
+### 6 — Org Assignment Count
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Address, Symbol)` |
+| Prefix | `"o"` |
+| Value | `u32` |
+
+**Purpose:** Tracks how many active assignments contributor `C` holds within org `O`. Capped at the effective org cap (default `ORG_ASSIGNMENT_LIMIT = 4`, overridable via `set_org_cap`). Entry is removed when count reaches zero.
+
+**Example key:**
+```
+("o", GBFZB...XK2Q, "stellar-org")
+```
+
+**Example value:** `2`
+
+---
+
+### 7 — Active Assignment Entry
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Symbol, u32, Address)` |
+| Prefix | `"s"` |
+| Value | `bool` (always `true`, presence sentinel) |
+
+**Purpose:** Records that contributor `C` is actively assigned to issue `I` in org `O`. Key order is `(org_id, issue_id, contributor)` so lookups by issue are efficient.
+
+**Example key:**
+```
+("s", "stellar-org", 42, GBFZB...XK2Q)
+```
+
+**Example value:** `true`
+
+---
+
+### 8 — Per-Org Assignment Cap
+
+| Field | Value |
+|---|---|
+| Tier | Persistent |
+| Key type | `(Symbol, Symbol)` |
+| Prefix | `"o_cap"` |
+| Value | `u32` |
+
+**Purpose:** Stores a per-org override for the maximum number of active assignments a contributor may hold within a specific organisation. When absent callers fall back to `ORG_ASSIGNMENT_LIMIT = 4`. Valid range: `[1, 20]`.
+
+**Example key:**
+```
+("o_cap", "stellar-org")
+```
+
+**Example value:** `8`
+
+**Who writes it:** Admin only, via the `set_org_cap(admin, org_id, cap)` contract function introduced in v0.2. No other role can write this key. The value is validated at write time — values outside `[1, 20]` are rejected with `InvalidOrgCap` (code 16).
+
+**Default behaviour when absent:** The key is optional. `assign_issue` reads it with `unwrap_or(ORG_ASSIGNMENT_LIMIT)`, so any org without an explicit cap entry behaves as if the global default of 4 were stored. Adding a new org does not require writing this key unless a non-default cap is needed.
+
+**Interaction with `OrgAssignmentLimitReached` (error 7):** In `assign_issue`, after the contributor's org assignment count is fetched from `("o_asgn", contributor, org_id)`, the effective cap is determined by reading this key:
+
+```rust
+let cap = storage::get_org_cap(&env, &org_id).unwrap_or(ORG_ASSIGNMENT_LIMIT);
+if asgn_count >= cap {
+    panic_with_error!(&env, ContractError::OrgAssignmentLimitReached);
+}
+```
+
+A contributor blocked by error 7 in an org with a raised cap is blocked at the *org's* cap, not the global default. See [docs/error-reference.md — Error 7](error-reference.md#error-7--orgassignmentlimitreached) for resolution steps.
+
+**Upgrade path:** To raise the cap for an org in production:
+
+1. Confirm the request comes from the platform governance process (see [docs/runbooks/cap-emergency-increase.md](runbooks/cap-emergency-increase.md)).
+2. Call `set_org_cap` as the admin:
+
+   ```bash
+   stellar contract invoke \
+     --id "$CONTRACT_ID" \
+     --network testnet \
+     --source <admin-account> \
+     -- set_org_cap \
+     --admin <ADMIN_ADDRESS> \
+     --org_id <ORG_ID> \
+     --cap <NEW_CAP>
+   ```
+
+3. Verify the stored value:
+
+   ```bash
+   stellar contract invoke \
+     --id "$CONTRACT_ID" \
+     --network testnet \
+     -- get_org_cap \
+     --org_id <ORG_ID>
+   # Expected: <NEW_CAP>
+   ```
+
+The cap change takes effect immediately for subsequent `assign_issue` calls. Existing assignments are not affected.
+
+See [docs/admin-guide.md](admin-guide.md) for the full org cap management procedure.
+
+---
+
+## TTL Semantics
+
+### Why temporary storage for applications?
+
+Applications are scoped to an AlignmentDrips **Wave** — a time-bounded funding round. When a Wave ends, all pending applications should cease to exist automatically without requiring an explicit cleanup transaction. Temporary storage on Soroban expires when its TTL reaches ledger 0, giving exactly this behaviour for free.
+
+- TTL is set to `APP_TTL_LEDGERS = 17_280` ledgers (≈ 24 hours at 5 s/ledger).
+- This constant is designed to match the Wave duration and must satisfy `APP_TTL_MIN ≤ value ≤ APP_TTL_MAX` (platform cap: 535 000 ledgers).
+- Anyone can call `extend_application_ttl` to bump an application within a live Wave.
+- Both the Global Application Count (key #1) and the per-issue Application Entry (key #2) are temporary — they expire together, keeping the global counter consistent.
+
+### Why persistent storage for assignments and admin?
+
+Assignments represent contractual obligations between a contributor and a maintainer. They must survive beyond a single Wave and must not disappear due to ledger-level TTL expiry. The same reasoning applies to the admin address and maintainer registrations: these are governance records that must be durable. Persistent entries in Soroban remain indefinitely as long as the contract instance itself is alive (bumped every `INSTANCE_TTL_LEDGERS / 2` ledgers).
+
+---
+
+## TTL Expiry Scenarios
+
+This section documents edge-case behaviour when temporary storage entries expire before normal workflow completion.
+
+### Scenario A — Application entry expires before assignment
+
+**Setup:** Contributor `C` applies to issue `I` in org `O`. No one calls `extend_application_ttl`. 17 280 ledgers elapse and the Wave ends.
+
+**What happens at expiry:**
+
+1. The per-issue application entry `("app", C, O, I)` is deleted by the Soroban host when its TTL reaches 0.
+2. The global count entry `("g_apps", C)` shares the same TTL — it also expires, resetting the counter to 0 from the host's perspective.
+3. `has_applied(C, O, I)` returns `false`.
+4. `get_global_application_count(C)` returns `0` (key absent → default).
+
+**Consequences:**
+
+- The contributor is automatically unblocked for the next Wave — no explicit cleanup needed.
+- No assignment was created, so no persistent storage is affected.
+- There is no `CounterInconsistency` risk because the `"o_asgn"` key (persistent) was never written in this path.
+
+**Code path in `src/storage.rs`:**
+```rust
+// get_global_app_count returns 0 when key is absent
+env.storage().temporary().get(&key).unwrap_or(0)
+
+// has_app_entry returns false when key is absent
+env.storage().temporary().get::<_, bool>(&key).unwrap_or(false)
+```
+
+**Prevention:** Call `extend_application_ttl(C, O, I)` periodically during an active Wave to keep the application alive.
+
+---
+
+### Scenario B — Global count key absent while per-issue entry is still live
+
+**Setup:** A prior `withdraw_application` decremented the global count to zero and deleted `("g_apps", C)`. The contributor then re-applied, creating a new `("app", C, O, I)` entry but the global count key was not re-created before expiry of the old one. (In practice this cannot happen via normal contract calls, but a migration script could leave this state.)
+
+**What happens at `assign_issue`:**
+
+```rust
+// get_global_app_count returns 0 — key absent
+let app_count = storage::get_global_app_count(&env, &contributor); // → 0
+let new_app_count = app_count.saturating_sub(1); // → 0  (safe, no underflow)
+if new_app_count == 0 {
+    storage::remove_global_app_count(&env, &contributor); // no-op remove — safe
+}
+```
+
+**Conclusion:** Safe. `saturating_sub` and no-op removal on a missing key prevent a panic.
+
+---
+
+### Scenario C — Application expires between `apply_for_issue` and `assign_issue`
+
+**Setup:** Contributor applies at ledger L. The maintainer does not assign until ledger L + 18 000 (after TTL = 17 280 has elapsed).
+
+**What happens:**
+
+- `has_app_entry` returns `false` (entry expired).
+- `assign_issue` panics with `ApplicationNotFound` (error 9).
+
+**Recovery:** The contributor must re-apply in the new Wave. The maintainer retries `assign_issue` after re-application.
+
+---
+
+### How `CounterInconsistency` (error 13) Can Arise
+
+Error 13 is raised by `revoke_assignment` when an assignment sentinel exists (`has_assignment` returns `true`) but the org assignment counter is `0`. This indicates the counter and sentinel are out of sync.
+
+**Root causes:**
+
+1. **Manual counter zeroing in a migration script** — a script sets `("o_asgn", C, O)` to `0` without also removing the `("asgn", O, I, C)` sentinels.
+2. **Incomplete rollback** — a partial rollback resets counters but leaves assignment sentinels in place.
+3. **Off-by-one in a custom migration** — a script iterates assignment entries and writes a counter that is lower than the true count of live sentinels.
+
+**Detection:**
+
+```bash
+# For each known (contributor, org_id) pair:
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- get_org_assignment_count \
+  --contributor "$CONTRIBUTOR" --org_id "$ORG_ID"
+# If output is 0 but you know an assignment exists, CounterInconsistency is present.
+
+# Programmatic detection via check_consistency() (admin-only read function):
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- check_consistency
+# Returns a list of (contributor, org_id) pairs with mismatched state.
+```
+
+Refer to `docs/runbooks/incident-response.md` for the full remediation playbook.
+
+---
+
+## Key Collision Proof
+
+The current storage prefixes are distinct one-character `symbol_short!` values:
+
+| # | Prefix | Rust literal |
+|---|---|---|
+| 1 | `g` | `symbol_short!("g")` |
+| 2 | `a` | `symbol_short!("a")` |
+| 3 | `d` | `symbol_short!("d")` |
+| 4 | `m` | `symbol_short!("m")` |
+| 5 | `o` | `symbol_short!("o")` |
+| 6 | `s` | `symbol_short!("s")` |
+| 7 | `v` | `symbol_short!("v")` |
+| 8 | `t` | `symbol_short!("t")` |
+| 9 | `u` | `symbol_short!("u")` |
+| 10 | `p` | `symbol_short!("p")` |
+| 11 | `w` | `symbol_short!("w")` |
+| 12 | `c` | `symbol_short!("c")` |
+| 13 | `r` | `symbol_short!("r")` |
+| 14 | `n` | `symbol_short!("n")` |
+
+The legacy `o_asgn` prefix remains only in the v1 migration reader and is not used for current writes.
+
+### Formal Argument
+
+**Claim:** No two distinct logical storage records can produce the same Soroban storage key.
+
+**Proof:**
+
+Soroban serialises every storage key as a `ScVal`. Tuple keys become `ScVal::Vec([elem₀, …])`. The scalar admin key is `ScVal::Symbol("admin")`. Two keys `K₁` and `K₂` collide iff their full `ScVal` byte representations are identical.
+
+*Cross-pattern collision is impossible* because every key begins with a unique prefix byte sequence. A `ScVal::Vec` whose first element is `symbol_short!("x")` cannot equal one whose first element is `symbol_short!("y")` when `"x" ≠ "y"`. A `ScVal::Vec` cannot equal `ScVal::Symbol` because the XDR discriminant byte differs.
+
+Exhaustive check of all C(8, 2) = **28 pairs**:
+
+| Pair | Why no collision |
+|------|-----------------|
+| 1 vs 2 | `"g_apps"` ≠ `"app"` |
+| 1 vs 3 | `"g_apps"` ≠ `"app_idx"` |
+| 1 vs 4 | Vec ≠ Symbol (different `ScVal` variant) |
+| 1 vs 5 | `"g_apps"` ≠ `"maint"` |
+| 1 vs 6 | `"g_apps"` ≠ `"o_asgn"` |
+| 1 vs 7 | `"g_apps"` ≠ `"asgn"` |
+| 1 vs 8 | `"g_apps"` ≠ `"o_cap"` |
+| 2 vs 3 | `"app"` ≠ `"app_idx"` |
+| 2 vs 4 | Vec ≠ Symbol |
+| 2 vs 5 | `"app"` ≠ `"maint"` |
+| 2 vs 6 | `"app"` ≠ `"o_asgn"` |
+| 2 vs 7 | `"app"` ≠ `"asgn"` |
+| 2 vs 8 | `"app"` ≠ `"o_cap"` |
+| 3 vs 4 | Vec ≠ Symbol |
+| 3 vs 5 | `"app_idx"` ≠ `"maint"` |
+| 3 vs 6 | `"app_idx"` ≠ `"o_asgn"` |
+| 3 vs 7 | `"app_idx"` ≠ `"asgn"` |
+| 3 vs 8 | `"app_idx"` ≠ `"o_cap"` |
+| 4 vs 5 | Symbol ≠ Vec |
+| 4 vs 6 | Symbol ≠ Vec |
+| 4 vs 7 | Symbol ≠ Vec |
+| 4 vs 8 | Symbol ≠ Vec |
+| 5 vs 6 | `"maint"` ≠ `"o_asgn"` |
+| 5 vs 7 | `"maint"` ≠ `"asgn"` |
+| 5 vs 8 | `"maint"` ≠ `"o_cap"` |
+| 6 vs 7 | `"o_asgn"` ≠ `"asgn"` |
+| 6 vs 8 | `"o_asgn"` ≠ `"o_cap"` |
+| 7 vs 8 | `"asgn"` ≠ `"o_cap"` |
+
+*Within-pattern collision is impossible* because the remaining tuple fields uniquely identify the logical record. `Address` values are validated by the host via `require_auth`, preventing impersonation. Distinct logical records within the same category differ in at least one of `(contributor, org_id, issue_id)`. ∎
+
+---
+
+## Storage Migration Playbook
+
+This playbook covers how to safely evolve the storage schema in future contract upgrades.
+
+### Principles
+
+1. **No automatic migration.** Soroban does not run migration hooks on upgrade. Data reshaping must happen via an explicit on-chain migration transaction after the new WASM is deployed.
+2. **Additive changes are safe.** New key prefixes are simply absent from existing state; `unwrap_or` defaults handle them transparently.
+3. **Breaking changes require a migration transaction.** Renaming a prefix, changing a value type, or removing a key that existing logic reads requires an explicit migration call.
+4. **Dry-run first.** Always run the upgrade dry-run CI step (see `docs/runbooks/contract-upgrade.md`) before deploying to testnet or mainnet.
+
+---
+
+### Playbook A — Additive change (new key prefix)
+
+**Example:** Adding `("o_cap", org_id)` (key #7, deployed in v0.2).
+
+**Steps:**
+
+1. Add the new key helper and read/write functions to `src/storage.rs`.
+2. Guard the read path with `unwrap_or(<default>)` so existing state without the new key returns a safe default.
+3. Update `src/lib.rs` to call the new storage helper.
+4. Deploy the new WASM — no migration transaction needed.
+5. The new key is written on the first `set_org_cap` call. Until then callers receive the default.
+
+**Verification:**
+```bash
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- get_org_cap --org_id my_org
+# Expected: "4"  (default, no key written yet)
+```
+
+---
+
+### Playbook B — Key prefix rename (breaking change)
+
+**Example:** Renaming `("o_asgn", contributor, org_id)` to `("oa2", contributor, org_id)`.
+
+**Steps:**
+
+1. In the new WASM keep **both** the old read helper (reads `"o_asgn"`) and the new read helper (reads `"oa2"`) during the migration window.
+2. Write a `migrate_asgn_counts(admin, pairs: Vec<(Address, Symbol)>)` contract function that:
+   - Reads each count from the old key.
+   - Writes it to the new key.
+   - Removes the old key.
+3. Deploy the new WASM.
+4. Call `migrate_asgn_counts` with the full list of affected `(contributor, org_id)` pairs.
+5. After confirming all pairs migrated, deploy a follow-up WASM that removes the old read helper.
+
+**Verification:**
+```bash
+# New key should match the old value
+stellar contract invoke --id "$CONTRACT_ID" --network testnet \
+  -- get_org_assignment_count \
+  --contributor "$CONTRIBUTOR" --org_id "$ORG_ID"
+
+# Old key helper (if still exposed) should return 0 — key removed
+stellar contract invoke --id "$CONTRACT_ID" --network testnet \
+  -- get_org_assignment_count_v1 \
+  --contributor "$CONTRIBUTOR" --org_id "$ORG_ID"
+# Expected: "0"
+```
+
+---
+
+### Playbook C — Value type change (breaking change)
+
+**Example:** Changing assignment counts from `u32` to `u64`.
+
+**Steps:**
+
+1. Introduce a new prefix `"o_asgn2"` for the `u64` values.
+2. Write a `migrate_counts_u64(admin, pairs: Vec<(Address, Symbol)>)` function that reads each `u32` count, writes it as `u64` under the new prefix, and removes the old key.
+3. Deploy, run migration, verify.
+4. In a subsequent WASM rename `"o_asgn2"` back to `"o_asgn"` (another Playbook B migration).
+
+> **Warning:** Never change the value type in-place without a key rename. Soroban will attempt to deserialise old bytes with the new type, which silently produces garbage or panics.
+
+---
+
+### Playbook D — Key removal
+
+**Example:** Removing legacy `("maint", …)` entries superseded by a new role system.
+
+**Steps:**
+
+1. In the transition WASM, read from both old and new keys during a grace period.
+2. Write a `cleanup_legacy_maint(admin, entries: Vec<(Address, Symbol)>)` function that removes old keys.
+3. After confirming cleanup is complete, ship a final WASM that reads only the new keys.
+
+---
+
+## Storage Budget Analysis
+
+This section estimates the ledger entry storage cost for WorkloadGovernor state in **stroops** (1 XLM = 10 000 000 stroops).
+
+### Soroban Storage Fee Model (Protocol 21+)
+
+Soroban charges **rent** for persistent and temporary storage based on:
+
+- **Entry size in bytes** (XDR-encoded key + value).
+- **TTL** — longer TTL = higher upfront rent reservation at write time.
+- **Fee rates** — network parameters; approximate current values:
+  - Persistent: ~0.01 XLM per 1 KB per 1 M ledgers.
+  - Temporary: ~0.001 XLM per 1 KB per 1 M ledgers.
+
+### Estimated Entry Sizes
+
+| Key pattern | Key XDR (bytes) | Value XDR (bytes) | Total |
+|-------------|-----------------|-------------------|-------|
+| `("g_apps", Address)` | ~50 | 5 | ~55 |
+| `("app", Address, Symbol, u32)` | ~60 | 5 | ~65 |
+| `"admin"` | 12 | ~48 | ~60 |
+| `("maint", Address, Symbol)` | ~55 | 5 | ~60 |
+| `("o_asgn", Address, Symbol)` | ~55 | 5 | ~60 |
+| `("asgn", Symbol, u32, Address)` | ~58 | 5 | ~63 |
+| `("o_cap", Symbol)` | ~30 | 5 | ~35 |
+
+> Address XDR ≈ 36 bytes (32-byte public key + discriminant). Symbol up to 10 bytes. u32 = 4 bytes. Vec wrapper adds ~4 bytes per element.
+
+### Scenario: 1 org, 100 contributors per Wave
+
+Assume 100 contributors each submit 3 applications, 30 are assigned, 30 complete.
+
+| Entry type | Count | Approx size | Temp rent (1 Wave ≈ 17 280 ledgers) |
+|------------|-------|-------------|--------------------------------------|
+| Global app count | 100 | 5 500 B total | ~0.01 XLM |
+| App entry | 300 | 19 500 B total | ~0.03 XLM |
+| Org assignment count | 30 | 1 800 B total | ~0.03 XLM/year (persistent) |
+| Assignment entry | 30 | 1 890 B total | ~0.03 XLM/year (persistent) |
+
+**Estimated total per Wave:** ~0.04–0.10 XLM for temporary entries. Persistent entries accumulate slowly and are cleaned up when counts hit zero.
+
+### Worst-case: 1 org, 10 000 contributors at global cap
+
+| Entry type | Count | Estimated cost |
+|------------|-------|----------------|
+| Global app count | 10 000 | ~1 XLM/Wave |
+| App entry (15 each) | 150 000 | ~15 XLM/Wave |
+| Org assignment count | 10 000 | ~1 XLM/year |
+| Assignment entry | 40 000 | ~4 XLM/year |
+
+**Total worst-case:** ~16 XLM/Wave for temporary entries, ~5 XLM/year persistent rent at normal completion rates.
+
+### Recommendations
+
+- Call `complete_assignment` or `revoke_assignment` promptly to free persistent entries and recover rent.
+- Do not let the contract instance TTL lapse — bump it regularly or rely on the `bump_instance` call made on every state-changing transaction.
+- For orgs with > 5 000 contributors, raise `APP_TTL_LEDGERS` only if the Wave duration requires it — a longer TTL multiplies the temporary rent cost proportionally.
+- Monitor the `("o_cap", org_id)` key: each distinct org adds one persistent entry of ~35 bytes (negligible unless there are thousands of orgs).
+
+---
+
+## Off-chain Redis Cache Architecture
+
+In addition to on-chain Soroban storage, WorkloadGovernor uses an off-chain Redis caching layer (`src/services/redis.ts`) to serve high-throughput read traffic, enforce transaction idempotency, and provide distributed synchronization across backend instances.
+
+### Key Namespaces and TTL Policies
+
+| Key Pattern | Description | TTL | Invalidation Trigger |
+|-------------|-------------|-----|----------------------|
+| `idemp:<key>` | Idempotency token storage preventing double execution | 86,400 s (24 h) | Natural TTL expiry |
+| `lock:<resource>` | Distributed Redlock mutex for critical sections | 30 s | Explicit release on operation completion |
+| `cache:org:<org_id>` | Cached organization metadata and active issue capacities | 300 s (5 min) | Contract events (`applied`, `assigned`, `completed`) |
+| `cache:contributor:<address>` | Cached global application count and active assignment list | 60 s (1 min) | Contract events (`applied`, `withdrawn`, `revoked`) |
+
+### Cache Invalidation Flow
+
+When state changes on-chain, Soroban contract events are ingested by the off-chain indexer service, which publishes cache eviction messages to purge stale entries:
+
+```mermaid
+flowchart LR
+    A["Soroban Smart Contract"] -->|"Emit Event"| B["Event Indexer Service"]
+    B -->|"Parse Event"| C["Redis Cache Service"]
+    C -->|"DEL cache:org:<org_id>"| D["Organization Cache"]
+    C -->|"DEL cache:contributor:<address>"| E["Contributor Cache"]
+```
+

@@ -1,0 +1,424 @@
+/* =============================================================
+   Design-system tokens — light mode defaults
+   Override with [data-theme="dark"] or prefers-color-scheme
+   ============================================================= */
+
+:root,
+[data-theme="light"] {
+  /* Surfaces */
+  --ds-bg: #ffffff;
+  --ds-surface: #f8f9fa;
+  --ds-surface-2: #f1f3f5;
+  --ds-border: #dee2e6;
+
+  /* Text */
+  --ds-text: #212529;
+  --ds-text-muted: #6c757d;
+  --ds-text-inverse: #ffffff;
+
+  /* Brand */
+  --ds-primary: #4a6de0;
+  --ds-primary-hover: #3859c7;
+  --ds-primary-subtle: rgba(74, 109, 224, 0.12);
+
+  /* Status */
+  --ds-success: #198754;
+  --ds-success-subtle: rgba(25, 135, 84, 0.12);
+  --ds-warning: #e67e00;
+  --ds-warning-subtle: rgba(230, 126, 0, 0.12);
+  --ds-danger: #dc3545;
+  --ds-danger-subtle: rgba(220, 53, 69, 0.12);
+  --ds-info: #0d6efd;
+  --ds-info-subtle: rgba(13, 110, 253, 0.12);
+
+  /* Focus */
+  --ds-focus: #fbbf24;
+
+  /* Gauge */
+  --gauge-track: #dee2e6;
+  --gauge-ok: #198754;
+  --gauge-warn: #e67e00;
+  --gauge-danger: #dc3545;
+
+  /* Radius / shadow */
+  --ds-radius: 6px;
+  --ds-radius-full: 9999px;
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --ds-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] {
+  /* Surfaces */
+  --ds-bg: #0f1117;
+  --ds-surface: #1c1f2b;
+  --ds-surface-2: #252836;
+  --ds-border: #2e3347;
+
+  /* Text */
+  --ds-text: #e2e8f0;
+  --ds-text-muted: #94a3b8;
+  --ds-text-inverse: #0f1117;
+
+  /* Brand */
+  --ds-primary: #6c8eff;
+  --ds-primary-hover: #5577ee;
+  --ds-primary-subtle: rgba(108, 142, 255, 0.15);
+
+  /* Status */
+  --ds-success: #22c55e;
+  --ds-success-subtle: rgba(34, 197, 94, 0.15);
+  --ds-warning: #f59e0b;
+  --ds-warning-subtle: rgba(245, 158, 11, 0.15);
+  --ds-danger: #ef4444;
+  --ds-danger-subtle: rgba(239, 68, 68, 0.15);
+  --ds-info: #38bdf8;
+  --ds-info-subtle: rgba(56, 189, 248, 0.15);
+
+  /* Focus */
+  --ds-focus: #facc15;
+
+  /* Gauge */
+  --gauge-track: #2e3347;
+  --gauge-ok: #22c55e;
+  --gauge-warn: #f59e0b;
+  --gauge-danger: #ef4444;
+
+  /* Shadow */
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --ds-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* =============================================================
+   Focus ring — applied globally within the design system
+   ============================================================= */
+.ds *:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+/* =============================================================
+   Button
+   ============================================================= */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1.5px solid transparent;
+  border-radius: var(--ds-radius);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+  line-height: 1.25;
+  user-select: none;
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+/* Sizes */
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+.btn-lg {
+  padding: 12px 24px;
+  font-size: 1rem;
+}
+
+/* Variants */
+.btn-primary {
+  background: var(--ds-primary);
+  color: var(--ds-text-inverse);
+  border-color: var(--ds-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--ds-primary-hover);
+  border-color: var(--ds-primary-hover);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--ds-primary);
+  border-color: var(--ds-primary);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--ds-primary-subtle);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ds-text-muted);
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--ds-text);
+  background: var(--ds-surface-2);
+}
+
+/* Loading spinner */
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ds-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ds-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =============================================================
+   Badge
+   ============================================================= */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--ds-radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.badge-default {
+  background: var(--ds-surface-2);
+  color: var(--ds-text-muted);
+  border: 1px solid var(--ds-border);
+}
+.badge-success {
+  background: var(--ds-success-subtle);
+  color: var(--ds-success);
+  border: 1px solid var(--ds-success);
+}
+.badge-warning {
+  background: var(--ds-warning-subtle);
+  color: var(--ds-warning);
+  border: 1px solid var(--ds-warning);
+}
+.badge-danger {
+  background: var(--ds-danger-subtle);
+  color: var(--ds-danger);
+  border: 1px solid var(--ds-danger);
+}
+.badge-info {
+  background: var(--ds-info-subtle);
+  color: var(--ds-info);
+  border: 1px solid var(--ds-info);
+}
+
+/* =============================================================
+   Card
+   ============================================================= */
+.card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  box-shadow: var(--ds-shadow-sm);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ds-text);
+  line-height: 1.4;
+}
+
+.card-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  color: var(--ds-text-muted);
+  line-height: 1.4;
+}
+
+.card-body {
+  padding: 16px 20px;
+  color: var(--ds-text);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.card-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--ds-border);
+  background: var(--ds-surface-2);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* =============================================================
+   Modal
+   ============================================================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 16px;
+}
+
+.modal-panel {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: calc(var(--ds-radius) * 2);
+  box-shadow: var(--ds-shadow);
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--ds-border);
+  flex-shrink: 0;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--ds-text);
+  line-height: 1.4;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--ds-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: var(--ds-radius);
+  padding: 4px 8px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.modal-close:hover { color: var(--ds-text); }
+
+.modal-body {
+  padding: 20px 24px;
+  color: var(--ds-text);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--ds-border);
+  background: var(--ds-surface-2);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* =============================================================
+   Table
+   ============================================================= */
+.table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  color: var(--ds-text);
+  background: var(--ds-surface);
+}
+
+.table-caption {
+  caption-side: top;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ds-text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.table thead th {
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--ds-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--ds-surface-2);
+  border-bottom: 2px solid var(--ds-border);
+  white-space: nowrap;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--ds-border);
+  transition: background 0.1s;
+}
+.table tbody tr:last-child { border-bottom: none; }
+.table tbody tr:hover { background: var(--ds-surface-2); }
+
+.table tbody td {
+  padding: 10px 16px;
+  vertical-align: middle;
+  line-height: 1.5;
+}
+
+.table-empty,
+.table-loading {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--ds-text-muted);
+  font-style: italic;
+}
+
+/* =============================================================
+   Gauge
+   ============================================================= */
+.gauge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gauge-label {
+  font-size: 0.75rem;
+  color: var(--ds-text-muted);
+  text-align: center;
+  line-height: 1.3;
+}

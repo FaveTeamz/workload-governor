@@ -1,0 +1,154 @@
+/* IssueSearch — global fuzzy search component */
+
+.issue-search {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+}
+
+/* ---- Input wrapper ---- */
+.issue-search__wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.issue-search__icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-text-muted, #888);
+  pointer-events: none;
+  font-size: 0.9rem;
+}
+
+.issue-search__input {
+  width: 100%;
+  padding: 0.45rem 2.5rem 0.45rem 2.25rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.issue-search__input:focus {
+  border-color: var(--color-accent, #4f46e5);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent, #4f46e5) 20%, transparent);
+}
+
+/* Spinner sits right-aligned inside the input */
+.issue-search__spinner {
+  position: absolute;
+  right: 0.6rem;
+  display: flex;
+  align-items: center;
+}
+
+.issue-search__spinner-ring {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border, #d1d5db);
+  border-top-color: var(--color-accent, #4f46e5);
+  border-radius: 50%;
+  animation: issue-search-spin 0.6s linear infinite;
+}
+
+@keyframes issue-search-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Dropdown listbox ---- */
+.issue-search__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: var(--radius-md, 6px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0.25rem 0;
+}
+
+/* ---- Result items ---- */
+.issue-search__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.issue-search__item:hover,
+.issue-search__item--active {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.issue-search__item-title {
+  font-size: 0.875rem;
+  color: var(--color-text, #111);
+  font-weight: 500;
+}
+
+.issue-search__item-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.issue-search__item-org {
+  font-weight: 500;
+}
+
+/* Highlighted match characters */
+.issue-search__item mark {
+  background: var(--color-accent-light, #fef9c3);
+  color: inherit;
+  font-style: normal;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ---- Empty state ---- */
+.issue-search__empty {
+  padding: 0.85rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #6b7280);
+  text-align: center;
+}
+
+.issue-search__empty a {
+  color: var(--color-accent, #4f46e5);
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: inherit;
+  padding: 0;
+}
+
+/* ---- Keyboard hint badge ---- */
+.issue-search__hint {
+  position: absolute;
+  right: 0.6rem;
+  font-size: 0.7rem;
+  color: var(--color-text-muted, #9ca3af);
+  background: var(--color-surface-alt, #f3f4f6);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  padding: 1px 5px;
+  pointer-events: none;
+  user-select: none;
+}

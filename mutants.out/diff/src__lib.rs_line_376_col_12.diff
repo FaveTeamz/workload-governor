@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ delete ! in WorkloadGovernor::revoke_assignment
+@@ -368,17 +368,17 @@
+         org_id: Symbol,
+         issue_id: u32,
+     ) {
+         storage::require_initialized(&env, &ContractError::NotInitialized);
+         maintainer.require_auth();
+         if !storage::is_maintainer(&env, &maintainer, &org_id) {
+             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+         }
+-        if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {
++        if  /* ~ changed by cargo-mutants ~ */storage::has_assignment(&env, &org_id, issue_id, &contributor) {
+             panic_with_error!(env, ContractError::AssignmentNotFound);
+         }
+         storage::remove_assignment(&env, &org_id, issue_id, &contributor);
+         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+         let new_count = asgn_count.saturating_sub(1);
+         if new_count == 0 {
+             storage::remove_org_assignment_count(&env, &contributor, &org_id);
+         } else {
