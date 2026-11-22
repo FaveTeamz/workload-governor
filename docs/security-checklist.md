@@ -129,3 +129,66 @@ without also passing that user's auth check.
 - `extend_application_ttl` is intentionally permissionless. The only effect is
   extending the TTL of an existing entry — it cannot create new entries or change
   values, so there is no harmful capability granted to an anonymous caller.
+
+---
+
+## RDS At-Rest Encryption with Customer-Managed KMS Key
+
+Audited against `terraform/modules/kms/`, `terraform/modules/database/main.tf`, `infra/rds-backup.tf`.
+Audit date: 2026-11-22.
+
+### Compliance requirement
+
+SOC 2 CC6.1 / ISO 27001 A.10.1.1 — all production database storage volumes and automated snapshot backups must be encrypted with a customer-managed cryptographic key whose rotation is under platform control.
+
+### Implementation
+
+| Resource | File | Setting | Value |
+|---|---|---|---|
+| `aws_kms_key.rds` | `terraform/modules/kms/main.tf` | `enable_key_rotation` | `true` (annual automatic rotation) |
+| `aws_kms_key.rds` | `terraform/modules/kms/main.tf` | `deletion_window_in_days` | `30` (prevents accidental permanent loss) |
+| `aws_kms_alias.rds` | `terraform/modules/kms/main.tf` | alias name | `alias/<project>-<environment>-rds` |
+| `aws_db_instance.this` | `terraform/modules/database/main.tf` | `kms_key_id` | `module.kms.rds_key_arn` |
+| `aws_db_instance.main` | `infra/rds-backup.tf` | `kms_key_id` | `var.kms_key_arn` |
+| `aws_db_instance.main` | `infra/rds-backup.tf` | `copy_tags_to_snapshot` | `true` (snapshots inherit CMK tag) |
+
+The KMS key policy grants:
+- **Root account** (`arn:aws:iam::<account>:root`): full `kms:*` for break-glass and IAM delegation.
+- **`rds.amazonaws.com` service**: `Encrypt`, `Decrypt`, `ReEncrypt*`, `GenerateDataKey*`, `DescribeKey`, `CreateGrant`, `ListGrants`, `RevokeGrant`.
+
+### Key lifecycle
+
+| Event | Behaviour |
+|---|---|
+| Annual rotation | AWS KMS automatically creates a new key material version. Existing ciphertexts decrypt transparently; new writes use the latest material. No re-encryption of existing data is needed. |
+| Key deletion | 30-day waiting period. Cancel via AWS Console or `aws kms cancel-key-deletion` before the window closes. |
+| Access revocation | Remove the IAM grant or update the key policy. Existing encrypted data becomes unreadable immediately. |
+
+### Verification steps
+
+```bash
+# 1. Confirm the CMK exists and rotation is enabled
+aws kms describe-key --key-id alias/<project>-<environment>-rds \
+  --query 'KeyMetadata.{KeyId:KeyId,RotationEnabled:KeyRotationEnabled,DeletionWindow:DeletionWindowInDays}'
+
+# 2. Confirm the RDS instance uses the CMK (not the default aws/rds key)
+aws rds describe-db-instances --db-instance-identifier <instance-id> \
+  --query 'DBInstances[0].KmsKeyId'
+
+# 3. Confirm automated snapshots inherit the same key
+aws rds describe-db-snapshots --db-instance-identifier <instance-id> \
+  --snapshot-type automated \
+  --query 'DBSnapshots[0].KmsKeyId'
+```
+
+### Checklist
+
+| # | Control | Status |
+|---|---|---|
+| 1 | Dedicated CMK created (not shared `aws/rds` default) | **PASS** |
+| 2 | Annual automated key rotation enabled | **PASS** |
+| 3 | 30-day deletion window configured | **PASS** |
+| 4 | RDS storage volume encrypted with CMK (`kms_key_id` set) | **PASS** |
+| 5 | Automated snapshots encrypted with CMK (`copy_tags_to_snapshot = true`) | **PASS** |
+| 6 | Key policy restricts usage to root account and RDS service | **PASS** |
+| 7 | CMK alias follows naming convention `alias/<project>-<environment>-rds` | **PASS** |
