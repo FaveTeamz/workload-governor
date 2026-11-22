@@ -140,6 +140,37 @@ The contract address does not change. All storage entries are preserved.
 
 ---
 
+## Admin Key Rotation
+
+The admin keypair must be rotated every 90 days or immediately on suspected
+compromise. The rotation uses `transfer_admin`, which requires both the current
+and new admin to sign the same transaction — neither party can transfer
+authority unilaterally.
+
+For the full procedure including AWS Secrets Manager update and ECS backend
+restart, follow the runbook:
+
+**[docs/runbooks/admin-key-rotation.md](runbooks/admin-key-rotation.md)**
+
+An automation script is available for the on-chain phases (1–4):
+
+```bash
+# Dry run — prints all commands without submitting any transactions
+CONTRACT_ID=<CONTRACT_ID> \
+  OLD_ADMIN_KEY=<stellar-cli-identity> \
+  NETWORK=testnet \
+  DRY_RUN=1 \
+  bash scripts/rotate-admin-key.sh
+
+# Live run
+CONTRACT_ID=<CONTRACT_ID> \
+  OLD_ADMIN_KEY=<stellar-cli-identity> \
+  NETWORK=testnet \
+  bash scripts/rotate-admin-key.sh
+```
+
+---
+
 ## Error Reference
 
 For the full list of error codes and their resolutions, see [docs/error-reference.md](error-reference.md).

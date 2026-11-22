@@ -162,6 +162,55 @@ impl WorkloadGovernor {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
+    /// Transfers admin authority from the current keypair to a new one (atomic, dual-auth).
+    ///
+    /// Both `current_admin` and `new_admin` must authorise the transaction. Neither party
+    /// can complete the transfer unilaterally: the old admin cannot redirect authority to
+    /// an arbitrary address without the new admin's consent, and the new admin cannot pull
+    /// authority to itself without the old admin's sign-off.
+    ///
+    /// The new admin is active from the **next ledger**. There is no pending state,
+    /// cooldown, or separate `accept_admin` step.
+    ///
+    /// # Who can call
+    /// Must be signed by both `current_admin` (the stored admin address) and `new_admin`.
+    ///
+    /// # Arguments
+    /// * `current_admin` – Must match the stored admin address (auth enforced).
+    /// * `new_admin`     – The replacement admin address (auth enforced).
+    ///
+    /// # Returns
+    /// `()` on success.
+    ///
+    /// # Errors
+    /// * [`ContractError::NotInitialized`]    — contract has not been initialised yet.
+    /// * [`ContractError::UnauthorizedAdmin`] — `current_admin` does not match the stored admin.
+    ///
+    /// # Examples
+    /// ```text
+    /// # Sequential dual-signing (recommended for production):
+    /// stellar tx new invoke \
+    ///   --id <CONTRACT_ID> --network testnet \
+    ///   -- transfer_admin \
+    ///   --current_admin <OLD_ADMIN_ADDRESS> \
+    ///   --new_admin     <NEW_ADMIN_ADDRESS> \
+    /// | stellar tx sign --sign-with-key old-admin \
+    /// | stellar tx sign --sign-with-key new-admin \
+    /// | stellar tx send
+    /// ```
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        let stored_admin = storage::get_admin(&env).unwrap();
+        if stored_admin != current_admin {
+            panic_with_error!(env, ContractError::UnauthorizedAdmin);
+        }
+        current_admin.require_auth();
+        new_admin.require_auth();
+        storage::set_admin(&env, &new_admin);
+        storage::bump_instance(&env);
+        events::emit_admin_transferred(&env, &current_admin, &new_admin);
+    }
+
     /// Sets the global application cap via the normal (non-emergency) operator path.
     ///
     /// Emits `GlobalCapUpdated` event. Admin auth is required.
