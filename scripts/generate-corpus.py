@@ -1,0 +1,677 @@
+#!/usr/bin/env python3
+"""
+generate-corpus.py — Regenerate fuzz corpus seed inputs for WorkloadGovernor.
+
+Usage:
+    python3 scripts/generate-corpus.py [--corpus-dir fuzz/corpus]
+
+This script writes deterministic binary seed files to each of the 7 fuzz
+target corpus directories.  Run it after a fresh clone or whenever you want
+to reset the corpus to the canonical hand-crafted seed set.
+
+Existing files with the same name are overwritten; unrecognised files (e.g.
+files discovered by the fuzzer) are left untouched.
+
+All 7 targets are covered:
+  fuzz_apply, fuzz_assign, fuzz_batch_apply, fuzz_withdraw,
+  fuzz_revoke, fuzz_lifecycle, fuzz_admin_threshold
+
+Seed format (matches fuzz target input parsers in fuzz/fuzz_targets/):
+
+  fuzz_apply / fuzz_assign:
+    bytes [0..4)  — issue_id as little-endian u32
+    bytes [4..)   — org_id characters (each byte mapped to lowercase ascii
+                    by the target via `(b % 26) + b'a'`, so raw bytes are fine)
+    byte  [5]     — (fuzz_assign only) bit 0 controls whether apply_for_issue
+                    is called before assign_issue
+
+  fuzz_batch_apply:
+    pairs of bytes interpreted as little-endian u16 issue IDs;
+    issue_id == 0 is filtered out by the target.
+
+  fuzz_admin_threshold:
+    byte  [0]     — raw threshold value
+    byte  [1]     — signer count, clamped to [0, 10] by the target
+    byte  [2]     — bit 0: inject a duplicate signer into the list
+
+Boundary values deliberately covered (issue #835):
+  issue_id = 0           (zero boundary — contract rejects via InvalidIssueId)
+  issue_id = 1           (minimum valid)
+  issue_id = u32::MAX-1  (0xFFFFFFFE — near-maximum)
+  issue_id = u32::MAX    (0xFFFFFFFF — maximum; contract rejects via InvalidIssueId)
+  batch vec len = 0      (empty payload)
+  batch vec len = 15     (fills the global cap exactly)
+  batch vec len = 16     (exceeds the global cap by 1)
+Stellar address formats covered (issue #1070):
+  G-addresses — standard Ed25519 public keys (StrKey-encoded, 56 chars, prefix G)
+  M-addresses — multiplexed (muxed) accounts (StrKey-encoded, prefix M)
+               M-addresses embed a 64-bit account ID inside the base-32 payload
+  C-addresses — contract accounts (StrKey-encoded, 56 chars, prefix C)
+               C-addresses represent Soroban smart-contract addresses
+
+Example address shapes used in seeds:
+  G…  (56 chars, uppercase base-32)
+  M…  (68-69 chars, uppercase base-32, embeds u64 mux ID)
+  C…  (56 chars, uppercase base-32)
+"""
+
+import argparse
+import os
+import struct
+import sys
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def pack_apply(issue_id: int, org: bytes) -> bytes:
+    """Pack an (issue_id, org) seed for fuzz_apply / fuzz_assign targets."""
+    return struct.pack("<I", issue_id & 0xFFFFFFFF) + org
+
+
+def pack_apply_with_flag(issue_id: int, org: bytes, apply_flag: int) -> bytes:
+    """Pack a seed for fuzz_assign ensuring byte[5] carries the apply flag bit."""
+    data = bytearray(pack_apply(issue_id, org))
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFE) | (apply_flag & 1)
+    else:
+        data += bytearray([apply_flag & 1])
+    return bytes(data)
+
+
+def pack_batch(issue_ids: list[int]) -> bytes:
+    """Pack a list of u16 issue IDs for fuzz_batch_apply."""
+    return b"".join(struct.pack("<H", x & 0xFFFF) for x in issue_ids)
+
+
+def write_seed(path: str, data: bytes) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(data)
+    print(f"  wrote {path} ({len(data)} bytes)")
+
+
+# ---------------------------------------------------------------------------
+# Seed definitions
+# ---------------------------------------------------------------------------
+
+# Each entry: (filename, seed_bytes, description)
+SEEDS_APPLY = [
+    # Original seeds
+    ("seed_1",  pack_apply(1, b"org"),   "issue_id=1, org='org' — minimum valid"),
+    ("seed_42", pack_apply(42, b"acme"), "issue_id=42, org='acme'"),
+    # ── issue_id boundary values (issue #835) ────────────────────────────────
+    ("seed_issue_id_zero",       pack_apply(0, b"org"),
+     "issue_id=0 — zero boundary; contract rejects with InvalidIssueId"),
+    ("seed_issue_id_one",        pack_apply(1, b"org"),
+     "issue_id=1 — minimum valid (non-zero, non-MAX)"),
+    ("seed_issue_id_max_minus1", pack_apply(0xFFFFFFFE, b"org"),
+     "issue_id=u32::MAX-1 (0xFFFFFFFE) — near-maximum boundary"),
+    ("seed_issue_id_max",        pack_apply(0xFFFFFFFF, b"org"),
+     "issue_id=u32::MAX (0xFFFFFFFF) — contract rejects with InvalidIssueId"),
+    # ── org-length boundaries ─────────────────────────────────────────────────
+    ("seed_single_char_org",     pack_apply(42, b"a"),
+     "org of 1 character — minimum Symbol length"),
+    ("seed_long_org",            pack_apply(100, b"abcdefghijklmnopqrstuvwxyzabcdef"),
+     "org of 32 characters — maximum Soroban Symbol length"),
+    ("seed_all_same_char_org",   pack_apply(256, b"zzzzzzzzzzzzzzzz"),
+     "org of 16 identical chars — repetition stress"),
+    # ── cap boundaries ────────────────────────────────────────────────────────
+    ("seed_issue_id_cap_minus1", pack_apply(14, b"captest"),
+     "issue_id=14 — just below the global application cap of 15"),
+    ("seed_issue_id_large_mid",  pack_apply(65536, b"midrange"),
+     "issue_id=65536 — mid-range u32"),
+    ("seed_two_char_org",        pack_apply(999, b"ab"),
+     "org of 2 characters"),
+    ("seed_issue_id_ff",         pack_apply(255, b"boundary"),
+     "issue_id=255 — byte boundary"),
+]
+
+SEEDS_ASSIGN = [
+    # Original seeds
+    ("seed_with_apply",  pack_apply_with_flag(1,  b"org", 1),
+     "issue_id=1, with prior apply_for_issue"),
+    ("seed_no_apply",    pack_apply_with_flag(1,  b"org", 0),
+     "issue_id=1, no prior apply → ApplicationNotFound path"),
+    # ── issue_id boundary values (issue #835) ────────────────────────────────
+    ("seed_assign_issue_zero_no_apply",
+     pack_apply_with_flag(0, b"org", 0),
+     "issue_id=0 no pre-apply — zero boundary (contract rejects with InvalidIssueId)"),
+    ("seed_assign_issue_one_with_apply",
+     pack_apply_with_flag(1, b"org", 1),
+     "issue_id=1 (minimum valid) with pre-apply"),
+    ("seed_assign_issue_max_minus1_with_apply",
+     pack_apply_with_flag(0xFFFFFFFE, b"orgXX", 1),
+     "issue_id=u32::MAX-1 (0xFFFFFFFE) with pre-apply — near-maximum boundary"),
+    ("seed_assign_max_issue_with_apply",
+     pack_apply_with_flag(0xFFFFFFFF, b"orgXX", 1),
+     "issue_id=u32::MAX with pre-apply — contract rejects with InvalidIssueId"),
+    # ── org-length boundaries ─────────────────────────────────────────────────
+    ("seed_assign_long_org_with_apply",
+     pack_apply_with_flag(512, b"abcdefghijklmnopqrstuvwxyzabcdef", 1),
+     "32-char org with pre-apply — max Symbol length"),
+    ("seed_assign_long_org_no_apply",
+     pack_apply_with_flag(512, b"abcdefghijklmnopqrstuvwxyzabcdee", 0),
+     "32-char org no pre-apply — ApplicationNotFound at max Symbol length"),
+    ("seed_assign_issue_255_with_apply",
+     pack_apply_with_flag(255, b"bytebd", 1),
+     "issue_id=255 byte boundary with pre-apply"),
+    ("seed_assign_issue_65536_with_apply",
+     pack_apply_with_flag(65536, b"midorg", 1),
+     "issue_id=65536 mid-range u32 with pre-apply"),
+    ("seed_assign_single_char_org_apply",
+     pack_apply_with_flag(77, b"aXXXXX", 1),
+     "single-char org with pre-apply — minimal Symbol"),
+    ("seed_assign_then_complete",
+     pack_apply_with_flag(1, b"complt", 1),
+     "exercises apply → assign → complete_assignment path"),
+    ("seed_assign_then_revoke",
+     pack_apply_with_flag(2, b"revoke", 1),
+     "exercises apply → assign → revoke_assignment path"),
+    ("seed_assign_zero_issue_no_apply",
+     pack_apply_with_flag(0, b"orgXX", 0),
+     "issue_id=0 no pre-apply — zero boundary without application"),
+]
+
+SEEDS_BATCH = [
+    # Original seeds
+    ("seed_3issues", pack_batch([1, 2, 3]),
+     "3 distinct issues — basic batch path"),
+    ("seed_cap",     pack_batch(list(range(1, 17))),
+     "16 issues — hits global cap of 15, 16th rejected"),
+    # ── issue #835 explicit boundary values ──────────────────────────────────
+    ("seed_empty_vec",             pack_batch([]),
+     "empty issue list — vec len=0; no applications attempted"),
+    ("seed_exactly_15_unique",     pack_batch(list(range(1, 16))),
+     "exactly 15 unique issues — vec len=15; fills cap exactly"),
+    ("seed_16_unique",             pack_batch(list(range(1, 17))),
+     "16 unique issues — vec len=16; 16th is rejected (cap enforced)"),
+    ("seed_issue_id_one",          pack_batch([1]),
+     "single issue_id=1 — minimum valid non-zero"),
+    ("seed_issue_id_max_u16",      pack_batch([0xFFFF]),
+     "issue_id=65535 (max u16) — boundary for u16 parsing in target"),
+    # ── additional boundary values ────────────────────────────────────────────
+    ("seed_all_zero",              pack_batch([0] * 10),
+     "all issue_id=0 — filtered by target; count stays 0"),
+    ("seed_all_same",              pack_batch([42] * 15),
+     "same issue_id repeated — duplicate detection across all 15 slots"),
+    ("seed_max_u16_repeated",      pack_batch([0xFFFF] * 5),
+     "issue_id=65535 (max u16) repeated — boundary repetition"),
+    ("seed_alternating",           pack_batch([1, 65535, 2, 65534, 3, 65533, 4, 65532]),
+     "alternating small/large issue IDs — interleaved boundary values"),
+    ("seed_single_issue",          pack_batch([100]),
+     "single application — minimal batch"),
+    ("seed_one_valid_one_zero",    pack_batch([50, 0]),
+     "one valid issue, one zero — zero filtering path"),
+    ("seed_cap_minus1",            pack_batch(list(range(1, 15))),
+     "14 unique issues — one below the cap of 15"),
+    ("seed_sequential_large",      pack_batch(list(range(1000, 1016))),
+     "16 sequential IDs starting at 1000 — large-value batch"),
+]
+
+
+def pack_withdraw(issue_id: int, org: bytes, apply_flag: int = 0,
+                  double_flag: int = 0) -> bytes:
+    """Pack a seed for fuzz_withdraw.
+
+    byte[5] carries control bits:
+      bit 0 — apply_flag:    if 1, call apply_for_issue before withdraw
+      bit 1 — double_flag:   if 1, attempt a second (double) withdraw
+    """
+    data = bytearray(pack_apply(issue_id, org))
+    ctrl = (apply_flag & 1) | ((double_flag & 1) << 1)
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFC) | ctrl
+    else:
+        data += bytearray([ctrl])
+    return bytes(data)
+
+
+def pack_revoke(issue_id: int, org: bytes, cycle_flag: int = 0,
+                revoke_before_assign: int = 0) -> bytes:
+    """Pack a seed for fuzz_revoke.
+
+    byte[5] carries control bits:
+      bit 0 — cycle_flag:            if 1, perform full apply→assign→revoke cycle
+      bit 1 — revoke_before_assign:  if 1, apply only then attempt revoke
+    """
+    data = bytearray(pack_apply(issue_id, org))
+    ctrl = (cycle_flag & 1) | ((revoke_before_assign & 1) << 1)
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFC) | ctrl
+    else:
+        data += bytearray([ctrl])
+    return bytes(data)
+
+
+# ---------------------------------------------------------------------------
+# fuzz_withdraw seed definitions
+# ---------------------------------------------------------------------------
+# byte[5] bit 0 = apply_flag, bit 1 = double_withdraw_flag
+
+SEEDS_WITHDRAW = [
+    ("seed_apply_then_withdraw",
+     pack_withdraw(1, b"org", apply_flag=1),
+     "issue_id=1, org='org' — apply then withdraw (counter must return to 0)"),
+    ("seed_withdraw_no_apply",
+     pack_withdraw(1, b"org", apply_flag=0),
+     "issue_id=1, no prior apply — ApplicationNotFound path"),
+    ("seed_double_withdraw",
+     pack_withdraw(1, b"org", apply_flag=1, double_flag=1),
+     "issue_id=1 — apply → withdraw → withdraw (second must fail gracefully)"),
+    # ── issue_id boundary values (issue #835) ────────────────────────────────
+    ("seed_issue_id_one_withdraw",
+     pack_withdraw(1, b"org", apply_flag=1),
+     "issue_id=1 — minimum valid, apply then withdraw"),
+    ("seed_issue_id_max_minus1_withdraw",
+     pack_withdraw(0xFFFFFFFE, b"org", apply_flag=1),
+     "issue_id=u32::MAX-1 (0xFFFFFFFE) — near-maximum counter arithmetic"),
+    ("seed_max_u32_withdraw",
+     pack_withdraw(0xFFFFFFFF, b"org", apply_flag=1),
+     "issue_id=u32::MAX — contract rejects with InvalidIssueId"),
+    ("seed_zero_issue_withdraw",
+     pack_withdraw(0, b"org", apply_flag=1),
+     "issue_id=0 — contract rejects with InvalidIssueId"),
+    # ── org-length boundaries ─────────────────────────────────────────────────
+    ("seed_empty_org_withdraw",
+     pack_withdraw(1, b"", apply_flag=1),
+     "empty org bytes — target falls back to 'org' default"),
+    ("seed_long_org_withdraw",
+     pack_withdraw(42, b"abcdefghijklmnopqrstuvwxyzabcdef", apply_flag=1),
+     "32-char org — maximum Soroban Symbol length"),
+]
+
+# ---------------------------------------------------------------------------
+# fuzz_revoke seed definitions
+# ---------------------------------------------------------------------------
+# byte[5] bit 0 = cycle_flag, bit 1 = revoke_before_assign_flag
+
+SEEDS_REVOKE = [
+    ("seed_full_cycle_revoke",
+     pack_revoke(1, b"org", cycle_flag=1, revoke_before_assign=0),
+     "issue_id=1 — full apply→assign→revoke cycle (org count must return to 0)"),
+    ("seed_revoke_before_assign",
+     pack_revoke(1, b"org", cycle_flag=0, revoke_before_assign=1),
+     "issue_id=1 — apply only, then revoke without assign (AssignmentNotFound)"),
+    ("seed_revoke_no_state",
+     pack_revoke(1, b"org", cycle_flag=0, revoke_before_assign=0),
+     "issue_id=1 — bare revoke with no prior state — must not trap"),
+    # ── issue_id boundary values (issue #835) ────────────────────────────────
+    ("seed_revoke_issue_one",
+     pack_revoke(1, b"org", cycle_flag=1),
+     "issue_id=1 — minimum valid, full revoke cycle"),
+    ("seed_revoke_max_minus1",
+     pack_revoke(0xFFFFFFFE, b"org", cycle_flag=1),
+     "issue_id=u32::MAX-1 (0xFFFFFFFE) — near-maximum counter arithmetic"),
+    ("seed_revoke_max_u32",
+     pack_revoke(0xFFFFFFFF, b"org", cycle_flag=1),
+     "issue_id=u32::MAX — contract rejects with InvalidIssueId"),
+    ("seed_revoke_zero_issue",
+     pack_revoke(0, b"org", cycle_flag=1),
+     "issue_id=0 — contract rejects with InvalidIssueId"),
+    # ── org-length boundaries ─────────────────────────────────────────────────
+    ("seed_revoke_long_org",
+     pack_revoke(99, b"abcdefghijklmnopqrstuvwxyzabcdef", cycle_flag=1),
+     "32-char org — maximum Soroban Symbol length"),
+    ("seed_revoke_before_assign_max_u32",
+     pack_revoke(0xFFFFFFFF, b"org", cycle_flag=0, revoke_before_assign=1),
+     "issue_id=u32::MAX — revoke-before-assign at boundary"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def pack_lifecycle(issue_id: int, org: bytes,
+                   do_apply: int = 0, do_withdraw: int = 0,
+                   do_assign: int = 0, do_complete: int = 0,
+                   do_revoke: int = 0) -> bytes:
+    """Pack a seed for fuzz_lifecycle.
+
+    byte[5] carries operation-sequence control flags:
+      bit 0 — do_apply:    call apply_for_issue
+      bit 1 — do_withdraw: call withdraw_application after apply
+      bit 2 — do_assign:   call assign_issue
+      bit 3 — do_complete: call complete_assignment after assign
+      bit 4 — do_revoke:   call revoke_assignment instead of complete
+    """
+    data = bytearray(pack_apply(issue_id, org))
+    ctrl = (
+        (do_apply    & 1) << 0 |
+        (do_withdraw & 1) << 1 |
+        (do_assign   & 1) << 2 |
+        (do_complete & 1) << 3 |
+        (do_revoke   & 1) << 4
+    )
+    if len(data) > 5:
+        data[5] = ctrl
+    else:
+        data += bytearray([ctrl])
+    return bytes(data)
+
+
+# ---------------------------------------------------------------------------
+# fuzz_lifecycle seed definitions
+# ---------------------------------------------------------------------------
+# Covers every state transition in the apply → assign → complete/revoke lifecycle.
+
+SEEDS_LIFECYCLE = [
+    # ── Full happy paths ──────────────────────────────────────────────────────
+    ("seed_apply_assign_complete",
+     pack_lifecycle(1, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=1 — full apply→assign→complete lifecycle"),
+    ("seed_apply_assign_revoke",
+     pack_lifecycle(2, b"org", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=2 — full apply→assign→revoke lifecycle"),
+    # ── Partial paths ─────────────────────────────────────────────────────────
+    ("seed_apply_only",
+     pack_lifecycle(3, b"org", do_apply=1),
+     "issue_id=3 — apply only, no downstream ops"),
+    ("seed_apply_withdraw",
+     pack_lifecycle(4, b"org", do_apply=1, do_withdraw=1),
+     "issue_id=4 — apply→withdraw (counter must return to 0)"),
+    ("seed_apply_withdraw_assign",
+     pack_lifecycle(5, b"org", do_apply=1, do_withdraw=1, do_assign=1),
+     "issue_id=5 — apply→withdraw→re-apply→assign (fuzzer re-applies before assign)"),
+    # ── Error paths ───────────────────────────────────────────────────────────
+    ("seed_assign_no_apply",
+     pack_lifecycle(6, b"org", do_assign=1),
+     "issue_id=6 — assign without prior apply (ApplicationNotFound)"),
+    ("seed_complete_no_assign",
+     pack_lifecycle(7, b"org", do_complete=1),
+     "issue_id=7 — complete without assign (AssignmentNotFound)"),
+    ("seed_revoke_no_assign",
+     pack_lifecycle(8, b"org", do_revoke=1),
+     "issue_id=8 — revoke without assign (AssignmentNotFound)"),
+    # ── Boundary: issue_id extremes ───────────────────────────────────────────
+    ("seed_max_u32_full_complete",
+     pack_lifecycle(0xFFFFFFFF, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=u32::MAX — full lifecycle at maximum boundary"),
+    ("seed_max_u32_full_revoke",
+     pack_lifecycle(0xFFFFFFFF, b"boundary", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=u32::MAX — full lifecycle (revoke path) at maximum boundary"),
+    ("seed_zero_issue_full_complete",
+     pack_lifecycle(0, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=0 — full lifecycle at zero boundary"),
+    ("seed_issue_255_full_revoke",
+     pack_lifecycle(255, b"boundary", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=255 — byte boundary full lifecycle (revoke)"),
+    # ── issue #835 explicit u32::MAX-1 boundary ───────────────────────────────
+    ("seed_max_u32_minus1_full_complete",
+     pack_lifecycle(0xFFFFFFFE, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=u32::MAX-1 (0xFFFFFFFE) — near-maximum, full lifecycle (complete)"),
+    ("seed_max_u32_minus1_full_revoke",
+     pack_lifecycle(0xFFFFFFFE, b"boundary", do_apply=1, do_assign=1, do_revoke=1),
+     "issue_id=u32::MAX-1 (0xFFFFFFFE) — near-maximum, full lifecycle (revoke)"),
+    ("seed_issue_one_full_complete",
+     pack_lifecycle(1, b"org", do_apply=1, do_assign=1, do_complete=1),
+     "issue_id=1 — minimum valid, full lifecycle (complete)"),
+    # ── Boundary: org lengths ─────────────────────────────────────────────────
+    ("seed_single_char_org_full",
+     pack_lifecycle(42, b"aXXXXX", do_apply=1, do_assign=1, do_complete=1),
+     "single-char org (after mapping) — minimal Symbol"),
+    ("seed_long_org_full_complete",
+     pack_lifecycle(100, b"abcdefghijklmnopqrstuvwxyzabcdef",
+                    do_apply=1, do_assign=1, do_complete=1),
+     "32-char org — maximum Soroban Symbol length, complete path"),
+    ("seed_long_org_full_revoke",
+     pack_lifecycle(101, b"abcdefghijklmnopqrstuvwxyzabcdef",
+                    do_apply=1, do_assign=1, do_revoke=1),
+     "32-char org — maximum Soroban Symbol length, revoke path"),
+    # ── All ops set (complete + revoke both set; complete wins because revoke
+    #    is only attempted when !do_complete) ───────────────────────────────────
+    ("seed_all_flags_set",
+     pack_lifecycle(99, b"allflag", do_apply=1, do_withdraw=1,
+                    do_assign=1, do_complete=1, do_revoke=1),
+     "all flags set — exercices withdraw+re-apply+assign+complete path"),
+    # ── No-op seed (no flags set) ─────────────────────────────────────────────
+    ("seed_no_ops",
+     pack_lifecycle(0, b"noop"),
+     "no operation flags set — minimal input, only setup runs"),
+]
+
+
+# ---------------------------------------------------------------------------
+# fuzz_admin_threshold seed definitions  (issue #836 / #835)
+# ---------------------------------------------------------------------------
+# Input layout for fuzz_admin_threshold:
+#   byte[0] — raw threshold value
+#   byte[1] — signer count, clamped to [0, 10] by the target
+#   byte[2] — bit 0: inject duplicate signer at position signer_count/2
+
+def pack_admin_threshold(threshold: int, signer_count: int,
+                          inject_duplicate: int = 0) -> bytes:
+    """Pack a seed for fuzz_admin_threshold."""
+    return bytes([threshold & 0xFF, signer_count & 0xFF, inject_duplicate & 0x01])
+
+
+SEEDS_ADMIN_THRESHOLD = [
+    # ── Rejection: threshold = 0 (always invalid) ────────────────────────────
+    ("seed_t0_s1",         pack_admin_threshold(0, 1),
+     "threshold=0, signers=1 — must panic with InvalidThreshold"),
+    ("seed_t0_s5",         pack_admin_threshold(0, 5),
+     "threshold=0, signers=5 — must panic with InvalidThreshold"),
+    ("seed_t0_s0",         pack_admin_threshold(0, 0),
+     "threshold=0, signers=0 — must panic (both invalid)"),
+    # ── Rejection: threshold > signer_count ──────────────────────────────────
+    ("seed_t6_s5",         pack_admin_threshold(6, 5),
+     "threshold=6, signers=5 — must panic with InvalidThreshold"),
+    ("seed_t11_s10",       pack_admin_threshold(11, 10),
+     "threshold=11, signers=10 — must panic with InvalidThreshold"),
+    ("seed_t1_s0",         pack_admin_threshold(1, 0),
+     "threshold=1, signers=0 — must panic (threshold > 0 signers)"),
+    # ── Valid: threshold in [1, signer_count] ─────────────────────────────────
+    ("seed_t1_s1",         pack_admin_threshold(1, 1),
+     "threshold=1, signers=1 — minimum valid single-signer threshold"),
+    ("seed_t1_s5",         pack_admin_threshold(1, 5),
+     "threshold=1, signers=5 — minimum threshold with 5 signers"),
+    ("seed_t5_s5",         pack_admin_threshold(5, 5),
+     "threshold=5, signers=5 — unanimous (threshold == signer_count)"),
+    ("seed_t3_s5",         pack_admin_threshold(3, 5),
+     "threshold=3, signers=5 — majority threshold"),
+    ("seed_t10_s10",       pack_admin_threshold(10, 10),
+     "threshold=10, signers=10 — maximum signer count, unanimous"),
+    ("seed_t1_s10",        pack_admin_threshold(1, 10),
+     "threshold=1, signers=10 — minimum threshold with maximum signers"),
+    # ── Duplicate signer injection ────────────────────────────────────────────
+    ("seed_t1_s3_dup",     pack_admin_threshold(1, 3, inject_duplicate=1),
+     "threshold=1, signers=3, duplicate injected — must not corrupt counter"),
+    ("seed_t3_s5_dup",     pack_admin_threshold(3, 5, inject_duplicate=1),
+     "threshold=3, signers=5, duplicate injected — majority with duplicate"),
+    ("seed_t10_s10_dup",   pack_admin_threshold(10, 10, inject_duplicate=1),
+     "threshold=10, signers=10, duplicate injected — unanimous with duplicate"),
+    # ── Boundary byte values ──────────────────────────────────────────────────
+    ("seed_t255_s10",      pack_admin_threshold(255, 10),
+     "threshold=255 (byte max), signers=10 — maps to valid threshold 255%10+1=6"),
+    ("seed_t128_s10",      pack_admin_threshold(128, 10),
+     "threshold=128, signers=10 — mid-byte value, maps to valid threshold"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Stellar address format helpers (issue #1070)
+# ---------------------------------------------------------------------------
+# These helpers produce byte sequences whose ASCII representation matches the
+# character patterns of real Stellar address types.  The fuzz targets accept
+# the raw bytes and map each byte into the allowed character set, so the exact
+# StrKey checksum is not required — what matters is that the *prefix* byte and
+# *length* range exercise the address-format branches in the contract.
+#
+# Stellar StrKey character set (base-32 variant):
+#   A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 2 3 4 5 6 7
+#
+# Address type summary:
+#   G-address (56 chars)  — standard Ed25519 public key (StrKey version 6)
+#   M-address (69 chars)  — multiplexed/muxed account (StrKey version 12)
+#                          Embeds a 64-bit account ID in the payload
+#   C-address (56 chars)  — Soroban contract account (StrKey version 14)
+#
+# For fuzzing purposes we encode the address as raw ASCII bytes so the target's
+# byte-to-char mapping exercises recognisable address-type prefixes.
+# The fuzz targets do not validate StrKey checksums.
+
+# Canonical representative test vectors.
+
+# G-address (56 chars): standard Ed25519 public key
+_G_ADDR_1 = b"GBTEST1234ABCDEFGHIJKLMNOPQRSTUVWXYZ2345678901234567GAAA"
+_G_ADDR_2 = b"GCEZNTESTADDRESS11111111111111111111111111111111111111AA"
+
+# M-address (69 chars): muxed account — longer due to embedded mux ID.
+# Real M-addresses are 69 characters long in StrKey encoding.
+_M_ADDR_1     = b"MA7QYNF7SOWQ3GLR2BGMZEHXR47BF4GSTCEZNTESTADDRESS1111111111111111AAAB"
+_M_ADDR_2     = b"MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+# Minimum-length M-address stub (tests short-payload branch)
+_M_ADDR_SHORT = b"MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+# Maximum-field mux ID — 0xFFFFFFFFFFFFFFFF embedded at start of payload
+_M_ADDR_MAX_ID = b"MZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZAB"
+
+# C-address (56 chars): contract account — same length as G-address
+_C_ADDR_1    = b"CCEZNTESTCONTRACT11111111111111111111111111111111111111AB"
+_C_ADDR_2    = b"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+# Contract address with maximum-entropy payload
+_C_ADDR_HIGH = b"CZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZAB"
+
+
+def pack_apply_addr(issue_id: int, addr: bytes) -> bytes:
+    """Pack an apply seed using a Stellar address as the org_id field.
+
+    The fuzz target reads the first 4 bytes as a little-endian u32 issue_id and
+    the remaining bytes as the org_id symbol payload.  Passing a Stellar address
+    as the org payload exercises address-format parsing in downstream handlers.
+    """
+    return struct.pack("<I", issue_id & 0xFFFFFFFF) + addr
+
+
+def pack_apply_with_flag_addr(issue_id: int, addr: bytes,
+                               apply_flag: int) -> bytes:
+    """Pack an assign seed using a Stellar address as the org_id field."""
+    data = bytearray(pack_apply_addr(issue_id, addr))
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFE) | (apply_flag & 1)
+    else:
+        data += bytearray([apply_flag & 1])
+    return bytes(data)
+
+
+# ---------------------------------------------------------------------------
+# M-address seeds for fuzz_apply (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_APPLY_MADDR = [
+    ("seed_m_addr_apply_1",
+     pack_apply_addr(1, _M_ADDR_1),
+     "M-muxed address as org_id, issue_id=1 — standard M-address length (69 chars)"),
+    ("seed_m_addr_apply_2",
+     pack_apply_addr(42, _M_ADDR_2),
+     "M-muxed address as org_id, issue_id=42 — all-A M-address"),
+    ("seed_m_addr_apply_short",
+     pack_apply_addr(10, _M_ADDR_SHORT),
+     "Short M-address stub as org_id — minimum-length muxed address branch"),
+    ("seed_m_addr_apply_max_id",
+     pack_apply_addr(0xFFFFFFFE, _M_ADDR_MAX_ID),
+     "M-address with max mux ID, near-max issue_id — boundary combination"),
+    ("seed_m_addr_apply_zero_issue",
+     pack_apply_addr(0, _M_ADDR_1),
+     "M-address as org_id, issue_id=0 — zero boundary (contract rejects)"),
+    ("seed_m_addr_apply_max_issue",
+     pack_apply_addr(0xFFFFFFFF, _M_ADDR_1),
+     "M-address as org_id, issue_id=u32::MAX — max boundary (contract rejects)"),
+]
+
+# ---------------------------------------------------------------------------
+# C-address seeds for fuzz_apply (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_APPLY_CADDR = [
+    ("seed_c_addr_apply_1",
+     pack_apply_addr(1, _C_ADDR_1),
+     "C-contract address as org_id, issue_id=1 — standard C-address (56 chars)"),
+    ("seed_c_addr_apply_2",
+     pack_apply_addr(99, _C_ADDR_2),
+     "C-contract address as org_id, issue_id=99 — all-A C-address"),
+    ("seed_c_addr_apply_high",
+     pack_apply_addr(255, _C_ADDR_HIGH),
+     "High-entropy C-address as org_id, issue_id=255 — byte boundary"),
+    ("seed_c_addr_apply_max_issue",
+     pack_apply_addr(0xFFFFFFFF, _C_ADDR_1),
+     "C-address as org_id, issue_id=u32::MAX — contract rejects with InvalidIssueId"),
+    ("seed_c_addr_apply_zero_issue",
+     pack_apply_addr(0, _C_ADDR_1),
+     "C-address as org_id, issue_id=0 — zero boundary (contract rejects)"),
+    ("seed_c_addr_apply_max_minus1",
+     pack_apply_addr(0xFFFFFFFE, _C_ADDR_2),
+     "C-address as org_id, issue_id=u32::MAX-1 — near-max boundary"),
+]
+
+# ---------------------------------------------------------------------------
+# M-address seeds for fuzz_assign (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_ASSIGN_MADDR = [
+    ("seed_m_addr_assign_with_apply",
+     pack_apply_with_flag_addr(1, _M_ADDR_1, apply_flag=1),
+     "M-address as org_id, issue_id=1, with prior apply — standard assign path"),
+    ("seed_m_addr_assign_no_apply",
+     pack_apply_with_flag_addr(1, _M_ADDR_1, apply_flag=0),
+     "M-address as org_id, issue_id=1, no prior apply — ApplicationNotFound path"),
+    ("seed_m_addr_assign_max_id_with_apply",
+     pack_apply_with_flag_addr(0xFFFFFFFE, _M_ADDR_MAX_ID, apply_flag=1),
+     "M-address max mux ID, issue_id=u32::MAX-1, with apply — boundary combination"),
+    ("seed_m_addr_assign_short_with_apply",
+     pack_apply_with_flag_addr(42, _M_ADDR_SHORT, apply_flag=1),
+     "Short M-address, issue_id=42, with apply — minimum-length muxed address"),
+]
+
+# ---------------------------------------------------------------------------
+# C-address seeds for fuzz_assign (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_ASSIGN_CADDR = [
+    ("seed_c_addr_assign_with_apply",
+     pack_apply_with_flag_addr(1, _C_ADDR_1, apply_flag=1),
+     "C-address as org_id, issue_id=1, with prior apply — contract address assign path"),
+    ("seed_c_addr_assign_no_apply",
+     pack_apply_with_flag_addr(1, _C_ADDR_1, apply_flag=0),
+     "C-address as org_id, issue_id=1, no prior apply — ApplicationNotFound"),
+    ("seed_c_addr_assign_high_with_apply",
+     pack_apply_with_flag_addr(255, _C_ADDR_HIGH, apply_flag=1),
+     "High-entropy C-address, issue_id=255, with apply — byte boundary"),
+    ("seed_c_addr_assign_max_minus1_with_apply",
+     pack_apply_with_flag_addr(0xFFFFFFFE, _C_ADDR_2, apply_flag=1),
+     "C-address, issue_id=u32::MAX-1, with apply — near-max boundary"),
+]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--corpus-dir", default="fuzz/corpus",
+                        help="Root corpus directory (default: fuzz/corpus)")
+    args = parser.parse_args()
+
+    root = args.corpus_dir
+
+    targets = [
+        ("fuzz_apply",            SEEDS_APPLY + SEEDS_APPLY_MADDR + SEEDS_APPLY_CADDR),
+        ("fuzz_assign",           SEEDS_ASSIGN + SEEDS_ASSIGN_MADDR + SEEDS_ASSIGN_CADDR),
+        ("fuzz_batch_apply",      SEEDS_BATCH),
+        ("fuzz_withdraw",         SEEDS_WITHDRAW),
+        ("fuzz_revoke",           SEEDS_REVOKE),
+        ("fuzz_lifecycle",        SEEDS_LIFECYCLE),
+        ("fuzz_admin_threshold",  SEEDS_ADMIN_THRESHOLD),
+    ]
+
+    total = 0
+    for target_name, seeds in targets:
+        print(f"\n[{target_name}]")
+        for filename, data, description in seeds:
+            path = os.path.join(root, target_name, filename)
+            write_seed(path, data)
+            total += 1
+
+    print(f"\n{total} seed files written to {root}/")
+    print("Run fuzz targets with:")
+    for target_name, _ in targets:
+        print(f"  cargo +nightly fuzz run {target_name} {root}/{target_name}"
+              " -- -max_total_time=600")
+
+
+if __name__ == "__main__":
+    main()

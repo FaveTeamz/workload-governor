@@ -1,0 +1,27 @@
+--- src/lib.rs
++++ replace WorkloadGovernor::extend_application_ttl with ()
+@@ -417,23 +417,17 @@
+     /// ```text
+     /// stellar contract invoke --id <CONTRACT_ID> \
+     ///   --network testnet --source <any-account> \
+     ///   -- extend_application_ttl \
+     ///   --contributor <CONTRIBUTOR_ADDRESS> \
+     ///   --org_id my_org --issue_id 42
+     /// ```
+     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+-            panic_with_error!(env, ContractError::ApplicationNotFound);
+-        }
+-        storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);
+-        if storage::get_global_app_count(&env, &contributor) > 0 {
+-            storage::extend_global_app_count_ttl(&env, &contributor);
+-        }
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     // -----------------------------------------------------------------------
+     // Read-only query functions — no storage mutations, no events
+     // -----------------------------------------------------------------------
+ 
+     /// Returns the contributor's current global pending-application count.
+     ///

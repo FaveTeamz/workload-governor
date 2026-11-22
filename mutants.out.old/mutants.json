@@ -1,0 +1,2690 @@
+[
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::initialize with ()\n@@ -47,23 +47,17 @@\n     ///\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet --source <admin-account> \\\n     ///   -- initialize --admin <ADMIN_ADDRESS>\n     /// ```\n     pub fn initialize(env: Env, admin: Address) {\n-        if storage::get_admin(&env).is_some() {\n-            panic_with_error!(env, ContractError::AlreadyInitialized);\n-        }\n-        admin.require_auth();\n-        storage::set_admin(&env, &admin);\n-        storage::bump_instance(&env);\n-        events::emit_initialized(&env, &admin);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Authorises a maintainer to manage issues within a specific organisation.\n     /// The operation is idempotent — calling it twice for the same pair is safe.\n     ///\n     /// # Who can call\n     /// The stored admin address only.\n     ///\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::initialize",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 62
+        },
+        "start": {
+          "column": 5,
+          "line": 32
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:55:9: replace WorkloadGovernor::initialize with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 61
+      },
+      "start": {
+        "column": 9,
+        "line": 55
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::register_maintainer with ()\n@@ -75,22 +75,17 @@\n     /// # Returns\n     /// `()` on success.\n     ///\n     /// # Errors\n     /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.\n     /// * [`ContractError::UnauthorizedAdmin`] — `admin` auth check fails (enforced by\n     ///   `require_auth` on the stored admin, not a direct comparison).\n     pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        let stored_admin = storage::get_admin(&env).unwrap();\n-        stored_admin.require_auth();\n-        storage::set_maintainer(&env, &maintainer, &org_id);\n-        storage::bump_instance(&env);\n-        events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Upgrades the contract WASM to a new hash (admin-only).\n     ///\n     /// This is the standard Soroban upgrade path. The new WASM must already be\n     /// uploaded to the network before calling this function.\n     ///\n     /// # Who can call\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::register_maintainer",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 89
+        },
+        "start": {
+          "column": 5,
+          "line": 64
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:83:9: replace WorkloadGovernor::register_maintainer with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 80,
+        "line": 88
+      },
+      "start": {
+        "column": 9,
+        "line": 83
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::upgrade with ()\n@@ -101,20 +101,17 @@\n     ///\n     /// # Returns\n     /// `()` on success; the contract is upgraded in-place with no address change.\n     ///\n     /// # Errors\n     /// * [`ContractError::NotInitialized`]   — contract has not been initialised yet.\n     /// * [`ContractError::UnauthorizedAdmin`] — admin auth check fails.\n     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        let stored_admin = storage::get_admin(&env).unwrap();\n-        stored_admin.require_auth();\n-        env.deployer().update_current_contract_wasm(new_wasm_hash);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     // -----------------------------------------------------------------------\n     // Contributor functions\n     // -----------------------------------------------------------------------\n \n     /// Submits a pending application for a contributor to work on a specific issue.\n     ///\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::upgrade",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 113
+        },
+        "start": {
+          "column": 5,
+          "line": 91
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:109:9: replace WorkloadGovernor::upgrade with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 68,
+        "line": 112
+      },
+      "start": {
+        "column": 9,
+        "line": 109
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::apply_for_issue with ()\n@@ -145,31 +145,17 @@\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet --source <contributor-account> \\\n     ///   -- apply_for_issue \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        contributor.require_auth();\n-        let count = storage::get_global_app_count(&env, &contributor);\n-        if count >= storage::GLOBAL_APP_LIMIT {\n-            panic_with_error!(env, ContractError::GlobalApplicationLimitReached);\n-        }\n-        if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n-            panic_with_error!(env, ContractError::DuplicateApplication);\n-        }\n-        storage::set_global_app_count(&env, &contributor, count + 1);\n-        storage::set_app_entry(&env, &contributor, &org_id, issue_id);\n-        storage::extend_global_app_count_ttl(&env, &contributor);\n-        storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n-        storage::bump_instance(&env);\n-        events::emit_application_submitted(&env, &contributor, &org_id, issue_id);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Cancels a contributor's pending application for a specific issue.\n     ///\n     /// Removes the application sentinel and decrements the global application counter.\n     /// If the counter reaches zero the counter entry itself is removed to free storage.\n     ///\n     /// # Who can call\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::apply_for_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 168
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:153:9: replace WorkloadGovernor::apply_for_issue with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 167
+      },
+      "start": {
+        "column": 9,
+        "line": 153
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace >= with < in WorkloadGovernor::apply_for_issue\n@@ -148,17 +148,17 @@\n     ///   -- apply_for_issue \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         contributor.require_auth();\n         let count = storage::get_global_app_count(&env, &contributor);\n-        if count >= storage::GLOBAL_APP_LIMIT {\n+        if count < /* ~ changed by cargo-mutants ~ */ storage::GLOBAL_APP_LIMIT {\n             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);\n         }\n         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::DuplicateApplication);\n         }\n         storage::set_global_app_count(&env, &contributor, count + 1);\n         storage::set_app_entry(&env, &contributor, &org_id, issue_id);\n         storage::extend_global_app_count_ttl(&env, &contributor);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::apply_for_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 168
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:156:18: replace >= with < in WorkloadGovernor::apply_for_issue",
+    "package": "workload-governor",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 156
+      },
+      "start": {
+        "column": 18,
+        "line": 156
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace + with - in WorkloadGovernor::apply_for_issue\n@@ -154,17 +154,17 @@\n         contributor.require_auth();\n         let count = storage::get_global_app_count(&env, &contributor);\n         if count >= storage::GLOBAL_APP_LIMIT {\n             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);\n         }\n         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::DuplicateApplication);\n         }\n-        storage::set_global_app_count(&env, &contributor, count + 1);\n+        storage::set_global_app_count(&env, &contributor, count - /* ~ changed by cargo-mutants ~ */ 1);\n         storage::set_app_entry(&env, &contributor, &org_id, issue_id);\n         storage::extend_global_app_count_ttl(&env, &contributor);\n         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n         storage::bump_instance(&env);\n         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);\n     }\n \n     /// Cancels a contributor's pending application for a specific issue.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::apply_for_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 168
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:162:65: replace + with - in WorkloadGovernor::apply_for_issue",
+    "package": "workload-governor",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 66,
+        "line": 162
+      },
+      "start": {
+        "column": 65,
+        "line": 162
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace + with * in WorkloadGovernor::apply_for_issue\n@@ -154,17 +154,17 @@\n         contributor.require_auth();\n         let count = storage::get_global_app_count(&env, &contributor);\n         if count >= storage::GLOBAL_APP_LIMIT {\n             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);\n         }\n         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::DuplicateApplication);\n         }\n-        storage::set_global_app_count(&env, &contributor, count + 1);\n+        storage::set_global_app_count(&env, &contributor, count * /* ~ changed by cargo-mutants ~ */ 1);\n         storage::set_app_entry(&env, &contributor, &org_id, issue_id);\n         storage::extend_global_app_count_ttl(&env, &contributor);\n         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n         storage::bump_instance(&env);\n         events::emit_application_submitted(&env, &contributor, &org_id, issue_id);\n     }\n \n     /// Cancels a contributor's pending application for a specific issue.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::apply_for_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 168
+        },
+        "start": {
+          "column": 5,
+          "line": 119
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:162:65: replace + with * in WorkloadGovernor::apply_for_issue",
+    "package": "workload-governor",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 66,
+        "line": 162
+      },
+      "start": {
+        "column": 65,
+        "line": 162
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::withdraw_application with ()\n@@ -193,31 +193,17 @@\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet --source <contributor-account> \\\n     ///   -- withdraw_application \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        contributor.require_auth();\n-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n-            panic_with_error!(env, ContractError::ApplicationNotFound);\n-        }\n-        storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n-        let count = storage::get_global_app_count(&env, &contributor);\n-        let new_count = count.saturating_sub(1);\n-        if new_count == 0 {\n-            storage::remove_global_app_count(&env, &contributor);\n-        } else {\n-            storage::set_global_app_count(&env, &contributor, new_count);\n-        }\n-        storage::bump_instance(&env);\n-        events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     // -----------------------------------------------------------------------\n     // Maintainer functions\n     // -----------------------------------------------------------------------\n \n     /// Converts a pending application into an active assignment (maintainer-only).\n     ///\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::withdraw_application",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 216
+        },
+        "start": {
+          "column": 5,
+          "line": 170
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:201:9: replace WorkloadGovernor::withdraw_application with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 83,
+        "line": 215
+      },
+      "start": {
+        "column": 9,
+        "line": 201
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::withdraw_application\n@@ -195,17 +195,17 @@\n     ///   --network testnet --source <contributor-account> \\\n     ///   -- withdraw_application \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         contributor.require_auth();\n-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n         let count = storage::get_global_app_count(&env, &contributor);\n         let new_count = count.saturating_sub(1);\n         if new_count == 0 {\n             storage::remove_global_app_count(&env, &contributor);\n         } else {\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::withdraw_application",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 216
+        },
+        "start": {
+          "column": 5,
+          "line": 170
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:203:12: delete ! in WorkloadGovernor::withdraw_application",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 203
+      },
+      "start": {
+        "column": 12,
+        "line": 203
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace == with != in WorkloadGovernor::withdraw_application\n@@ -201,17 +201,17 @@\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         contributor.require_auth();\n         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n         let count = storage::get_global_app_count(&env, &contributor);\n         let new_count = count.saturating_sub(1);\n-        if new_count == 0 {\n+        if new_count != /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::remove_global_app_count(&env, &contributor);\n         } else {\n             storage::set_global_app_count(&env, &contributor, new_count);\n         }\n         storage::bump_instance(&env);\n         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);\n     }\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::withdraw_application",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 216
+        },
+        "start": {
+          "column": 5,
+          "line": 170
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:209:22: replace == with != in WorkloadGovernor::withdraw_application",
+    "package": "workload-governor",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 209
+      },
+      "start": {
+        "column": 22,
+        "line": 209
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::assign_issue with ()\n@@ -256,44 +256,17 @@\n     /// ```\n     pub fn assign_issue(\n         env: Env,\n         maintainer: Address,\n         contributor: Address,\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        maintainer.require_auth();\n-        if !storage::is_maintainer(&env, &maintainer, &org_id) {\n-            panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n-        }\n-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n-            panic_with_error!(env, ContractError::ApplicationNotFound);\n-        }\n-        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {\n-            panic_with_error!(env, ContractError::OrgAssignmentLimitReached);\n-        }\n-        if storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n-            panic_with_error!(env, ContractError::AlreadyAssigned);\n-        }\n-        // Transition: consume the application, create the assignment\n-        storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n-        let app_count = storage::get_global_app_count(&env, &contributor);\n-        let new_app_count = app_count.saturating_sub(1);\n-        if new_app_count == 0 {\n-            storage::remove_global_app_count(&env, &contributor);\n-        } else {\n-            storage::set_global_app_count(&env, &contributor, new_app_count);\n-        }\n-        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);\n-        storage::set_assignment(&env, &org_id, issue_id, &contributor);\n-        storage::bump_instance(&env);\n-        events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Marks an active assignment as completed and frees the assignment slot (maintainer-only).\n     ///\n     /// Removes the assignment sentinel and decrements the contributor's org-level\n     /// assignment counter. If the counter reaches zero the counter entry itself is removed.\n     ///\n     /// # Who can call\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:264:9: replace WorkloadGovernor::assign_issue with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 89,
+        "line": 291
+      },
+      "start": {
+        "column": 9,
+        "line": 264
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::assign_issue\n@@ -258,17 +258,17 @@\n         env: Env,\n         maintainer: Address,\n         contributor: Address,\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         maintainer.require_auth();\n-        if !storage::is_maintainer(&env, &maintainer, &org_id) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {\n             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:266:12: delete ! in WorkloadGovernor::assign_issue",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 266
+      },
+      "start": {
+        "column": 12,
+        "line": 266
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::assign_issue\n@@ -261,17 +261,17 @@\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         maintainer.require_auth();\n         if !storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {\n             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);\n         }\n         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AlreadyAssigned);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:269:12: delete ! in WorkloadGovernor::assign_issue",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 269
+      },
+      "start": {
+        "column": 12,
+        "line": 269
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace >= with < in WorkloadGovernor::assign_issue\n@@ -265,17 +265,17 @@\n         maintainer.require_auth();\n         if !storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {\n+        if asgn_count < /* ~ changed by cargo-mutants ~ */ storage::ORG_ASSIGNMENT_LIMIT {\n             panic_with_error!(env, ContractError::OrgAssignmentLimitReached);\n         }\n         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AlreadyAssigned);\n         }\n         // Transition: consume the application, create the assignment\n         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n         let app_count = storage::get_global_app_count(&env, &contributor);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:273:23: replace >= with < in WorkloadGovernor::assign_issue",
+    "package": "workload-governor",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 273
+      },
+      "start": {
+        "column": 23,
+        "line": 273
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace == with != in WorkloadGovernor::assign_issue\n@@ -275,17 +275,17 @@\n         }\n         if storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AlreadyAssigned);\n         }\n         // Transition: consume the application, create the assignment\n         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n         let app_count = storage::get_global_app_count(&env, &contributor);\n         let new_app_count = app_count.saturating_sub(1);\n-        if new_app_count == 0 {\n+        if new_app_count != /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::remove_global_app_count(&env, &contributor);\n         } else {\n             storage::set_global_app_count(&env, &contributor, new_app_count);\n         }\n         storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);\n         storage::set_assignment(&env, &org_id, issue_id, &contributor);\n         storage::bump_instance(&env);\n         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:283:26: replace == with != in WorkloadGovernor::assign_issue",
+    "package": "workload-governor",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 283
+      },
+      "start": {
+        "column": 26,
+        "line": 283
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace + with - in WorkloadGovernor::assign_issue\n@@ -280,17 +280,17 @@\n         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n         let app_count = storage::get_global_app_count(&env, &contributor);\n         let new_app_count = app_count.saturating_sub(1);\n         if new_app_count == 0 {\n             storage::remove_global_app_count(&env, &contributor);\n         } else {\n             storage::set_global_app_count(&env, &contributor, new_app_count);\n         }\n-        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);\n+        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count - /* ~ changed by cargo-mutants ~ */ 1);\n         storage::set_assignment(&env, &org_id, issue_id, &contributor);\n         storage::bump_instance(&env);\n         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);\n     }\n \n     /// Marks an active assignment as completed and frees the assignment slot (maintainer-only).\n     ///\n     /// Removes the assignment sentinel and decrements the contributor's org-level\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:288:83: replace + with - in WorkloadGovernor::assign_issue",
+    "package": "workload-governor",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 84,
+        "line": 288
+      },
+      "start": {
+        "column": 83,
+        "line": 288
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace + with * in WorkloadGovernor::assign_issue\n@@ -280,17 +280,17 @@\n         storage::remove_app_entry(&env, &contributor, &org_id, issue_id);\n         let app_count = storage::get_global_app_count(&env, &contributor);\n         let new_app_count = app_count.saturating_sub(1);\n         if new_app_count == 0 {\n             storage::remove_global_app_count(&env, &contributor);\n         } else {\n             storage::set_global_app_count(&env, &contributor, new_app_count);\n         }\n-        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);\n+        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count * /* ~ changed by cargo-mutants ~ */ 1);\n         storage::set_assignment(&env, &org_id, issue_id, &contributor);\n         storage::bump_instance(&env);\n         events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);\n     }\n \n     /// Marks an active assignment as completed and frees the assignment slot (maintainer-only).\n     ///\n     /// Removes the assignment sentinel and decrements the contributor's org-level\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::assign_issue",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 292
+        },
+        "start": {
+          "column": 5,
+          "line": 222
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:288:83: replace + with * in WorkloadGovernor::assign_issue",
+    "package": "workload-governor",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 84,
+        "line": 288
+      },
+      "start": {
+        "column": 83,
+        "line": 288
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::complete_assignment with ()\n@@ -314,34 +314,17 @@\n     /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists for the triple.\n     pub fn complete_assignment(\n         env: Env,\n         maintainer: Address,\n         contributor: Address,\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        maintainer.require_auth();\n-        if !storage::is_maintainer(&env, &maintainer, &org_id) {\n-            panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n-        }\n-        if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n-            panic_with_error!(env, ContractError::AssignmentNotFound);\n-        }\n-        storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n-        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        let new_count = asgn_count.saturating_sub(1);\n-        if new_count == 0 {\n-            storage::remove_org_assignment_count(&env, &contributor, &org_id);\n-        } else {\n-            storage::set_org_assignment_count(&env, &contributor, &org_id, new_count);\n-        }\n-        storage::bump_instance(&env);\n-        events::emit_assignment_completed(&env, &maintainer, &contributor, &org_id, issue_id);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Cancels an active assignment and frees the assignment slot (maintainer-only).\n     ///\n     /// Semantically identical to [`WorkloadGovernor::complete_assignment`] except the emitted\n     /// event is `assignment_revoked` rather than `assignment_completed`. Use this when a\n     /// contributor's work is being cancelled rather than accepted.\n     ///\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::complete_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 340
+        },
+        "start": {
+          "column": 5,
+          "line": 294
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:322:9: replace WorkloadGovernor::complete_assignment with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 95,
+        "line": 339
+      },
+      "start": {
+        "column": 9,
+        "line": 322
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::complete_assignment\n@@ -316,17 +316,17 @@\n         env: Env,\n         maintainer: Address,\n         contributor: Address,\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         maintainer.require_auth();\n-        if !storage::is_maintainer(&env, &maintainer, &org_id) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AssignmentNotFound);\n         }\n         storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         let new_count = asgn_count.saturating_sub(1);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::complete_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 340
+        },
+        "start": {
+          "column": 5,
+          "line": 294
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:324:12: delete ! in WorkloadGovernor::complete_assignment",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 324
+      },
+      "start": {
+        "column": 12,
+        "line": 324
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::complete_assignment\n@@ -319,17 +319,17 @@\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         maintainer.require_auth();\n         if !storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n-        if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AssignmentNotFound);\n         }\n         storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         let new_count = asgn_count.saturating_sub(1);\n         if new_count == 0 {\n             storage::remove_org_assignment_count(&env, &contributor, &org_id);\n         } else {\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::complete_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 340
+        },
+        "start": {
+          "column": 5,
+          "line": 294
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:327:12: delete ! in WorkloadGovernor::complete_assignment",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 327
+      },
+      "start": {
+        "column": 12,
+        "line": 327
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace == with != in WorkloadGovernor::complete_assignment\n@@ -325,17 +325,17 @@\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AssignmentNotFound);\n         }\n         storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         let new_count = asgn_count.saturating_sub(1);\n-        if new_count == 0 {\n+        if new_count != /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::remove_org_assignment_count(&env, &contributor, &org_id);\n         } else {\n             storage::set_org_assignment_count(&env, &contributor, &org_id, new_count);\n         }\n         storage::bump_instance(&env);\n         events::emit_assignment_completed(&env, &maintainer, &contributor, &org_id, issue_id);\n     }\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::complete_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 340
+        },
+        "start": {
+          "column": 5,
+          "line": 294
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:333:22: replace == with != in WorkloadGovernor::complete_assignment",
+    "package": "workload-governor",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 333
+      },
+      "start": {
+        "column": 22,
+        "line": 333
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::revoke_assignment with ()\n@@ -363,34 +363,17 @@\n     /// * [`ContractError::AssignmentNotFound`]     — no active assignment exists for the triple.\n     pub fn revoke_assignment(\n         env: Env,\n         maintainer: Address,\n         contributor: Address,\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n-        storage::require_initialized(&env, &ContractError::NotInitialized);\n-        maintainer.require_auth();\n-        if !storage::is_maintainer(&env, &maintainer, &org_id) {\n-            panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n-        }\n-        if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n-            panic_with_error!(env, ContractError::AssignmentNotFound);\n-        }\n-        storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n-        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        let new_count = asgn_count.saturating_sub(1);\n-        if new_count == 0 {\n-            storage::remove_org_assignment_count(&env, &contributor, &org_id);\n-        } else {\n-            storage::set_org_assignment_count(&env, &contributor, &org_id, new_count);\n-        }\n-        storage::bump_instance(&env);\n-        events::emit_assignment_revoked(&env, &maintainer, &contributor, &org_id, issue_id);\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     // -----------------------------------------------------------------------\n     // TTL management\n     // -----------------------------------------------------------------------\n \n     /// Resets the TTL of a contributor's pending application entries to the full wave\n     /// duration (permissionless — anyone can call this to prevent an application expiring).\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::revoke_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 389
+        },
+        "start": {
+          "column": 5,
+          "line": 342
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:371:9: replace WorkloadGovernor::revoke_assignment with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 93,
+        "line": 388
+      },
+      "start": {
+        "column": 9,
+        "line": 371
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::revoke_assignment\n@@ -365,17 +365,17 @@\n         env: Env,\n         maintainer: Address,\n         contributor: Address,\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         maintainer.require_auth();\n-        if !storage::is_maintainer(&env, &maintainer, &org_id) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AssignmentNotFound);\n         }\n         storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         let new_count = asgn_count.saturating_sub(1);\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::revoke_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 389
+        },
+        "start": {
+          "column": 5,
+          "line": 342
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:373:12: delete ! in WorkloadGovernor::revoke_assignment",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 373
+      },
+      "start": {
+        "column": 12,
+        "line": 373
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::revoke_assignment\n@@ -368,17 +368,17 @@\n         org_id: Symbol,\n         issue_id: u32,\n     ) {\n         storage::require_initialized(&env, &ContractError::NotInitialized);\n         maintainer.require_auth();\n         if !storage::is_maintainer(&env, &maintainer, &org_id) {\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n-        if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AssignmentNotFound);\n         }\n         storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         let new_count = asgn_count.saturating_sub(1);\n         if new_count == 0 {\n             storage::remove_org_assignment_count(&env, &contributor, &org_id);\n         } else {\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::revoke_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 389
+        },
+        "start": {
+          "column": 5,
+          "line": 342
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:376:12: delete ! in WorkloadGovernor::revoke_assignment",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 376
+      },
+      "start": {
+        "column": 12,
+        "line": 376
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace == with != in WorkloadGovernor::revoke_assignment\n@@ -374,17 +374,17 @@\n             panic_with_error!(env, ContractError::UnauthorizedMaintainer);\n         }\n         if !storage::has_assignment(&env, &org_id, issue_id, &contributor) {\n             panic_with_error!(env, ContractError::AssignmentNotFound);\n         }\n         storage::remove_assignment(&env, &org_id, issue_id, &contributor);\n         let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n         let new_count = asgn_count.saturating_sub(1);\n-        if new_count == 0 {\n+        if new_count != /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::remove_org_assignment_count(&env, &contributor, &org_id);\n         } else {\n             storage::set_org_assignment_count(&env, &contributor, &org_id, new_count);\n         }\n         storage::bump_instance(&env);\n         events::emit_assignment_revoked(&env, &maintainer, &contributor, &org_id, issue_id);\n     }\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::revoke_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 389
+        },
+        "start": {
+          "column": 5,
+          "line": 342
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:382:22: replace == with != in WorkloadGovernor::revoke_assignment",
+    "package": "workload-governor",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 382
+      },
+      "start": {
+        "column": 22,
+        "line": 382
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::extend_application_ttl with ()\n@@ -417,23 +417,17 @@\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet --source <any-account> \\\n     ///   -- extend_application_ttl \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n-            panic_with_error!(env, ContractError::ApplicationNotFound);\n-        }\n-        storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n-        if storage::get_global_app_count(&env, &contributor) > 0 {\n-            storage::extend_global_app_count_ttl(&env, &contributor);\n-        }\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     // -----------------------------------------------------------------------\n     // Read-only query functions — no storage mutations, no events\n     // -----------------------------------------------------------------------\n \n     /// Returns the contributor's current global pending-application count.\n     ///\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::extend_application_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 432
+        },
+        "start": {
+          "column": 5,
+          "line": 395
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:425:9: replace WorkloadGovernor::extend_application_ttl with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 431
+      },
+      "start": {
+        "column": 9,
+        "line": 425
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ delete ! in WorkloadGovernor::extend_application_ttl\n@@ -417,17 +417,17 @@\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet --source <any-account> \\\n     ///   -- extend_application_ttl \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n+        if  /* ~ changed by cargo-mutants ~ */storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n         if storage::get_global_app_count(&env, &contributor) > 0 {\n             storage::extend_global_app_count_ttl(&env, &contributor);\n         }\n     }\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::extend_application_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 432
+        },
+        "start": {
+          "column": 5,
+          "line": 395
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/lib.rs:425:12: delete ! in WorkloadGovernor::extend_application_ttl",
+    "package": "workload-governor",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 13,
+        "line": 425
+      },
+      "start": {
+        "column": 12,
+        "line": 425
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace > with == in WorkloadGovernor::extend_application_ttl\n@@ -421,17 +421,17 @@\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n-        if storage::get_global_app_count(&env, &contributor) > 0 {\n+        if storage::get_global_app_count(&env, &contributor) == /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::extend_global_app_count_ttl(&env, &contributor);\n         }\n     }\n \n     // -----------------------------------------------------------------------\n     // Read-only query functions — no storage mutations, no events\n     // -----------------------------------------------------------------------\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::extend_application_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 432
+        },
+        "start": {
+          "column": 5,
+          "line": 395
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:429:62: replace > with == in WorkloadGovernor::extend_application_ttl",
+    "package": "workload-governor",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 63,
+        "line": 429
+      },
+      "start": {
+        "column": 62,
+        "line": 429
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace > with < in WorkloadGovernor::extend_application_ttl\n@@ -421,17 +421,17 @@\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n-        if storage::get_global_app_count(&env, &contributor) > 0 {\n+        if storage::get_global_app_count(&env, &contributor) < /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::extend_global_app_count_ttl(&env, &contributor);\n         }\n     }\n \n     // -----------------------------------------------------------------------\n     // Read-only query functions — no storage mutations, no events\n     // -----------------------------------------------------------------------\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::extend_application_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 432
+        },
+        "start": {
+          "column": 5,
+          "line": 395
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:429:62: replace > with < in WorkloadGovernor::extend_application_ttl",
+    "package": "workload-governor",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 63,
+        "line": 429
+      },
+      "start": {
+        "column": 62,
+        "line": 429
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace > with >= in WorkloadGovernor::extend_application_ttl\n@@ -421,17 +421,17 @@\n     ///   --contributor <CONTRIBUTOR_ADDRESS> \\\n     ///   --org_id my_org --issue_id 42\n     /// ```\n     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {\n         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {\n             panic_with_error!(env, ContractError::ApplicationNotFound);\n         }\n         storage::extend_app_entry_ttl(&env, &contributor, &org_id, issue_id);\n-        if storage::get_global_app_count(&env, &contributor) > 0 {\n+        if storage::get_global_app_count(&env, &contributor) >= /* ~ changed by cargo-mutants ~ */ 0 {\n             storage::extend_global_app_count_ttl(&env, &contributor);\n         }\n     }\n \n     // -----------------------------------------------------------------------\n     // Read-only query functions — no storage mutations, no events\n     // -----------------------------------------------------------------------\n \n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::extend_application_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 432
+        },
+        "start": {
+          "column": 5,
+          "line": 395
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:429:62: replace > with >= in WorkloadGovernor::extend_application_ttl",
+    "package": "workload-governor",
+    "replacement": ">=",
+    "span": {
+      "end": {
+        "column": 63,
+        "line": 429
+      },
+      "start": {
+        "column": 62,
+        "line": 429
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_global_application_count -> u32 with 0\n@@ -451,17 +451,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- get_global_application_count \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS>\n     /// ```\n     pub fn get_global_application_count(env: Env, contributor: Address) -> u32 {\n-        storage::get_global_app_count(&env, &contributor)\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns the contributor's active assignment count for the given organisation.\n     ///\n     /// Returns `0` if the contributor has no active assignments in `org_id`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_global_application_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 460
+        },
+        "start": {
+          "column": 5,
+          "line": 438
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:459:9: replace WorkloadGovernor::get_global_application_count -> u32 with 0",
+    "package": "workload-governor",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 459
+      },
+      "start": {
+        "column": 9,
+        "line": 459
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_global_application_count -> u32 with 1\n@@ -451,17 +451,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- get_global_application_count \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS>\n     /// ```\n     pub fn get_global_application_count(env: Env, contributor: Address) -> u32 {\n-        storage::get_global_app_count(&env, &contributor)\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns the contributor's active assignment count for the given organisation.\n     ///\n     /// Returns `0` if the contributor has no active assignments in `org_id`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_global_application_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 460
+        },
+        "start": {
+          "column": 5,
+          "line": 438
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:459:9: replace WorkloadGovernor::get_global_application_count -> u32 with 1",
+    "package": "workload-governor",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 459
+      },
+      "start": {
+        "column": 9,
+        "line": 459
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_org_assignment_count -> u32 with 0\n@@ -476,17 +476,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- get_org_assignment_count \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org\n     /// ```\n     pub fn get_org_assignment_count(env: Env, contributor: Address, org_id: Symbol) -> u32 {\n-        storage::get_org_assignment_count(&env, &contributor, &org_id)\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor has a pending application for the given issue.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_org_assignment_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 485
+        },
+        "start": {
+          "column": 5,
+          "line": 462
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:484:9: replace WorkloadGovernor::get_org_assignment_count -> u32 with 0",
+    "package": "workload-governor",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 71,
+        "line": 484
+      },
+      "start": {
+        "column": 9,
+        "line": 484
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_org_assignment_count -> u32 with 1\n@@ -476,17 +476,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- get_org_assignment_count \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org\n     /// ```\n     pub fn get_org_assignment_count(env: Env, contributor: Address, org_id: Symbol) -> u32 {\n-        storage::get_org_assignment_count(&env, &contributor, &org_id)\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor has a pending application for the given issue.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_org_assignment_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 485
+        },
+        "start": {
+          "column": 5,
+          "line": 462
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:484:9: replace WorkloadGovernor::get_org_assignment_count -> u32 with 1",
+    "package": "workload-governor",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 71,
+        "line": 484
+      },
+      "start": {
+        "column": 9,
+        "line": 484
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::has_applied -> bool with true\n@@ -500,17 +500,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- has_applied \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org --issue_id 42\n     /// ```\n     pub fn has_applied(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {\n-        storage::has_app_entry(&env, &contributor, &org_id, issue_id)\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor is actively assigned to the given issue.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::has_applied",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 509
+        },
+        "start": {
+          "column": 5,
+          "line": 487
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:508:9: replace WorkloadGovernor::has_applied -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 70,
+        "line": 508
+      },
+      "start": {
+        "column": 9,
+        "line": 508
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::has_applied -> bool with false\n@@ -500,17 +500,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- has_applied \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org --issue_id 42\n     /// ```\n     pub fn has_applied(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {\n-        storage::has_app_entry(&env, &contributor, &org_id, issue_id)\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor is actively assigned to the given issue.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::has_applied",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 509
+        },
+        "start": {
+          "column": 5,
+          "line": 487
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:508:9: replace WorkloadGovernor::has_applied -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 70,
+        "line": 508
+      },
+      "start": {
+        "column": 9,
+        "line": 508
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::is_assigned -> bool with true\n@@ -524,17 +524,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- is_assigned \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org --issue_id 42\n     /// ```\n     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {\n-        storage::has_assignment(&env, &org_id, issue_id, &contributor)\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n \n     // -----------------------------------------------------------------------\n     // Organization Selector Helper Functions\n     // -----------------------------------------------------------------------\n \n     /// Returns the number of additional assignment slots available to a contributor\n     /// within an organisation.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::is_assigned",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 533
+        },
+        "start": {
+          "column": 5,
+          "line": 511
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:532:9: replace WorkloadGovernor::is_assigned -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 71,
+        "line": 532
+      },
+      "start": {
+        "column": 9,
+        "line": 532
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::is_assigned -> bool with false\n@@ -524,17 +524,17 @@\n     /// # Examples\n     /// ```text\n     /// stellar contract invoke --id <CONTRACT_ID> \\\n     ///   --network testnet \\\n     ///   -- is_assigned \\\n     ///   --contributor <CONTRIBUTOR_ADDRESS> --org_id my_org --issue_id 42\n     /// ```\n     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {\n-        storage::has_assignment(&env, &org_id, issue_id, &contributor)\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n \n     // -----------------------------------------------------------------------\n     // Organization Selector Helper Functions\n     // -----------------------------------------------------------------------\n \n     /// Returns the number of additional assignment slots available to a contributor\n     /// within an organisation.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::is_assigned",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 533
+        },
+        "start": {
+          "column": 5,
+          "line": 511
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:532:9: replace WorkloadGovernor::is_assigned -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 71,
+        "line": 532
+      },
+      "start": {
+        "column": 9,
+        "line": 532
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_org_assignment_capacity -> u32 with 0\n@@ -551,18 +551,17 @@\n     ///\n     /// # Returns\n     /// Remaining capacity as a `u32` in `[0, ORG_ASSIGNMENT_LIMIT]`.\n     pub fn get_org_assignment_capacity(\n         env: Env,\n         contributor: Address,\n         org_id: Symbol,\n     ) -> u32 {\n-        let current = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        storage::ORG_ASSIGNMENT_LIMIT.saturating_sub(current)\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns the number of additional global applications a contributor may submit.\n     ///\n     /// Computed as `GLOBAL_APP_LIMIT - current_count`, floored at zero.\n     /// Returns `0` when the contributor has reached the cap of 15 pending applications.\n     ///\n     /// # Who can call\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_org_assignment_capacity",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 561
+        },
+        "start": {
+          "column": 5,
+          "line": 539
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:559:9: replace WorkloadGovernor::get_org_assignment_capacity -> u32 with 0",
+    "package": "workload-governor",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 560
+      },
+      "start": {
+        "column": 9,
+        "line": 559
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_org_assignment_capacity -> u32 with 1\n@@ -551,18 +551,17 @@\n     ///\n     /// # Returns\n     /// Remaining capacity as a `u32` in `[0, ORG_ASSIGNMENT_LIMIT]`.\n     pub fn get_org_assignment_capacity(\n         env: Env,\n         contributor: Address,\n         org_id: Symbol,\n     ) -> u32 {\n-        let current = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        storage::ORG_ASSIGNMENT_LIMIT.saturating_sub(current)\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns the number of additional global applications a contributor may submit.\n     ///\n     /// Computed as `GLOBAL_APP_LIMIT - current_count`, floored at zero.\n     /// Returns `0` when the contributor has reached the cap of 15 pending applications.\n     ///\n     /// # Who can call\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_org_assignment_capacity",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 561
+        },
+        "start": {
+          "column": 5,
+          "line": 539
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:559:9: replace WorkloadGovernor::get_org_assignment_capacity -> u32 with 1",
+    "package": "workload-governor",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 560
+      },
+      "start": {
+        "column": 9,
+        "line": 559
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_global_application_capacity -> u32 with 0\n@@ -569,18 +569,17 @@\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n     /// * `contributor` – Address to query.\n     ///\n     /// # Returns\n     /// Remaining capacity as a `u32` in `[0, GLOBAL_APP_LIMIT]`.\n     pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {\n-        let current = storage::get_global_app_count(&env, &contributor);\n-        storage::GLOBAL_APP_LIMIT.saturating_sub(current)\n+        0 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor has reached their per-org assignment limit.\n     ///\n     /// Equivalent to checking `get_org_assignment_count >= 4`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_global_application_capacity",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 579
+        },
+        "start": {
+          "column": 5,
+          "line": 563
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:577:9: replace WorkloadGovernor::get_global_application_capacity -> u32 with 0",
+    "package": "workload-governor",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 578
+      },
+      "start": {
+        "column": 9,
+        "line": 577
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::get_global_application_capacity -> u32 with 1\n@@ -569,18 +569,17 @@\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n     /// * `contributor` – Address to query.\n     ///\n     /// # Returns\n     /// Remaining capacity as a `u32` in `[0, GLOBAL_APP_LIMIT]`.\n     pub fn get_global_application_capacity(env: Env, contributor: Address) -> u32 {\n-        let current = storage::get_global_app_count(&env, &contributor);\n-        storage::GLOBAL_APP_LIMIT.saturating_sub(current)\n+        1 /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor has reached their per-org assignment limit.\n     ///\n     /// Equivalent to checking `get_org_assignment_count >= 4`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::get_global_application_capacity",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 579
+        },
+        "start": {
+          "column": 5,
+          "line": 563
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:577:9: replace WorkloadGovernor::get_global_application_capacity -> u32 with 1",
+    "package": "workload-governor",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 58,
+        "line": 578
+      },
+      "start": {
+        "column": 9,
+        "line": 577
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::is_org_assignment_limit_reached -> bool with true\n@@ -591,18 +591,17 @@\n     ///\n     /// # Returns\n     /// `true` if the contributor has 4 active assignments in `org_id`.\n     pub fn is_org_assignment_limit_reached(\n         env: Env,\n         contributor: Address,\n         org_id: Symbol,\n     ) -> bool {\n-        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        count >= storage::ORG_ASSIGNMENT_LIMIT\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor has reached their global application limit.\n     ///\n     /// Equivalent to checking `get_global_application_count >= 15`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::is_org_assignment_limit_reached",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 601
+        },
+        "start": {
+          "column": 5,
+          "line": 581
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:599:9: replace WorkloadGovernor::is_org_assignment_limit_reached -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 600
+      },
+      "start": {
+        "column": 9,
+        "line": 599
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::is_org_assignment_limit_reached -> bool with false\n@@ -591,18 +591,17 @@\n     ///\n     /// # Returns\n     /// `true` if the contributor has 4 active assignments in `org_id`.\n     pub fn is_org_assignment_limit_reached(\n         env: Env,\n         contributor: Address,\n         org_id: Symbol,\n     ) -> bool {\n-        let count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        count >= storage::ORG_ASSIGNMENT_LIMIT\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Returns `true` if the contributor has reached their global application limit.\n     ///\n     /// Equivalent to checking `get_global_application_count >= 15`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::is_org_assignment_limit_reached",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 601
+        },
+        "start": {
+          "column": 5,
+          "line": 581
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:599:9: replace WorkloadGovernor::is_org_assignment_limit_reached -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 600
+      },
+      "start": {
+        "column": 9,
+        "line": 599
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace >= with < in WorkloadGovernor::is_org_assignment_limit_reached\n@@ -592,17 +592,17 @@\n     /// # Returns\n     /// `true` if the contributor has 4 active assignments in `org_id`.\n     pub fn is_org_assignment_limit_reached(\n         env: Env,\n         contributor: Address,\n         org_id: Symbol,\n     ) -> bool {\n         let count = storage::get_org_assignment_count(&env, &contributor, &org_id);\n-        count >= storage::ORG_ASSIGNMENT_LIMIT\n+        count < /* ~ changed by cargo-mutants ~ */ storage::ORG_ASSIGNMENT_LIMIT\n     }\n \n     /// Returns `true` if the contributor has reached their global application limit.\n     ///\n     /// Equivalent to checking `get_global_application_count >= 15`.\n     ///\n     /// # Who can call\n     /// Anyone — read-only, no authentication required.\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::is_org_assignment_limit_reached",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 601
+        },
+        "start": {
+          "column": 5,
+          "line": 581
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:600:15: replace >= with < in WorkloadGovernor::is_org_assignment_limit_reached",
+    "package": "workload-governor",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 17,
+        "line": 600
+      },
+      "start": {
+        "column": 15,
+        "line": 600
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::global_app_limit_reached -> bool with true\n@@ -608,12 +608,11 @@\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n     /// * `contributor` – Address to query.\n     ///\n     /// # Returns\n     /// `true` if the contributor has 15 pending applications globally.\n     pub fn global_app_limit_reached(env: Env, contributor: Address) -> bool {\n-        let count = storage::get_global_app_count(&env, &contributor);\n-        count >= storage::GLOBAL_APP_LIMIT\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n }\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::global_app_limit_reached",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 618
+        },
+        "start": {
+          "column": 5,
+          "line": 603
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:616:9: replace WorkloadGovernor::global_app_limit_reached -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 43,
+        "line": 617
+      },
+      "start": {
+        "column": 9,
+        "line": 616
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace WorkloadGovernor::global_app_limit_reached -> bool with false\n@@ -608,12 +608,11 @@\n     /// Anyone — read-only, no authentication required.\n     ///\n     /// # Arguments\n     /// * `contributor` – Address to query.\n     ///\n     /// # Returns\n     /// `true` if the contributor has 15 pending applications globally.\n     pub fn global_app_limit_reached(env: Env, contributor: Address) -> bool {\n-        let count = storage::get_global_app_count(&env, &contributor);\n-        count >= storage::GLOBAL_APP_LIMIT\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n }\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::global_app_limit_reached",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 618
+        },
+        "start": {
+          "column": 5,
+          "line": 603
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/lib.rs:616:9: replace WorkloadGovernor::global_app_limit_reached -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 43,
+        "line": 617
+      },
+      "start": {
+        "column": 9,
+        "line": 616
+      }
+    }
+  },
+  {
+    "diff": "--- src/lib.rs\n+++ replace >= with < in WorkloadGovernor::global_app_limit_reached\n@@ -609,11 +609,11 @@\n     ///\n     /// # Arguments\n     /// * `contributor` – Address to query.\n     ///\n     /// # Returns\n     /// `true` if the contributor has 15 pending applications globally.\n     pub fn global_app_limit_reached(env: Env, contributor: Address) -> bool {\n         let count = storage::get_global_app_count(&env, &contributor);\n-        count >= storage::GLOBAL_APP_LIMIT\n+        count < /* ~ changed by cargo-mutants ~ */ storage::GLOBAL_APP_LIMIT\n     }\n }\n",
+    "file": "src/lib.rs",
+    "function": {
+      "function_name": "WorkloadGovernor::global_app_limit_reached",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 618
+        },
+        "start": {
+          "column": 5,
+          "line": 603
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/lib.rs:617:15: replace >= with < in WorkloadGovernor::global_app_limit_reached",
+    "package": "workload-governor",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 17,
+        "line": 617
+      },
+      "start": {
+        "column": 15,
+        "line": 617
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace bump_instance with ()\n@@ -39,19 +39,17 @@\n \n // ---------------------------------------------------------------------------\n // Instance TTL management\n // ---------------------------------------------------------------------------\n \n /// Bumps the contract instance TTL on every state-changing call.\n /// Prevents the contract from being archived between operator-level TTL extensions.\n pub(crate) fn bump_instance(env: &Env) {\n-    env.storage()\n-        .instance()\n-        .extend_ttl(INSTANCE_TTL_LEDGERS / 2, INSTANCE_TTL_LEDGERS);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Initialization guard\n // ---------------------------------------------------------------------------\n \n /// Panics with the given error if the contract has not been initialized yet.\n pub(crate) fn require_initialized(env: &Env, error: &ContractError) {\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "bump_instance",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 50
+        },
+        "start": {
+          "column": 1,
+          "line": 44
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:47:5: replace bump_instance with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 69,
+        "line": 49
+      },
+      "start": {
+        "column": 5,
+        "line": 47
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace / with % in bump_instance\n@@ -41,17 +41,17 @@\n // Instance TTL management\n // ---------------------------------------------------------------------------\n \n /// Bumps the contract instance TTL on every state-changing call.\n /// Prevents the contract from being archived between operator-level TTL extensions.\n pub(crate) fn bump_instance(env: &Env) {\n     env.storage()\n         .instance()\n-        .extend_ttl(INSTANCE_TTL_LEDGERS / 2, INSTANCE_TTL_LEDGERS);\n+        .extend_ttl(INSTANCE_TTL_LEDGERS % /* ~ changed by cargo-mutants ~ */ 2, INSTANCE_TTL_LEDGERS);\n }\n \n // ---------------------------------------------------------------------------\n // Initialization guard\n // ---------------------------------------------------------------------------\n \n /// Panics with the given error if the contract has not been initialized yet.\n pub(crate) fn require_initialized(env: &Env, error: &ContractError) {\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "bump_instance",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 50
+        },
+        "start": {
+          "column": 1,
+          "line": 44
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/storage.rs:49:42: replace / with % in bump_instance",
+    "package": "workload-governor",
+    "replacement": "%",
+    "span": {
+      "end": {
+        "column": 43,
+        "line": 49
+      },
+      "start": {
+        "column": 42,
+        "line": 49
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace / with * in bump_instance\n@@ -41,17 +41,17 @@\n // Instance TTL management\n // ---------------------------------------------------------------------------\n \n /// Bumps the contract instance TTL on every state-changing call.\n /// Prevents the contract from being archived between operator-level TTL extensions.\n pub(crate) fn bump_instance(env: &Env) {\n     env.storage()\n         .instance()\n-        .extend_ttl(INSTANCE_TTL_LEDGERS / 2, INSTANCE_TTL_LEDGERS);\n+        .extend_ttl(INSTANCE_TTL_LEDGERS * /* ~ changed by cargo-mutants ~ */ 2, INSTANCE_TTL_LEDGERS);\n }\n \n // ---------------------------------------------------------------------------\n // Initialization guard\n // ---------------------------------------------------------------------------\n \n /// Panics with the given error if the contract has not been initialized yet.\n pub(crate) fn require_initialized(env: &Env, error: &ContractError) {\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "bump_instance",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 50
+        },
+        "start": {
+          "column": 1,
+          "line": 44
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/storage.rs:49:42: replace / with * in bump_instance",
+    "package": "workload-governor",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 43,
+        "line": 49
+      },
+      "start": {
+        "column": 42,
+        "line": 49
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace require_initialized with ()\n@@ -50,19 +50,17 @@\n }\n \n // ---------------------------------------------------------------------------\n // Initialization guard\n // ---------------------------------------------------------------------------\n \n /// Panics with the given error if the contract has not been initialized yet.\n pub(crate) fn require_initialized(env: &Env, error: &ContractError) {\n-    if get_admin(env).is_none() {\n-        panic_with_error!(env, *error);\n-    }\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Temporary storage — Global Application Count\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"g_apps\"), contributor: Address)`\n // Value: `u32`\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "require_initialized",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 56
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:58:5: replace require_initialized with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 60
+      },
+      "start": {
+        "column": 5,
+        "line": 58
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace global_app_count_key -> (Symbol, Address) with (Default::default(), Default::default())\n@@ -63,17 +63,17 @@\n // ---------------------------------------------------------------------------\n // Temporary storage — Global Application Count\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"g_apps\"), contributor: Address)`\n // Value: `u32`\n \n fn global_app_count_key(contributor: &Address) -> (Symbol, Address) {\n-    (symbol_short!(\"g_apps\"), contributor.clone())\n+    (Default::default(), Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns the contributor's current global pending-application count (0 if absent/expired).\n pub(crate) fn get_global_app_count(env: &Env, contributor: &Address) -> u32 {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().get(&key).unwrap_or(0)\n }\n \n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "global_app_count_key",
+      "return_type": "-> (Symbol, Address)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 72
+        },
+        "start": {
+          "column": 1,
+          "line": 70
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:71:5: replace global_app_count_key -> (Symbol, Address) with (Default::default(), Default::default())",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default())",
+    "span": {
+      "end": {
+        "column": 51,
+        "line": 71
+      },
+      "start": {
+        "column": 5,
+        "line": 71
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace get_global_app_count -> u32 with 0\n@@ -68,18 +68,17 @@\n // Value: `u32`\n \n fn global_app_count_key(contributor: &Address) -> (Symbol, Address) {\n     (symbol_short!(\"g_apps\"), contributor.clone())\n }\n \n /// Returns the contributor's current global pending-application count (0 if absent/expired).\n pub(crate) fn get_global_app_count(env: &Env, contributor: &Address) -> u32 {\n-    let key = global_app_count_key(contributor);\n-    env.storage().temporary().get(&key).unwrap_or(0)\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the contributor's global pending-application count.\n pub(crate) fn set_global_app_count(env: &Env, contributor: &Address, count: u32) {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().set(&key, &count);\n }\n \n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "get_global_app_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 78
+        },
+        "start": {
+          "column": 1,
+          "line": 74
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:76:5: replace get_global_app_count -> u32 with 0",
+    "package": "workload-governor",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 77
+      },
+      "start": {
+        "column": 5,
+        "line": 76
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace get_global_app_count -> u32 with 1\n@@ -68,18 +68,17 @@\n // Value: `u32`\n \n fn global_app_count_key(contributor: &Address) -> (Symbol, Address) {\n     (symbol_short!(\"g_apps\"), contributor.clone())\n }\n \n /// Returns the contributor's current global pending-application count (0 if absent/expired).\n pub(crate) fn get_global_app_count(env: &Env, contributor: &Address) -> u32 {\n-    let key = global_app_count_key(contributor);\n-    env.storage().temporary().get(&key).unwrap_or(0)\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the contributor's global pending-application count.\n pub(crate) fn set_global_app_count(env: &Env, contributor: &Address, count: u32) {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().set(&key, &count);\n }\n \n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "get_global_app_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 78
+        },
+        "start": {
+          "column": 1,
+          "line": 74
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:76:5: replace get_global_app_count -> u32 with 1",
+    "package": "workload-governor",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 77
+      },
+      "start": {
+        "column": 5,
+        "line": 76
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace set_global_app_count with ()\n@@ -74,18 +74,17 @@\n /// Returns the contributor's current global pending-application count (0 if absent/expired).\n pub(crate) fn get_global_app_count(env: &Env, contributor: &Address) -> u32 {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().get(&key).unwrap_or(0)\n }\n \n /// Writes the contributor's global pending-application count.\n pub(crate) fn set_global_app_count(env: &Env, contributor: &Address, count: u32) {\n-    let key = global_app_count_key(contributor);\n-    env.storage().temporary().set(&key, &count);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n /// Removes the contributor's global pending-application count entry.\n pub(crate) fn remove_global_app_count(env: &Env, contributor: &Address) {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().remove(&key);\n }\n \n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "set_global_app_count",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 84
+        },
+        "start": {
+          "column": 1,
+          "line": 80
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:82:5: replace set_global_app_count with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 83
+      },
+      "start": {
+        "column": 5,
+        "line": 82
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace remove_global_app_count with ()\n@@ -80,18 +80,17 @@\n /// Writes the contributor's global pending-application count.\n pub(crate) fn set_global_app_count(env: &Env, contributor: &Address, count: u32) {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().set(&key, &count);\n }\n \n /// Removes the contributor's global pending-application count entry.\n pub(crate) fn remove_global_app_count(env: &Env, contributor: &Address) {\n-    let key = global_app_count_key(contributor);\n-    env.storage().temporary().remove(&key);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n /// Extends the TTL of the contributor's global pending-application count entry.\n pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {\n     let key = global_app_count_key(contributor);\n     env.storage()\n         .temporary()\n         .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "remove_global_app_count",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 90
+        },
+        "start": {
+          "column": 1,
+          "line": 86
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:88:5: replace remove_global_app_count with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 44,
+        "line": 89
+      },
+      "start": {
+        "column": 5,
+        "line": 88
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace extend_global_app_count_ttl with ()\n@@ -86,20 +86,17 @@\n /// Removes the contributor's global pending-application count entry.\n pub(crate) fn remove_global_app_count(env: &Env, contributor: &Address) {\n     let key = global_app_count_key(contributor);\n     env.storage().temporary().remove(&key);\n }\n \n /// Extends the TTL of the contributor's global pending-application count entry.\n pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {\n-    let key = global_app_count_key(contributor);\n-    env.storage()\n-        .temporary()\n-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Temporary storage — Per-Issue Application Entry\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"app\"), contributor: Address, org_id: Symbol, issue_id: u32)`\n // Value: `bool` (presence sentinel — always `true`)\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "extend_global_app_count_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 98
+        },
+        "start": {
+          "column": 1,
+          "line": 92
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:94:5: replace extend_global_app_count_ttl with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 61,
+        "line": 97
+      },
+      "start": {
+        "column": 5,
+        "line": 94
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace app_entry_key -> (Symbol, Address, Symbol, u32) with (Default::default(), Default::default(), Default::default(), 0)\n@@ -104,22 +104,17 @@\n // Key: `(symbol_short!(\"app\"), contributor: Address, org_id: Symbol, issue_id: u32)`\n // Value: `bool` (presence sentinel — always `true`)\n \n fn app_entry_key(\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) -> (Symbol, Address, Symbol, u32) {\n-    (\n-        symbol_short!(\"app\"),\n-        contributor.clone(),\n-        org_id.clone(),\n-        issue_id,\n-    )\n+    (Default::default(), Default::default(), Default::default(), 0) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns `true` if a pending application exists for this contributor/org/issue triple.\n pub(crate) fn has_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "app_entry_key",
+      "return_type": "-> (Symbol, Address, Symbol, u32)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 118
+        },
+        "start": {
+          "column": 1,
+          "line": 107
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:112:5: replace app_entry_key -> (Symbol, Address, Symbol, u32) with (Default::default(), Default::default(), Default::default(), 0)",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default(), Default::default(), 0)",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 117
+      },
+      "start": {
+        "column": 5,
+        "line": 112
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace app_entry_key -> (Symbol, Address, Symbol, u32) with (Default::default(), Default::default(), Default::default(), 1)\n@@ -104,22 +104,17 @@\n // Key: `(symbol_short!(\"app\"), contributor: Address, org_id: Symbol, issue_id: u32)`\n // Value: `bool` (presence sentinel — always `true`)\n \n fn app_entry_key(\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) -> (Symbol, Address, Symbol, u32) {\n-    (\n-        symbol_short!(\"app\"),\n-        contributor.clone(),\n-        org_id.clone(),\n-        issue_id,\n-    )\n+    (Default::default(), Default::default(), Default::default(), 1) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns `true` if a pending application exists for this contributor/org/issue triple.\n pub(crate) fn has_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "app_entry_key",
+      "return_type": "-> (Symbol, Address, Symbol, u32)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 118
+        },
+        "start": {
+          "column": 1,
+          "line": 107
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:112:5: replace app_entry_key -> (Symbol, Address, Symbol, u32) with (Default::default(), Default::default(), Default::default(), 1)",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default(), Default::default(), 1)",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 117
+      },
+      "start": {
+        "column": 5,
+        "line": 112
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace has_app_entry -> bool with true\n@@ -119,21 +119,17 @@\n \n /// Returns `true` if a pending application exists for this contributor/org/issue triple.\n pub(crate) fn has_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) -> bool {\n-    let key = app_entry_key(contributor, org_id, issue_id);\n-    env.storage()\n-        .temporary()\n-        .get::<_, bool>(&key)\n-        .unwrap_or(false)\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the application presence sentinel (`true`).\n pub(crate) fn set_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "has_app_entry",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 132
+        },
+        "start": {
+          "column": 1,
+          "line": 120
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:127:5: replace has_app_entry -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 131
+      },
+      "start": {
+        "column": 5,
+        "line": 127
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace has_app_entry -> bool with false\n@@ -119,21 +119,17 @@\n \n /// Returns `true` if a pending application exists for this contributor/org/issue triple.\n pub(crate) fn has_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) -> bool {\n-    let key = app_entry_key(contributor, org_id, issue_id);\n-    env.storage()\n-        .temporary()\n-        .get::<_, bool>(&key)\n-        .unwrap_or(false)\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the application presence sentinel (`true`).\n pub(crate) fn set_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "has_app_entry",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 132
+        },
+        "start": {
+          "column": 1,
+          "line": 120
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:127:5: replace has_app_entry -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 131
+      },
+      "start": {
+        "column": 5,
+        "line": 127
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace set_app_entry with ()\n@@ -133,18 +133,17 @@\n \n /// Writes the application presence sentinel (`true`).\n pub(crate) fn set_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) {\n-    let key = app_entry_key(contributor, org_id, issue_id);\n-    env.storage().temporary().set(&key, &true);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n /// Removes the application entry for this contributor/org/issue triple.\n pub(crate) fn remove_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "set_app_entry",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 143
+        },
+        "start": {
+          "column": 1,
+          "line": 134
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:141:5: replace set_app_entry with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 142
+      },
+      "start": {
+        "column": 5,
+        "line": 141
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace remove_app_entry with ()\n@@ -144,18 +144,17 @@\n \n /// Removes the application entry for this contributor/org/issue triple.\n pub(crate) fn remove_app_entry(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) {\n-    let key = app_entry_key(contributor, org_id, issue_id);\n-    env.storage().temporary().remove(&key);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n /// Extends the TTL of the per-issue application entry.\n pub(crate) fn extend_app_entry_ttl(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "remove_app_entry",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 154
+        },
+        "start": {
+          "column": 1,
+          "line": 145
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:152:5: replace remove_app_entry with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 44,
+        "line": 153
+      },
+      "start": {
+        "column": 5,
+        "line": 152
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace extend_app_entry_ttl with ()\n@@ -155,20 +155,17 @@\n \n /// Extends the TTL of the per-issue application entry.\n pub(crate) fn extend_app_entry_ttl(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     issue_id: u32,\n ) {\n-    let key = app_entry_key(contributor, org_id, issue_id);\n-    env.storage()\n-        .temporary()\n-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Persistent storage — Admin\n // ---------------------------------------------------------------------------\n //\n // Key: `symbol_short!(\"admin\")`\n // Value: `Address`\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "extend_app_entry_ttl",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 167
+        },
+        "start": {
+          "column": 1,
+          "line": 156
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:163:5: replace extend_app_entry_ttl with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 61,
+        "line": 166
+      },
+      "start": {
+        "column": 5,
+        "line": 163
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace admin_key -> Symbol with Default::default()\n@@ -169,17 +169,17 @@\n // ---------------------------------------------------------------------------\n // Persistent storage — Admin\n // ---------------------------------------------------------------------------\n //\n // Key: `symbol_short!(\"admin\")`\n // Value: `Address`\n \n fn admin_key() -> Symbol {\n-    symbol_short!(\"admin\")\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns the stored admin address, or `None` if not yet initialized.\n pub(crate) fn get_admin(env: &Env) -> Option<Address> {\n     env.storage().persistent().get(&admin_key())\n }\n \n /// Writes the admin address to persistent storage.\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "admin_key",
+      "return_type": "-> Symbol",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 178
+        },
+        "start": {
+          "column": 1,
+          "line": 176
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:177:5: replace admin_key -> Symbol with Default::default()",
+    "package": "workload-governor",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 27,
+        "line": 177
+      },
+      "start": {
+        "column": 5,
+        "line": 177
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace get_admin -> Option<Address> with None\n@@ -174,17 +174,17 @@\n // Value: `Address`\n \n fn admin_key() -> Symbol {\n     symbol_short!(\"admin\")\n }\n \n /// Returns the stored admin address, or `None` if not yet initialized.\n pub(crate) fn get_admin(env: &Env) -> Option<Address> {\n-    env.storage().persistent().get(&admin_key())\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the admin address to persistent storage.\n pub(crate) fn set_admin(env: &Env, admin: &Address) {\n     env.storage().persistent().set(&admin_key(), admin);\n }\n \n // ---------------------------------------------------------------------------\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "get_admin",
+      "return_type": "-> Option<Address>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 183
+        },
+        "start": {
+          "column": 1,
+          "line": 180
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:182:5: replace get_admin -> Option<Address> with None",
+    "package": "workload-governor",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 182
+      },
+      "start": {
+        "column": 5,
+        "line": 182
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace get_admin -> Option<Address> with Some(Default::default())\n@@ -174,17 +174,17 @@\n // Value: `Address`\n \n fn admin_key() -> Symbol {\n     symbol_short!(\"admin\")\n }\n \n /// Returns the stored admin address, or `None` if not yet initialized.\n pub(crate) fn get_admin(env: &Env) -> Option<Address> {\n-    env.storage().persistent().get(&admin_key())\n+    Some(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the admin address to persistent storage.\n pub(crate) fn set_admin(env: &Env, admin: &Address) {\n     env.storage().persistent().set(&admin_key(), admin);\n }\n \n // ---------------------------------------------------------------------------\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "get_admin",
+      "return_type": "-> Option<Address>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 183
+        },
+        "start": {
+          "column": 1,
+          "line": 180
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:182:5: replace get_admin -> Option<Address> with Some(Default::default())",
+    "package": "workload-governor",
+    "replacement": "Some(Default::default())",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 182
+      },
+      "start": {
+        "column": 5,
+        "line": 182
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace set_admin with ()\n@@ -179,17 +179,17 @@\n \n /// Returns the stored admin address, or `None` if not yet initialized.\n pub(crate) fn get_admin(env: &Env) -> Option<Address> {\n     env.storage().persistent().get(&admin_key())\n }\n \n /// Writes the admin address to persistent storage.\n pub(crate) fn set_admin(env: &Env, admin: &Address) {\n-    env.storage().persistent().set(&admin_key(), admin);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Persistent storage — Maintainer Registration\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"maint\"), maintainer: Address, org_id: Symbol)`\n // Value: `bool`\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "set_admin",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 188
+        },
+        "start": {
+          "column": 1,
+          "line": 185
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:187:5: replace set_admin with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 57,
+        "line": 187
+      },
+      "start": {
+        "column": 5,
+        "line": 187
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace maintainer_key -> (Symbol, Address, Symbol) with (Default::default(), Default::default(), Default::default())\n@@ -190,17 +190,17 @@\n // ---------------------------------------------------------------------------\n // Persistent storage — Maintainer Registration\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"maint\"), maintainer: Address, org_id: Symbol)`\n // Value: `bool`\n \n fn maintainer_key(maintainer: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {\n-    (symbol_short!(\"maint\"), maintainer.clone(), org_id.clone())\n+    (Default::default(), Default::default(), Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns `true` if `maintainer` is registered for `org_id`.\n pub(crate) fn is_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) -> bool {\n     let key = maintainer_key(maintainer, org_id);\n     env.storage()\n         .persistent()\n         .get::<_, bool>(&key)\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "maintainer_key",
+      "return_type": "-> (Symbol, Address, Symbol)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 199
+        },
+        "start": {
+          "column": 1,
+          "line": 197
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:198:5: replace maintainer_key -> (Symbol, Address, Symbol) with (Default::default(), Default::default(), Default::default())",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default(), Default::default())",
+    "span": {
+      "end": {
+        "column": 65,
+        "line": 198
+      },
+      "start": {
+        "column": 5,
+        "line": 198
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace is_maintainer -> bool with true\n@@ -195,21 +195,17 @@\n // Value: `bool`\n \n fn maintainer_key(maintainer: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {\n     (symbol_short!(\"maint\"), maintainer.clone(), org_id.clone())\n }\n \n /// Returns `true` if `maintainer` is registered for `org_id`.\n pub(crate) fn is_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) -> bool {\n-    let key = maintainer_key(maintainer, org_id);\n-    env.storage()\n-        .persistent()\n-        .get::<_, bool>(&key)\n-        .unwrap_or(false)\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n /// Registers `maintainer` for `org_id` (idempotent).\n pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {\n     let key = maintainer_key(maintainer, org_id);\n     env.storage().persistent().set(&key, &true);\n }\n \n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "is_maintainer",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 208
+        },
+        "start": {
+          "column": 1,
+          "line": 201
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:203:5: replace is_maintainer -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 207
+      },
+      "start": {
+        "column": 5,
+        "line": 203
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace is_maintainer -> bool with false\n@@ -195,21 +195,17 @@\n // Value: `bool`\n \n fn maintainer_key(maintainer: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {\n     (symbol_short!(\"maint\"), maintainer.clone(), org_id.clone())\n }\n \n /// Returns `true` if `maintainer` is registered for `org_id`.\n pub(crate) fn is_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) -> bool {\n-    let key = maintainer_key(maintainer, org_id);\n-    env.storage()\n-        .persistent()\n-        .get::<_, bool>(&key)\n-        .unwrap_or(false)\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n /// Registers `maintainer` for `org_id` (idempotent).\n pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {\n     let key = maintainer_key(maintainer, org_id);\n     env.storage().persistent().set(&key, &true);\n }\n \n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "is_maintainer",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 208
+        },
+        "start": {
+          "column": 1,
+          "line": 201
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:203:5: replace is_maintainer -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 207
+      },
+      "start": {
+        "column": 5,
+        "line": 203
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace set_maintainer with ()\n@@ -204,18 +204,17 @@\n     env.storage()\n         .persistent()\n         .get::<_, bool>(&key)\n         .unwrap_or(false)\n }\n \n /// Registers `maintainer` for `org_id` (idempotent).\n pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {\n-    let key = maintainer_key(maintainer, org_id);\n-    env.storage().persistent().set(&key, &true);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Persistent storage — Org Assignment Count\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"o_asgn\"), contributor: Address, org_id: Symbol)`\n // Value: `u32`\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "set_maintainer",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 214
+        },
+        "start": {
+          "column": 1,
+          "line": 210
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:212:5: replace set_maintainer with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 213
+      },
+      "start": {
+        "column": 5,
+        "line": 212
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace org_assignment_count_key -> (Symbol, Address, Symbol) with (Default::default(), Default::default(), Default::default())\n@@ -216,17 +216,17 @@\n // ---------------------------------------------------------------------------\n // Persistent storage — Org Assignment Count\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"o_asgn\"), contributor: Address, org_id: Symbol)`\n // Value: `u32`\n \n fn org_assignment_count_key(contributor: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {\n-    (symbol_short!(\"o_asgn\"), contributor.clone(), org_id.clone())\n+    (Default::default(), Default::default(), Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns the contributor's active assignment count for `org_id` (0 if absent).\n pub(crate) fn get_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n ) -> u32 {\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "org_assignment_count_key",
+      "return_type": "-> (Symbol, Address, Symbol)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 225
+        },
+        "start": {
+          "column": 1,
+          "line": 223
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:224:5: replace org_assignment_count_key -> (Symbol, Address, Symbol) with (Default::default(), Default::default(), Default::default())",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default(), Default::default())",
+    "span": {
+      "end": {
+        "column": 67,
+        "line": 224
+      },
+      "start": {
+        "column": 5,
+        "line": 224
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace get_org_assignment_count -> u32 with 0\n@@ -225,18 +225,17 @@\n }\n \n /// Returns the contributor's active assignment count for `org_id` (0 if absent).\n pub(crate) fn get_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n ) -> u32 {\n-    let key = org_assignment_count_key(contributor, org_id);\n-    env.storage().persistent().get(&key).unwrap_or(0)\n+    0 /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the contributor's active assignment count for `org_id`.\n pub(crate) fn set_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     count: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "get_org_assignment_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 235
+        },
+        "start": {
+          "column": 1,
+          "line": 227
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:233:5: replace get_org_assignment_count -> u32 with 0",
+    "package": "workload-governor",
+    "replacement": "0",
+    "span": {
+      "end": {
+        "column": 54,
+        "line": 234
+      },
+      "start": {
+        "column": 5,
+        "line": 233
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace get_org_assignment_count -> u32 with 1\n@@ -225,18 +225,17 @@\n }\n \n /// Returns the contributor's active assignment count for `org_id` (0 if absent).\n pub(crate) fn get_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n ) -> u32 {\n-    let key = org_assignment_count_key(contributor, org_id);\n-    env.storage().persistent().get(&key).unwrap_or(0)\n+    1 /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the contributor's active assignment count for `org_id`.\n pub(crate) fn set_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     count: u32,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "get_org_assignment_count",
+      "return_type": "-> u32",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 235
+        },
+        "start": {
+          "column": 1,
+          "line": 227
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:233:5: replace get_org_assignment_count -> u32 with 1",
+    "package": "workload-governor",
+    "replacement": "1",
+    "span": {
+      "end": {
+        "column": 54,
+        "line": 234
+      },
+      "start": {
+        "column": 5,
+        "line": 233
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace set_org_assignment_count with ()\n@@ -236,18 +236,17 @@\n \n /// Writes the contributor's active assignment count for `org_id`.\n pub(crate) fn set_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n     count: u32,\n ) {\n-    let key = org_assignment_count_key(contributor, org_id);\n-    env.storage().persistent().set(&key, &count);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n /// Removes the org assignment count entry (called when count reaches 0).\n pub(crate) fn remove_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n ) {\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "set_org_assignment_count",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 246
+        },
+        "start": {
+          "column": 1,
+          "line": 237
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:244:5: replace set_org_assignment_count with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 50,
+        "line": 245
+      },
+      "start": {
+        "column": 5,
+        "line": 244
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace remove_org_assignment_count with ()\n@@ -246,18 +246,17 @@\n }\n \n /// Removes the org assignment count entry (called when count reaches 0).\n pub(crate) fn remove_org_assignment_count(\n     env: &Env,\n     contributor: &Address,\n     org_id: &Symbol,\n ) {\n-    let key = org_assignment_count_key(contributor, org_id);\n-    env.storage().persistent().remove(&key);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n // ---------------------------------------------------------------------------\n // Persistent storage — Active Assignment Entry\n // ---------------------------------------------------------------------------\n //\n // Key: `(symbol_short!(\"asgn\"), org_id: Symbol, issue_id: u32, contributor: Address)`\n // Value: `bool` (presence sentinel — always `true`)\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "remove_org_assignment_count",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 256
+        },
+        "start": {
+          "column": 1,
+          "line": 248
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:254:5: replace remove_org_assignment_count with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 45,
+        "line": 255
+      },
+      "start": {
+        "column": 5,
+        "line": 254
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace assignment_entry_key -> (Symbol, Symbol, u32, Address) with (Default::default(), Default::default(), 0, Default::default())\n@@ -262,22 +262,17 @@\n // Key: `(symbol_short!(\"asgn\"), org_id: Symbol, issue_id: u32, contributor: Address)`\n // Value: `bool` (presence sentinel — always `true`)\n \n fn assignment_entry_key(\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n ) -> (Symbol, Symbol, u32, Address) {\n-    (\n-        symbol_short!(\"asgn\"),\n-        org_id.clone(),\n-        issue_id,\n-        contributor.clone(),\n-    )\n+    (Default::default(), Default::default(), 0, Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns `true` if an active assignment exists for this org/issue/contributor triple.\n pub(crate) fn has_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "assignment_entry_key",
+      "return_type": "-> (Symbol, Symbol, u32, Address)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 276
+        },
+        "start": {
+          "column": 1,
+          "line": 265
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:270:5: replace assignment_entry_key -> (Symbol, Symbol, u32, Address) with (Default::default(), Default::default(), 0, Default::default())",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default(), 0, Default::default())",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 275
+      },
+      "start": {
+        "column": 5,
+        "line": 270
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace assignment_entry_key -> (Symbol, Symbol, u32, Address) with (Default::default(), Default::default(), 1, Default::default())\n@@ -262,22 +262,17 @@\n // Key: `(symbol_short!(\"asgn\"), org_id: Symbol, issue_id: u32, contributor: Address)`\n // Value: `bool` (presence sentinel — always `true`)\n \n fn assignment_entry_key(\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n ) -> (Symbol, Symbol, u32, Address) {\n-    (\n-        symbol_short!(\"asgn\"),\n-        org_id.clone(),\n-        issue_id,\n-        contributor.clone(),\n-    )\n+    (Default::default(), Default::default(), 1, Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// Returns `true` if an active assignment exists for this org/issue/contributor triple.\n pub(crate) fn has_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "assignment_entry_key",
+      "return_type": "-> (Symbol, Symbol, u32, Address)",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 276
+        },
+        "start": {
+          "column": 1,
+          "line": 265
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:270:5: replace assignment_entry_key -> (Symbol, Symbol, u32, Address) with (Default::default(), Default::default(), 1, Default::default())",
+    "package": "workload-governor",
+    "replacement": "(Default::default(), Default::default(), 1, Default::default())",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 275
+      },
+      "start": {
+        "column": 5,
+        "line": 270
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace has_assignment -> bool with true\n@@ -277,21 +277,17 @@\n \n /// Returns `true` if an active assignment exists for this org/issue/contributor triple.\n pub(crate) fn has_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n ) -> bool {\n-    let key = assignment_entry_key(org_id, issue_id, contributor);\n-    env.storage()\n-        .persistent()\n-        .get::<_, bool>(&key)\n-        .unwrap_or(false)\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the assignment presence sentinel (`true`).\n pub(crate) fn set_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "has_assignment",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 290
+        },
+        "start": {
+          "column": 1,
+          "line": 278
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:285:5: replace has_assignment -> bool with true",
+    "package": "workload-governor",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 289
+      },
+      "start": {
+        "column": 5,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace has_assignment -> bool with false\n@@ -277,21 +277,17 @@\n \n /// Returns `true` if an active assignment exists for this org/issue/contributor triple.\n pub(crate) fn has_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n ) -> bool {\n-    let key = assignment_entry_key(org_id, issue_id, contributor);\n-    env.storage()\n-        .persistent()\n-        .get::<_, bool>(&key)\n-        .unwrap_or(false)\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n /// Writes the assignment presence sentinel (`true`).\n pub(crate) fn set_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "has_assignment",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 290
+        },
+        "start": {
+          "column": 1,
+          "line": 278
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:285:5: replace has_assignment -> bool with false",
+    "package": "workload-governor",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 26,
+        "line": 289
+      },
+      "start": {
+        "column": 5,
+        "line": 285
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace set_assignment with ()\n@@ -291,18 +291,17 @@\n \n /// Writes the assignment presence sentinel (`true`).\n pub(crate) fn set_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n ) {\n-    let key = assignment_entry_key(org_id, issue_id, contributor);\n-    env.storage().persistent().set(&key, &true);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n \n /// Removes the active assignment entry.\n pub(crate) fn remove_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "set_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 301
+        },
+        "start": {
+          "column": 1,
+          "line": 292
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:299:5: replace set_assignment with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 300
+      },
+      "start": {
+        "column": 5,
+        "line": 299
+      }
+    }
+  },
+  {
+    "diff": "--- src/storage.rs\n+++ replace remove_assignment with ()\n@@ -302,11 +302,10 @@\n \n /// Removes the active assignment entry.\n pub(crate) fn remove_assignment(\n     env: &Env,\n     org_id: &Symbol,\n     issue_id: u32,\n     contributor: &Address,\n ) {\n-    let key = assignment_entry_key(org_id, issue_id, contributor);\n-    env.storage().persistent().remove(&key);\n+    () /* ~ changed by cargo-mutants ~ */\n }\n",
+    "file": "src/storage.rs",
+    "function": {
+      "function_name": "remove_assignment",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 312
+        },
+        "start": {
+          "column": 1,
+          "line": 303
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/storage.rs:310:5: replace remove_assignment with ()",
+    "package": "workload-governor",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 45,
+        "line": 311
+      },
+      "start": {
+        "column": 5,
+        "line": 310
+      }
+    }
+  }
+]

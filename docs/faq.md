@@ -17,6 +17,9 @@ To free a slot: wait for a maintainer to assign one of your existing application
 (which converts it to an assignment and removes it from your pending count), or
 withdraw an application yourself using `withdraw_application`.
 
+For a plain-English explanation of how both caps work and what to do when you
+hit them, see [docs/fairness-explainer.md](fairness-explainer.md).
+
 ---
 
 ### 2. How long does a pending application last?
@@ -68,6 +71,9 @@ by the contract via error code `7` (`OrgAssignmentLimitReached`).
 
 There is no global assignment cap — the cap is per-org. You could theoretically have
 4 assignments in org A and 4 in org B simultaneously.
+
+For worked examples showing how the global and per-org caps interact, see
+[docs/fairness-explainer.md](fairness-explainer.md).
 
 ---
 
@@ -157,3 +163,27 @@ has already been uploaded to the network. The contract WASM is replaced in-place
 Only the admin can upgrade. Ensure the new WASM is thoroughly tested before upgrading
 on mainnet — there is no rollback mechanism beyond uploading the old WASM again and
 calling `upgrade` a second time.
+
+---
+
+### 15. Freighter said success, but the UI hasn't updated — what do I do?
+
+This is the most common contributor support question. It happens because a
+successful Freighter signature covers only **Stage 2** of a 7-stage pipeline.
+The UI updates only after all 7 stages complete, which can take up to 72 seconds
+in the worst case.
+
+The usual causes:
+
+1. **Event indexer lag (up to 10 s):** The `EventIndexer` polls the Soroban RPC
+   for contract events every 5 seconds. An event emitted right after a poll cycle
+   started will wait until the next cycle.
+2. **Frontend polling stopped too early:** The frontend should keep polling
+   `GET /api/events` for at least 30 seconds after Freighter confirms, not just
+   once at transaction confirmation.
+3. **Wrong filter parameters:** Make sure the `org_id` and `event_type` query
+   parameters sent to `/api/events` match what was submitted.
+
+For full debugging steps — including SQL queries to check the event database
+and RPC commands to inspect the raw transaction result — see
+[docs/transaction-lifecycle.md](./transaction-lifecycle.md#stuck-transaction-debugging-checklist).

@@ -1,15 +1,19 @@
-import type { ReactNode } from "react";
-import NetworkBanner from "../components/NetworkBanner";
+import type { Metadata } from 'next';
+import './globals.css';
 
-export const metadata = { title: "WorkloadGovernor" };
+export const metadata: Metadata = {
+  title: 'WorkloadGovernor Dashboard',
+  description: 'Contributor dashboard for the WorkloadGovernor platform on Stellar',
+};
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body>
-        <NetworkBanner />
-        <main>{children}</main>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
