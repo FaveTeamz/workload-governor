@@ -4,6 +4,10 @@ import {
   validateGitHubSignature,
 } from '../services/github-webhook';
 import { invalidateCache } from '../services/redis';
+import {
+  githubWebhooksReceivedTotal,
+  githubWebhookProcessingDurationSeconds,
+} from '../metrics';
 
 const router = Router();
 
@@ -56,25 +60,38 @@ const GOOD_FIRST_ISSUE = 'good first issue';
 
 // POST /webhooks/github
 router.post('/github', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const eventType = (req.headers['x-github-event'] as string) || 'issues';
+
+  const recordMetrics = (status: 'success' | 'invalid_signature' | 'error' | 'ignored') => {
+    const durationSeconds = (Date.now() - startTime) / 1000;
+    githubWebhooksReceivedTotal.labels(eventType, status).inc();
+    githubWebhookProcessingDurationSeconds.labels(eventType, status).observe(durationSeconds);
+  };
+
   const rawBody = req.body as Record<string, unknown>;
   const issueUrl = rawBody.issue_url || (rawBody.issue as Record<string, unknown> | undefined)?.url;
   const repoUrl = rawBody.repository_url || (rawBody.repository as Record<string, unknown> | undefined)?.url;
 
   if (typeof issueUrl === 'string' && !isValidGitHubApiUrl(issueUrl)) {
+    recordMetrics('error');
     return res.status(400).json({ error: 'invalid or disallowed issue URL domain' });
   }
   if (typeof repoUrl === 'string' && !isValidGitHubApiUrl(repoUrl)) {
+    recordMetrics('error');
     return res.status(400).json({ error: 'invalid or disallowed repository URL domain' });
   }
   const signature = req.headers['x-hub-signature-256'] as string;
 
   if (!signature) {
+    recordMetrics('invalid_signature');
     return res.status(401).json({ error: 'missing signature' });
   }
 
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) {
     console.error('GITHUB_WEBHOOK_SECRET not configured');
+    recordMetrics('error');
     return res.status(500).json({ error: 'webhook not configured' });
   }
 
@@ -83,9 +100,11 @@ router.post('/github', async (req: Request, res: Response) => {
 
   try {
     if (!validateGitHubSignature(payload, signature, secret)) {
+      recordMetrics('invalid_signature');
       return res.status(401).json({ error: 'invalid signature' });
     }
   } catch {
+    recordMetrics('invalid_signature');
     return res.status(401).json({ error: 'invalid signature' });
   }
 
@@ -94,6 +113,7 @@ router.post('/github', async (req: Request, res: Response) => {
 
   // Require both issue and repository fields to be present
   if (!action || !issue || !repository) {
+    recordMetrics('ignored');
     return res.status(200).json({ message: 'event ignored' });
   }
 
@@ -145,6 +165,7 @@ router.post('/github', async (req: Request, res: Response) => {
       case 'labeled': {
         const labelName = body.label?.name;
         if (labelName !== GOOD_FIRST_ISSUE) {
+          recordMetrics('ignored');
           return res.status(200).json({ message: 'event ignored' });
         }
         // Upsert issue and record the label
@@ -165,6 +186,7 @@ router.post('/github', async (req: Request, res: Response) => {
       case 'unlabeled': {
         const labelName = body.label?.name;
         if (labelName !== GOOD_FIRST_ISSUE) {
+          recordMetrics('ignored');
           return res.status(200).json({ message: 'event ignored' });
         }
         // Remove the label record
@@ -181,18 +203,22 @@ router.post('/github', async (req: Request, res: Response) => {
         // Contributor applied or withdrew — invalidate their global-count cache
         await invalidateCache('global-count:*');
         console.log(`Webhook action '${action}': invalidated global-count cache`);
+        recordMetrics('success');
         return res.status(200).json({ message: 'webhook processed successfully' });
       }
 
       default:
+        recordMetrics('ignored');
         return res.status(200).json({ message: 'event type not supported' });
     }
 
     // Invalidate cache after successful update
     await invalidateCache('issues:*');
+    recordMetrics('success');
     return res.status(200).json({ message: 'webhook processed successfully' });
   } catch (error) {
     console.error('Database error processing webhook:', error);
+    recordMetrics('error');
     return res.status(500).json({ error: 'database error' });
   }
 });

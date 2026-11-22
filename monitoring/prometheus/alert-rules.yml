@@ -9,3 +9,21 @@ groups:
         annotations:
           summary: "High HTTP 5xx error rate detected"
           description: "HTTP 5xx error rate has exceeded 1% of total requests over a 5-minute rolling window (current: {{ $value | humanizePercentage }})."
+
+      - alert: WebhookSignatureFailureRateHigh
+        expr: (sum(rate(github_webhooks_received_total{status="invalid_signature"}[5m])) / sum(rate(github_webhooks_received_total[5m]))) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High GitHub webhook signature failure rate detected"
+          description: "GitHub webhook signature failure rate exceeds 10% of total webhook deliveries over a 5-minute window (current: {{ $value | humanizePercentage }}). Verify GITHUB_WEBHOOK_SECRET and webhook configuration."
+
+      - alert: WebhookProcessingErrorRateHigh
+        expr: (sum(rate(github_webhooks_received_total{status="error"}[5m])) / sum(rate(github_webhooks_received_total[5m]))) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GitHub webhook processing error rate detected"
+          description: "GitHub webhook processing error rate exceeds 5% of total webhook deliveries over a 5-minute window (current: {{ $value | humanizePercentage }})."

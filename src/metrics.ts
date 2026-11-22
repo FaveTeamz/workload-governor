@@ -157,6 +157,21 @@ export const indexerLedgerLag = new Gauge({
   help: "Number of ledgers between the latest and last processed ledger",
   registers: [register],
 });
+
+export const githubWebhooksReceivedTotal = new Counter({
+  name: "github_webhooks_received_total",
+  help: "Total incoming GitHub webhooks received",
+  labelNames: ["event_type", "status"],
+  registers: [register],
+});
+
+export const githubWebhookProcessingDurationSeconds = new Histogram({
+  name: "github_webhook_processing_duration_seconds",
+  help: "Duration of GitHub webhook processing in seconds",
+  labelNames: ["event_type", "status"],
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [register],
+});
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 /**

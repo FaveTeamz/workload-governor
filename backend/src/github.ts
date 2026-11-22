@@ -370,3 +370,90 @@ export async function runFullSync(): Promise<SyncResult[]> {
   }
   return results;
 }
+
+// ─── Webhook processing & Prometheus metrics ──────────────────────────────────
+
+import {
+  githubWebhooksReceivedTotal,
+  githubWebhookProcessingDurationSeconds,
+} from "./tracing.js";
+
+export { githubWebhooksReceivedTotal, githubWebhookProcessingDurationSeconds };
+
+export interface WebhookProcessingResult {
+  status: "success" | "invalid_signature" | "error" | "ignored";
+  statusCode: number;
+  message: string;
+}
+
+/**
+ * Increment webhook delivery counter and observe execution duration.
+ */
+export function recordWebhookMetric(
+  eventType: string,
+  status: "success" | "invalid_signature" | "error" | "ignored",
+  durationSeconds?: number,
+): void {
+  githubWebhooksReceivedTotal.labels(eventType, status).inc();
+  if (durationSeconds !== undefined) {
+    githubWebhookProcessingDurationSeconds.labels(eventType, status).observe(durationSeconds);
+  }
+}
+
+/**
+ * Process an incoming GitHub webhook with end-to-end metrics instrumentation.
+ */
+export async function processWebhookDelivery(
+  headers: Record<string, string | string[] | undefined>,
+  payload: string | Record<string, unknown>,
+  secret?: string,
+): Promise<WebhookProcessingResult> {
+  const start = Date.now();
+  const eventType = (headers["x-github-event"] as string) || "issues";
+  const signature = (headers["x-hub-signature-256"] as string) || "";
+
+  if (!signature) {
+    const duration = (Date.now() - start) / 1000;
+    recordWebhookMetric(eventType, "invalid_signature", duration);
+    return { status: "invalid_signature", statusCode: 401, message: "missing signature" };
+  }
+
+  const webhookSecret = secret ?? process.env.GITHUB_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    const duration = (Date.now() - start) / 1000;
+    recordWebhookMetric(eventType, "error", duration);
+    return { status: "error", statusCode: 500, message: "webhook secret not configured" };
+  }
+
+  const crypto = await import("crypto");
+  const payloadStr = typeof payload === "string" ? payload : JSON.stringify(payload);
+  const computed = `sha256=${crypto.createHmac("sha256", webhookSecret).update(payloadStr).digest("hex")}`;
+  const valid =
+    computed.length === signature.length &&
+    crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
+
+  if (!valid) {
+    const duration = (Date.now() - start) / 1000;
+    recordWebhookMetric(eventType, "invalid_signature", duration);
+    return { status: "invalid_signature", statusCode: 401, message: "invalid signature" };
+  }
+
+  try {
+    const body = typeof payload === "string" ? JSON.parse(payload) : payload;
+    const { action, issue, repository } = body as Record<string, unknown>;
+
+    if (!action || !issue || !repository) {
+      const duration = (Date.now() - start) / 1000;
+      recordWebhookMetric(eventType, "ignored", duration);
+      return { status: "ignored", statusCode: 200, message: "event ignored" };
+    }
+
+    const duration = (Date.now() - start) / 1000;
+    recordWebhookMetric(eventType, "success", duration);
+    return { status: "success", statusCode: 200, message: "webhook processed successfully" };
+  } catch {
+    const duration = (Date.now() - start) / 1000;
+    recordWebhookMetric(eventType, "error", duration);
+    return { status: "error", statusCode: 500, message: "processing error" };
+  }
+}
