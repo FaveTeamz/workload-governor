@@ -1,0 +1,21 @@
+--- src/lib.rs
++++ replace >= with < in WorkloadGovernor::apply_for_issue
+@@ -148,17 +148,17 @@
+     ///   -- apply_for_issue \
+     ///   --contributor <CONTRIBUTOR_ADDRESS> \
+     ///   --org_id my_org --issue_id 42
+     /// ```
+     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+         storage::require_initialized(&env, &ContractError::NotInitialized);
+         contributor.require_auth();
+         let count = storage::get_global_app_count(&env, &contributor);
+-        if count >= storage::GLOBAL_APP_LIMIT {
++        if count < /* ~ changed by cargo-mutants ~ */ storage::GLOBAL_APP_LIMIT {
+             panic_with_error!(env, ContractError::GlobalApplicationLimitReached);
+         }
+         if storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+             panic_with_error!(env, ContractError::DuplicateApplication);
+         }
+         storage::set_global_app_count(&env, &contributor, count + 1);
+         storage::set_app_entry(&env, &contributor, &org_id, issue_id);
+         storage::extend_global_app_count_ttl(&env, &contributor);

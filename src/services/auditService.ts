@@ -1,235 +1,162 @@
-/**
- * auditService.ts
- *
- * Append-only audit log with cryptographic hash-chaining.
- *
- * Every row stored in audit_log is linked to the previous row:
- *
- *   entry_hash = SHA-256( previous_hash + event_type + stable_payload + created_at )
- *   signature  = HMAC-SHA-256( entry_hash, AUDIT_SECRET )
- *
- * The first row uses an all-zero genesis hash as "previous_hash".
- *
- * Verification iterates all rows in insertion order, re-derives each
- * entry_hash and signature, and reports any break in the chain or
- * any tampered field.
- */
+import crypto from 'crypto';
+import { pool } from '../db';
+import { logger } from '../logger';
 
-import { createHash, createHmac } from 'crypto';
-import { Pool } from 'pg';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+export type AuditEventType =
+  | 'cap_update'
+  | 'maintainer_register'
+  | 'api_key_created'
+  | 'api_key_revoked';
 
 export interface AuditEntry {
-  id: number;
+  id?: number;
+  event_type: AuditEventType;
+  actor: string;        // admin public key or IP
+  ip_address?: string;
+  resource?: string;    // e.g. "global_cap", "per_org_cap"
+  previous_value?: unknown;
+  new_value?: unknown;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  prev_hash?: string;
+  entry_hash?: string;
+}
+
+export function computeAuditHash(entry: {
+  prev_hash: string;
   event_type: string;
-  payload: Record<string, unknown>;
-  created_at: Date;
-  previous_hash: string;
-  entry_hash: string;
-  signature: string;
+  actor: string;
+  resource?: string;
+  previous_value?: unknown;
+  new_value?: unknown;
+  timestamp: string;
+}): string {
+  const content = `${entry.prev_hash}|${entry.event_type}|${entry.actor}|${entry.resource ?? ''}|${JSON.stringify(entry.previous_value ?? null)}|${JSON.stringify(entry.new_value ?? null)}|${entry.timestamp}`;
+  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
-export interface VerificationResult {
-  ok: boolean;
-  total: number;
-  broken: BrokenLink[];
+export async function verifyAuditLogChain(entries?: AuditEntry[]): Promise<{ valid: boolean; brokenAtId?: number }> {
+  try {
+    const logs = entries ?? (await pool.query('SELECT * FROM audit_logs ORDER BY id ASC')).rows as AuditEntry[];
+    let prevHash = 'GENESIS_HASH';
+    for (const log of logs) {
+      const timestamp = log.created_at ?? '';
+      const expectedHash = computeAuditHash({
+        prev_hash: log.prev_hash || prevHash,
+        event_type: log.event_type,
+        actor: log.actor,
+        resource: log.resource,
+        previous_value: log.previous_value,
+        new_value: log.new_value,
+        timestamp,
+      });
+      if (log.entry_hash && log.entry_hash !== expectedHash) {
+        return { valid: false, brokenAtId: log.id };
+      }
+      prevHash = log.entry_hash ?? expectedHash;
+    }
+    return { valid: true };
+  } catch (err) {
+    logger.error({ message: 'Audit chain verification failed', error: String(err) });
+    return { valid: false };
+  }
 }
-
-export interface BrokenLink {
-  id: number;
-  reason: string;
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/** SHA-256 hex of the empty string — used as the genesis previous_hash. */
-export const GENESIS_HASH =
-  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-
-// ─── Hash helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Produces a deterministic string for the data fields that are covered by the
- * entry hash.  Payload is serialised as a sorted-key JSON string so that
- * field order never affects the digest.
+ * Persist a single audit entry.
+ * Designed to be called fire-and-forget; errors are logged but never rethrown
+ * so they never fail the originating request.
  */
-export function buildHashInput(
-  previousHash: string,
-  eventType: string,
-  payload: Record<string, unknown>,
-  createdAt: Date,
-): string {
-  const stablePayload = JSON.stringify(payload, Object.keys(payload).sort());
-  return `${previousHash}|${eventType}|${stablePayload}|${createdAt.toISOString()}`;
-}
-
-/** SHA-256 hex digest of the concatenated chain fields. */
-export function computeEntryHash(
-  previousHash: string,
-  eventType: string,
-  payload: Record<string, unknown>,
-  createdAt: Date,
-): string {
-  const input = buildHashInput(previousHash, eventType, payload, createdAt);
-  return createHash('sha256').update(input).digest('hex');
-}
-
-/** HMAC-SHA-256 hex over entry_hash, keyed with AUDIT_SECRET. */
-export function computeSignature(entryHash: string, secret: string): string {
-  return createHmac('sha256', secret).update(entryHash).digest('hex');
-}
-
-// ─── Service class ────────────────────────────────────────────────────────────
-
-export class AuditService {
-  private readonly pool: Pool;
-  private readonly secret: string;
-
-  constructor(pool: Pool, secret?: string) {
-    this.pool = pool;
-    const s = secret ?? process.env.AUDIT_SECRET;
-    if (!s) {
-      throw new Error('AUDIT_SECRET environment variable is required');
-    }
-    this.secret = s;
-  }
-
-  /**
-   * Appends a new entry to the audit log.
-   *
-   * The method fetches the most-recent entry_hash under a row-level lock,
-   * derives the new hashes, and inserts the row — all within a single
-   * transaction so concurrent writers never produce a fork in the chain.
-   */
-  async append(
-    eventType: string,
-    payload: Record<string, unknown>,
-  ): Promise<AuditEntry> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Fetch the last entry_hash with a FOR UPDATE lock to prevent races.
-      const prevResult = await client.query<{ entry_hash: string }>(
-        `SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1 FOR UPDATE`,
-      );
-      const previousHash =
-        prevResult.rows.length > 0
-          ? prevResult.rows[0].entry_hash
-          : GENESIS_HASH;
-
-      // Use the DB server's clock so the timestamp is authoritative.
-      const tsResult = await client.query<{ now: Date }>(
-        `SELECT NOW() AS now`,
-      );
-      const createdAt: Date = tsResult.rows[0].now;
-
-      const entryHash = computeEntryHash(
-        previousHash,
-        eventType,
-        payload,
-        createdAt,
-      );
-      const signature = computeSignature(entryHash, this.secret);
-
-      const insertResult = await client.query<AuditEntry>(
-        `INSERT INTO audit_log
-           (event_type, payload, created_at, previous_hash, entry_hash, signature)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, event_type, payload, created_at, previous_hash, entry_hash, signature`,
-        [
-          eventType,
-          JSON.stringify(payload),
-          createdAt,
-          previousHash,
-          entryHash,
-          signature,
-        ],
-      );
-
-      await client.query('COMMIT');
-      return insertResult.rows[0];
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Reads all audit entries in insertion order.
-   * Useful for read-only inspection; verification is handled by verify().
-   */
-  async listAll(): Promise<AuditEntry[]> {
-    const result = await this.pool.query<AuditEntry>(
-      `SELECT id, event_type, payload, created_at,
-              previous_hash, entry_hash, signature
-       FROM audit_log
-       ORDER BY id ASC`,
-    );
-    return result.rows;
-  }
-
-  /**
-   * Iterates all entries in order and re-derives every hash and signature.
-   *
-   * Returns:
-   *   ok      — true only when every entry passes both checks.
-   *   total   — total number of entries inspected.
-   *   broken  — list of entries that failed with a human-readable reason.
-   */
-  async verify(): Promise<VerificationResult> {
-    const entries = await this.listAll();
-    const broken: BrokenLink[] = [];
-    let expectedPrevious = GENESIS_HASH;
-
-    for (const entry of entries) {
-      // 1. The stored previous_hash must match what we expect.
-      if (entry.previous_hash !== expectedPrevious) {
-        broken.push({
-          id: entry.id,
-          reason: `previous_hash mismatch: expected ${expectedPrevious}, got ${entry.previous_hash}`,
-        });
-        // Update expectedPrevious to the stored value so we continue
-        // detecting further breaks rather than cascading a single error.
-        expectedPrevious = entry.entry_hash;
-        continue;
-      }
-
-      // 2. Re-derive the entry_hash and compare.
-      const derived = computeEntryHash(
-        entry.previous_hash,
+export async function recordAuditEvent(entry: AuditEntry): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO audit_logs
+         (event_type, actor, ip_address, resource, previous_value, new_value, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
         entry.event_type,
-        entry.payload,
-        new Date(entry.created_at),
-      );
-      if (derived !== entry.entry_hash) {
-        broken.push({
-          id: entry.id,
-          reason: `entry_hash mismatch: data has been tampered`,
-        });
-        expectedPrevious = entry.entry_hash;
-        continue;
-      }
+        entry.actor,
+        entry.ip_address ?? null,
+        entry.resource ?? null,
+        entry.previous_value !== undefined ? JSON.stringify(entry.previous_value) : null,
+        entry.new_value !== undefined ? JSON.stringify(entry.new_value) : null,
+        entry.metadata ? JSON.stringify(entry.metadata) : null,
+      ],
+    );
 
-      // 3. Re-derive the signature and compare.
-      const derivedSig = computeSignature(entry.entry_hash, this.secret);
-      if (derivedSig !== entry.signature) {
-        broken.push({
-          id: entry.id,
-          reason: `signature mismatch: HMAC verification failed`,
-        });
-      }
-
-      expectedPrevious = entry.entry_hash;
-    }
-
-    return {
-      ok: broken.length === 0,
-      total: entries.length,
-      broken,
-    };
+    logger.info({
+      ecs: { version: '8.11.0' },
+      event: {
+        action: entry.event_type,
+        category: 'audit',
+        created: new Date().toISOString(),
+      },
+      user: {
+        name: entry.actor,
+      },
+      client: {
+        ip: entry.ip_address ?? null,
+      },
+      service: {
+        name: 'workload-governor-backend',
+      },
+      audit: {
+        resource: entry.resource ?? null,
+        previous_value: entry.previous_value,
+        new_value: entry.new_value,
+        metadata: entry.metadata,
+      },
+      message: `Audit event recorded: ${entry.event_type} by ${entry.actor}`,
+    });
+  } catch (err) {
+    logger.error({
+      message: 'Failed to write audit log entry',
+      event_type: entry.event_type,
+      actor: entry.actor,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+}
+
+/**
+ * Retrieve paginated audit log entries.
+ * Used by GET /api/v1/audit/logs.
+ */
+export async function getAuditLogs(opts: {
+  event_type?: string;
+  actor?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ rows: AuditEntry[]; total: number }> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (opts.event_type) {
+    params.push(opts.event_type);
+    conditions.push(`event_type = $${params.length}`);
+  }
+  if (opts.actor) {
+    params.push(opts.actor);
+    conditions.push(`actor = $${params.length}`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limitNum = Math.min(Math.max(opts.limit ?? 50, 1), 500);
+  const offsetNum = Math.max(opts.offset ?? 0, 0);
+
+  const countResult = await pool.query(
+    `SELECT COUNT(*) as total FROM audit_logs ${where}`,
+    params,
+  );
+  const total = parseInt(
+    (countResult.rows[0] as Record<string, unknown>).total as string,
+    10,
+  );
+
+  const result = await pool.query(
+    `SELECT * FROM audit_logs ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limitNum, offsetNum],
+  );
+
+  return { rows: result.rows as AuditEntry[], total };
 }

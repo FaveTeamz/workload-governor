@@ -1,253 +1,165 @@
-# Security Model — WorkloadGovernor Backend
+# Security Model
 
-**Last updated**: 2026-11-22  
-**Covers**: audit log cryptographic integrity (PR #9)
+## Checks-Effects-Interactions (CEI) Pattern
 
----
-
-## 1. Overview
-
-WorkloadGovernor writes an append-only audit log entry every time a privileged
-action occurs: maintainer registration, issue assignment, workload-cap
-enforcement, and administrative overrides.
-
-Before this change, audit rows in the `audit_log` table could be silently
-modified or deleted by any database user with write permissions.  Attackers
-who gain access to the database could alter history without detection.
-
-The hash-chain / HMAC-seal mechanism described here makes every row
-cryptographically bound to all rows that precede it.  Altering any field — or
-removing any row — causes verification to fail on the first affected link.
+WorkloadGovernor enforces a strict **Checks → Effects → Interactions** ordering in every
+state-changing function. This pattern is a well-established defense against reentrancy and
+ensures that all invariants are validated before any storage is mutated, and that external
+interactions (event emission) only occur after storage commits are complete.
 
 ---
 
-## 2. Data Model
+### Why CEI Matters in Soroban Contracts
 
-### `audit_log` table
+Soroban supports cross-contract invocations. An event emitted mid-function could, in a
+future composition, trigger a callback into the same contract before the current invocation
+finishes. CEI ordering eliminates this class of vulnerability by ensuring:
 
-| Column          | Type        | Description                                              |
-|-----------------|-------------|----------------------------------------------------------|
-| `id`            | BIGSERIAL   | Monotonically increasing primary key                     |
-| `event_type`    | TEXT        | Semantic event name (e.g. `ASSIGN_ISSUE`)                |
-| `payload`       | JSONB       | Structured event data                                    |
-| `created_at`    | TIMESTAMPTZ | Server-authoritative write timestamp (set by `NOW()`)    |
-| `previous_hash` | TEXT        | `entry_hash` of the immediately preceding row            |
-| `entry_hash`    | TEXT        | SHA-256 digest binding all data fields                   |
-| `signature`     | TEXT        | HMAC-SHA-256 seal over `entry_hash`, keyed with a secret |
-
-The three new columns are added by **migration 9** (`migrations/9_add_audit_signatures.js`).
+1. **All checks run first** — no storage is touched until every precondition and consistency
+   guard passes.
+2. **All effects complete next** — storage writes are committed atomically relative to the
+   logical operation.
+3. **External interactions happen last** — events are emitted only after all writes are final,
+   so any observer or callback sees a fully consistent state.
 
 ---
 
-## 3. Cryptographic Design
+### Verified Interaction Ordering
 
-### 3.1 Genesis hash
-
-The chain starts with a well-known sentinel value:
+#### `complete_assignment`
 
 ```
-GENESIS_HASH = SHA-256("")
-             = e3b0c44298fc1c149afbf4c8996fb924…
+CHECKS
+  require_initialized(env, NotInitialized)
+  maintainer.require_auth()
+  is_maintainer(maintainer, org_id)           → UnauthorizedMaintainer if false
+  has_assignment(org_id, issue_id, contributor) → AssignmentNotFound if false
+  get_org_assignment_count(contributor, org_id)
+    if count == 0 → CounterInconsistency       ← consistency guard BEFORE any write
+
+EFFECTS
+  remove_assignment(org_id, issue_id, contributor)
+  if new_count == 0:
+    remove_org_assignment_count(contributor, org_id)
+  else:
+    set_org_assignment_count(contributor, org_id, count - 1)
+  bump_instance()
+
+INTERACTIONS
+  emit_assignment_completed(maintainer, contributor, org_id, issue_id)
 ```
 
-The first row in the table stores `GENESIS_HASH` as its `previous_hash`.
+**Key property:** The counter consistency check (`count == 0` guard) is performed in the
+**CHECK phase**, reading the stored counter and comparing it before `remove_assignment` is
+called. If the counter is inconsistent, the function panics without touching storage.
 
-### 3.2 Entry hash
-
-For every new row the following input string is constructed:
-
-```
-input = previous_hash + "|" + event_type + "|" + stable_payload + "|" + created_at_iso
-```
-
-where `stable_payload` is `JSON.stringify(payload, sortedKeys)` — keys are
-sorted before serialisation so that field insertion order never affects the
-digest.
+#### `revoke_assignment`
 
 ```
-entry_hash = SHA-256(input)
+CHECKS
+  require_initialized(env, NotInitialized)
+  maintainer.require_auth()
+  is_maintainer(maintainer, org_id)           → UnauthorizedMaintainer if false
+  has_assignment(org_id, issue_id, contributor) → AssignmentNotFound if false
+  get_org_assignment_count(contributor, org_id)
+    if count == 0 → CounterInconsistency       ← consistency guard BEFORE any write
+
+EFFECTS
+  remove_assignment(org_id, issue_id, contributor)
+  if new_count == 0:
+    remove_org_assignment_count(contributor, org_id)
+  else:
+    set_org_assignment_count(contributor, org_id, count - 1)
+  bump_instance()
+
+INTERACTIONS
+  emit_assignment_revoked(maintainer, contributor, org_id, issue_id)
 ```
 
-### 3.3 HMAC signature
-
-```
-signature = HMAC-SHA-256(entry_hash, AUDIT_SECRET)
-```
-
-`AUDIT_SECRET` is a server-side secret stored as an environment variable (or
-injected via AWS Secrets Manager in production).  It is never persisted to the
-database.
-
-The dual-layer design means:
-
-* **entry_hash** alone proves data integrity — any field change is detectable
-  without knowledge of the secret.
-* **signature** proves authenticity — an attacker who can write to the database
-  but does not know `AUDIT_SECRET` cannot forge a valid HMAC for a rewritten
-  row.
-
-### 3.4 Chain linkage
-
-```
-row N+1 .previous_hash  ==  row N .entry_hash
-```
-
-This binds the entire sequence.  Deleting row N makes row N+1's
-`previous_hash` point to a hash that no longer exists, which verification
-detects immediately.
+**Key property (SC-006 fix):** Before SC-006, `revoke_assignment` called `remove_assignment`
+*before* reading the counter, which meant a `CounterInconsistency` panic would leave the
+assignment entry permanently deleted with no counter to match. The fix moves the counter read
+and the `CounterInconsistency` guard into the CHECK phase, before any storage mutation.
 
 ---
 
-## 4. Write Path
+### SC-006 Regression: Pre-Fix vs Post-Fix
 
-```
-caller
-  │
-  ▼
-AuditService.append(eventType, payload)
-  │
-  ├─ BEGIN transaction
-  ├─ SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1 FOR UPDATE
-  │    (row-level lock prevents concurrent writes from forking the chain)
-  ├─ SELECT NOW()   ← server timestamp, not client clock
-  ├─ Derive entry_hash = SHA-256(prev|type|payload|ts)
-  ├─ Derive signature  = HMAC-SHA-256(entry_hash, AUDIT_SECRET)
-  ├─ INSERT INTO audit_log …
-  └─ COMMIT
-```
+| Phase | Pre-SC-006 (`revoke_assignment`) | Post-SC-006 (`revoke_assignment`) |
+|---|---|---|
+| Checks | `require_initialized`, `require_auth`, `is_maintainer`, `has_assignment` | `require_initialized`, `require_auth`, `is_maintainer`, `has_assignment`, **`get_org_assignment_count` + zero check** |
+| Effects | `remove_assignment` ← *write happened here* | `remove_assignment`, counter update |
+| Inconsistency check | Read counter, panic if 0 ← *after the write!* | Moved to checks phase |
+| Interactions | `emit_assignment_revoked` | `emit_assignment_revoked` |
 
-The `FOR UPDATE` lock on the previous row guarantees that two concurrent
-`append()` calls cannot both read the same tail hash and produce a fork.
+**Observable difference:** With the pre-fix code, if storage was in a corrupted state
+(assignment exists but counter is 0), calling `revoke_assignment` would:
+1. Delete the assignment sentinel (storage write).
+2. Read the counter (returns 0).
+3. Panic with `CounterInconsistency`.
+
+The assignment was gone — with no counter entry — leaving storage in a **worse** corrupted
+state than before. Post-fix, the panic fires before any write, leaving storage untouched.
 
 ---
 
-## 5. Verification
+### Counter Atomicity Guarantee
 
-`AuditService.verify()` replays the entire chain in `id ASC` order:
+The `org_assignment_count` counter and the `("asgn", org_id, issue_id, contributor)` sentinel
+are always kept in sync:
 
-1. Start with `expectedPrevious = GENESIS_HASH`.
-2. For each row:
-   a. Assert `row.previous_hash == expectedPrevious`.
-   b. Re-derive `entry_hash` from the stored fields and assert it matches
-      `row.entry_hash`.
-   c. Re-derive `signature` and assert it matches `row.signature`.
-3. Advance `expectedPrevious = row.entry_hash` and continue.
+- **`assign_issue`**: counter incremented *and* sentinel written in the same effects phase.
+- **`complete_assignment`**: sentinel removed *and* counter decremented in the same effects phase.
+- **`revoke_assignment`**: sentinel removed *and* counter decremented in the same effects phase.
 
-Any failure is recorded in a `broken` list with the row ID and a human-readable
-reason.  Verification continues past failures so all broken links are reported
-in a single pass.
+Because Soroban's storage operations within a single contract invocation are committed
+atomically (the host either applies all writes or none on panic), the counter and sentinel
+will never diverge during normal operation.
 
-### Verification endpoint
-
-```
-GET /api/v1/audit/verify
-Authorization: X-Admin-Token: <ADMIN_TOKEN>
-```
-
-Response (HTTP 200):
-
-```json
-{
-  "ok":    true,
-  "total": 1247,
-  "broken": []
-}
-```
-
-When integrity fails:
-
-```json
-{
-  "ok":    false,
-  "total": 1247,
-  "broken": [
-    { "id": 42, "reason": "entry_hash mismatch: data has been tampered" },
-    { "id": 43, "reason": "previous_hash mismatch: expected abc…, got def…" }
-  ]
-}
-```
-
-The endpoint always returns HTTP 200 for a successful query so callers can
-inspect `ok` without special-casing status codes.  HTTP 503 is used only when
-the verification query itself fails (database unavailable, etc.).
+The `CounterInconsistency` guard exists to detect *externally introduced* corruption (e.g.
+post-migration data anomalies or direct storage manipulation in test environments) and reject
+any operation that would act on corrupt data.
 
 ---
 
-## 6. Configuration
+### Test Coverage
 
-| Environment variable | Required | Description                                                              |
-|----------------------|----------|--------------------------------------------------------------------------|
-| `AUDIT_SECRET`       | Yes      | Key for HMAC signatures. Minimum 32 random bytes, base64 or hex encoded. |
-| `ADMIN_TOKEN`        | Yes      | Bearer token for the `/api/v1/audit/verify` endpoint.                    |
+The CEI ordering is verified by the following test suite in `src/test.rs`:
 
-Add these to your deployment secrets store.  For local development copy
-`.env.example` to `.env` and set both values.
+| Test | What it verifies |
+|---|---|
+| `unit_cei_revoke_counter_inconsistency_leaves_assignment_intact` | Regression: revoke panics in CHECK phase; assignment sentinel remains |
+| `unit_cei_complete_counter_inconsistency_leaves_assignment_intact` | complete panics in CHECK phase; assignment sentinel remains |
+| `unit_cei_complete_effects_precede_event` | All storage writes committed before `assignment_completed` event |
+| `unit_cei_revoke_effects_precede_event` | All storage writes committed before `assignment_revoked` event |
+| `unit_cei_complete_slot_freed_for_reuse` | Counter decrement is durable; freed slot accepts new assignment |
+| `unit_cei_revoke_slot_freed_for_reuse` | Counter decrement is durable; freed slot accepts new assignment |
+| `unit_cei_complete_sentinel_and_counter_atomic` | Sentinel and counter removed atomically on complete |
+| `unit_cei_revoke_sentinel_and_counter_atomic` | Sentinel and counter removed atomically on revoke |
 
 ---
 
-## 7. Migration
+### Auth Ordering
 
-### Up (apply)
+Authentication (`require_auth`) is enforced as the **first** user-supplied input check,
+immediately after the initialization guard. This prevents any computation from being
+performed on behalf of an unauthorized caller before the call is rejected:
 
-```bash
-node -e "
-  const { Pool } = require('pg');
-  const { up } = require('./migrations/9_add_audit_signatures');
-  up(new Pool({ connectionString: process.env.DATABASE_URL }))
-    .then(() => { console.log('migration 9 applied'); process.exit(0); })
-    .catch(err => { console.error(err); process.exit(1); });
-"
+```
+require_initialized(env, NotInitialized)   ← contract liveness guard
+caller.require_auth()                       ← auth check (second)
+role/permission checks                      ← business logic checks
 ```
 
-### Down (rollback)
-
-```bash
-# Drop only the three signature columns (safe, retains audit rows):
-node -e "
-  const { Pool } = require('pg');
-  const { down } = require('./migrations/9_add_audit_signatures');
-  down(new Pool({ connectionString: process.env.DATABASE_URL }))
-    .then(() => { console.log('migration 9 rolled back'); process.exit(0); })
-    .catch(err => { console.error(err); process.exit(1); });
-"
-
-# Drop the entire audit_log table (destructive — use with care):
-FULL_ROLLBACK=1 node -e "…same as above…"
-```
+This ordering ensures that:
+- No storage reads reveal information to unauthenticated callers.
+- No CPU budget is consumed on behalf of an impersonator.
+- Auth failures produce a clean, uninformative rejection with no side effects.
 
 ---
 
-## 8. Threat Model
+### References
 
-| Threat                               | Mitigation                                                            |
-|--------------------------------------|-----------------------------------------------------------------------|
-| DB row field tampered                | entry_hash mismatch detected on next verify()                        |
-| DB row deleted                       | Successor row's previous_hash breaks chain                           |
-| Row inserted mid-chain               | Successor row's previous_hash does not match the forged entry's hash  |
-| Hash rewritten but payload unchanged | Signature mismatch: attacker lacks AUDIT_SECRET                      |
-| AUDIT_SECRET rotated without re-seal | All signatures fail — planned rotation requires a re-seal migration  |
-| Replay / duplicate events            | Each row's entry_hash covers the server timestamp, so identical events at different times produce distinct hashes |
-
-### Out of scope
-
-* **Key management rotation**: re-sealing an existing chain after key rotation
-  requires a one-time migration that re-computes all signatures. This is an
-  operational procedure not covered by this implementation.
-* **Multi-node clock skew**: `created_at` is set by `NOW()` on the primary
-  database node, so it is consistent within a single primary.
-* **Long-term archive integrity**: for compliance archives consider periodically
-  anchoring the chain tail hash into an external transparency log or immutable
-  store (e.g. AWS QLDB or a public blockchain).
-
----
-
-## 9. Files changed
-
-| Path                                       | Purpose                             |
-|--------------------------------------------|-------------------------------------|
-| `migrations/9_add_audit_signatures.js`     | DB schema change (up + down)        |
-| `src/services/auditService.ts`             | Hash-chain logic and verification   |
-| `src/routes/audit.ts`                      | `GET /api/v1/audit/verify` endpoint |
-| `src/app.ts`                               | Router registration                 |
-| `tests/unit/auditService.test.ts`          | 24-test unit suite                  |
-| `docs/security-model.md`                   | This document                       |
+- [OWASP Smart Contract Top 10 — Reentrancy](https://owasp.org/www-project-smart-contract-security-top-10/)
+- [Soroban Authorization Model](https://developers.stellar.org/docs/smart-contracts/guides/authorization/)
+- SC-006 issue: *Enforce checks-effects-interactions order on complete and revoke handlers*

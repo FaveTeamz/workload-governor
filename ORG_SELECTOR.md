@@ -1,63 +1,87 @@
 # Organization Selector Component
 
-This module provides utilities for organization selection and filtering in the Workload Governor contract.
+`frontend/src/components/OrgSelector.tsx`
 
 ## Features
 
-- **Organization Filtering**: Search organizations by name or ID
-- **Assignment Tracking**: Display per-org assignment counts (X/4)
-- **Session Persistence**: Selection state managed across contract calls
-- **Searchability**: Fast lookups by org name or org ID
+- **Real-time search**: Filters organisations by name or ID as the user types
+- **Recent orgs**: The last 5 used orgs are persisted to `localStorage` and shown in a "Recent" section at the top of the dropdown
+- **Keyboard navigation**: Arrow Up/Down to move, Enter to select, Escape to close
+- **Accessible**: ARIA combobox pattern (`role="combobox"` on the input, `role="listbox"` on the list, `role="option"` on each item, `aria-activedescendant` tracking, `aria-expanded` on the trigger)
+- **Mobile-friendly**: Full-screen modal overlay on small viewports (via CSS media query targeting the `.org-selector--open` modifier)
+- **Assignment counts**: Displays `X/4` next to each org to show current workload
 
 ## Usage
 
-### Query Organization Assignment Count
+```tsx
+import { OrgSelector, type Org } from './components/OrgSelector';
 
-```rust
-let count = workload_governor::get_org_assignment_count(&env, contributor, org_id);
+const orgs: Org[] = [
+  { id: 'stellar-org', name: 'Stellar Org', assignmentCount: 1 },
+  { id: 'meridian-dao', name: 'Meridian DAO', assignmentCount: 0 },
+];
+
+function MyPage() {
+  const [selectedOrg, setSelectedOrg] = useState<string | null>(null);
+
+  return (
+    <OrgSelector
+      orgs={orgs}
+      value={selectedOrg}
+      onChange={(org) => setSelectedOrg(org.id)}
+    />
+  );
+}
 ```
 
-### List All Organizations for a Contributor
+## Props
 
-Organizations are managed through the contract's state. Query available organizations and their assignment counts.
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `orgs` | `Org[]` | required | Full list of available organisations |
+| `value` | `string \| null` | required | Currently selected org id |
+| `onChange` | `(org: Org) => void` | required | Called when user selects an org |
+| `placeholder` | `string` | `"Search orgs…"` | Search input placeholder |
+| `maxRecent` | `number` | `5` | Max number of recent orgs to store |
+| `storageKey` | `string` | `"wg_recent_orgs"` | localStorage key for recent orgs |
 
-### Filter Organizations by Name or ID
+## Org type
 
-Use the provided utility functions to filter organizations:
-
-```rust
-// Get organization by ID
-let org = get_organization_by_id(&env, org_id);
-
-// Search organizations by partial name match
-let matching_orgs = search_organizations(&env, search_term);
+```ts
+interface Org {
+  id: string;            // unique identifier
+  name: string;          // display name
+  assignmentCount?: number; // active assignments (shown as X/4)
+}
 ```
 
-## Component Behavior
+## Keyboard Navigation
 
-1. **Renders**: All orgs available for the connected contributor
-2. **Searchable**: Filter orgs by name or ID in real-time
-3. **Display**: Shows assignment count in format "X/4" next to each org
-4. **Persistent**: Selection is maintained in contract state across calls
-5. **Performance**: Optimized for fast lookups and filtering
+| Key | Action |
+|---|---|
+| `ArrowDown` | Move selection down (wraps to top) |
+| `ArrowUp` | Move selection up (wraps to bottom) |
+| `Enter` | Select the currently highlighted org |
+| `Escape` | Close the dropdown without selecting |
+| `Tab` | Close the dropdown without selecting |
 
-## API Reference
+## Recent Orgs
 
-### `get_org_assignment_count(env, contributor, org_id) -> u32`
-Returns the number of active assignments for a contributor in a specific organization.
+- Up to `maxRecent` (default 5) recently selected orgs are stored in `localStorage` under `wg_recent_orgs`
+- When no search query is active, a "Recent" section is shown above "All orgs"
+- When a search query is active, the recent section is hidden and only filtered results are shown
+- Selecting an org moves it to the front of the recent list
 
-### `get_global_application_count(env, contributor) -> u32`
-Returns the total number of pending applications across all organizations.
+## Accessibility
 
-### `get_organization_by_id(env, org_id) -> Organization`
-Retrieves organization details by ID.
+- Trigger button: `role` is implicit `button`, uses `aria-haspopup="listbox"` and `aria-expanded`
+- Search input: `role="combobox"`, `aria-autocomplete="list"`, `aria-controls` → listbox id, `aria-activedescendant` → active option id
+- Option list: `role="listbox"`
+- Options: `role="option"`, `aria-selected`
+- Section headers: `aria-hidden="true"` (decorative, not part of the option list for AT)
 
-## Integration with Contract
+## Implementation Notes
 
-The organization selector integrates with:
-- Application limits (6 global cap)
-- Assignment limits (4 per-org cap)
-- Maintainer registration per organization
-- Issue assignment tracking
-
-See the main contract documentation for complete details.
+- Dropdown closes on outside click via a `mousedown` listener on `document`
+- `scrollIntoView` is called on the active item to keep it visible when keyboard-navigating long lists
+- The component is self-contained with no external state management dependencies

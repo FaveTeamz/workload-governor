@@ -58,3 +58,6 @@ A quick-start reference for contributors new to Stellar, Soroban, and Freighter.
 | Horizon API | https://developers.stellar.org/docs/data/horizon |
 | Soroban RPC | https://developers.stellar.org/docs/data/rpc |
 | Testnet friendbot | https://friendbot.stellar.org |
+| WorkloadGovernor Glossary | [docs/glossary.md](glossary.md) |
+
+> 💡 **New to Soroban?** The [WorkloadGovernor Glossary](glossary.md) defines all project-specific terms introduced in this primer — including [Wave TTL](glossary.md#wave-ttl), [WASM Hash](glossary.md#wasm-hash), [Soroban RPC vs Horizon](glossary.md#soroban-rpc-vs-horizon), and [Auth Context / require_auth](glossary.md#auth-context--require_auth).

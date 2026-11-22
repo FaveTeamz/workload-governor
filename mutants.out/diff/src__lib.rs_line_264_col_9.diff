@@ -1,0 +1,48 @@
+--- src/lib.rs
++++ replace WorkloadGovernor::assign_issue with ()
+@@ -256,44 +256,17 @@
+     /// ```
+     pub fn assign_issue(
+         env: Env,
+         maintainer: Address,
+         contributor: Address,
+         org_id: Symbol,
+         issue_id: u32,
+     ) {
+-        storage::require_initialized(&env, &ContractError::NotInitialized);
+-        maintainer.require_auth();
+-        if !storage::is_maintainer(&env, &maintainer, &org_id) {
+-            panic_with_error!(env, ContractError::UnauthorizedMaintainer);
+-        }
+-        if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+-            panic_with_error!(env, ContractError::ApplicationNotFound);
+-        }
+-        let asgn_count = storage::get_org_assignment_count(&env, &contributor, &org_id);
+-        if asgn_count >= storage::ORG_ASSIGNMENT_LIMIT {
+-            panic_with_error!(env, ContractError::OrgAssignmentLimitReached);
+-        }
+-        if storage::has_assignment(&env, &org_id, issue_id, &contributor) {
+-            panic_with_error!(env, ContractError::AlreadyAssigned);
+-        }
+-        // Transition: consume the application, create the assignment
+-        storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+-        let app_count = storage::get_global_app_count(&env, &contributor);
+-        let new_app_count = app_count.saturating_sub(1);
+-        if new_app_count == 0 {
+-            storage::remove_global_app_count(&env, &contributor);
+-        } else {
+-            storage::set_global_app_count(&env, &contributor, new_app_count);
+-        }
+-        storage::set_org_assignment_count(&env, &contributor, &org_id, asgn_count + 1);
+-        storage::set_assignment(&env, &org_id, issue_id, &contributor);
+-        storage::bump_instance(&env);
+-        events::emit_issue_assigned(&env, &maintainer, &contributor, &org_id, issue_id);
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Marks an active assignment as completed and frees the assignment slot (maintainer-only).
+     ///
+     /// Removes the assignment sentinel and decrements the contributor's org-level
+     /// assignment counter. If the counter reaches zero the counter entry itself is removed.
+     ///
+     /// # Who can call
