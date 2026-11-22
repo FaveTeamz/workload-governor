@@ -46,3 +46,23 @@ TTL (Time-To-Live) is the duration that a storage entry remains valid on the Ste
 Extends the TTL of an assignment entry and related counters.
 
 **Function Signature:**
+```rust
+pub fn extend_assignment_ttl(env: Env, admin: Address, org_id: Symbol, issue_id: u64) -> Result<(), Error>;
+```
+
+---
+
+## Compliance & Audit Logs
+
+All governance events (cap modifications, maintainer additions, remediation invocations, and API key lifecycles) are recorded to an append-only, tamper-evident audit ledger with SHA-256 cryptographic chaining.
+
+### Querying Audit Logs
+
+Administrators and compliance auditors can query the audit trail programmatically:
+
+```bash
+curl -X GET "https://api.workloadgovernor.org/api/v1/audit/logs?limit=50" \
+  -H "Authorization: Bearer <ADMIN_API_KEY>"
+```
+
+For full parameter definitions, schema documentation, and hash chain validation details, see the [API Reference: GET /api/v1/audit/logs](api-reference.md#get-apiv1auditlogs).

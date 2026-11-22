@@ -366,11 +366,28 @@ paths:
             type: string
             enum: [cap_update, maintainer_register, api_key_created, api_key_revoked]
           description: Filter by audit event type
+        - name: action
+          in: query
+          schema:
+            type: string
+          description: Alias for event_type filter
         - name: actor
           in: query
           schema:
             type: string
           description: Filter by actor public key
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter by minimum creation timestamp
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter by maximum creation timestamp
         - name: limit
           in: query
           schema:
@@ -1033,6 +1050,18 @@ components:
           type: string
           format: date-time
           description: Timestamp of the audit event
+        prev_hash:
+          type: string
+          nullable: true
+          description: SHA-256 hash of the preceding audit log entry in the chain
+        entry_hash:
+          type: string
+          nullable: true
+          description: SHA-256 digest of this entry payload ensuring tamper-evidence
+        signature:
+          type: string
+          nullable: true
+          description: Optional Ed25519 digital signature of the administrative actor
       required:
         - id
         - event_type
