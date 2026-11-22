@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "jest --coverage"
+    "test": "jest --coverage",
+    "db:seed": "ts-node ../scripts/seed-mock-data.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",

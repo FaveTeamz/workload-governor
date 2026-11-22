@@ -43,6 +43,8 @@ setup: ## Install backend, frontend, and rust toolchain dependencies
 	npm --prefix frontend install
 	@echo "==> Checking cargo toolchain..."
 	cargo check --features testutils
+	@echo "==> Seeding local database with mock environment data..."
+	npm run db:seed || true
 
 # ---------------------------------------------------------------------------
 # Build Targets

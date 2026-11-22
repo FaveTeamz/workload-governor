@@ -197,6 +197,27 @@ npm run dev
 # Server listening on http://localhost:3000
 ```
 
+### Seeding Mock Data for Local Development
+
+When starting a fresh database environment, the PostgreSQL tables start completely empty. To immediately populate realistic data for browsing organization task cards, inspecting contributor workload gauges, and testing the leaderboard:
+
+```bash
+npm run db:seed
+```
+
+Or from the `backend/` directory:
+
+```bash
+npm run db:seed
+```
+
+This fast seed script finishes in under 3 seconds and is completely idempotent:
+- **5 Organizations:** `stellar`, `soroban-governor`, `wave-builders`, `defi-alliance`, and `open-tools`
+- **Maintainers:** Registered maintainer addresses for each organization
+- **30 Issues:** Realistic tasks across difficulty tags (`good first issue`, `easy`, `medium`, `hard`) and categories (`frontend`, `backend`, `smart-contract`, `security`, `devops`, `performance`, `ui/ux`)
+- **10 Contributors:** Realistic workload states (e.g., Contributor A at 14/15 pending applications near global cap, Contributor B with 3 active assignments)
+- **Historical Timeline Events:** Populates contract event history and activity feeds for monthly charts and dashboards
+
 Confirm it's healthy:
 
 ```bash

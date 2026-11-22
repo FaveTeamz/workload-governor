@@ -53,6 +53,10 @@ if [ ! -f frontend/.env ]; then
   cp frontend/.env.example frontend/.env
 fi
 
+# ── Database seed ────────────────────────────────────────────────────────────
+echo "==> [post-create] Seeding local database mock data…"
+npm run db:seed || true
+
 echo ""
 echo "==> [post-create] Done! Next steps:"
 echo "    1. docker compose up -d          (start Postgres + Redis)"
