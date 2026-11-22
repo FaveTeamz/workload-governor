@@ -1,8 +1,54 @@
-node_modules
-dist
-.env*
-*.log
+# ── Version control ──────────────────────────────────────────
 .git
+.github
+
+# ── Environment & secrets ────────────────────────────────────
+.env*
+!.env.example
+
+# ── Dependencies (re-installed in-image) ─────────────────────
+node_modules
+frontend/node_modules
+
+# ── Build artefacts ──────────────────────────────────────────
+dist
+
+# ── Rust / Cargo artefacts ───────────────────────────────────
+target/
+
+# ── Test artefacts ───────────────────────────────────────────
 coverage
+.nyc_output
+tests/
+test_snapshots
+mutants.out
+mutants.out.old
+
+# ── Fuzzing corpus ───────────────────────────────────────────
+fuzz/corpus
+fuzz/artifacts
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── Test source files ────────────────────────────────────────
 *.test.ts
 *.spec.ts
+
+# ── Infrastructure & IaC (not needed at runtime) ─────────────
+terraform/
+infra/
+
+# ── Documentation ────────────────────────────────────────────
+docs/
+*.md
+
+# ── Dev tooling & IDE config ─────────────────────────────────
+.devcontainer
+.claude
+.vscode
+.idea
+
+# ── Frontend (served separately, not part of backend image) ──
+frontend/
