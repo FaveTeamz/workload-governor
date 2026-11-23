@@ -1,204 +1,90 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import React, { useEffect, useRef, useState } from 'react';
+import type { ToastItem } from '../context/ToastContext';
 
-export type ToastType = "success" | "error" | "warning" | "info";
-
-export interface Toast {
-  id: number;
-  message: string;
-  type: ToastType;
-  duration: number;
+interface ToastProps {
+  toast: ToastItem;
+  onDismiss: (id: string) => void;
 }
 
-interface ToastOptions {
-  duration?: number;
-}
+const TYPE_STYLES: Record<ToastItem['type'], string> = {
+  success: 'border-green-500 bg-green-50 text-green-900',
+  error: 'border-red-500 bg-red-50 text-red-900',
+  warning: 'border-yellow-500 bg-yellow-50 text-yellow-900',
+  info: 'border-blue-500 bg-blue-50 text-blue-900',
+};
 
-interface ToastContextValue {
-  toasts: Toast[];
-  add: (message: string, type?: ToastType, options?: ToastOptions) => void;
-  remove: (id: number) => void;
-}
+const BAR_STYLES: Record<ToastItem['type'], string> = {
+  success: 'bg-green-500',
+  error: 'bg-red-500',
+  warning: 'bg-yellow-500',
+  info: 'bg-blue-500',
+};
 
-const ToastContext = createContext<ToastContextValue | undefined>(undefined);
+export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
+  const [paused, setPaused] = useState(false);
+  const [remaining, setRemaining] = useState(toast.duration);
+  const startRef = useRef<number>(Date.now());
+  const remainingRef = useRef<number>(toast.duration);
 
-let _nextId = 0;
+  useEffect(() => {
+    if (toast.duration <= 0) return;
 
-export function ToastProvider({ children }: { children: ReactNode }) {
-  const [visibleToasts, setVisibleToasts] = useState<Toast[]>([]);
-  const [queuedToasts, setQueuedToasts] = useState<Toast[]>([]);
-  const visibleRef = useRef<Toast[]>([]);
-  const queuedRef = useRef<Toast[]>([]);
-  const timersRef = useRef(new Map<number, { timeoutId: number; startedAt: number; remaining: number }>());
-
-  const clearTimer = useCallback((id: number) => {
-    const timer = timersRef.current.get(id);
-    if (!timer) return;
-    window.clearTimeout(timer.timeoutId);
-    timersRef.current.delete(id);
-  }, []);
-
-  const startTimer = useCallback((toast: Toast, remaining = toast.duration) => {
-    clearTimer(toast.id);
-    const startedAt = Date.now();
-    const timeoutId = window.setTimeout(() => remove(toast.id), remaining);
-    timersRef.current.set(toast.id, { timeoutId, startedAt, remaining });
-  }, [clearTimer]);
-
-  const pauseTimer = useCallback((id: number) => {
-    const timer = timersRef.current.get(id);
-    if (!timer) return;
-    const remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
-    window.clearTimeout(timer.timeoutId);
-    timersRef.current.set(id, { ...timer, remaining });
-  }, []);
-
-  const resumeTimer = useCallback((toast: Toast) => {
-    const timer = timersRef.current.get(toast.id);
-    if (!timer) return;
-    startTimer(toast, timer.remaining);
-  }, [startTimer]);
-
-  const add = useCallback((message: string, type: ToastType = "info", options: ToastOptions = {}) => {
-    const toast: Toast = {
-      id: ++_nextId,
-      message,
-      type,
-      duration: options.duration ?? 5000,
-    };
-
-    if (visibleRef.current.length >= 3) {
-      queuedRef.current = [...queuedRef.current, toast];
-      setQueuedToasts(queuedRef.current);
+    if (paused) {
+      remainingRef.current = remaining;
       return;
     }
 
-    visibleRef.current = [...visibleRef.current, toast];
-    setVisibleToasts(visibleRef.current);
-    startTimer(toast);
-  }, [startTimer]);
+    startRef.current = Date.now();
+    const timer = setTimeout(() => {
+      onDismiss(toast.id);
+    }, remainingRef.current);
 
-  const remove = useCallback((id: number) => {
-    clearTimer(id);
-    visibleRef.current = visibleRef.current.filter((toast) => toast.id !== id);
-    setVisibleToasts(visibleRef.current);
+    return () => clearTimeout(timer);
+  }, [paused, toast.id, toast.duration, onDismiss, remaining]);
 
-    if (queuedRef.current.length > 0) {
-      const [nextToast, ...rest] = queuedRef.current;
-      queuedRef.current = rest;
-      setQueuedToasts(rest);
-      visibleRef.current = [...visibleRef.current, nextToast];
-      setVisibleToasts(visibleRef.current);
-      startTimer(nextToast);
-    }
-  }, [clearTimer, startTimer]);
-
-  useEffect(() => () => {
-    timersRef.current.forEach(({ timeoutId }) => window.clearTimeout(timeoutId));
-    timersRef.current.clear();
-  }, []);
-
-  return (
-    <ToastContext.Provider value={{ toasts: visibleToasts, add, remove }}>
-      {children}
-      <div
-        className="toast-container"
-        role="region"
-        aria-label="Notifications"
-        aria-live="polite"
-        aria-atomic="false"
-        aria-relevant="additions"
-      >
-        {visibleToasts.map((toast) => (
-          <ToastItem
-            key={toast.id}
-            toast={toast}
-            onRemove={remove}
-            onPause={() => pauseTimer(toast.id)}
-            onResume={() => resumeTimer(toast)}
-          />
-        ))}
-      </div>
-    </ToastContext.Provider>
-  );
-}
-
-export function useToast() {
-  const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error("useToast must be used inside ToastProvider");
-  }
-  return context;
-}
-
-function ToastItem({
-  toast,
-  onRemove,
-  onPause,
-  onResume,
-}: {
-  toast: Toast;
-  onRemove: (id: number) => void;
-  onPause: () => void;
-  onResume: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const hoveredRef = useRef(false);
-  const focusedRef = useRef(false);
-  const pausedRef = useRef(false);
-
-  const updateInteraction = (kind: "hovered" | "focused", active: boolean) => {
-    if (kind === "hovered") hoveredRef.current = active;
-    else focusedRef.current = active;
-
-    const paused = hoveredRef.current || focusedRef.current;
-    if (paused === pausedRef.current) return;
-    pausedRef.current = paused;
-    if (paused) onPause();
-    else onResume();
+  const handleMouseEnter = () => {
+    setRemaining(Math.max(0, remainingRef.current - (Date.now() - startRef.current)));
+    setPaused(true);
   };
 
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
+  const handleMouseLeave = () => setPaused(false);
 
-  const liveRole = toast.type === "error" ? "alert" : "status";
-  const liveValue = toast.type === "error" ? "assertive" : "polite";
+  const ariaLive = toast.type === 'error' ? 'assertive' : 'polite';
 
   return (
     <div
-      ref={ref}
-      role={liveRole}
-      aria-live={liveValue}
-      className={`toast toast-${toast.type}`}
-      tabIndex={-1}
-      aria-busy={toast.type === "pending"}
-      onMouseEnter={() => updateInteraction("hovered", true)}
-      onMouseLeave={() => updateInteraction("hovered", false)}
-      onFocus={() => updateInteraction("focused", true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          updateInteraction("focused", false);
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          onRemove(toast.id);
-        }
-      }}
+      role="alert"
+      aria-live={ariaLive}
+      aria-atomic="true"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`relative w-80 overflow-hidden rounded-md border-l-4 p-4 shadow-lg ${TYPE_STYLES[toast.type]}`}
     >
-      {toast.type === "pending" && (
-        <span className="toast-spinner" aria-hidden="true" />
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{toast.title}</p>
+          {toast.message && <p className="mt-1 break-words text-xs">{toast.message}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => onDismiss(toast.id)}
+          aria-label="Close notification"
+          className="shrink-0 rounded p-1 text-current opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-current"
+        >
+          <span aria-hidden="true">&#10005;</span>
+        </button>
+      </div>
+      {toast.duration > 0 && (
+        <div className="absolute bottom-0 left-0 h-1 w-full bg-black/10">
+          <div
+            className={`h-full ${BAR_STYLES[toast.type]}`}
+            style={{
+              animation: `toast-countdown ${toast.duration}ms linear forwards`,
+              animationPlayState: paused ? 'paused' : 'running',
+            }}
+          />
+        </div>
       )}
-      <span>{toast.message}</span>
-      <button
-        className="toast-close"
-        onClick={() => onRemove(toast.id)}
-        aria-label="Dismiss notification"
-        type="button"
-      >
-        ✕
-      </button>
     </div>
   );
-}
+};
