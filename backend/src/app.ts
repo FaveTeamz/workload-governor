@@ -9,17 +9,25 @@
  *
  * Tracing:
  *   - AWS X-Ray segment opened per request via xrayMiddleware (#634)
+ *
+ * Correlation:
+ *   - Every request gets a unique X-Request-ID propagated via AsyncLocalStorage
+ *     so that all log lines for the request carry reqId (#1234)
  */
 
 import express from "express";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
-import { xrayMiddleware } from "./tracing.js";
+import { xrayMiddleware, correlationMiddleware } from "./tracing.js";
 import logger from "./logger.js";
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
 const app = express();
+
+// Correlation ID middleware — must be registered first so that every log line
+// emitted downstream carries reqId from AsyncLocalStorage (#1234).
+app.use(correlationMiddleware());
 
 // X-Ray segment middleware — must be first so all downstream handlers inherit
 // the active segment context. No-op when XRAY_ENABLED=false.

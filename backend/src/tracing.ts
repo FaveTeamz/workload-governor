@@ -1,15 +1,20 @@
 /**
- * tracing.ts — AWS X-Ray distributed tracing integration
+ * tracing.ts — AWS X-Ray distributed tracing + request correlation ID (#1234)
  *
  * Provides:
- *   - Configured aws-xray-sdk-core instance
- *   - xrayMiddleware()   — Express middleware: opens/closes a segment per request
- *   - tracedFetch()      — wraps global fetch with an X-Ray HTTP subsegment
- *   - tracedDbQuery()    — wraps pg Pool.query with an X-Ray subsegment
+ *   - correlationMiddleware() — assigns/propagates X-Request-ID per request,
+ *                               stores it in AsyncLocalStorage so every log line
+ *                               emitted during the request lifecycle carries reqId
+ *   - getRequestId()          — read the current correlation ID anywhere in the
+ *                               async call stack without passing it explicitly
+ *   - xrayMiddleware()        — Express middleware: opens/closes a segment per request
+ *   - tracedFetch()           — wraps global fetch with an X-Ray HTTP subsegment
+ *   - tracedDbQuery()         — wraps pg Pool.query with an X-Ray subsegment
  *
  * Usage:
- *   // app.ts
- *   import { xrayMiddleware } from "./tracing.js";
+ *   // app.ts — register correlationMiddleware first, then xrayMiddleware
+ *   import { correlationMiddleware, xrayMiddleware } from "./tracing.js";
+ *   app.use(correlationMiddleware());
  *   app.use(xrayMiddleware());
  *
  *   // github.ts / health.ts
@@ -21,10 +26,65 @@
  *   const result = await tracedDbQuery("SELECT 1");
  */
 
+import { AsyncLocalStorage } from "async_hooks";
+import { randomUUID } from "crypto";
 import AWSXRay from "aws-xray-sdk-core";
 import type { Request, Response, NextFunction } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
 import logger from "./logger.js";
+
+// ─── Correlation ID storage ────────────────────────────────────────────────────
+
+/**
+ * AsyncLocalStorage context for the current HTTP request.
+ * Any code that runs inside a request handler (including async continuations,
+ * database callbacks and scheduled microtasks) can read the reqId without it
+ * being threaded through every function argument.
+ */
+export const requestContext = new AsyncLocalStorage<{ reqId: string }>();
+
+/**
+ * Return the correlation ID for the currently executing request, or undefined
+ * when called outside a request context (e.g. from a background scheduler).
+ */
+export function getRequestId(): string | undefined {
+  return requestContext.getStore()?.reqId;
+}
+
+// ─── Correlation middleware ────────────────────────────────────────────────────
+
+/**
+ * Express middleware that assigns a unique X-Request-ID to every incoming
+ * request and propagates it through the async execution context (#1234).
+ *
+ * Behaviour:
+ *   1. If the client sends an X-Request-ID header its value is sanitised
+ *      (stripped to alphanumeric, hyphens and underscores, max 128 chars) and
+ *      used as-is to support end-to-end tracing from client to backend.
+ *   2. Otherwise a new UUIDv4 is generated.
+ *   3. The (possibly sanitised) ID is set as the X-Request-ID response header.
+ *   4. The request handler chain runs inside AsyncLocalStorage.run() so that
+ *      getRequestId() returns the correct ID throughout the full async stack.
+ *
+ * Register this middleware before all route handlers in app.ts.
+ */
+export function correlationMiddleware() {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const raw = req.headers["x-request-id"];
+    const incoming = Array.isArray(raw) ? raw[0] : raw;
+
+    // Sanitise to prevent header injection and log-format manipulation.
+    // Allow only alphanumeric characters, hyphens and underscores, up to 128 chars.
+    const reqId = incoming
+      ? incoming.replace(/[^a-zA-Z0-9\-_]/g, "").slice(0, 128) || randomUUID()
+      : randomUUID();
+
+    res.setHeader("X-Request-ID", reqId);
+
+    requestContext.run({ reqId }, () => next());
+  };
+}
+
 
 // ─── SDK configuration ────────────────────────────────────────────────────────
 

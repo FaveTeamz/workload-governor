@@ -11,9 +11,15 @@
  *   DB_POOL_MAX: maximum connections allowed   (default: 20)
  *   DB_IDLE_TIMEOUT: ms before idle connection is closed (default: 30000)
  *   DB_ACQUIRE_TIMEOUT: ms to wait for a connection   (default: 10000)
+ *
+ * Query correlation (#1234):
+ *   taggedQuery() prepends a SQL comment /* reqId: <id> *\/ to every query so
+ *   that the correlation ID appears in PostgreSQL slow-query logs and pg_stat_activity.
  */
 
 import pg, { PoolClient } from "pg";
+import logger from "./logger.js";
+import { getRequestId } from "./tracing.js";
 
 const { Pool } = pg;
 
@@ -55,16 +61,25 @@ const originalConnect = pool.connect.bind(pool);
     const client = await (originalConnect as any)(...args);
     const duration = Date.now() - startTime;
     if (duration > SLOW_ACQUIRE_THRESHOLD_MS) {
-      console.warn(
-        `[db] Slow connection acquisition detected: ${duration}ms (threshold: ${SLOW_ACQUIRE_THRESHOLD_MS}ms). Pool stats: total=${pool.totalCount}, idle=${pool.idleCount}, waiting=${pool.waitingCount}`,
-        new Error("Slow acquire trace").stack
+      logger.warn(
+        {
+          durationMs: duration,
+          thresholdMs: SLOW_ACQUIRE_THRESHOLD_MS,
+          pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
+        },
+        "[db] Slow connection acquisition detected",
       );
     }
     return client;
   } catch (err: any) {
     const duration = Date.now() - startTime;
-    console.error(
-      `[db] Connection acquire failed after ${duration}ms: ${err.message}. Pool stats: total=${pool.totalCount}, idle=${pool.idleCount}, waiting=${pool.waitingCount}`
+    logger.error(
+      {
+        durationMs: duration,
+        err: err.message,
+        pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
+      },
+      "[db] Connection acquire failed",
     );
     throw err;
   }
@@ -72,7 +87,7 @@ const originalConnect = pool.connect.bind(pool);
 
 // Log and alert on unexpected idle-client errors and clean up (fixes #561, #860)
 pool.on("error", (err: Error, client?: any) => {
-  console.error("[db] Unexpected error on idle DB client:", err.message, err.stack);
+  logger.error({ err: err.message, stack: err.stack }, "[db] Unexpected error on idle DB client");
   if (client) {
     try {
       client.release?.(true); // destroy client on fatal error
@@ -83,3 +98,29 @@ pool.on("error", (err: Error, client?: any) => {
 });
 
 export default pool;
+
+// ─── Correlation-tagged query helper (#1234) ──────────────────────────────────
+
+/**
+ * Execute a SQL query with a leading comment that embeds the current request's
+ * correlation ID.  The comment appears verbatim in PostgreSQL slow-query logs
+ * and pg_stat_activity, making it straightforward to match a database query to
+ * the HTTP request that triggered it.
+ *
+ * Example comment prepended to the SQL:
+ *   /* reqId: 550e8400-e29b-41d4-a716-446655440000 *\/
+ *
+ * Falls back to running the query untagged when called outside a request context
+ * (e.g. from a background scheduler), so callers never need to guard the call.
+ *
+ * @param sql    — SQL query string (may already contain parameters as $1, $2, …)
+ * @param values — Optional parameterised values array
+ */
+export async function taggedQuery<R extends pg.QueryResultRow = pg.QueryResultRow>(
+  sql: string,
+  values?: unknown[],
+): Promise<pg.QueryResult<R>> {
+  const reqId = getRequestId();
+  const taggedSql = reqId ? `/* reqId: ${reqId} */ ${sql}` : sql;
+  return values ? pool.query<R>(taggedSql, values) : pool.query<R>(taggedSql);
+}
