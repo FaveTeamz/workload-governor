@@ -49,6 +49,13 @@ export const ApplyForIssueButton: React.FC<ApplyForIssueButtonProps> = ({
         onClick={handleApply}
         disabled={isLimitReached || isSubmitting}
         aria-disabled={isLimitReached || isSubmitting}
+        aria-label={
+          isSubmitting
+            ? 'Applying for issue…'
+            : isLimitReached
+            ? 'Apply disabled: global application limit of 15 reached'
+            : `Apply for issue ${issueId} in ${orgId}`
+        }
         className={`px-4 py-2 rounded-md font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
           isLimitReached
             ? 'bg-red-100 text-red-400 border border-red-200 cursor-not-allowed dark:bg-red-950/40 dark:text-red-500 dark:border-red-900/50'

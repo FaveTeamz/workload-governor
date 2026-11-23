@@ -42,19 +42,30 @@ fn require_valid_issue_id(env: &Env, issue_id: u32) {
     }
 }
 
+#[inline]
+fn require_valid_org_id(env: &Env, org_id: &Symbol) {
+    if org_id.len() < 2 || org_id.len() > 32 {
+        panic_with_error!(env, ContractError::InvalidOrgId);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helper: require admin auth, supporting multi-sig (#603)
 // ---------------------------------------------------------------------------
 
-/// Requires authentication from the stored admin address.
+/// Requires authentication from the stored admin address and increments the
+/// monotonic admin nonce to prevent authorisation replay attacks. (#828 SC-003)
 ///
-/// If a multi-sig threshold has been configured via `set_admin_threshold`, each
-/// signer in the list is required to provide auth up to the configured threshold.
-/// The Stellar protocol enforces multi-sig by requiring all listed `require_auth`
-/// calls to be satisfied; the threshold is encoded as "require auth from the first
-/// `threshold` signers in the ordered list".
+/// Every privileged governance action calls this helper which:
+/// 1. Requires auth from the admin (and multi-sig signers when configured).
+/// 2. Reads the current nonce from persistent storage.
+/// 3. Increments and persists the nonce atomically.
+/// 4. Emits `AdminActionExecuted` with the new nonce so off-chain indexers
+///    can confirm each action was executed exactly once.
 ///
-/// In single-admin mode (threshold == 0), only the admin address is required.
+/// Because the nonce changes on every successful call, any previously
+/// collected multi-sig signatures are invalidated for future invocations —
+/// they were bound to the old nonce value and will not satisfy a fresh check.
 #[inline]
 fn require_admin_auth(env: &Env) {
     let stored_admin = storage::get_admin(env).unwrap();
@@ -63,8 +74,6 @@ fn require_admin_auth(env: &Env) {
     let threshold = storage::get_multisig_threshold(env);
     if threshold > 0 {
         let signers = storage::get_multisig_signers(env);
-        // Require auth from the first `threshold` signers in the ordered list.
-        // Stellar's auth framework will verify all collected signatures.
         let mut count: u32 = 0;
         for i in 0..signers.len() {
             if count >= threshold {
@@ -75,6 +84,10 @@ fn require_admin_auth(env: &Env) {
             count += 1;
         }
     }
+
+    // #828 SC-003: increment nonce and emit AdminActionExecuted
+    let new_nonce = storage::increment_admin_nonce(env);
+    events::emit_admin_action_executed(env, &stored_admin, new_nonce);
 }
 
 #[contract]
@@ -106,10 +119,39 @@ impl WorkloadGovernor {
     /// - Requires authentication from the stored admin address.
     pub fn register_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         require_admin_auth(&env);
         storage::set_maintainer(&env, &maintainer, &org_id);
         storage::bump_instance(&env);
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
+    }
+
+    /// Configures the threshold and target used to extend application TTLs.
+    ///
+    /// Both values must be nonzero, the threshold must not exceed the target,
+    /// and the target must not exceed the Soroban TTL platform cap.
+    pub fn set_application_ttl_config(
+        env: Env,
+        threshold_ledgers: u32,
+        extend_to_ledgers: u32,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_admin_auth(&env);
+        if threshold_ledgers < storage::APP_TTL_MIN
+            || extend_to_ledgers < threshold_ledgers
+            || extend_to_ledgers > storage::APP_TTL_MAX
+        {
+            panic_with_error!(&env, ContractError::InvalidApplicationTtl);
+        }
+        storage::set_app_ttl_config(&env, threshold_ledgers, extend_to_ledgers);
+        storage::bump_instance(&env);
+        let admin = storage::get_admin(&env).unwrap();
+        events::emit_app_ttl_config_updated(
+            &env,
+            &admin,
+            threshold_ledgers,
+            extend_to_ledgers,
+        );
     }
 
     /// Upgrades the contract WASM (admin-only).
@@ -188,6 +230,7 @@ impl WorkloadGovernor {
         let mut migrated: u32 = 0;
         for i in 0..pairs.len() {
             let (contributor, org_id) = pairs.get(i).unwrap();
+            require_valid_org_id(&env, &org_id);
             if let Some(count) = storage::get_org_assignment_count_v1(&env, &contributor, &org_id) {
                 // Write v2 key
                 storage::set_org_assignment_count(&env, &contributor, &org_id, count);
@@ -212,6 +255,7 @@ impl WorkloadGovernor {
     ///   GlobalApplicationLimitReached → DuplicateApplication
     pub fn apply_for_issue(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
         contributor.require_auth();
         let count = storage::get_global_app_count(&env, &contributor);
@@ -235,6 +279,7 @@ impl WorkloadGovernor {
     /// Guards (in order): NotInitialized → InvalidIssueId → auth → ApplicationNotFound
     pub fn withdraw_application(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
         contributor.require_auth();
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
@@ -250,6 +295,55 @@ impl WorkloadGovernor {
         }
         storage::bump_instance(&env);
         events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
+    }
+
+    /// Withdraws multiple pending applications in one authenticated transaction.
+    ///
+    /// Validates the complete list before changing storage, then updates the global
+    /// application count once and emits one `ApplicationWithdrawn` event per item.
+    pub fn batch_withdraw_applications(
+        env: Env,
+        contributor: Address,
+        applications: Vec<(Symbol, u32)>,
+    ) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        contributor.require_auth();
+
+        let application_count = applications.len();
+        for i in 0..application_count {
+            let (org_id, issue_id) = applications.get(i).unwrap();
+            require_valid_issue_id(&env, issue_id);
+
+            for j in 0..i {
+                let (previous_org_id, previous_issue_id) = applications.get(j).unwrap();
+                if previous_org_id == org_id && previous_issue_id == issue_id {
+                    panic_with_error!(&env, ContractError::DuplicateApplication);
+                }
+            }
+
+            if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
+                panic_with_error!(&env, ContractError::ApplicationNotFound);
+            }
+        }
+
+        if application_count == 0 {
+            return;
+        }
+
+        for i in 0..application_count {
+            let (org_id, issue_id) = applications.get(i).unwrap();
+            storage::remove_app_entry(&env, &contributor, &org_id, issue_id);
+            events::emit_application_withdrawn(&env, &contributor, &org_id, issue_id);
+        }
+
+        let count = storage::get_global_app_count(&env, &contributor);
+        let new_count = count.saturating_sub(application_count);
+        if new_count == 0 {
+            storage::remove_global_app_count(&env, &contributor);
+        } else {
+            storage::set_global_app_count(&env, &contributor, new_count);
+        }
+        storage::bump_instance(&env);
     }
 
     // -----------------------------------------------------------------------
@@ -269,6 +363,7 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -311,6 +406,7 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -343,6 +439,7 @@ impl WorkloadGovernor {
         issue_id: u32,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
@@ -373,6 +470,7 @@ impl WorkloadGovernor {
     /// Panics with `ApplicationNotFound` if no pending application exists.
     /// Silently skips the global count TTL if that key is absent.
     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
+        require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
         if !storage::has_app_entry(&env, &contributor, &org_id, issue_id) {
             panic_with_error!(env, ContractError::ApplicationNotFound);
@@ -381,6 +479,7 @@ impl WorkloadGovernor {
         if storage::get_global_app_count(&env, &contributor) > 0 {
             storage::extend_global_app_count_ttl(&env, &contributor);
         }
+        events::emit_app_ttl_extended(&env, &contributor, &org_id, issue_id);
     }
 
     // -----------------------------------------------------------------------
@@ -401,6 +500,7 @@ impl WorkloadGovernor {
         new_global_cap: u32,
     ) -> u32 {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -439,6 +539,7 @@ impl WorkloadGovernor {
         approve: bool,
     ) {
         storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
         maintainer.require_auth();
         if !storage::is_maintainer(&env, &maintainer, &org_id) {
             panic_with_error!(env, ContractError::UnauthorizedMaintainer);
@@ -524,16 +625,19 @@ impl WorkloadGovernor {
 
     /// Returns the contributor's active assignment count for the given org (0 if absent).
     pub fn get_org_assignment_count(env: Env, contributor: Address, org_id: Symbol) -> u32 {
+        require_valid_org_id(&env, &org_id);
         storage::get_org_assignment_count(&env, &contributor, &org_id)
     }
 
     /// Returns `true` if the contributor has a pending application for the given issue.
     pub fn has_applied(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
+        require_valid_org_id(&env, &org_id);
         storage::has_app_entry(&env, &contributor, &org_id, issue_id)
     }
 
     /// Returns `true` if the contributor is actively assigned to the given issue.
     pub fn is_assigned(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) -> bool {
+        require_valid_org_id(&env, &org_id);
         storage::has_assignment(&env, &org_id, issue_id, &contributor)
     }
 
@@ -543,5 +647,28 @@ impl WorkloadGovernor {
     /// compile-time default (`GLOBAL_APP_LIMIT` = 15).
     pub fn get_global_cap(env: Env) -> u32 {
         storage::get_effective_global_cap(&env)
+    }
+
+    /// Returns the configured application TTL extension threshold.
+    pub fn get_app_ttl_threshold_ledgers(env: Env) -> u32 {
+        storage::get_app_ttl_threshold_ledgers(&env)
+    }
+
+    /// Returns the configured application TTL extension target.
+    pub fn get_app_ttl_extend_to_ledgers(env: Env) -> u32 {
+        storage::get_app_ttl_extend_to_ledgers(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // #828 SC-003 — Admin nonce query
+    // -----------------------------------------------------------------------
+
+    /// Returns the current admin nonce (0 before the first privileged call).
+    ///
+    /// Off-chain clients can read this value before constructing a multi-sig
+    /// authorisation to ensure their signatures are bound to the latest on-chain
+    /// state and cannot be replayed after the nonce advances.
+    pub fn get_admin_nonce(env: Env) -> u32 {
+        storage::get_admin_nonce(&env)
     }
 }

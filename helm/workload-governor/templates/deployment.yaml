@@ -45,8 +45,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "vesting-backend.fullname" . }}-config
+            {{- if .Values.externalSecrets.enabled }}
             - secretRef:
                 name: {{ include "vesting-backend.fullname" . }}-secrets
+            {{- end }}
           {{- with .Values.extraEnv }}
           env:
             {{- toYaml . | nindent 12 }}

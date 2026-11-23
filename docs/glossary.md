@@ -8,16 +8,16 @@ Domain-specific terms used in the WorkloadGovernor codebase, documentation, and 
 
 - [Core Roles](#core-roles): Admin · Contributor · Maintainer
 - [Organisational Concepts](#organisational-concepts): Issue · Org
-- [Workflow States](#workflow-states): Application · Assignment · Difference between Application and Assignment
-- [Limits / Caps](#limits--caps): Global Cap · Org Cap · Org Assignment Limit
+- [Workflow States](#workflow-states): Application · App Index · Assignment · Difference between Application and Assignment
+- [Limits / Caps](#limits--caps): Global Cap · Global Application Count vs Org Assignment Count · Org Cap · Org Assignment Limit
 - [Contract Functions (Quick Reference)](#contract-functions-quick-reference): check_consistency · complete_assignment · extend_application_ttl · has_applied · is_assigned · revoke_assignment · withdraw_application
 - [TTL / Lifecycle](#ttl--lifecycle): Wave · Wave TTL
 - [Storage Tiers](#storage-tiers): Instance Storage · Ledger Entry · Persistent Storage · Temporary Storage · TTL
-- [Soroban Primitives](#soroban-primitives): Contract Address · contracterror · Ledger · Ledger Sequence Number · panic_with_error! · WASM
+- [Soroban Primitives](#soroban-primitives): Auth Context / require_auth · Contract Address · contracterror · Ledger · Ledger Sequence Number · panic_with_error! · WASM · WASM Hash
 - [Counter & Integrity Concepts](#counter--integrity-concepts): CounterInconsistency · Global Application Count · Org Assignment Count
-- [Stellar Network Concepts](#stellar-network-concepts): Fee Bump Transaction · Friendbot · Horizon API · Network Passphrase · Sequence Number · Stellar Address · StrKey · Testnet · XDR
+- [Stellar Network Concepts](#stellar-network-concepts): Fee Bump Transaction · Friendbot · Horizon API · Network Passphrase · Sequence Number · Soroban RPC vs Horizon · Stellar Address · StrKey · Testnet · XDR
 - [API / Backend Terms](#api--backend-terms): API Key · Freighter · MSW · Unsigned Transaction · Soroban
-- [Infrastructure](#infrastructure): Contract ID · Horizon
+- [Infrastructure](#infrastructure): Backfill · Contract ID · Event Indexer · Horizon
 
 ---
 
@@ -69,6 +69,13 @@ A pending intent by a contributor to work on an issue. Created by `apply_for_iss
 
 ---
 
+**App Index**
+An internal accounting structure tracked per-contributor under the key `("app_idx", contributor)`. It records the ordered list of `(org_id, issue_id)` pairs for which the contributor currently holds pending applications. The App Index is used by consistency-checking logic to iterate a contributor's active applications without a full ledger scan. It is maintained automatically by `apply_for_issue` and `withdraw_application` — operators and contributors do not interact with it directly. See [docs/storage-design.md](storage-design.md) for the key layout.
+
+*Related: [Application](#application), [Global Application Count](#global-application-count)*
+
+---
+
 **Assignment**
 An active work commitment granted by a maintainer via `assign_issue`. Stored persistently under `("asgn", org_id, issue_id, contributor)`. Counts against the contributor's [Org Cap](#org-cap). Removed on `complete_assignment` or `revoke_assignment`. Converting an application to an assignment atomically removes the application and decrements the global app count.
 
@@ -87,6 +94,13 @@ An *application* is a contributor's request to work on an issue — it is unconf
 Maximum number of pending [applications](#application) a contributor may hold simultaneously across all orgs. Fixed at `15` (`GLOBAL_APP_LIMIT`). Enforced in `apply_for_issue` with the `GlobalApplicationLimitReached` error (code 6). See also [Global Application Count](#global-application-count).
 
 *Related: [Global Application Count](#global-application-count), [Org Cap](#org-cap)*
+
+---
+
+**Global Application Count vs Org Assignment Count**
+These two counters serve different purposes and are stored in different tiers. The **Global Application Count** (`("g_apps", contributor)`) is in [Temporary Storage](#temporary-storage) — it expires with the [Wave TTL](#wave-ttl), giving automatic cleanup between waves. The **Org Assignment Count** (`("o_asgn", contributor, org_id)`) is in [Persistent Storage](#persistent-storage) — it survives wave boundaries because assignments are contractual obligations that outlast a single wave. The split between tiers is intentional: pending interest (applications) is wave-scoped and ephemeral; confirmed work (assignments) is durable and requires explicit completion or revocation to clear. See [docs/storage-design.md](storage-design.md) for full key layouts.
+
+*Related: [Global Application Count](#global-application-count), [Org Assignment Count](#org-assignment-count), [Temporary Storage](#temporary-storage), [Persistent Storage](#persistent-storage)*
 
 ---
 
@@ -210,6 +224,13 @@ Number of ledgers before a storage entry is eligible for archival and eviction. 
 
 ## Soroban Primitives
 
+**Auth Context / require_auth**
+The Soroban host's mechanism for verifying that a specific `Address` has authorised a contract invocation. A call to `address.require_auth()` inside a contract function causes the host to check that the transaction was signed (directly or via a sub-invocation) by the private key corresponding to that address. If the check fails the host returns an authentication error and the transaction is rolled back. In WorkloadGovernor, `require_auth` is called on `contributor` in `apply_for_issue` and `withdraw_application`, and on `admin`/`maintainer` in their respective functions. This ensures that only the intended party can submit or cancel actions on their behalf.
+
+*Related: [contracterror](#contracterror), [Contributor](#contributor), [Admin](#admin)*
+
+---
+
 **Contract Address**
 The unique Stellar StrKey address (starts with `C`) assigned to a deployed Soroban contract. Used as the `--id` argument in `stellar contract invoke` commands. Determined at deploy time and stored in `.env` or `config/contracts.json`. Different from the [Stellar Address](#stellar-address) of an account (starts with `G`).
 
@@ -249,6 +270,13 @@ Soroban macro that halts contract execution and returns a typed [`ContractError`
 The binary format that Soroban contracts are compiled to. WorkloadGovernor targets `wasm32v1-none`. The Stellar network imposes a 64 KB size limit per contract WASM binary. WorkloadGovernor uses `opt-level = 'z'` and `lto = true` to keep the binary under 20 KB after optimization.
 
 *Related: [Contract Address](#contract-address), [Soroban](#soroban)*
+
+---
+
+**WASM Hash**
+The SHA-256 digest of the contract WASM binary, encoded as a 64-character hex string. When a new contract version is uploaded with `stellar contract upload`, the network stores the binary and returns its hash. The hash is passed to the `upgrade` contract function to atomically swap the running WASM without changing the contract address or storage state. The hash is also used in the upgrade CI step and stored in deployment receipts for auditability. See [docs/runbooks/contract-upgrade.md](runbooks/contract-upgrade.md) for the full procedure.
+
+*Related: [WASM](#wasm-webassembly), [Contract Address](#contract-address)*
 
 ---
 
@@ -309,6 +337,13 @@ A string constant that uniquely identifies a Stellar network (e.g. `"Test SDF Ne
 A per-account counter on the Stellar network that must be incremented with each transaction to prevent replay attacks. Managed automatically by the Stellar SDK. Relevant when constructing raw transactions or debugging "sequence number too low" errors from Horizon.
 
 *Related: [Stellar Address](#stellar-address), [Horizon API](#horizon-api)*
+
+---
+
+**Soroban RPC vs Horizon**
+Two distinct API surfaces for interacting with the Stellar network. **Soroban RPC** (`soroban-rpc`) is the JSON-RPC interface for simulating and submitting smart-contract invocations; it is the primary interface used by WorkloadGovernor's backend for contract calls (`src/soroban.ts`). **Horizon** is the REST API for querying ledger state, streaming events, and submitting classical Stellar transactions; WorkloadGovernor uses it for account queries, event streaming, and health checks (`src/horizon.ts`). Use Soroban RPC when interacting with contract functions; use Horizon when reading account balances, transaction history, or Stellar-level events. Both are referenced in the Stellar developer docs.
+
+*Related: [Horizon API](#horizon-api), [XDR](#xdr-external-data-representation), [Event Indexer](#event-indexer)*
 
 ---
 
@@ -377,10 +412,24 @@ The response payload from `/api/transactions/apply`, `/api/transactions/withdraw
 
 ## Infrastructure
 
+**Backfill**
+The process of retroactively populating the off-chain database with Stellar contract events that were emitted before the [Event Indexer](#event-indexer) started running, or after a gap in indexer uptime. The backfill script (`src/scripts/backfill-events.ts`) queries Horizon for historical contract events within a specified ledger range and inserts them into the database in the same format the live indexer uses. It is safe to re-run on already-indexed ranges because the script deduplicates by event ID. Backfill is required after deploying the indexer to a fresh environment or after recovering from indexer downtime.
+
+*Related: [Event Indexer](#event-indexer), [Horizon API](#horizon-api)*
+
+---
+
 **Contract ID**
 The unique Stellar address (starts with `C`) that identifies a deployed instance of WorkloadGovernor on the network. Required for all `stellar contract invoke` calls. Determined at deploy time and stored in `.env` or passed as a CLI argument. Example: `stellar contract deploy --wasm ... --network testnet --source <account>`.
 
 *Related: [Contract Address](#contract-address), [Testnet](#testnet)*
+
+---
+
+**Event Indexer**
+The off-chain background service (`src/eventIndexer.ts`) that streams Soroban contract events from Horizon and writes them to the PostgreSQL database. It polls Horizon for new events at a configurable interval, parses the XDR payloads, and inserts structured records. The indexer enables the REST API to serve event history (`GET /api/events`) and audit logs without querying the Stellar network on every request. In the Docker Compose stack it runs as the `event-indexer` service. See also [Backfill](#backfill) for recovering historical data.
+
+*Related: [Backfill](#backfill), [Horizon API](#horizon-api), [XDR](#xdr-external-data-representation)*
 
 ---
 

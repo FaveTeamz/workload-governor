@@ -167,33 +167,28 @@ config:
 # ─── Secrets via External Secrets Operator ───────────────────────────────────
 externalSecrets:
   # -- Enable ExternalSecret resource (requires external-secrets operator)
-  enabled: false
-  # -- SecretStore or ClusterSecretStore reference
-  secretStoreRef:
-    name: "aws-secretsmanager"
-    kind: "ClusterSecretStore"
-  # -- Remote secret key/path (AWS secret name or Vault KV path)
-  remoteKey: "workload-governor/production"
+  enabled: true
+  # -- Name of the SecretStore or ClusterSecretStore to use
+  secretStoreName: "aws-secrets-manager"
+  # -- SecretStore kind: SecretStore | ClusterSecretStore
+  secretStoreKind: "ClusterSecretStore"
   # -- How often the secret is refreshed from the backend
   refreshInterval: "1h"
   # -- Mapping of env var name → backend secret key path
   secrets:
+    # AWS Secrets Manager path → env var name in the pod
+    - secretKey: ADMIN_TOKEN
+      remoteRef:
+        key: "workload-governor/admin-token"
+    - secretKey: STELLAR_SECRET_KEY
+      remoteRef:
+        key: "workload-governor/stellar-secret-key"
     - secretKey: DATABASE_URL
       remoteRef:
-        property: "DATABASE_URL"
-    - secretKey: ADMIN_SECRET_KEY
+        key: "workload-governor/database-url"
+    - secretKey: REDIS_URL
       remoteRef:
-        property: "ADMIN_SECRET_KEY"
-    - secretKey: GITHUB_WEBHOOK_SECRET
-      remoteRef:
-        property: "GITHUB_WEBHOOK_SECRET"
-
-# -- Standard Kubernetes Secret values used when externalSecrets.enabled=false
-# Leave values empty unless the secret must be managed by this chart.
-secrets:
-  databasePassword: ""
-  adminSecretKey: ""
-  githubWebhookSecret: ""
+        key: "workload-governor/redis-url"
 
 # -- Node selector labels
 nodeSelector: {}

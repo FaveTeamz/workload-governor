@@ -72,6 +72,8 @@
   border: 1px solid transparent;
   background: var(--color-surface, #1c1f2b);
   transition: background 0.15s;
+  /* Prevent flex children from overflowing the row on narrow viewports */
+  min-width: 0;
 }
 
 .af-event:hover {
@@ -114,12 +116,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Prevent body from expanding past its flex container */
+  min-width: 0;
 }
 
 .af-event__tx {
   color: var(--color-primary, #6c8eff);
   text-decoration: none;
   font-family: var(--font-mono, monospace);
+  /* Break long transaction hashes and Stellar addresses on narrow viewports */
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .af-event__tx:hover,
@@ -167,4 +174,35 @@
   background: var(--color-error-100, #fee2e2);
   color: var(--color-error-700, #b91c1c);
   font-size: var(--text-sm, 0.8125rem);
+}
+
+/* ── Mobile card layout (≤ 375 px) ── */
+@media (max-width: 375px) {
+  /* Stack badge, body and timestamp vertically inside each card */
+  .af-event {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  /* Badge occupies its own row so the body doesn't fight it for space */
+  .af-badge {
+    flex: 0 0 auto;
+  }
+
+  /* Body fills the full card width and wraps long hashes/addresses */
+  .af-event__body {
+    flex: 1 1 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-all;
+    text-overflow: unset;
+    overflow: visible;
+  }
+
+  /* Timestamp pushed to its own row at the bottom */
+  .af-event__time {
+    flex: 0 0 100%;
+    text-align: right;
+  }
 }

@@ -1,24 +1,11 @@
-# Makefile — WorkloadGovernor contract development helpers
+# Makefile — WorkloadGovernor unified development & testing targets
 #
-# Most CI steps live in .github/workflows/; this Makefile provides convenient
-# local and CI entry points without requiring shell-script knowledge.
-#
-# Prerequisites:
-#   - Rust stable  (cargo test, build)
-#   - Rust nightly (cargo fuzz — libfuzzer requires nightly + LLVM sanitizers)
-#   - cargo-fuzz:  cargo install cargo-fuzz --locked
-#
-# Usage:
-#   make test          # run all contract tests
-#   make build         # compile native (debug)
-#   make build-wasm    # compile to wasm32v1-none (release)
-#   make fuzz-apply    # fuzz apply_for_issue for FUZZ_SECS seconds (default 60)
-#   make fuzz-ci       # same but 600 s — matches the nightly CI budget
-#   make fuzz-list     # list all registered fuzz targets
+# Standard developer commands for smart contract, backend, and frontend.
+# Run 'make help' for a list of all documented targets.
 
-.PHONY: all test build build-wasm \
-        fuzz-apply fuzz-ci fuzz-list \
-        clean help
+.PHONY: all setup build build-wasm build-all test test-contract test-backend \
+        test-frontend test-all lint-all dev fuzz-list fuzz-build fuzz-apply \
+        fuzz-ci clean help
 
 # ---------------------------------------------------------------------------
 # Tunables
@@ -43,44 +30,86 @@ ARTIFACTS_DIR := fuzz/artifacts/$(FUZZ_TARGET)
 # Default
 # ---------------------------------------------------------------------------
 
-all: build test
+all: build test ## Build and test contract (default)
 
 # ---------------------------------------------------------------------------
-# Build
+# Setup & Installation
 # ---------------------------------------------------------------------------
 
-build:
+setup: ## Install backend, frontend, and rust toolchain dependencies
+	@echo "==> Installing backend dependencies..."
+	npm --prefix backend install
+	@echo "==> Installing frontend dependencies..."
+	npm --prefix frontend install
+	@echo "==> Checking cargo toolchain..."
+	cargo check --features testutils
+
+# ---------------------------------------------------------------------------
+# Build Targets
+# ---------------------------------------------------------------------------
+
+build: ## Compile contract natively (debug with testutils)
 	cargo build --features testutils
 
-build-wasm:
+build-wasm: ## Compile contract to wasm32v1-none (release)
 	cargo build --target wasm32v1-none --release
 
+build-all: build build-wasm ## Build contract, backend, and frontend
+	@echo "==> Building backend..."
+	npm --prefix backend run build
+	@echo "==> Building frontend..."
+	npm --prefix frontend run build
+
 # ---------------------------------------------------------------------------
-# Test
+# Test Targets
 # ---------------------------------------------------------------------------
 
-test:
+test: ## Run contract tests with testutils
 	cargo test --features testutils
 
+test-contract: ## Run contract tests and verify storage key collision freedom
+	cargo test --features testutils
+	bash scripts/check-key-collisions.sh
+
+test-backend: ## Run backend unit and integration tests
+	npm --prefix backend test
+
+test-frontend: ## Run frontend test suite
+	npm --prefix frontend test
+
+test-all: test-contract test-backend test-frontend ## Run all test suites across contract, backend, and frontend
+
 # ---------------------------------------------------------------------------
-# Fuzz
+# Lint Targets
 # ---------------------------------------------------------------------------
 
-## List all registered fuzz targets (requires cargo-fuzz on nightly)
-fuzz-list:
+lint-all: ## Run code formatters and linters across contract, backend, and frontend
+	@echo "==> Linting contract..."
+	cargo fmt --all -- --check
+	cargo clippy --features testutils -- -D warnings
+	@echo "==> Linting backend..."
+	npm --prefix backend run lint
+	@echo "==> Linting frontend..."
+	npm --prefix frontend run lint
+
+# ---------------------------------------------------------------------------
+# Local Development
+# ---------------------------------------------------------------------------
+
+dev: ## Launch backend and frontend development servers concurrently
+	@echo "==> Starting backend and frontend in dev mode..."
+	npx concurrently -k -n "backend,frontend" -c "blue,green" \
+		"npm --prefix backend run dev" \
+		"npm --prefix frontend run dev"
+
+# ---------------------------------------------------------------------------
+# Fuzz Testing
+# ---------------------------------------------------------------------------
+
+fuzz-list: ## List all registered fuzz targets (requires cargo-fuzz on nightly)
 	cargo +nightly fuzz list
 
-## Build the fuzz harness.
-##
-## Two-stage approach for memory-constrained environments:
-##   Stage 1: build dependencies WITHOUT sancov instrumentation (avoids
-##            OOM-killing the enormous stellar-xdr crate on 8 GB machines).
-##   Stage 2: build the fuzz binary itself WITH sancov via cargo-fuzz.
-##
-## If Stage 2 fails due to OOM, the pre-built deps from Stage 1 are still
-## used and the binary falls back to the plain --cfg fuzzing build which
-## provides correct crash detection (though without coverage feedback).
-fuzz-build:
+fuzz-build: ## Build the fuzz harness (two-stage, memory-safe)
 	@echo "==> Stage 1: pre-build deps without sancov (avoids OOM on stellar-xdr)"
 	RUSTFLAGS="--cfg fuzzing" cargo +nightly build \
 	    --manifest-path fuzz/Cargo.toml \
@@ -91,12 +120,7 @@ fuzz-build:
 	cargo +nightly fuzz build --sanitizer none $(FUZZ_TARGET) || \
 	    echo "WARNING: sancov build failed (OOM?); using plain --cfg fuzzing binary from stage 1"
 
-## Run the apply_for_issue fuzz target locally for FUZZ_SECS seconds.
-## Loads structured seeds from $(CORPUS_DIR) before random mutation.
-##
-##   make fuzz-apply            # 60 s default
-##   make fuzz-apply FUZZ_SECS=300
-fuzz-apply: fuzz-build
+fuzz-apply: fuzz-build ## Fuzz apply_for_issue for FUZZ_SECS seconds
 	mkdir -p $(ARTIFACTS_DIR)
 	cargo +nightly fuzz run --sanitizer none $(FUZZ_TARGET) $(CORPUS_DIR) \
 		-- -max_total_time=$(FUZZ_SECS) \
@@ -108,9 +132,7 @@ fuzz-apply: fuzz-build
 		   -print_final_stats=1 \
 		   -artifact_prefix=$(ARTIFACTS_DIR)/
 
-## CI budget: 600 s — matches the nightly GitHub Actions schedule.
-## Called by .github/workflows/contract-pipeline.yml fuzz job.
-fuzz-ci:
+fuzz-ci: ## Fuzz apply_for_issue for FUZZ_CI_SECS seconds (CI budget)
 	mkdir -p $(ARTIFACTS_DIR)
 	RUSTFLAGS="--cfg fuzzing" cargo +nightly build \
 	    --manifest-path fuzz/Cargo.toml \
@@ -127,26 +149,18 @@ fuzz-ci:
 # Clean
 # ---------------------------------------------------------------------------
 
-clean:
+clean: ## Remove build artifacts and temporary files
 	cargo clean
 	rm -rf fuzz/artifacts/
+	rm -rf backend/dist frontend/dist
 
 # ---------------------------------------------------------------------------
-# Help
+# Dynamic Help
 # ---------------------------------------------------------------------------
 
-help:
+help: ## Show this help message
 	@echo ""
-	@echo "WorkloadGovernor Makefile targets"
-	@echo "----------------------------------"
-	@echo "  all          Build + test (default)"
-	@echo "  build        cargo build --features testutils"
-	@echo "  build-wasm   cargo build --target wasm32v1-none --release"
-	@echo "  test         cargo test --features testutils"
-	@echo "  fuzz-list    List registered fuzz targets"
-	@echo "  fuzz-build   Build the fuzz harness (two-stage, memory-safe)"
-	@echo "  fuzz-apply   Fuzz apply_for_issue for FUZZ_SECS=$(FUZZ_SECS) seconds"
-	@echo "  fuzz-ci      Fuzz apply_for_issue for FUZZ_CI_SECS=$(FUZZ_CI_SECS) seconds (CI budget)"
-	@echo "  clean        Remove build artifacts and fuzz crash files"
+	@echo "WorkloadGovernor Makefile Targets"
+	@echo "================================="
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "Override fuzzing duration:  make fuzz-apply FUZZ_SECS=300"

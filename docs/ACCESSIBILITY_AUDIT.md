@@ -4,6 +4,58 @@
 **Project**: WorkloadGovernor Soroban Smart Contract  
 **Standards**: WCAG 2.1 AA (adapted for smart contract accessibility)
 
+---
+
+## Document Schema
+
+This document tracks all accessibility findings for the WorkloadGovernor
+frontend and smart contract interface. Use the tables below to understand
+the current state of conformance and to pick up open remediation work.
+
+### Severity Levels
+
+| Level | Definition |
+|---|---|
+| **Critical** | Data loss, security exposure, or complete inaccessibility for users with disabilities |
+| **High** | Blocks access to a primary workflow for users with disabilities (maps to WCAG Level A — must fix before launch) |
+| **Medium** | Significant barrier that degrades the experience for users with disabilities (maps to WCAG Level AA — required for launch) |
+| **Low** | Enhancement that improves the experience beyond the minimum standard (maps to WCAG Level AAA) |
+
+> **Note on P-ratings in finding tables:** Findings use P1/P2/P3 to reflect
+> WCAG conformance level priority: **P1** = Level A (High severity — must fix),
+> **P2** = Level AA (Medium severity — required for launch), **P3** = Level AAA
+> (Low severity — enhancement). These map to the severity scale above.
+
+### Status Values
+
+| Status | Meaning |
+|---|---|
+| **Open** | Finding identified; no remediation work started |
+| **In Progress** | A GitHub issue has been assigned and work is underway |
+| **Fixed** | Fix merged to `main`, automated test passes, GitHub issue closed |
+| **Won't Fix** | Formally accepted as out of scope, with documented PM approval |
+| **Deferred** | Intentionally postponed to a future milestone, with target date |
+
+### How to read the tracking tables
+
+Each finding row contains:
+- **Finding ID** — stable identifier (F-01, F-02, …) used to cross-reference
+  issues and PRs
+- **WCAG Criterion** — the specific success criterion (e.g. `2.4.7 Focus Visible`)
+- **Level** — WCAG conformance level (A, AA, AAA)
+- **Component** — the UI component or area affected
+- **Severity** — P1/P2/P3 (see above)
+- **Status** — current remediation state
+- **GitHub Issue** — linked issue for tracking work
+
+A finding moves to **Fixed** only when all four conditions are met:
+1. Fix is merged to `main`.
+2. The relevant automated test (axe-core, Playwright, or Vitest) passes.
+3. A manual check has been performed and documented in the linked issue.
+4. The GitHub issue is closed with a comment linking the fix commit.
+
+---
+
 ## Executive Summary
 
 This accessibility audit covers the WorkloadGovernor smart contract and the contributor-facing frontend experience, focusing on:
@@ -357,7 +409,56 @@ Manual checks are required for criteria that automated tools cannot fully assess
 
 ---
 
-## Audit Re-run Timeline
+## Re-audit Process
+
+This section defines how, when, and with what tools to re-run the accessibility
+audit so that the tracking table stays current.
+
+### When to re-audit
+
+| Trigger | Scope |
+|---|---|
+| Any PR touching an interactive component | Manual keyboard walkthrough of affected component; Vitest a11y assertions |
+| Release candidate cut | Full automated scan (axe-core + Playwright); update all **Fixed** rows |
+| Quarterly cadence (every 3 months) | Full WCAG 2.1 AA audit — automated + manual screen reader walkthrough |
+| Any new UI feature landing on `main` | Add new finding rows if new violations are discovered |
+
+### Tools
+
+| Tool | What it covers | How to run |
+|---|---|---|
+| **axe-core** (via `@axe-core/playwright`) | ARIA roles, labels, contrast, HTML structure | `npx playwright test --grep "@a11y"` |
+| **Playwright keyboard nav** | Focus order, keyboard trap, Escape key | `npx playwright test tests/e2e/keyboard-nav.spec.ts` |
+| **Chromatic** | Focus indicator visibility, colour contrast regressions | Runs automatically on every PR touching `frontend/` |
+| **Vitest component tests** | ARIA attribute presence, label associations, role assertions | `npm run test:unit -- a11y` |
+| **HTML validator** (W3C Nu) | Parsing errors, duplicate IDs | `npx html-validate "frontend/dist/**/*.html"` |
+| **Screen reader** | Full user flow (apply → assign) | NVDA + Firefox; VoiceOver + Safari |
+| **Colour Contrast Analyser** | Design token contrast ratios | Manual — run against rendered tokens |
+
+### How to update the tracking table
+
+**Marking a finding Fixed:**
+1. Merge the fix to `main`.
+2. Confirm the relevant automated test passes in CI.
+3. Perform a manual check (keyboard walkthrough or screen reader) and document the result in the linked GitHub issue.
+4. Close the GitHub issue with a comment linking the fix commit.
+5. Change the finding's **Status** cell to `Fixed` and update the main checklist row to `✅ Pass`.
+
+**Marking a finding In Progress:**
+- Assign the GitHub issue to a developer.
+- Change **Status** to `In Progress`.
+
+**Adding a new finding:**
+1. Assign the next available F-NN ID (continuing from the highest current number).
+2. Create a GitHub issue describing the finding, affected component, WCAG criterion, and reproduction steps.
+3. Add a row to the remediation tracking table with **Status** = `Open`.
+4. Add the finding to the relevant WCAG 2.1 AA checklist row.
+
+**Won't Fix / Deferred:**
+- Requires written PM approval documented in the linked GitHub issue.
+- Add the justification in a comment on the issue before changing the status.
+
+### Audit Re-run Timeline
 
 | Milestone | Date | Scope | Owner |
 |-----------|------|-------|-------|
@@ -366,14 +467,6 @@ Manual checks are required for criteria that automated tools cannot fully assess
 | axe-core integration merged | 2026-08-01 | Automated scan baseline established | Frontend team |
 | Full manual re-audit (screen reader) | 2026-09-15 | All 43 applicable criteria | Accessibility reviewer |
 | Pre-launch sign-off audit | 2026-10-01 | Full WCAG 2.1 AA — target zero open items | Accessibility reviewer + PM |
-
-### Definition of done for each finding
-
-A finding may be marked **✅ Pass** when:
-1. The fix is merged to `main`.
-2. The relevant automated test (axe-core, Playwright, or Vitest) passes for that criterion.
-3. A manual check has been performed and documented in the linked GitHub issue.
-4. The GitHub issue is closed with a comment linking the fix commit.
 
 ---
 

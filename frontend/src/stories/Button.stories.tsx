@@ -1,67 +1,55 @@
 /**
- * Button stories — closes #279
+ * Complete Button stories for the design system.
+ * Covers primary, secondary, ghost, disabled, loading variants.
+ * Dark-mode variants via Storybook decorator.
  *
- * Covers all variant/state combinations defined in app.css:
- *   primary, secondary, ghost, complete, revoke
- *   sizes: default, sm
- *   states: default, hover (CSS), disabled, loading (aria-busy)
+ * Closes #541
  */
 import type { Meta, StoryObj } from '@storybook/react';
 
 interface ButtonProps {
-  label:    string;
-  variant:  'primary' | 'secondary' | 'ghost' | 'complete' | 'revoke';
-  size:     'default' | 'sm';
+  label: string;
+  variant: 'primary' | 'secondary' | 'ghost' | 'complete' | 'revoke';
+  size: 'default' | 'sm';
   disabled: boolean;
-  loading:  boolean;
+  loading: boolean;
   onClick?: () => void;
 }
 
 function Button({ label, variant, size, disabled, loading, onClick }: ButtonProps) {
-  const cls = [
-    'btn',
-    `btn-${variant}`,
-    size === 'sm' ? 'btn-sm' : '',
-  ].filter(Boolean).join(' ');
+  const cls = ['btn', `btn-${variant}`, size === 'sm' ? 'btn-sm' : '']
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <button
-      className={cls}
-      disabled={disabled || loading}
-      aria-busy={loading}
-      onClick={onClick}
-    >
+    <button className={cls} disabled={disabled || loading} aria-busy={loading} onClick={onClick}>
       {loading ? 'Loading…' : label}
     </button>
   );
 }
 
 const meta: Meta<ButtonProps> = {
-  title:     'Design System/Button',
+  title: 'Design System/Button',
   component: Button,
-  tags:      ['autodocs'],
+  tags: ['autodocs'],
+  parameters: { layout: 'centered' },
   argTypes: {
     variant: {
       control: 'select',
       options: ['primary', 'secondary', 'ghost', 'complete', 'revoke'],
-      description: 'Visual variant of the button',
     },
-    size: {
-      control: 'select',
-      options: ['default', 'sm'],
-      description: 'Button size',
-    },
+    size: { control: 'select', options: ['default', 'sm'] },
     disabled: { control: 'boolean' },
-    loading:  { control: 'boolean' },
-    label:    { control: 'text' },
-    onClick:  { action: 'clicked' },
+    loading: { control: 'boolean' },
+    label: { control: 'text' },
+    onClick: { action: 'clicked' },
   },
   args: {
-    label:    'Button',
-    variant:  'primary',
-    size:     'default',
+    label: 'Button',
+    variant: 'primary',
+    size: 'default',
     disabled: false,
-    loading:  false,
+    loading: false,
   },
 };
 
@@ -78,6 +66,7 @@ export const Secondary: Story = {
   args: { label: 'Secondary', variant: 'secondary' },
 };
 
+/** Minimal treatment, used inline or in toolbars. */
 export const Ghost: Story = {
   args: { label: 'Ghost', variant: 'ghost' },
 };
@@ -122,4 +111,83 @@ export const AllVariants: Story = {
       <button className="btn btn-primary btn-sm">Small</button>
     </div>
   ),
+};
+
+// ── Dark-mode variants ────────────────────────────────────────────────────────
+
+export const AllVariantsDark: Story = {
+  name: 'All variants (dark)',
+  render: () => (
+    <div
+      data-theme="dark"
+      style={{
+        background: 'var(--ds-bg, #0f1117)',
+        padding: '24px',
+        display: 'flex',
+        gap: '12px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}
+    >
+      <button className="btn btn-primary">Primary</button>
+      <button className="btn btn-secondary">Secondary</button>
+      <button className="btn btn-ghost">Ghost</button>
+      <button className="btn btn-complete">Complete</button>
+      <button className="btn btn-revoke">Revoke</button>
+      <button className="btn btn-primary" disabled>Disabled</button>
+      <button className="btn btn-primary btn-sm">Small</button>
+    </div>
+  ),
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
+  },
+};
+
+export const PrimaryDark: Story = {
+  name: 'Primary (dark)',
+  args: { label: 'Primary', variant: 'primary' },
+  decorators: [
+    (Story) => (
+      <div data-theme="dark" style={{ background: '#0f1117', padding: '24px' }}>
+        <Story />
+      </div>
+    ),
+  ],
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
+  },
+};
+
+export const SecondaryDark: Story = {
+  name: 'Secondary (dark)',
+  args: { label: 'Secondary', variant: 'secondary' },
+  decorators: [
+    (Story) => (
+      <div data-theme="dark" style={{ background: '#0f1117', padding: '24px' }}>
+        <Story />
+      </div>
+    ),
+  ],
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
+  },
+};
+
+export const GhostDark: Story = {
+  name: 'Ghost (dark)',
+  args: { label: 'Ghost', variant: 'ghost' },
+  decorators: [
+    (Story) => (
+      <div data-theme="dark" style={{ background: '#0f1117', padding: '24px' }}>
+        <Story />
+      </div>
+    ),
+  ],
+  parameters: {
+    themes: { themeOverride: 'dark' },
+    chromatic: { modes: { dark: { theme: 'dark' } } },
+  },
 };

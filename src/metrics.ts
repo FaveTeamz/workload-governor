@@ -12,6 +12,8 @@
  *   cache_hits_total (counter) — cache hits/misses by cache name, result
  *   db_pool_active (gauge) — active database connections
  *   db_pool_idle (gauge) — idle database connections
+ *   indexer_last_processed_ledger (gauge) — last ledger committed by the indexer
+ *   indexer_ledger_lag (gauge) — difference between latest and processed ledgers
  *
  * Secured with METRICS_TOKEN environment variable (optional).
  * If METRICS_TOKEN is set, requests must include "Authorization: Bearer <token>" header.
@@ -58,6 +60,14 @@ export const rpcCallDurationSeconds = new Histogram({
   registers: [register],
 });
 
+export const sorobanRpcDurationSeconds = new Histogram({
+  name: "soroban_rpc_duration_seconds",
+  help: "Soroban RPC call duration in seconds",
+  labelNames: ["rpc_method", "status"],
+  buckets: DEFAULT_BUCKETS,
+  registers: [register],
+});
+
 export const cacheHitsTotal = new Counter({
   name: "cache_hits_total",
   help: "Cache hits and misses by cache name and result",
@@ -83,6 +93,70 @@ export const dbPoolIdle = new Gauge({
   },
 });
 
+export const pgPoolTotalConnections = new Gauge({
+  name: "pg_pool_total_connections",
+  help: "Total connections in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.totalCount);
+  },
+});
+
+export const pgPoolIdleConnections = new Gauge({
+  name: "pg_pool_idle_connections",
+  help: "Idle connections in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.idleCount);
+  },
+});
+
+export const pgPoolWaitingRequests = new Gauge({
+  name: "pg_pool_waiting_requests",
+  help: "Queued waiting requests in the PostgreSQL connection pool",
+  registers: [register],
+  collect() {
+    this.set(pool.waitingCount);
+  },
+});
+
+export function updatePgPoolGauges(): void {
+  pgPoolTotalConnections.set(pool.totalCount);
+  pgPoolIdleConnections.set(pool.idleCount);
+  pgPoolWaitingRequests.set(pool.waitingCount);
+}
+
+export const webhookDeliveriesTotal = new Counter({
+  name: "webhook_deliveries_total",
+  help: "Total outbound webhook delivery attempts",
+  labelNames: ["org_id", "event_type"],
+  registers: [register],
+});
+
+export const webhookDeliveryFailuresTotal = new Counter({
+  name: "webhook_delivery_failures_total",
+  help: "Total outbound webhook delivery failures",
+  labelNames: ["org_id", "event_type"],
+  registers: [register],
+});
+
+export const sorobanMinApplicationTtlLedgers = new Gauge({
+  name: "soroban_min_application_ttl_ledgers",
+  help: "Minimum remaining application entry TTL in ledgers",
+  registers: [register],
+});
+
+export const indexerLastProcessedLedger = new Gauge({
+  name: "indexer_last_processed_ledger",
+  help: "Last ledger committed by the event indexer",
+  registers: [register],
+});
+
+export const indexerLedgerLag = new Gauge({
+  name: "indexer_ledger_lag",
+  help: "Number of ledgers between the latest and last processed ledger",
+  registers: [register],
+});
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 /**

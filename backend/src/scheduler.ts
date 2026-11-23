@@ -215,6 +215,131 @@ export async function runGitHubSyncJob(): Promise<void> {
   }
 }
 
+// ─── Indexer Checkpoint Persistence (issue #849) ─────────────────────────────
+
+export interface CheckpointRecord {
+  contract_id: string;
+  last_ledger: number;
+  last_ledger_hash: string | null;
+  updated_at: Date;
+}
+
+export const CHECKPOINT_LEDGER_INTERVAL = 100;
+export const CHECKPOINT_TIME_INTERVAL_MS = 5_000;
+
+interface LedgerProgressState {
+  lastCommittedLedger: number;
+  lastCommittedTime: number;
+}
+
+const progressStates = new Map<string, LedgerProgressState>();
+
+/**
+ * Commit current ledger checkpoint transactionally into indexer_checkpoints table.
+ */
+export async function commitLedgerCheckpoint(
+  contractId: string,
+  lastLedger: number,
+  lastLedgerHash?: string | null,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO indexer_checkpoints (contract_id, last_ledger, last_ledger_hash, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (contract_id)
+       DO UPDATE SET last_ledger = EXCLUDED.last_ledger,
+                     last_ledger_hash = EXCLUDED.last_ledger_hash,
+                     updated_at = NOW()`,
+      [contractId, lastLedger, lastLedgerHash ?? null],
+    );
+    await client.query("COMMIT");
+
+    progressStates.set(contractId, {
+      lastCommittedLedger: lastLedger,
+      lastCommittedTime: Date.now(),
+    });
+    logger.debug({ contractId, lastLedger }, "Indexer checkpoint committed transactionally");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    logger.error({ err, contractId, lastLedger }, "Failed to commit ledger checkpoint");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Read checkpoint from database.
+ */
+export async function getLedgerCheckpoint(
+  contractId: string,
+): Promise<CheckpointRecord | null> {
+  const result = await pool.query<CheckpointRecord>(
+    `SELECT contract_id, last_ledger, last_ledger_hash, updated_at
+     FROM indexer_checkpoints
+     WHERE contract_id = $1`,
+    [contractId],
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Startup recovery: resumes from database checkpoint if Redis cache is empty.
+ */
+export async function readStartupCheckpoint(
+  contractId: string,
+  redisCacheValue?: string | number | null,
+): Promise<number | null> {
+  if (redisCacheValue !== undefined && redisCacheValue !== null && redisCacheValue !== "") {
+    const parsed = typeof redisCacheValue === "number" ? redisCacheValue : parseInt(String(redisCacheValue), 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      logger.info({ contractId, ledger: parsed }, "Resuming from Redis cache checkpoint");
+      return parsed;
+    }
+  }
+
+  // Redis cache empty or unavailable — query database checkpoint
+  logger.info({ contractId }, "Redis cache empty, reading database checkpoint from indexer_checkpoints");
+  const dbCheckpoint = await getLedgerCheckpoint(contractId);
+  if (dbCheckpoint && dbCheckpoint.last_ledger > 0) {
+    logger.info({ contractId, ledger: dbCheckpoint.last_ledger }, "Resuming from database checkpoint");
+    return dbCheckpoint.last_ledger;
+  }
+
+  return null;
+}
+
+/**
+ * Checkpoint progress tracker: commits checkpoint every 5 seconds or upon every 100 ledgers.
+ */
+export async function trackLedgerProgress(
+  contractId: string,
+  currentLedger: number,
+  lastLedgerHash?: string | null,
+  force: boolean = false,
+): Promise<boolean> {
+  const state = progressStates.get(contractId) ?? {
+    lastCommittedLedger: 0,
+    lastCommittedTime: 0,
+  };
+
+  const ledgersDelta = currentLedger - state.lastCommittedLedger;
+  const timeDelta = Date.now() - state.lastCommittedTime;
+
+  if (
+    force ||
+    ledgersDelta >= CHECKPOINT_LEDGER_INTERVAL ||
+    timeDelta >= CHECKPOINT_TIME_INTERVAL_MS
+  ) {
+    await commitLedgerCheckpoint(contractId, currentLedger, lastLedgerHash);
+    return true;
+  }
+
+  return false;
+}
+
 // ─── Scheduler setup ─────────────────────────────────────────────────────────
 
 export interface SchedulerHandle {

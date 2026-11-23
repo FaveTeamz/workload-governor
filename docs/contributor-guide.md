@@ -439,6 +439,51 @@ expires, the application entry is removed and you will need to re-apply.
 
 ## 10. Withdrawing an Application
 
+`withdraw_application(contributor, org_id, issue_id)` cancels one of your
+pending applications and frees a slot under the global application cap
+(default 15). Only the contributor who applied can withdraw, and only while the
+application is still pending, before a maintainer assigns the issue.
+
+### When to withdraw
+
+- **You no longer want the issue**, for example because the scope changed or you
+  no longer have time for it.
+- **You need a slot before hitting the cap.** At 15 pending applications,
+  `apply_for_issue` fails with `GlobalApplicationLimitReached` (error 6).
+  Withdrawing a stale application frees a slot straight away.
+- **You want a different issue in the same org.** Withdraw from the old issue,
+  then apply for the new one. There is no "move application" call.
+
+### Withdraw from the UI
+
+1. Connect Freighter with the account you applied from and open the
+   **Dashboard**.
+2. In the **Pending applications** list, find the row for the issue. Each row
+   shows the org ID, issue title, and issue number.
+3. Click **Withdraw**. The button is disabled and labelled **Assigned** when a
+   maintainer has already assigned the issue to you (see
+   [Edge cases](#edge-cases-and-errors)).
+4. The **Withdraw application?** dialog (`WithdrawConfirmModal`) opens and
+   shows:
+   - the issue title,
+   - the org ID,
+   - a reminder that withdrawing frees one slot in your global application
+     count and cannot be undone.
+
+   Click **Cancel** or press Escape to back out. Nothing is submitted.
+5. Click **Confirm withdrawal** and approve the transaction in Freighter. The
+   button shows **Withdrawing…** until the transaction is confirmed.
+6. When it succeeds, the row disappears from the list. If it fails, the
+   contract error is shown inline, e.g. *"No application found for this issue."*
+   for error 9.
+   If you reject the Freighter prompt, you see *"Transaction was cancelled."*
+
+Other pages use the `WithdrawButton` component, which has the same flow: a
+**Withdraw** button opens a **Confirm withdrawal** modal naming the issue, and
+the application is removed from the list on success.
+
+### Withdraw with stellar-cli
+
 ```bash
 stellar contract invoke \
   --id "$CONTRACT_ID" --network testnet \
@@ -448,13 +493,78 @@ stellar contract invoke \
   --org_id rust_libs \
   --issue_id 42
 # Expected output: null
+```
 
-# Confirm the count decreased
+`--source` must be the key for `--contributor`. The call runs
+`contributor.require_auth()`, so signing with any other key fails authorization.
+
+Check the result:
+
+```bash
+# The application is gone
+stellar contract invoke \
+  --id "$CONTRACT_ID" --network testnet \
+  -- has_applied \
+  --contributor "$CONTRIBUTOR_ADDRESS" \
+  --org_id rust_libs \
+  --issue_id 42
+# → false
+
+# The global count went down by one
 stellar contract invoke \
   --id "$CONTRACT_ID" --network testnet \
   -- get_global_application_count \
   --contributor "$CONTRIBUTOR_ADDRESS"
 ```
+
+### Effect on your global application count
+
+A successful withdrawal does the following in one contract invocation, so
+either all of it happens or none of it does:
+
+1. Removes the application entry `("app", contributor, org_id, issue_id)`.
+2. Decrements your global counter `("g_apps", contributor)` by 1. When the
+   count reaches 0, the counter entry is removed instead of being stored as
+   `0`.
+3. Emits an `app_wdw` event with data `(contributor, org_id, issue_id)`, which
+   the backend indexes as a `withdrawn` event.
+
+The freed slot is available as soon as the transaction is confirmed. You can
+call `apply_for_issue` for another issue, in any org, in the next transaction.
+
+### Withdrawal is permanent
+
+A withdrawn application cannot be reinstated. To pursue the issue again, call
+`apply_for_issue` again, which:
+
+- takes a global slot again and fails with `GlobalApplicationLimitReached`
+  (error 6) if you are at the cap,
+- creates a new application entry with a fresh TTL, and
+- puts you back in the maintainer's queue as a new applicant. Your earlier
+  application does not carry over.
+
+### Edge cases and errors
+
+| Situation | Result |
+|---|---|
+| The maintainer already called `assign_issue` for this application | `ApplicationNotFound` (error 9). Assignment consumes the application entry and already decrements your global count. The issue is now an active assignment, which only a maintainer can end with `complete_assignment` or `revoke_assignment`. The Dashboard disables **Withdraw** for assigned issues. |
+| No application exists for this `(contributor, org_id, issue_id)` (never applied, already withdrawn, or wrong org/issue ID) | `ApplicationNotFound` (error 9) |
+| The application's TTL expired | `ApplicationNotFound` (error 9). The entry was deleted from temporary storage, so there is nothing to withdraw. See the note below. |
+| `issue_id` is `0` or `u32::MAX` | `InvalidIssueId` (error 13), checked before authorization |
+| Contract not initialized | `NotInitialized` (error 2) |
+| Transaction not signed by `contributor` | Soroban authorization failure; nothing changes |
+
+**TTL expiry vs explicit withdrawal.** Both remove the application, but only
+an explicit withdrawal decrements `g_apps` at that moment. When a single
+application entry expires, the counter is not decremented. The counter is
+also temporary storage, and its TTL is refreshed each time you apply, so it
+may keep counting the expired application until the counter itself expires.
+If you plan to drop an application, withdraw it explicitly rather than letting
+it lapse, so the slot is freed straight away. To keep an application alive
+instead, see [9. Extending an Application TTL](#9-extending-an-application-ttl).
+
+For the full list of error codes, see
+[error-reference.md](error-reference.md#applicationnotfound-9).
 
 ---
 

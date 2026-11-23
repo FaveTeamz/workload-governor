@@ -13,9 +13,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ─── Hoist mock factories (must be before any imports that use them) ──────────
 
-const { mockQuery, mockExtendBatch, mockLogger } = vi.hoisted(() => {
+const { mockQuery, mockConnect, mockClientQuery, mockClientRelease, mockExtendBatch, mockLogger } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 });
+  const mockClientRelease = vi.fn();
   return {
     mockQuery:       vi.fn(),
+    mockClientQuery,
+    mockClientRelease,
+    mockConnect:     vi.fn().mockResolvedValue({
+      query: mockClientQuery,
+      release: mockClientRelease,
+    }),
     mockExtendBatch: vi.fn(),
     mockLogger:      {
       info:  vi.fn(),
@@ -29,8 +37,8 @@ const { mockQuery, mockExtendBatch, mockLogger } = vi.hoisted(() => {
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock("../src/db.js", () => ({
-  default: { query: mockQuery },
-  pool:    { query: mockQuery },
+  default: { query: mockQuery, connect: mockConnect },
+  pool:    { query: mockQuery, connect: mockConnect },
 }));
 
 vi.mock("../src/soroban.js", () => ({
@@ -46,9 +54,13 @@ vi.mock("../src/github.js", () => ({
   runFullSync: vi.fn().mockResolvedValue([]),
 }));
 
-// ─── Import after mocks ───────────────────────────────────────────────────────
-
-import { runTtlExtensionJob } from "../src/scheduler.js";
+import {
+  runTtlExtensionJob,
+  commitLedgerCheckpoint,
+  getLedgerCheckpoint,
+  readStartupCheckpoint,
+  trackLedgerProgress,
+} from "../src/scheduler.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -332,3 +344,148 @@ describe("runGitHubSyncJob error handling", () => {
     );
   });
 });
+
+// ─── Indexer Checkpoint Persistence (issue #849) ─────────────────────────────
+
+describe("Indexer Checkpoint Persistence (#849)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("commitLedgerCheckpoint", () => {
+    it("commits ledger checkpoint transactionally (BEGIN, INSERT, COMMIT)", async () => {
+      mockClientQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+
+      await commitLedgerCheckpoint("CONTRACT123", 12345, "hashabc");
+
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+      expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
+      expect(mockClientQuery).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO indexer_checkpoints"),
+        ["CONTRACT123", 12345, "hashabc"],
+      );
+      expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
+      expect(mockClientRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it("rolls back transaction and releases client on database error", async () => {
+      mockClientQuery.mockImplementation(async (sql: string) => {
+        if (sql === "BEGIN") return { rows: [] };
+        if (typeof sql === "string" && sql.includes("INSERT INTO indexer_checkpoints")) {
+          throw new Error("DB connection lost");
+        }
+        return { rows: [] };
+      });
+
+      await expect(
+        commitLedgerCheckpoint("CONTRACT123", 12345, "hashabc"),
+      ).rejects.toThrow("DB connection lost");
+
+      expect(mockClientQuery).toHaveBeenCalledWith("ROLLBACK");
+      expect(mockClientRelease).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ contractId: "CONTRACT123", lastLedger: 12345 }),
+        expect.stringContaining("Failed to commit ledger checkpoint"),
+      );
+    });
+  });
+
+  describe("getLedgerCheckpoint", () => {
+    it("returns checkpoint record from database", async () => {
+      const mockRecord = {
+        contract_id: "CONTRACT123",
+        last_ledger: 500,
+        last_ledger_hash: "hashxyz",
+        updated_at: new Date(),
+      };
+      mockQuery.mockResolvedValueOnce({ rows: [mockRecord], rowCount: 1 });
+
+      const result = await getLedgerCheckpoint("CONTRACT123");
+      expect(result).toEqual(mockRecord);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("FROM indexer_checkpoints"),
+        ["CONTRACT123"],
+      );
+    });
+
+    it("returns null if no checkpoint row found", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const result = await getLedgerCheckpoint("NON_EXISTENT");
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("readStartupCheckpoint", () => {
+    it("resumes from Redis cache when valid number provided", async () => {
+      const result = await readStartupCheckpoint("CONTRACT123", 450);
+      expect(result).toBe(450);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it("resumes from Redis cache when valid numeric string provided", async () => {
+      const result = await readStartupCheckpoint("CONTRACT123", "780");
+      expect(result).toBe(780);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it("resumes from database checkpoint if Redis cache is empty or evicted", async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            contract_id: "CONTRACT123",
+            last_ledger: 300,
+            last_ledger_hash: "hash300",
+            updated_at: new Date(),
+          },
+        ],
+        rowCount: 1,
+      });
+
+      const result = await readStartupCheckpoint("CONTRACT123", null);
+      expect(result).toBe(300);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining("FROM indexer_checkpoints"),
+        ["CONTRACT123"],
+      );
+    });
+
+    it("returns null when both Redis and database checkpoint are empty", async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const result = await readStartupCheckpoint("CONTRACT123", undefined);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("trackLedgerProgress", () => {
+    it("persists checkpoint when force is true", async () => {
+      mockClientQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+
+      const persisted = await trackLedgerProgress("TRACK_CONTRACT_FORCE", 10, "h10", true);
+      expect(persisted).toBe(true);
+      expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
+      expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
+    });
+
+    it("persists checkpoint when ledger interval reaches 100", async () => {
+      mockClientQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+
+      // First force-sync to establish baseline
+      await trackLedgerProgress("TRACK_CONTRACT_INTERVAL", 100, "h100", true);
+      mockClientQuery.mockClear();
+
+      // Delta of 50 ledgers should not trigger
+      const skipped = await trackLedgerProgress("TRACK_CONTRACT_INTERVAL", 150, "h150", false);
+      expect(skipped).toBe(false);
+      expect(mockClientQuery).not.toHaveBeenCalled();
+
+      // Delta reaching 100 (200 - 100) should trigger
+      const triggered = await trackLedgerProgress("TRACK_CONTRACT_INTERVAL", 200, "h200", false);
+      expect(triggered).toBe(true);
+      expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
+      expect(mockClientQuery).toHaveBeenCalledWith("COMMIT");
+    });
+  });
+});
+

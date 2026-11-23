@@ -198,3 +198,235 @@ export async function tracedDbQuery<R extends QueryResultRow = QueryResultRow>(
 }
 
 export { AWSXRay };
+
+// ─── OpenTelemetry distributed tracing integration ───────────────────────────
+
+export enum SpanStatusCode {
+  UNSET = 0,
+  OK = 1,
+  ERROR = 2,
+}
+
+export interface SpanStatus {
+  code: SpanStatusCode;
+  message?: string;
+}
+
+export interface SpanContext {
+  traceId: string;
+  spanId: string;
+  traceFlags: number;
+}
+
+export interface SpanEvent {
+  name: string;
+  attributes?: Record<string, unknown>;
+  time?: number;
+}
+
+export interface Span {
+  readonly attributes: Record<string, unknown>;
+  readonly events: SpanEvent[];
+  readonly status: SpanStatus;
+  setAttribute(key: string, value: unknown): this;
+  setAttributes(attributes: Record<string, unknown>): this;
+  addEvent(name: string, attributes?: Record<string, unknown>): this;
+  setStatus(status: SpanStatus): this;
+  recordException(exception: Error | string): this;
+  end(): void;
+  isRecording(): boolean;
+  spanContext(): SpanContext;
+}
+
+export interface Tracer {
+  startSpan(
+    name: string,
+    options?: {
+      attributes?: Record<string, unknown>;
+      parent?: Span | SpanContext;
+    },
+  ): Span;
+  startActiveSpan<T>(
+    name: string,
+    fn: (span: Span) => T,
+  ): T;
+  startActiveSpan<T>(
+    name: string,
+    options: {
+      attributes?: Record<string, unknown>;
+      parent?: Span | SpanContext;
+    },
+    fn: (span: Span) => T,
+  ): T;
+}
+
+function randomHex(bytes: number): string {
+  let hex = "";
+  for (let i = 0; i < bytes; i++) {
+    hex += Math.floor(Math.random() * 256).toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+class InMemorySpan implements Span {
+  public attributes: Record<string, unknown> = {};
+  public events: SpanEvent[] = [];
+  public status: SpanStatus = { code: SpanStatusCode.UNSET };
+  private ended = false;
+  private readonly startTime = Date.now();
+  private readonly context: SpanContext;
+  private xRaySubsegment?: AWSXRay.Subsegment;
+
+  constructor(
+    public readonly name: string,
+    initialAttributes: Record<string, unknown> = {},
+    parentContext?: SpanContext,
+  ) {
+    this.attributes = { ...initialAttributes };
+    const traceId = parentContext?.traceId ?? randomHex(16);
+    const spanId = randomHex(8);
+    this.context = { traceId, spanId, traceFlags: 1 };
+
+    // Link with AWS X-Ray subsegment if active
+    if (XRAY_ENABLED) {
+      try {
+        const seg = AWSXRay.resolveSegment();
+        if (seg) {
+          this.xRaySubsegment = seg.addNewSubsegment(name);
+          this.xRaySubsegment.namespace = "remote";
+          for (const [k, v] of Object.entries(initialAttributes)) {
+            if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+              this.xRaySubsegment.addAnnotation(k.replace(/\./g, "_"), v);
+            }
+          }
+        }
+      } catch {
+        // Ignored in test environments without X-Ray daemon
+      }
+    }
+  }
+
+  setAttribute(key: string, value: unknown): this {
+    if (this.ended) return this;
+    this.attributes[key] = value;
+    if (this.xRaySubsegment && (typeof value === "string" || typeof value === "number" || typeof value === "boolean")) {
+      try {
+        this.xRaySubsegment.addAnnotation(key.replace(/\./g, "_"), value);
+      } catch {
+        // ignore
+      }
+    }
+    return this;
+  }
+
+  setAttributes(attributes: Record<string, unknown>): this {
+    for (const [k, v] of Object.entries(attributes)) {
+      this.setAttribute(k, v);
+    }
+    return this;
+  }
+
+  addEvent(name: string, attributes?: Record<string, unknown>): this {
+    if (this.ended) return this;
+    this.events.push({
+      name,
+      attributes: attributes ? { ...attributes } : undefined,
+      time: Date.now(),
+    });
+    return this;
+  }
+
+  setStatus(status: SpanStatus): this {
+    if (this.ended) return this;
+    this.status = status;
+    if (status.code === SpanStatusCode.ERROR && this.xRaySubsegment) {
+      try {
+        this.xRaySubsegment.addError(new Error(status.message ?? "Span error"));
+      } catch {
+        // ignore
+      }
+    }
+    return this;
+  }
+
+  recordException(exception: Error | string): this {
+    if (this.ended) return this;
+    const err = exception instanceof Error ? exception : new Error(String(exception));
+    this.addEvent("exception", {
+      "exception.type": err.name,
+      "exception.message": err.message,
+      "exception.stacktrace": err.stack,
+    });
+    this.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+    return this;
+  }
+
+  end(): void {
+    if (this.ended) return;
+    this.ended = true;
+    const durationMs = Date.now() - this.startTime;
+    if (this.attributes["response_latency_ms"] === undefined && this.attributes["rpc.response_latency_ms"] === undefined) {
+      this.attributes["rpc.response_latency_ms"] = durationMs;
+    }
+    if (this.xRaySubsegment) {
+      try {
+        this.xRaySubsegment.close();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  isRecording(): boolean {
+    return !this.ended;
+  }
+
+  spanContext(): SpanContext {
+    return this.context;
+  }
+}
+
+class InMemoryTracer implements Tracer {
+  private activeSpan: Span | null = null;
+
+  startSpan(
+    name: string,
+    options?: {
+      attributes?: Record<string, unknown>;
+      parent?: Span | SpanContext;
+    },
+  ): Span {
+    const parentContext =
+      options?.parent && "traceId" in options.parent
+        ? (options.parent as SpanContext)
+        : (options?.parent as Span | undefined)?.spanContext() ??
+          this.activeSpan?.spanContext();
+
+    return new InMemorySpan(name, options?.attributes ?? {}, parentContext);
+  }
+
+  startActiveSpan<T>(
+    name: string,
+    fnOrOptions: ((span: Span) => T) | { attributes?: Record<string, unknown>; parent?: Span | SpanContext },
+    maybeFn?: (span: Span) => T,
+  ): T {
+    const options = typeof fnOrOptions === "function" ? undefined : fnOrOptions;
+    const fn = typeof fnOrOptions === "function" ? fnOrOptions : maybeFn!;
+    const span = this.startSpan(name, options);
+    const prev = this.activeSpan;
+    this.activeSpan = span;
+    try {
+      return fn(span);
+    } finally {
+      this.activeSpan = prev;
+    }
+  }
+}
+
+export function getTracer(name: string = SERVICE_NAME): Tracer {
+  // If @opentelemetry/api is present in global runtime, delegate or return InMemoryTracer
+  return new InMemoryTracer();
+}
+
+export const tracer: Tracer = getTracer(SERVICE_NAME);
+

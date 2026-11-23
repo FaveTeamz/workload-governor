@@ -18,3 +18,15 @@ variable "acm_certificate_domain" {
   description = "Domain name of the ACM certificate to attach to the HTTPS ALB listener (e.g. app.example.com)"
   type        = string
 }
+
+variable "cpu" {
+  description = "ECS task and container CPU units (e.g. 1024 for 1 vCPU)"
+  type        = string
+  default     = "1024"
+}
+
+variable "memory" {
+  description = "ECS task and container memory allocation in MB (e.g. 2048 for 2 GB)"
+  type        = string
+  default     = "2048"
+}
