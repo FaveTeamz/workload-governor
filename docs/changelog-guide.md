@@ -15,7 +15,10 @@ A *user-facing change* is anything that affects:
 - Developer-facing tooling (new CLI commands, changed build steps, new config variables)
 - Security or dependency changes that affect runtime behaviour
 
-Internal refactors, test-only changes, CI workflow changes, and documentation-only PRs may omit a changelog entry, but adding one is never wrong.
+CI requires an `[Unreleased]` entry whenever a PR changes files under `src/`,
+`contracts/`, `frontend/src/`, or `backend/src/`. Documentation-only, CI-only,
+and test-only PRs may omit an entry. Bot PRs and PRs labeled `skip-changelog`
+are exempt.
 
 ---
 

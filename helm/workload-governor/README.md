@@ -1,6 +1,6 @@
-# vesting-backend Helm Chart
+# workload-governor Helm Chart
 
-Deploys the **WorkloadGovernor vesting-backend** service on any Kubernetes cluster.
+Deploys the **WorkloadGovernor** service on any Kubernetes cluster.
 The chart includes a `Deployment`, `Service`, `Ingress`, `HPA`, `ConfigMap`, and
 an `ExternalSecret` (via the [External Secrets Operator](https://external-secrets.io/)).
 
@@ -23,12 +23,12 @@ helm repo add workload-governor https://faveteamz.github.io/workload-governor
 helm repo update
 
 # Dry-run first
-helm install vesting-backend workload-governor/vesting-backend \
+helm install workload-governor workload-governor/workload-governor \
   --dry-run --debug \
   --set config.CONTRACT_ID=<YOUR_CONTRACT_ID>
 
 # Install
-helm install vesting-backend workload-governor/vesting-backend \
+helm install workload-governor workload-governor/workload-governor \
   --namespace vesting \
   --create-namespace \
   --set config.CONTRACT_ID=<YOUR_CONTRACT_ID>
@@ -41,7 +41,7 @@ helm install vesting-backend workload-governor/vesting-backend \
 kind create cluster --name wg-dev
 
 # Install from local chart directory
-helm install vesting-backend ./helm/vesting-backend \
+helm install workload-governor ./helm/workload-governor \
   --namespace vesting \
   --create-namespace \
   --set externalSecrets.enabled=false \
@@ -50,7 +50,7 @@ helm install vesting-backend ./helm/vesting-backend \
 
 # Verify
 kubectl get all -n vesting
-helm test vesting-backend -n vesting
+helm test workload-governor -n vesting
 ```
 
 ---
@@ -58,7 +58,7 @@ helm test vesting-backend -n vesting
 ## Upgrade
 
 ```bash
-helm upgrade vesting-backend workload-governor/vesting-backend \
+helm upgrade workload-governor workload-governor/workload-governor \
   --namespace vesting \
   --reuse-values \
   --set image.tag=<NEW_TAG>
@@ -69,7 +69,7 @@ helm upgrade vesting-backend workload-governor/vesting-backend \
 ## Uninstall
 
 ```bash
-helm uninstall vesting-backend --namespace vesting
+helm uninstall workload-governor --namespace vesting
 ```
 
 ---
@@ -104,7 +104,7 @@ All values can be overridden with `--set key=value` or a custom `-f values.yaml`
 | `ingress.enabled` | `true` | Create Ingress resource |
 | `ingress.className` | `nginx` | Ingress class |
 | `ingress.annotations` | See values.yaml | Custom annotations (supports cert-manager) |
-| `ingress.hosts` | `vesting-backend.example.com` | Hostname rules |
+| `ingress.hosts` | `workload-governor.example.com` | Hostname rules |
 | `ingress.tls` | See values.yaml | TLS secret mappings |
 | `ingress.tls[].secretName` | `""` | TLS secret name; leave empty to auto-generate as `<release-name>-tls` |
 
@@ -134,7 +134,7 @@ ingress:
 3. Install or upgrade the chart:
 
 ```bash
-helm upgrade --install vesting-backend ./helm/vesting-backend \
+helm upgrade --install workload-governor ./helm/workload-governor \
   -f my-values.yaml \
   --namespace vesting
 ```
@@ -199,14 +199,14 @@ Secrets synced by default:
 To disable and use a plain Kubernetes Secret instead:
 
 ```bash
-helm install vesting-backend ./helm/vesting-backend \
+helm install workload-governor ./helm/workload-governor \
   --set externalSecrets.enabled=false
 ```
 
 Then create the secret manually:
 
 ```bash
-kubectl create secret generic vesting-backend-secrets \
+kubectl create secret generic workload-governor-secrets \
   --from-literal=ADMIN_TOKEN=<token> \
   --from-literal=STELLAR_SECRET_KEY=<key> \
   --from-literal=DATABASE_URL=<url> \
@@ -231,12 +231,12 @@ The chart is published as a Helm repository on GitHub Pages.
 
 ```bash
 # From repo root — package and index
-helm package helm/vesting-backend --destination docs/helm-charts/
+helm package helm/workload-governor --destination docs/helm-charts/
 helm repo index docs/helm-charts/ --url https://faveteamz.github.io/workload-governor/helm-charts
 
 # Push and the gh-pages workflow will deploy automatically
 git add docs/helm-charts/
-git commit -m "chore: publish vesting-backend chart"
+git commit -m "chore: publish workload-governor chart"
 git push
 ```
 

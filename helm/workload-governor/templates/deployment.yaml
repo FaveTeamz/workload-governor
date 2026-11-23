@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "vesting-backend.fullname" . }}
+  name: {{ include "workload-governor.fullname" . }}
   labels:
-    {{- include "vesting-backend.labels" . | nindent 4 }}
+    {{- include "workload-governor.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "vesting-backend.selectorLabels" . | nindent 6 }}
+      {{- include "workload-governor.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -20,7 +20,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "vesting-backend.selectorLabels" . | nindent 8 }}
+        {{- include "workload-governor.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -29,14 +29,14 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "vesting-backend.serviceAccountName" . }}
+      serviceAccountName: {{ include "workload-governor.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ include "vesting-backend.imageTag" . }}"
+          image: "{{ .Values.image.repository }}:{{ include "workload-governor.imageTag" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -44,10 +44,10 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: {{ include "vesting-backend.fullname" . }}-config
+                name: {{ include "workload-governor.fullname" . }}-config
             {{- if .Values.externalSecrets.enabled }}
             - secretRef:
-                name: {{ include "vesting-backend.fullname" . }}-secrets
+                name: {{ include "workload-governor.fullname" . }}-secrets
             {{- end }}
           {{- with .Values.extraEnv }}
           env:
