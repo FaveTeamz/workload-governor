@@ -285,24 +285,19 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
             setOpen(true);
             setActiveIndex(0);
           }}
-          onFocus={() => {
-            setOpen(true);
-            setQuery("");
-          }}
+          onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
         />
-        <button
-          className="org-selector__chevron"
-          tabIndex={-1}
-          aria-hidden="true"
-          onClick={() => {
-            setOpen((o) => !o);
-            if (!open) inputRef.current?.focus();
-          }}
-          type="button"
-        >
-          {open ? "▲" : "▼"}
-        </button>
+        {selectedOrg.id && (
+          <button
+            type="button"
+            className="org-selector__clear"
+            aria-label={`Clear organisation filter ${selectedOrg.name}`}
+            onClick={() => selectOrg(ALL_ORGS_OPTION)}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
       </div>
 
       {open && (
@@ -313,48 +308,34 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
           className="org-selector__listbox"
           aria-label="Organisations"
         >
-          {filtered.length === 0 ? (
-            <li className="org-selector__no-results" role="option" aria-selected={false}>
-              No organisations match "{query}"
+          {filtered.length === 0 && (
+            <li className="org-selector__empty" role="presentation">
+              No organisations found
             </li>
-          ) : (
-            filtered.map((org, idx) => (
-              <li
-                key={org.id || "__all__"}
-                id={`org-option-${org.id || "all"}`}
-                role="option"
-                className={[
-                  "org-selector__option",
-                  idx === activeIndex ? "org-selector__option--active" : "",
-                  selectedOrg.id === org.id ? "org-selector__option--selected" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-selected={selectedOrg.id === org.id}
-                onMouseEnter={() => setActiveIndex(idx)}
-                onMouseDown={(e) => {
-                  e.preventDefault(); // prevent input blur before click
-                  selectOrg(org);
-                }}
-              >
-                <OrgAvatar org={org} />
-                <span className="org-selector__option-name">
-                  {org.id === "" ? <em>All Orgs</em> : org.name}
-                </span>
-                {org.id !== "" && (
-                  <span
-                    className="org-selector__issue-count"
-                    aria-label={`${org.activeIssueCount} active issues`}
-                  >
-                    {org.activeIssueCount}
-                  </span>
-                )}
-                {selectedOrg.id === org.id && (
-                  <span className="org-selector__checkmark" aria-hidden="true">✓</span>
-                )}
-              </li>
-            ))
           )}
+          {filtered.map((org, index) => (
+            <li
+              key={org.id || "all"}
+              id={`org-option-${org.id || "all"}`}
+              role="option"
+              aria-selected={org.id === selectedOrg.id}
+              className="org-selector__option"
+              data-active={index === activeIndex}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selectOrg(org);
+              }}
+              onMouseEnter={() => setActiveIndex(index)}
+            >
+              <OrgAvatar org={org} />
+              <span className="org-selector__option-name">{org.name}</span>
+              {org.activeIssueCount > 0 && (
+                <span className="org-selector__option-count">
+                  {org.activeIssueCount}
+                </span>
+              )}
+            </li>
+          ))}
         </ul>
       )}
     </div>

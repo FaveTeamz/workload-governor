@@ -269,21 +269,21 @@ export function EventHistoryTable({
           Event History
           <span
             className="count-badge"
-            aria-label={`${filtered.length} events`}
-            aria-live="polite"
+            aria-label={`${sorted.length} events`}
           >
-            {filtered.length}
+            {sorted.length}
           </span>
         </h2>
 
-        <label className="eht-filter-label" htmlFor="eht-filter">
-          <span className="visually-hidden">Filter by event type</span>
+        <div className="eht-controls">
+          <label className="eht-filter-label" htmlFor="eht-filter">
+            Filter
+          </label>
           <select
             id="eht-filter"
-            className="eht-filter-select"
+            className="eht-filter"
             value={filter}
             onChange={(e) => handleFilterChange(e.target.value as FilterValue)}
-            aria-label="Filter events by type"
           >
             {FILTER_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -291,84 +291,70 @@ export function EventHistoryTable({
               </option>
             ))}
           </select>
-        </label>
+
+          <button
+            className="btn btn-ghost btn-sm eht-sort-btn"
+            onClick={toggleSort}
+            aria-label={`Sort by timestamp, currently ${sortDir === "desc" ? "newest first" : "oldest first"}`}
+            type="button"
+          >
+            Timestamp <SortIndicator dir={sortDir} />
+          </button>
+        </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <EmptyState variant="no-events" />
+      {pageItems.length === 0 ? (
+        <EmptyState
+          title="No events found"
+          description="No contract events match the current filter."
+        />
       ) : (
-        <>
-          <div className="table-wrap" role="region" aria-label="Event history table" tabIndex={0}>
-            <table className="table eht-table">
-              <caption className="table__caption">
-                {filtered.length} event{filtered.length !== 1 ? "s" : ""}
-                {filter !== "all" ? ` · ${FILTER_OPTIONS.find((o) => o.value === filter)?.label}` : ""}
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Event Type</th>
-                  <th scope="col">Org</th>
-                  <th scope="col">Issue ID</th>
-                  <th
-                    scope="col"
-                    className="eht-sortable"
-                    onClick={toggleSort}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        toggleSort();
-                      }
-                    }}
-                    tabIndex={0}
-                    role="columnheader"
-                    aria-sort={sortDir === "asc" ? "ascending" : "descending"}
-                    aria-label={`Timestamp, sort ${sortDir === "asc" ? "descending" : "ascending"}`}
-                  >
-                    Timestamp <SortIndicator dir={sortDir} />
-                  </th>
-                  <th scope="col">Transaction Hash</th>
+        <div className="eht-table-wrap">
+          <table className="eht-table">
+            <caption className="sr-only">
+              Contract event history, sorted by timestamp {sortDir === "desc" ? "descending" : "ascending"}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Event</th>
+                <th scope="col">Org</th>
+                <th scope="col">Issue</th>
+                <th scope="col">Contributor</th>
+                <th scope="col">Timestamp</th>
+                <th scope="col">Tx Hash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((ev) => (
+                <tr key={ev.id}>
+                  <td>
+                    <Badge variant={EVENT_BADGE[ev.event_type] ?? "default"}>
+                      {ev.event_type}
+                    </Badge>
+                  </td>
+                  <td>{ev.org_id}</td>
+                  <td>{ev.issue_id}</td>
+                  <td>{ev.contributor ?? "—"}</td>
+                  <td>
+                    <time dateTime={ev.timestamp}>{formatTimestamp(ev.timestamp)}</time>
+                  </td>
+                  <td className="eht-hash-cell">
+                    <code title={ev.tx_hash}>{truncateHash(ev.tx_hash)}</code>
+                    <CopyButton text={ev.tx_hash} />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {pageItems.map((ev) => (
-                  <tr key={ev.id} className="eht-row">
-                    <td>
-                      <Badge variant={EVENT_BADGE[ev.event_type] ?? "neutral"}>
-                        {ev.event_type}
-                      </Badge>
-                    </td>
-                    <td>{ev.org_id}</td>
-                    <td className="eht-issue-id">{ev.issue_id}</td>
-                    <td>
-                      <time dateTime={ev.timestamp}>{formatTimestamp(ev.timestamp)}</time>
-                    </td>
-                    <td className="eht-txhash-cell">
-                      <a
-                        href={`https://stellar.expert/explorer/testnet/tx/${ev.tx_hash}`}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="eht-txhash-link"
-                        aria-label={`View transaction ${ev.tx_hash} on Stellar Expert`}
-                        title={ev.tx_hash}
-                      >
-                        {truncateHash(ev.tx_hash)}
-                      </a>
-                      <CopyButton text={ev.tx_hash} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <Pagination
-            page={safePage}
-            total={sorted.length}
-            pageSize={PAGE_SIZE}
-            onChange={setPage}
-          />
-        </>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <Pagination
+        page={safePage}
+        total={sorted.length}
+        pageSize={PAGE_SIZE}
+        onChange={setPage}
+      />
     </section>
   );
 }
