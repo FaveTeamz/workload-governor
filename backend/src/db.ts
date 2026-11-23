@@ -1,5 +1,5 @@
 /**
- * db.ts — PostgreSQL connection pool
+ * db.ts — PostgreSQL connection pool and Redis client
  *
  * Exposes a single Pool instance shared across all modules.
  * Connection parameters are read from environment variables:
@@ -11,9 +11,16 @@
  *   DB_POOL_MAX: maximum connections allowed   (default: 20)
  *   DB_IDLE_TIMEOUT: ms before idle connection is closed (default: 30000)
  *   DB_ACQUIRE_TIMEOUT: ms to wait for a connection   (default: 10000)
+ *
+ * Redis client (issue #1232):
+ *   REDIS_URL: Redis connection URL (default: redis://localhost:6379)
+ *   Configured with exponential backoff and jitter on reconnect to prevent
+ *   thundering herd during cluster restarts or ElastiCache failovers.
  */
 
 import pg, { PoolClient } from "pg";
+import Redis from "ioredis";
+import logger from "./logger.js";
 
 const { Pool } = pg;
 
@@ -83,3 +90,48 @@ pool.on("error", (err: Error, client?: any) => {
 });
 
 export default pool;
+
+// ─── Redis client ─────────────────────────────────────────────────────────────
+
+const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
+const REDIS_RECONNECT_MAX_DELAY_MS = 3_000;
+
+/**
+ * Shared Redis client with exponential backoff and jitter (closes #1232).
+ *
+ * retryStrategy caps reconnection delay at 3 s and adds up to 50 ms of random
+ * jitter to spread bursts of reconnections across multiple Node.js instances
+ * (prevents thundering-herd storms against ElastiCache or a restarting cluster).
+ */
+export const redisClient = new Redis(REDIS_URL, {
+  lazyConnect: true,
+  retryStrategy(times: number): number {
+    const delay = Math.min(times * 100 + Math.random() * 50, REDIS_RECONNECT_MAX_DELAY_MS);
+    logger.warn({ times, delayMs: Math.round(delay) }, "[redis] Reconnecting with backoff");
+    return delay;
+  },
+});
+
+redisClient.on("connect", () => {
+  logger.info("[redis] Connection established");
+});
+
+redisClient.on("ready", () => {
+  logger.info("[redis] Client ready — accepting commands");
+});
+
+redisClient.on("error", (err: Error) => {
+  logger.error({ err: err.message }, "[redis] Client error");
+});
+
+redisClient.on("close", () => {
+  logger.warn("[redis] Connection closed");
+});
+
+redisClient.on("reconnecting", (delay: number) => {
+  logger.warn({ delayMs: delay }, "[redis] Reconnecting…");
+});
+
+redisClient.on("end", () => {
+  logger.warn("[redis] Connection ended — no further reconnection attempts");
+});
