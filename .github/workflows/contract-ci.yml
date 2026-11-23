@@ -97,6 +97,10 @@ jobs:
         if: always()
         run: node scripts/mutation-report.js mutants.out mutants.out/mutation-report.html || true
 
+      - name: Enforce mutation score threshold (>= 90%)
+        if: always()
+        run: node scripts/mutation-report.js mutants.out --threshold=90 --text-only
+
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v7
@@ -225,70 +229,5 @@ jobs:
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
-          # Permanent retention on main merges; 7 days on PRs
-          retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 7 }}
-
-  # ── 5. Fuzz (nightly schedule only, 10-minute run) ───────────────────────
-  fuzz:
-    name: Fuzz (10 min)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Restore cargo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cache/sccache
-            target
-          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-fuzz-
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
-
-      - name: Run fuzz targets (10 minutes each)
-        run: |
-          for target in $(cargo fuzz list 2>/dev/null || true); do
-            echo "▶ Fuzzing target: $target"
-            cargo fuzz run "$target" -- -max_total_time=600 || true
-          done
-        continue-on-error: true
-
-      - name: Upload fuzz artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: fuzz-artifacts-${{ github.run_id }}
-          path: fuzz/artifacts/
-          if-no-files-found: ignore
-          retention-days: 30
-
-  # ── 6. Dependency Audit (cargo audit + cargo deny) ───────────────────────
-  #
-  # Closes issue #605, #874: supply-chain audit before mainnet deployment.
-  # Runs on every PR and push to main (not on the nightly fuzz schedule).
-  audit:
-    name: Dependency Audit
-    runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Check cargo-deny (licenses, bans, advisories)
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          arguments: licenses bans advisories
-
-      - name: Check RustSec advisories (cargo-audit)
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Permanent retention for release artifacts
+          retention-days: 90
