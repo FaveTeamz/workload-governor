@@ -133,9 +133,10 @@ All values can be overridden with `--set key=value` or a custom `-f values.yaml`
 
 | Key | Default | Description |
 |---|---|---|
-| `externalSecrets.enabled` | `true` | Enable ExternalSecret resource |
-| `externalSecrets.secretStoreName` | `aws-secrets-manager` | SecretStore name |
-| `externalSecrets.secretStoreKind` | `ClusterSecretStore` | Store kind |
+| `externalSecrets.enabled` | `false` | Enable ExternalSecret resource |
+| `externalSecrets.secretStoreRef.name` | `aws-secretsmanager` | SecretStore name |
+| `externalSecrets.secretStoreRef.kind` | `ClusterSecretStore` | Store kind |
+| `externalSecrets.remoteKey` | `workload-governor/production` | AWS secret name or Vault KV path |
 | `externalSecrets.refreshInterval` | `1h` | Refresh interval |
 | `externalSecrets.secrets` | See values.yaml | Secret key mappings |
 
@@ -143,10 +144,9 @@ Secrets synced by default:
 
 | Env Var | AWS Secrets Manager Path |
 |---|---|
-| `ADMIN_TOKEN` | `workload-governor/admin-token` |
-| `STELLAR_SECRET_KEY` | `workload-governor/stellar-secret-key` |
-| `DATABASE_URL` | `workload-governor/database-url` |
-| `REDIS_URL` | `workload-governor/redis-url` |
+| `DATABASE_URL` | `workload-governor/production` |
+| `ADMIN_SECRET_KEY` | `workload-governor/production` |
+| `GITHUB_WEBHOOK_SECRET` | `workload-governor/production` |
 
 To disable and use a plain Kubernetes Secret instead:
 
