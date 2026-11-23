@@ -216,6 +216,18 @@ export async function migrate(): Promise<void> {
       ON contract_events(ledger_seq);
     CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp
       ON contract_events(timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS indexer_quarantine (
+      id            SERIAL PRIMARY KEY,
+      ledger_seq    INTEGER,
+      tx_hash       TEXT,
+      event_index   INTEGER,
+      event_type    TEXT,
+      raw_xdr       JSONB NOT NULL,
+      error_message TEXT NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (ledger_seq, tx_hash, event_index)
+    );
   `);
 }
 

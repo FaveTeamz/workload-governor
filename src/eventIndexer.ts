@@ -4,8 +4,8 @@
  * Polls the Soroban RPC node every 5 seconds for WorkloadGovernor contract events,
  * parses them into typed DB records, and persists them with deduplication.
  *
- * Supported event types (matching src/events.rs emit helpers):
- *   applied, withdrew, assigned, completed, revoked, maintainer_registered
+ * Supported event topics (mapped to DB event types):
+ *   app_sub, app_wdw, assigned, completed, revoked, maint_reg
  *
  * Deduplication key: (ledger_sequence, transaction_hash, event_index) —
  *   INSERT … ON CONFLICT DO NOTHING prevents duplicate rows even after a
@@ -19,6 +19,7 @@ import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-s
 import { pool } from './db';
 import { logger } from './logger';
 import { publishLiveEvent } from './services/event-bus';
+import { isSupportedContractEvent, validateContractEvent } from './schemas/events';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -62,106 +63,10 @@ export interface ContractEventRecord {
 }
 
 // ---------------------------------------------------------------------------
-// XDR helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Safely decode an XDR base64 string to its native JS value.
- * Returns null if decoding fails.
- */
-function decodeScVal(xdrBase64: string): unknown {
-  try {
-    const scVal = stellarXdr.ScVal.fromXDR(xdrBase64, 'base64');
-    return scValToNative(scVal);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extract the symbol string from a Soroban ScVal topic (first topic slot).
- * The event type is emitted as a Symbol in slot[0].
- */
-function extractEventType(topics: string[]): ContractEventType | null {
-  if (topics.length === 0) return null;
-  const val = decodeScVal(topics[0]);
-  if (typeof val !== 'string') return null;
-  const known: ContractEventType[] = [
-    'applied',
-    'withdrew',
-    'assigned',
-    'completed',
-    'revoked',
-    'maintainer_registered',
-  ];
-  return known.includes(val as ContractEventType) ? (val as ContractEventType) : null;
-}
-
-/**
- * Extract the contributor address from a Soroban ScVal topic (second topic slot).
- * For all 5 state-change events the contributor is in topics[1].
- */
-function extractContributorFromTopic(topics: string[]): string | null {
-  if (topics.length < 2) return null;
-  const val = decodeScVal(topics[1]);
-  if (typeof val === 'string') return val;
-  return null;
-}
-
-/**
- * Parse the data value tuple emitted with each event.
- *
- * Event data layouts (from src/events.rs):
- *   applied    → data = (org_id: Symbol, issue_id: u32)
- *   withdrew   → data = (org_id: Symbol, issue_id: u32)
- *   assigned   → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   completed  → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   revoked    → data = (maintainer: Address, org_id: Symbol, issue_id: u32)
- *   maintainer_registered → data = org_id: Symbol (scalar, not tuple)
- */
-interface ParsedData {
-  org_id: string | null;
-  issue_id: number | null;
-}
-
-function parseEventData(dataXdr: string, eventType: ContractEventType): ParsedData {
-  const raw = decodeScVal(dataXdr);
-
-  if (eventType === 'maintainer_registered') {
-    // data is a plain Symbol
-    return {
-      org_id: typeof raw === 'string' ? raw : null,
-      issue_id: null,
-    };
-  }
-
-  // All other events emit a tuple
-  if (!Array.isArray(raw)) {
-    return { org_id: null, issue_id: null };
-  }
-
-  if (eventType === 'applied' || eventType === 'withdrew') {
-    // (org_id, issue_id)
-    const [orgId, issueId] = raw as [unknown, unknown];
-    return {
-      org_id: typeof orgId === 'string' ? orgId : null,
-      issue_id: typeof issueId === 'number' ? issueId : null,
-    };
-  }
-
-  // assigned / completed / revoked → (maintainer, org_id, issue_id)
-  const [, orgId, issueId] = raw as [unknown, unknown, unknown];
-  return {
-    org_id: typeof orgId === 'string' ? orgId : null,
-    issue_id: typeof issueId === 'number' ? issueId : null,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // RPC event shape (SDK v11 / RPC spec)
 // ---------------------------------------------------------------------------
 
-interface RpcEvent {
+export interface RpcEvent {
   /** "contract" | "system" | "diagnostic" */
   type: string;
   /** "<ledger>-<tx_index>-<event_index>" — paging cursor */
@@ -172,8 +77,190 @@ interface RpcEvent {
   /** ISO-8601 creation timestamp */
   createdAt: string;
   txHash?: string;
-  topic: Array<{ type: string; xdr: string }>;
-  value: { type: string; xdr: string };
+  topic?: Array<{ type: string; xdr: string }>;
+  value?: { type: string; xdr: string };
+}
+
+export interface InvalidRpcEvent {
+  ledgerSeq: number | null;
+  txHash: string | null;
+  eventIndex: number | null;
+  eventType: string | null;
+  rawXdr: { topics: unknown; value: unknown };
+  error: string;
+}
+
+export type RpcEventParseResult =
+  | { kind: 'ignored' }
+  | { kind: 'valid'; record: ContractEventRecord }
+  | { kind: 'invalid'; details: InvalidRpcEvent };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseUnsignedInteger(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function getEventIndex(id: unknown): number | null {
+  if (typeof id !== 'string') return null;
+  const parts = id.split('-');
+  if (parts.length < 3) return null;
+  return parseUnsignedInteger(parts[parts.length - 1]);
+}
+
+function eventXdr(raw: Record<string, unknown>): InvalidRpcEvent['rawXdr'] {
+  const topics = Array.isArray(raw.topic)
+    ? raw.topic.map((topic) => (isRecord(topic) ? topic.xdr ?? null : null))
+    : raw.topic ?? null;
+  const value = isRecord(raw.value) ? raw.value.xdr ?? null : null;
+  return { topics, value };
+}
+
+function invalidEvent(
+  raw: Record<string, unknown>,
+  eventType: string | null,
+  rawXdr: InvalidRpcEvent['rawXdr'],
+  error: string,
+): RpcEventParseResult {
+  const id = raw.id;
+  const ledgerSeq = parseUnsignedInteger(raw.ledger);
+  const txHash =
+    typeof raw.txHash === 'string' ? raw.txHash : typeof id === 'string' ? id : null;
+
+  return {
+    kind: 'invalid',
+    details: {
+      ledgerSeq,
+      txHash,
+      eventIndex: getEventIndex(id),
+      eventType,
+      rawXdr,
+      error,
+    },
+  };
+}
+
+function decodeScValResult(
+  value: unknown,
+): { success: true; value: unknown } | { success: false; error: string } {
+  if (typeof value !== 'string') {
+    return { success: false, error: 'XDR value is missing or not a string' };
+  }
+  try {
+    return {
+      success: true,
+      value: scValToNative(stellarXdr.ScVal.fromXDR(value, 'base64')),
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function parseRpcEvent(rawEvent: unknown): RpcEventParseResult {
+  if (!isRecord(rawEvent)) {
+    return invalidEvent({}, null, { topics: null, value: null }, 'RPC event is not an object');
+  }
+  const raw = rawEvent;
+  if (raw.type !== 'contract') return { kind: 'ignored' };
+
+  const rawXdr = eventXdr(raw);
+  if (!Array.isArray(raw.topic) || raw.topic.length === 0) {
+    return invalidEvent(raw, null, rawXdr, 'Contract event has no topic XDR values');
+  }
+
+  const firstTopic = isRecord(raw.topic[0]) ? raw.topic[0].xdr : null;
+  const decodedEventName = decodeScValResult(firstTopic);
+  if (!decodedEventName.success) {
+    return invalidEvent(raw, null, rawXdr, `Could not decode event type topic: ${decodedEventName.error}`);
+  }
+  if (typeof decodedEventName.value !== 'string') {
+    return invalidEvent(raw, null, rawXdr, 'Event type topic is not a Symbol');
+  }
+
+  const eventName = decodedEventName.value;
+  if (!isSupportedContractEvent(eventName)) return { kind: 'ignored' };
+
+  const topics: unknown[] = [];
+  for (const [index, topic] of raw.topic.entries()) {
+    const decoded = decodeScValResult(isRecord(topic) ? topic.xdr : null);
+    if (!decoded.success) {
+      return invalidEvent(raw, eventName, rawXdr, `Could not decode topic[${index}]: ${decoded.error}`);
+    }
+    topics.push(decoded.value);
+  }
+
+  const dataXdr = isRecord(raw.value) ? raw.value.xdr : null;
+  const decodedData = decodeScValResult(dataXdr);
+  if (!decodedData.success) {
+    return invalidEvent(raw, eventName, rawXdr, `Could not decode event data: ${decodedData.error}`);
+  }
+
+  const validation = validateContractEvent(eventName, topics, decodedData.value);
+  if (!validation.success) return invalidEvent(raw, eventName, rawXdr, validation.error);
+
+  const ledger = parseUnsignedInteger(raw.ledger);
+  const eventIndex = getEventIndex(raw.id);
+  const txHash = typeof raw.txHash === 'string' ? raw.txHash : raw.id;
+  const timestamp = typeof raw.createdAt === 'string' ? new Date(raw.createdAt) : null;
+  if (
+    ledger === null ||
+    eventIndex === null ||
+    typeof txHash !== 'string' ||
+    txHash.length === 0 ||
+    !timestamp ||
+    Number.isNaN(timestamp.getTime())
+  ) {
+    return invalidEvent(
+      raw,
+      eventName,
+      rawXdr,
+      'Event metadata has an invalid ledger, id, transaction hash, or timestamp',
+    );
+  }
+
+  return {
+    kind: 'valid',
+    record: {
+      ...validation.event,
+      tx_hash: txHash,
+      event_index: eventIndex,
+      ledger,
+      timestamp,
+    },
+  };
+}
+
+export async function quarantineRpcEvent(details: InvalidRpcEvent): Promise<void> {
+  const message = `Invalid event schema on ledger ${details.ledgerSeq ?? 'unknown'}, tx ${details.txHash ?? 'unknown'}`;
+  logger.error({
+    message,
+    eventType: details.eventType,
+    eventIndex: details.eventIndex,
+    error: details.error,
+    rawXdr: details.rawXdr,
+  });
+
+  await pool.query(
+    `INSERT INTO indexer_quarantine
+       (ledger_seq, tx_hash, event_index, event_type, raw_xdr, error_message)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+     ON CONFLICT DO NOTHING`,
+    [
+      details.ledgerSeq,
+      details.txHash,
+      details.eventIndex,
+      details.eventType,
+      JSON.stringify(details.rawXdr),
+      details.error,
+    ],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -275,14 +362,21 @@ export class EventIndexer {
         if (events.length > 0) {
           let persisted = 0;
           let skipped = 0;
+          let quarantined = 0;
 
           for (const raw of events) {
-            const record = this.parseRpcEvent(raw);
-            if (!record) {
+            const parsed = parseRpcEvent(raw);
+            if (parsed.kind === 'ignored') {
               skipped++;
               continue;
             }
-            const stored = await this.storeEvent(record);
+            if (parsed.kind === 'invalid') {
+              await quarantineRpcEvent(parsed.details);
+              quarantined++;
+              skipped++;
+              continue;
+            }
+            const stored = await this.storeEvent(parsed.record);
             if (stored) persisted++;
             else skipped++;
           }
@@ -297,6 +391,7 @@ export class EventIndexer {
             total: events.length,
             persisted,
             skipped,
+            quarantined,
           });
         }
 
@@ -308,55 +403,6 @@ export class EventIndexer {
         });
         await sleep(ERROR_BACKOFF_MS);
       }
-    }
-  }
-
-  // ── Event parsing ────────────────────────────────────────────────────────
-
-  /**
-   * Convert a raw RPC event object into a ContractEventRecord.
-   * Returns null if the event is unknown or malformed.
-   */
-  private parseRpcEvent(raw: RpcEvent): ContractEventRecord | null {
-    try {
-      // Only process contract events
-      if (raw.type !== 'contract') return null;
-
-      const topics = raw.topic?.map((t) => t.xdr) ?? [];
-      const dataXdr = raw.value?.xdr ?? '';
-
-      const eventType = extractEventType(topics);
-      if (!eventType) return null;
-
-      const contributor =
-        eventType === 'maintainer_registered'
-          ? null
-          : extractContributorFromTopic(topics);
-
-      const { org_id, issue_id } = parseEventData(dataXdr, eventType);
-
-      // Parse the event index from the id string: "<ledger>-<tx_index>-<event_index>"
-      const idParts = raw.id.split('-');
-      const eventIndex = idParts.length >= 3 ? parseInt(idParts[2], 10) : 0;
-
-      // tx_hash may be undefined for some synthetic events; fall back to id
-      const txHash = raw.txHash ?? raw.id;
-
-      const ledger = parseInt(raw.ledger, 10);
-      const timestamp = new Date(raw.createdAt);
-
-      return {
-        event_type: eventType,
-        contributor,
-        org_id,
-        issue_id,
-        tx_hash: txHash,
-        event_index: eventIndex,
-        ledger,
-        timestamp,
-      };
-    } catch {
-      return null;
     }
   }
 

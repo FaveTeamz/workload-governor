@@ -12,10 +12,11 @@
  *   --batch-size=N    Events per RPC call (default: 200)
  */
 
-import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
+import { SorobanRpc } from '@stellar/stellar-sdk';
 import { pool } from '../db';
 import { logger } from '../logger';
-import type { ContractEventRecord, ContractEventType } from '../eventIndexer';
+import { parseRpcEvent, quarantineRpcEvent } from '../eventIndexer';
+import type { ContractEventRecord, RpcEvent } from '../eventIndexer';
 
 // ─── Configuration ────────────────────────────────────────────────────────
 
@@ -66,138 +67,6 @@ function parseArgs(): {
   }
 
   return { fromLedger, toLedger, resume, batchSize };
-}
-
-// ─── XDR Helpers ──────────────────────────────────────────────────────────
-
-/**
- * Safely decode an XDR base64 string to its native JS value.
- * Returns null if decoding fails.
- */
-function decodeScVal(xdrBase64: string): unknown {
-  try {
-    const scVal = stellarXdr.ScVal.fromXDR(xdrBase64, 'base64');
-    return scValToNative(scVal);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extract the symbol string from a Soroban ScVal topic (first topic slot).
- */
-function extractEventType(topics: string[]): ContractEventType | null {
-  if (topics.length === 0) return null;
-  const val = decodeScVal(topics[0]);
-  if (typeof val !== 'string') return null;
-  const known: ContractEventType[] = [
-    'applied',
-    'withdrew',
-    'assigned',
-    'completed',
-    'revoked',
-    'maintainer_registered',
-  ];
-  return known.includes(val as ContractEventType) ? (val as ContractEventType) : null;
-}
-
-/**
- * Extract the contributor address from a Soroban ScVal topic (second topic slot).
- */
-function extractContributorFromTopic(topics: string[]): string | null {
-  if (topics.length < 2) return null;
-  const val = decodeScVal(topics[1]);
-  if (typeof val === 'string') return val;
-  return null;
-}
-
-/**
- * Parse the data value tuple emitted with each event.
- */
-interface ParsedData {
-  org_id: string | null;
-  issue_id: number | null;
-}
-
-function parseEventData(dataXdr: string, eventType: ContractEventType): ParsedData {
-  const raw = decodeScVal(dataXdr);
-
-  if (eventType === 'maintainer_registered') {
-    return {
-      org_id: typeof raw === 'string' ? raw : null,
-      issue_id: null,
-    };
-  }
-
-  if (!Array.isArray(raw)) {
-    return { org_id: null, issue_id: null };
-  }
-
-  if (eventType === 'applied' || eventType === 'withdrew') {
-    const [orgId, issueId] = raw as [unknown, unknown];
-    return {
-      org_id: typeof orgId === 'string' ? orgId : null,
-      issue_id: typeof issueId === 'number' ? issueId : null,
-    };
-  }
-
-  const [, orgId, issueId] = raw as [unknown, unknown, unknown];
-  return {
-    org_id: typeof orgId === 'string' ? orgId : null,
-    issue_id: typeof issueId === 'number' ? issueId : null,
-  };
-}
-
-// ─── Event Parsing ────────────────────────────────────────────────────────
-
-interface RpcEvent {
-  type: string;
-  id: string;
-  pagingToken: string;
-  ledger: string;
-  createdAt: string;
-  txHash?: string;
-  topic: Array<{ type: string; xdr: string }>;
-  value: { type: string; xdr: string };
-}
-
-function parseRpcEvent(raw: RpcEvent): ContractEventRecord | null {
-  try {
-    if (raw.type !== 'contract') return null;
-
-    const topics = raw.topic?.map((t) => t.xdr) ?? [];
-    const dataXdr = raw.value?.xdr ?? '';
-
-    const eventType = extractEventType(topics);
-    if (!eventType) return null;
-
-    const contributor =
-      eventType === 'maintainer_registered'
-        ? null
-        : extractContributorFromTopic(topics);
-
-    const { org_id, issue_id } = parseEventData(dataXdr, eventType);
-
-    const idParts = raw.id.split('-');
-    const eventIndex = idParts.length >= 3 ? parseInt(idParts[2], 10) : 0;
-
-    const txHash = raw.txHash ?? raw.id;
-    const ledger = parseInt(raw.ledger, 10);
-    const timestamp = new Date(raw.createdAt);
-
-    return {
-      event_type: eventType,
-      contributor,
-      org_id,
-      issue_id,
-      tx_hash: txHash,
-      event_index: eventIndex,
-      ledger,
-      timestamp,
-    };
-  } catch {
-    return null;
-  }
 }
 
 // ─── Progress Tracking ────────────────────────────────────────────────────
@@ -289,8 +158,13 @@ async function backfill(fromLedger: number, toLedger: number, resume: boolean): 
       }
 
       for (const raw of events) {
-        const record = parseRpcEvent(raw);
-        if (!record) continue;
+        const parsed = parseRpcEvent(raw);
+        if (parsed.kind === 'ignored') continue;
+        if (parsed.kind === 'invalid') {
+          await quarantineRpcEvent(parsed.details);
+          continue;
+        }
+        const record: ContractEventRecord = parsed.record;
 
         // Stop if we've gone past the target ledger
         if (record.ledger > toLedger) {
@@ -314,7 +188,10 @@ async function backfill(fromLedger: number, toLedger: number, resume: boolean): 
       cursor = lastEvent.pagingToken ?? lastEvent.id;
 
       // Check if we've reached the target ledger
-      const maxEventLedger = Math.max(...events.map((e) => parseInt(e.ledger, 10)));
+      const maxEventLedger = events.reduce((maxLedger, event) => {
+        const ledger = Number(event.ledger);
+        return Number.isSafeInteger(ledger) ? Math.max(maxLedger, ledger) : maxLedger;
+      }, startLedger);
       if (maxEventLedger >= toLedger) {
         processedLedgers = totalLedgers;
       } else {
