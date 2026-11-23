@@ -16,16 +16,23 @@ import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
 import logger from "./logger.js";
+import { rateLimiterMiddleware, rateLimitHeadersMiddleware } from "./services/rateLimiter.js";
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
 const app = express();
 
+// Requests arrive through one trusted AWS load balancer hop in production.
+app.set("trust proxy", 1);
+
 // X-Ray segment middleware — must be first so all downstream handlers inherit
 // the active segment context. No-op when XRAY_ENABLED=false.
 app.use(xrayMiddleware());
 
+// Set headers before body parsing so malformed JSON responses include them too.
+app.use(rateLimitHeadersMiddleware);
 app.use(express.json());
+app.use(rateLimiterMiddleware);
 
 // Request logger middleware
 app.use((req, _res, next) => {

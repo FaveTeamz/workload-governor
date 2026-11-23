@@ -9,6 +9,20 @@ WorkloadGovernor exposes two interfaces:
 
 ---
 
+## HTTP rate limits
+
+The backend uses Redis token buckets shared by all instances. Limits are applied per request IP for public and webhook paths, and per Stellar address for `apply` and `withdraw` paths:
+
+| Request tier | Limit |
+|---|---:|
+| Public endpoints | 120 requests per minute |
+| `apply` and `withdraw` | 30 requests per minute |
+| Webhook paths | 300 requests per minute |
+
+Contributor identity is read from the request body's `contributor`, `address`, `stellarAddress`, or `stellar_address` field, or the `X-Stellar-Address` header; if no address is supplied, the request IP is used. Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. Exceeded limits return HTTP 429 with `Retry-After`. When Redis is unavailable, the service logs a warning and applies process-local limits until Redis recovers.
+
+---
+
 ## Contract ID placeholder
 
 All CLI examples below use `<CONTRACT_ID>` as a placeholder for the deployed contract address (e.g. `CCHKV2NFHBZE3WX5DMPCDJXE6YSWCUHLHAVD3BPQ`). Replace it with your actual contract ID for testnet or mainnet.
