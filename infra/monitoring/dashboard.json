@@ -224,6 +224,28 @@
         ],
         "region": "us-east-1"
       }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 31,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 5xx Error Rate Spike (5-min window)",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "stat": "Sum",
+        "metrics": [
+          ["WorkloadGovernor/Application", "Http5xxCount", {"label": "5xx Count (5-min)", "color": "#ef4444"}]
+        ],
+        "annotations": {
+          "horizontal": [{"label": "Alarm threshold", "value": 10, "color": "#ef4444"}]
+        },
+        "yAxis": {"left": {"min": 0}},
+        "region": "us-east-1"
+      }
     }
   ]
 }

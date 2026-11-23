@@ -29,6 +29,9 @@ env:
 # ─────────────────────────────────────────────────────────────────────────────
 # Job 1 — Build WASM
 # ─────────────────────────────────────────────────────────────────────────────
+permissions:
+  contents: read
+
 jobs:
   build-wasm:
     name: Build WASM
@@ -40,7 +43,7 @@ jobs:
         with:
           targets: wasm32v1-none
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -73,7 +76,7 @@ jobs:
         with:
           targets: wasm32v1-none
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry

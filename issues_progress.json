@@ -1,0 +1,1426 @@
+{
+  "created": [
+    {
+      "index": 1,
+      "number": 1216,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1216",
+      "title": "fix(contract): Eliminate missed mutants in contract upgrade verification",
+      "labels": [
+        "bug",
+        "smart-contract",
+        "testing"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 2,
+      "number": 1217,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1217",
+      "title": "fix(contract): Catch mutation regression in issue assignment duplicate validation",
+      "labels": [
+        "bug",
+        "smart-contract",
+        "testing"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 3,
+      "number": 1218,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1218",
+      "title": "fix(contract): Catch mutation regression in complete_assignment maintainer validation",
+      "labels": [
+        "bug",
+        "smart-contract",
+        "testing"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 4,
+      "number": 1219,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1219",
+      "title": "fix(contract): Catch mutation regression in revoke_assignment state checks",
+      "labels": [
+        "bug",
+        "smart-contract",
+        "testing"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 5,
+      "number": 1220,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1220",
+      "title": "fix(contract): Emit event on extend_application_ttl and fix mutation test gap",
+      "labels": [
+        "bug",
+        "smart-contract"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 6,
+      "number": 1221,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1221",
+      "title": "feat(contract): Add batch application withdrawal to reduce transaction fees",
+      "labels": [
+        "enhancement",
+        "smart-contract",
+        "performance"
+      ],
+      "category": "feat(contract)"
+    },
+    {
+      "index": 7,
+      "number": 1222,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1222",
+      "title": "refactor(contract): Optimize storage key footprint to reduce ledger write costs",
+      "labels": [
+        "enhancement",
+        "smart-contract",
+        "performance"
+      ],
+      "category": "refactor(contract)"
+    },
+    {
+      "index": 8,
+      "number": 1223,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1223",
+      "title": "feat(contract): Support configurable application TTL duration via admin governance",
+      "labels": [
+        "enhancement",
+        "smart-contract",
+        "architecture"
+      ],
+      "category": "feat(contract)"
+    },
+    {
+      "index": 9,
+      "number": 1224,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1224",
+      "title": "fix(contract): Validate organization ID characters and length limit",
+      "labels": [
+        "bug",
+        "smart-contract",
+        "security"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 10,
+      "number": 1225,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1225",
+      "title": "fix(contract): Prevent re-initialization race condition in contract deployments",
+      "labels": [
+        "bug",
+        "smart-contract",
+        "security"
+      ],
+      "category": "fix(contract)"
+    },
+    {
+      "index": 11,
+      "number": 1226,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1226",
+      "title": "test(contract): Add property-based invariant test for global application cap monotonic counter",
+      "labels": [
+        "testing",
+        "smart-contract"
+      ],
+      "category": "test(contract)"
+    },
+    {
+      "index": 12,
+      "number": 1227,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1227",
+      "title": "fix(backend): Handle unhandled client disconnects in rate-limiting middleware",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 13,
+      "number": 1228,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1228",
+      "title": "fix(backend): Remove stray src/EventHistoryTable.js from backend codebase",
+      "labels": [
+        "bug",
+        "backend",
+        "dx"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 14,
+      "number": 1229,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1229",
+      "title": "fix(backend): Release idempotency locks reliably on internal errors",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 15,
+      "number": 1230,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1230",
+      "title": "fix(backend): Sanitize and validate cursor pagination query parameters in org routes",
+      "labels": [
+        "bug",
+        "backend",
+        "security"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 16,
+      "number": 1231,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1231",
+      "title": "feat(backend): Implement redis-backed distributed token bucket rate limiter",
+      "labels": [
+        "enhancement",
+        "backend",
+        "performance"
+      ],
+      "category": "feat(backend)"
+    },
+    {
+      "index": 17,
+      "number": 1232,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1232",
+      "title": "fix(backend): Gracefully handle Redis disconnection and automatic reconnect with exponential backoff",
+      "labels": [
+        "bug",
+        "backend",
+        "operations"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 18,
+      "number": 1233,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1233",
+      "title": "feat(backend): Add streaming server-sent events (SSE) endpoint for live application updates",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "category": "feat(backend)"
+    },
+    {
+      "index": 19,
+      "number": 1234,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1234",
+      "title": "fix(backend): Add request correlation ID tracing across all HTTP handlers and logs",
+      "labels": [
+        "bug",
+        "backend",
+        "observability"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 20,
+      "number": 1235,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1235",
+      "title": "fix(backend): Validate organization ID format against strict slug regex in routes",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(backend)"
+    },
+    {
+      "index": 21,
+      "number": 1236,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1236",
+      "title": "refactor(backend): Replace morgan logger with unified pino HTTP middleware",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "category": "refactor(backend)"
+    },
+    {
+      "index": 22,
+      "number": 1237,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1237",
+      "title": "feat(backend): Add dead-letter queue (DLQ) for failed GitHub webhook deliveries",
+      "labels": [
+        "enhancement",
+        "backend",
+        "operations"
+      ],
+      "category": "feat(backend)"
+    },
+    {
+      "index": 23,
+      "number": 1238,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1238",
+      "title": "fix(indexer): Handle Horizon ledger reorganization and fork rollbacks cleanly",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(indexer)"
+    },
+    {
+      "index": 24,
+      "number": 1239,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1239",
+      "title": "fix(indexer): Prevent event deduplication race condition under concurrent ingestion workers",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(indexer)"
+    },
+    {
+      "index": 25,
+      "number": 1240,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1240",
+      "title": "feat(indexer): Implement batch insert for contract events in indexer service",
+      "labels": [
+        "enhancement",
+        "backend",
+        "performance"
+      ],
+      "category": "feat(indexer)"
+    },
+    {
+      "index": 26,
+      "number": 1241,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1241",
+      "title": "fix(indexer): Add circuit breaker for failing Soroban RPC endpoints",
+      "labels": [
+        "bug",
+        "backend",
+        "operations"
+      ],
+      "category": "fix(indexer)"
+    },
+    {
+      "index": 27,
+      "number": 1242,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1242",
+      "title": "feat(indexer): Support backfilling events from specific starting ledger range via CLI",
+      "labels": [
+        "enhancement",
+        "backend",
+        "dx"
+      ],
+      "category": "feat(indexer)"
+    },
+    {
+      "index": 28,
+      "number": 1243,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1243",
+      "title": "fix(indexer): Track and persist checkpoint metrics to Prometheus",
+      "labels": [
+        "bug",
+        "backend",
+        "observability"
+      ],
+      "category": "fix(indexer)"
+    },
+    {
+      "index": 29,
+      "number": 1244,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1244",
+      "title": "fix(indexer): Handle RPC rate-limiting (429) with jittered exponential backoff",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(indexer)"
+    },
+    {
+      "index": 30,
+      "number": 1245,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1245",
+      "title": "refactor(indexer): Decouple event decoding logic from database persistence transactions",
+      "labels": [
+        "enhancement",
+        "backend",
+        "architecture"
+      ],
+      "category": "refactor(indexer)"
+    },
+    {
+      "index": 31,
+      "number": 1246,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1246",
+      "title": "fix(indexer): Validate contract event schema against ABI before inserting into database",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(indexer)"
+    },
+    {
+      "index": 32,
+      "number": 1247,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1247",
+      "title": "test(indexer): Add integration test for checkpoint recovery after worker sudden termination",
+      "labels": [
+        "testing",
+        "backend"
+      ],
+      "category": "test(indexer)"
+    },
+    {
+      "index": 33,
+      "number": 1248,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1248",
+      "title": "fix(db): Add missing down-migration for 3_indexer_checkpoints.js",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(db)"
+    },
+    {
+      "index": 34,
+      "number": 1249,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1249",
+      "title": "fix(db): Add down-migration for 3_add_events_org_created_idx.js index",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(db)"
+    },
+    {
+      "index": 35,
+      "number": 1250,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1250",
+      "title": "perf(db): Add composite index for contributor applications query on (contributor, status, created_at)",
+      "labels": [
+        "performance",
+        "backend"
+      ],
+      "category": "perf(db)"
+    },
+    {
+      "index": 36,
+      "number": 1251,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1251",
+      "title": "fix(db): Configure connection pool idle timeout and connection reap intervals",
+      "labels": [
+        "bug",
+        "backend",
+        "operations"
+      ],
+      "category": "fix(db)"
+    },
+    {
+      "index": 37,
+      "number": 1252,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1252",
+      "title": "feat(db): Add migration for soft-deletion and archival of stale applications",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "category": "feat(db)"
+    },
+    {
+      "index": 38,
+      "number": 1253,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1253",
+      "title": "fix(db): Enforce foreign key constraints between assignments and applications",
+      "labels": [
+        "bug",
+        "backend"
+      ],
+      "category": "fix(db)"
+    },
+    {
+      "index": 39,
+      "number": 1254,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1254",
+      "title": "perf(db): Add EXPLAIN ANALYZE benchmark tests for all leaderboard query endpoints",
+      "labels": [
+        "performance",
+        "testing"
+      ],
+      "category": "perf(db)"
+    },
+    {
+      "index": 40,
+      "number": 1255,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1255",
+      "title": "fix(db): Ensure advisory locks are used during database migration runs",
+      "labels": [
+        "bug",
+        "backend",
+        "devops"
+      ],
+      "category": "fix(db)"
+    },
+    {
+      "index": 41,
+      "number": 1256,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1256",
+      "title": "feat(db): Add database health check probe verifying read and write replicas",
+      "labels": [
+        "enhancement",
+        "backend",
+        "operations"
+      ],
+      "category": "feat(db)"
+    },
+    {
+      "index": 42,
+      "number": 1257,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1257",
+      "title": "fix(frontend): Resolve React 18 and @types/react 19 version mismatch in package.json",
+      "labels": [
+        "bug",
+        "frontend"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 43,
+      "number": 1258,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1258",
+      "title": "fix(frontend): Deduplicate duplicate vitest dependency in frontend package.json",
+      "labels": [
+        "bug",
+        "frontend"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 44,
+      "number": 1259,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1259",
+      "title": "fix(frontend): Consolidate split components directory between frontend/components and frontend/src/components",
+      "labels": [
+        "bug",
+        "frontend",
+        "architecture"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 45,
+      "number": 1260,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1260",
+      "title": "fix(frontend): Consolidate Next.js and Vite configuration into single unified build pipeline",
+      "labels": [
+        "bug",
+        "frontend",
+        "architecture"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 46,
+      "number": 1261,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1261",
+      "title": "fix(frontend): Replace dummy maintainer auth mock with real Soroban contract view call",
+      "labels": [
+        "bug",
+        "frontend"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 47,
+      "number": 1262,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1262",
+      "title": "feat(frontend): Implement optimistic UI updates when applying for issues",
+      "labels": [
+        "enhancement",
+        "frontend",
+        "ui-ux"
+      ],
+      "category": "feat(frontend)"
+    },
+    {
+      "index": 48,
+      "number": 1263,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1263",
+      "title": "fix(frontend): Prevent infinite re-render loop in useWallet hook on network change",
+      "labels": [
+        "bug",
+        "frontend"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 49,
+      "number": 1264,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1264",
+      "title": "feat(frontend): Add local storage caching for organization bookmark list",
+      "labels": [
+        "enhancement",
+        "frontend"
+      ],
+      "category": "feat(frontend)"
+    },
+    {
+      "index": 50,
+      "number": 1265,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1265",
+      "title": "fix(frontend): Improve error boundary fallback UI with retry button and error telemetry",
+      "labels": [
+        "bug",
+        "frontend",
+        "ui-ux"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 51,
+      "number": 1266,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1266",
+      "title": "perf(frontend): Code-split route bundles and lazy-load heavy transaction modal components",
+      "labels": [
+        "performance",
+        "frontend"
+      ],
+      "category": "perf(frontend)"
+    },
+    {
+      "index": 52,
+      "number": 1267,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1267",
+      "title": "fix(frontend): Handle Freighter wallet disconnection gracefully across active browser tabs",
+      "labels": [
+        "bug",
+        "frontend"
+      ],
+      "category": "fix(frontend)"
+    },
+    {
+      "index": 53,
+      "number": 1268,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1268",
+      "title": "fix(design-system): Ensure Storybook builds cleanly with all autodocs tags enabled",
+      "labels": [
+        "bug",
+        "storybook",
+        "frontend"
+      ],
+      "category": "fix(design-system)"
+    },
+    {
+      "index": 54,
+      "number": 1269,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1269",
+      "title": "fix(ui-ux): Address WCAG 2.1 AA accessibility contrast failures on WorkloadGauge text",
+      "labels": [
+        "bug",
+        "ui-ux",
+        "accessibility"
+      ],
+      "category": "fix(ui-ux)"
+    },
+    {
+      "index": 55,
+      "number": 1270,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1270",
+      "title": "feat(design-system): Add keyboard navigation and focus trapping to TxConfirmModal",
+      "labels": [
+        "enhancement",
+        "design-system",
+        "accessibility"
+      ],
+      "category": "feat(design-system)"
+    },
+    {
+      "index": 56,
+      "number": 1271,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1271",
+      "title": "fix(ui-ux): Fix mobile viewport layout distortion on EventHistoryTable cards",
+      "labels": [
+        "bug",
+        "ui-ux",
+        "frontend"
+      ],
+      "category": "fix(ui-ux)"
+    },
+    {
+      "index": 57,
+      "number": 1272,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1272",
+      "title": "feat(design-system): Add dark mode / high contrast color tokens to tokens.json",
+      "labels": [
+        "enhancement",
+        "design-system"
+      ],
+      "category": "feat(design-system)"
+    },
+    {
+      "index": 58,
+      "number": 1273,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1273",
+      "title": "fix(ui-ux): Prevent layout shift during Skeleton screen loading transitions",
+      "labels": [
+        "bug",
+        "ui-ux",
+        "performance"
+      ],
+      "category": "fix(ui-ux)"
+    },
+    {
+      "index": 59,
+      "number": 1274,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1274",
+      "title": "feat(design-system): Implement animated progress ring for ContributorActivity streak badge",
+      "labels": [
+        "enhancement",
+        "design-system"
+      ],
+      "category": "feat(design-system)"
+    },
+    {
+      "index": 60,
+      "number": 1275,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1275",
+      "title": "fix(storybook): Fix broken Chromatic visual regression test baseline on Button stories",
+      "labels": [
+        "bug",
+        "storybook",
+        "ci"
+      ],
+      "category": "fix(storybook)"
+    },
+    {
+      "index": 61,
+      "number": 1276,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1276",
+      "title": "feat(ui-ux): Add toast notification queue with auto-dismiss countdown timer",
+      "labels": [
+        "enhancement",
+        "ui-ux"
+      ],
+      "category": "feat(ui-ux)"
+    },
+    {
+      "index": 62,
+      "number": 1277,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1277",
+      "title": "fix(ui-ux): Ensure all interactive icon buttons have explicit aria-label attributes",
+      "labels": [
+        "bug",
+        "ui-ux",
+        "accessibility"
+      ],
+      "category": "fix(ui-ux)"
+    },
+    {
+      "index": 63,
+      "number": 1278,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1278",
+      "title": "fix(testing): Raise mutation testing score from 75% to above 90% threshold",
+      "labels": [
+        "bug",
+        "testing"
+      ],
+      "category": "fix(testing)"
+    },
+    {
+      "index": 64,
+      "number": 1279,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1279",
+      "title": "test(fuzz): Add libFuzzer target for XDR signature payload decoding",
+      "labels": [
+        "testing",
+        "security"
+      ],
+      "category": "test(fuzz)"
+    },
+    {
+      "index": 65,
+      "number": 1280,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1280",
+      "title": "test(contract): Add fuzzing test for simultaneous global cap and org cap saturation",
+      "labels": [
+        "testing",
+        "smart-contract"
+      ],
+      "category": "test(contract)"
+    },
+    {
+      "index": 66,
+      "number": 1281,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1281",
+      "title": "fix(testing): Fix flaky Playwright e2e test in admin-maintainer-flow.spec.ts",
+      "labels": [
+        "bug",
+        "testing"
+      ],
+      "category": "fix(testing)"
+    },
+    {
+      "index": 67,
+      "number": 1282,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1282",
+      "title": "test(api): Add end-to-end integration tests for multi-org application limits",
+      "labels": [
+        "testing",
+        "backend"
+      ],
+      "category": "test(api)"
+    },
+    {
+      "index": 68,
+      "number": 1283,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1283",
+      "title": "fix(testing): Mock external Horizon RPC calls in vitest unit test suite",
+      "labels": [
+        "bug",
+        "testing"
+      ],
+      "category": "fix(testing)"
+    },
+    {
+      "index": 69,
+      "number": 1284,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1284",
+      "title": "test(load): Create k6 load testing script for high-concurrency issue application spikes",
+      "labels": [
+        "testing",
+        "performance"
+      ],
+      "category": "test(load)"
+    },
+    {
+      "index": 70,
+      "number": 1285,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1285",
+      "title": "fix(testing): Update obsolete snapshots in tests/unit/__snapshots__/snapshots.test.tsx.snap",
+      "labels": [
+        "bug",
+        "testing"
+      ],
+      "category": "fix(testing)"
+    },
+    {
+      "index": 71,
+      "number": 1286,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1286",
+      "title": "test(fuzz): Expand corpus generator with edge-case Stellar public key formats",
+      "labels": [
+        "testing",
+        "dx"
+      ],
+      "category": "test(fuzz)"
+    },
+    {
+      "index": 72,
+      "number": 1287,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1287",
+      "title": "test(backend): Add unit tests for API key authentication middleware edge cases",
+      "labels": [
+        "testing",
+        "backend"
+      ],
+      "category": "test(backend)"
+    },
+    {
+      "index": 73,
+      "number": 1288,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1288",
+      "title": "test(frontend): Add visual regression tests for responsive navigation bar across mobile and desktop",
+      "labels": [
+        "testing",
+        "frontend"
+      ],
+      "category": "test(frontend)"
+    },
+    {
+      "index": 74,
+      "number": 1289,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1289",
+      "title": "fix(ci): Update outdated GitHub Action versions flagged by Dependabot",
+      "labels": [
+        "bug",
+        "ci"
+      ],
+      "category": "fix(ci)"
+    },
+    {
+      "index": 75,
+      "number": 1290,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1290",
+      "title": "fix(ci): Cache cargo dependencies and sccache artifacts in contract-ci.yml",
+      "labels": [
+        "bug",
+        "ci",
+        "performance"
+      ],
+      "category": "fix(ci)"
+    },
+    {
+      "index": 76,
+      "number": 1291,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1291",
+      "title": "fix(ci): Fix frontend-ci.yml workflow path triggers and node version matrix",
+      "labels": [
+        "bug",
+        "ci"
+      ],
+      "category": "fix(ci)"
+    },
+    {
+      "index": 77,
+      "number": 1292,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1292",
+      "title": "feat(ci): Add automated OpenAPI documentation sync check to PR pull request workflow",
+      "labels": [
+        "enhancement",
+        "ci"
+      ],
+      "category": "feat(ci)"
+    },
+    {
+      "index": 78,
+      "number": 1293,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1293",
+      "title": "fix(ci): Set security permissions blocks with minimal required privileges on all workflows",
+      "labels": [
+        "bug",
+        "ci",
+        "security"
+      ],
+      "category": "fix(ci)"
+    },
+    {
+      "index": 79,
+      "number": 1294,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1294",
+      "title": "feat(ci): Add automatic contract WASM byte size check on pull requests",
+      "labels": [
+        "enhancement",
+        "ci",
+        "smart-contract"
+      ],
+      "category": "feat(ci)"
+    },
+    {
+      "index": 80,
+      "number": 1295,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1295",
+      "title": "fix(ci): Ensure semantic-release workflow only publishes tags on main branch merges",
+      "labels": [
+        "bug",
+        "ci"
+      ],
+      "category": "fix(ci)"
+    },
+    {
+      "index": 81,
+      "number": 1296,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1296",
+      "title": "feat(ci): Add automated security vulnerability scanner for container images in docker-publish.yml",
+      "labels": [
+        "enhancement",
+        "ci",
+        "security"
+      ],
+      "category": "feat(ci)"
+    },
+    {
+      "index": 82,
+      "number": 1297,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1297",
+      "title": "fix(ci): Fix concurrency cancellation rules in PR workflows to prevent wasteful runner usage",
+      "labels": [
+        "bug",
+        "ci"
+      ],
+      "category": "fix(ci)"
+    },
+    {
+      "index": 83,
+      "number": 1298,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1298",
+      "title": "feat(ci): Add automated changelog validation check on pull requests",
+      "labels": [
+        "enhancement",
+        "ci"
+      ],
+      "category": "feat(ci)"
+    },
+    {
+      "index": 84,
+      "number": 1299,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1299",
+      "title": "fix(helm): Rename vesting-backend chart to workload-governor and update metadata",
+      "labels": [
+        "bug",
+        "devops"
+      ],
+      "category": "fix(helm)"
+    },
+    {
+      "index": 85,
+      "number": 1300,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1300",
+      "title": "fix(docker): Enforce non-root user in production Dockerfile",
+      "labels": [
+        "bug",
+        "devops",
+        "security"
+      ],
+      "category": "fix(docker)"
+    },
+    {
+      "index": 86,
+      "number": 1301,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1301",
+      "title": "feat(docker): Add multi-stage Docker build separating dev dependencies from runtime image",
+      "labels": [
+        "enhancement",
+        "devops",
+        "performance"
+      ],
+      "category": "feat(docker)"
+    },
+    {
+      "index": 87,
+      "number": 1302,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1302",
+      "title": "fix(terraform): Enable customer-managed KMS key encryption on RDS PostgreSQL database",
+      "labels": [
+        "bug",
+        "devops",
+        "security"
+      ],
+      "category": "fix(terraform)"
+    },
+    {
+      "index": 88,
+      "number": 1303,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1303",
+      "title": "feat(helm): Add HorizontalPodAutoscaler (HPA) resource metrics and scaling thresholds",
+      "labels": [
+        "enhancement",
+        "devops"
+      ],
+      "category": "feat(helm)"
+    },
+    {
+      "index": 89,
+      "number": 1304,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1304",
+      "title": "fix(terraform): Enable S3 bucket versioning and public access block on state bucket",
+      "labels": [
+        "bug",
+        "devops",
+        "security"
+      ],
+      "category": "fix(terraform)"
+    },
+    {
+      "index": 90,
+      "number": 1305,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1305",
+      "title": "feat(devops): Add healthcheck instruction to Dockerfile and docker-compose.yml",
+      "labels": [
+        "enhancement",
+        "devops"
+      ],
+      "category": "feat(devops)"
+    },
+    {
+      "index": 91,
+      "number": 1306,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1306",
+      "title": "fix(terraform): Configure DynamoDB state locking table for Terraform remote backend",
+      "labels": [
+        "bug",
+        "devops"
+      ],
+      "category": "fix(terraform)"
+    },
+    {
+      "index": 92,
+      "number": 1307,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1307",
+      "title": "feat(helm): Support external secret management via HashiCorp Vault / AWS Secrets Manager",
+      "labels": [
+        "enhancement",
+        "devops",
+        "security"
+      ],
+      "category": "feat(helm)"
+    },
+    {
+      "index": 93,
+      "number": 1308,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1308",
+      "title": "fix(docker): Optimize .dockerignore to exclude git history, tests, and temporary artifacts",
+      "labels": [
+        "bug",
+        "devops"
+      ],
+      "category": "fix(docker)"
+    },
+    {
+      "index": 94,
+      "number": 1309,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1309",
+      "title": "fix(security): Enforce authorization checks in all admin consistency remediation endpoints",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 95,
+      "number": 1310,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1310",
+      "title": "fix(security): Add rate limiting and abuse prevention on public /verify-xdr endpoint",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 96,
+      "number": 1311,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1311",
+      "title": "fix(security): Prevent timing attacks on API key comparison in api-key-auth middleware",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 97,
+      "number": 1312,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1312",
+      "title": "feat(security): Implement replay attack prevention using nonce or ledger sequence validation",
+      "labels": [
+        "enhancement",
+        "security"
+      ],
+      "category": "feat(security)"
+    },
+    {
+      "index": 98,
+      "number": 1313,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1313",
+      "title": "fix(security): Update Semgrep ruleset in .semgrep.yml to detect hardcoded Stellar secret keys",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 99,
+      "number": 1314,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1314",
+      "title": "fix(security): Enforce Content Security Policy (CSP) headers in backend response middleware",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 100,
+      "number": 1315,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1315",
+      "title": "feat(security): Add audit log signature verification in auditService",
+      "labels": [
+        "enhancement",
+        "security"
+      ],
+      "category": "feat(security)"
+    },
+    {
+      "index": 101,
+      "number": 1316,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1316",
+      "title": "fix(security): Sanitize user input in GitHub issue webhook handler to prevent SSRF",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 102,
+      "number": 1317,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1317",
+      "title": "feat(security): Add automated secret rotation runbook for Stellar admin keypair",
+      "labels": [
+        "documentation",
+        "security"
+      ],
+      "category": "feat(security)"
+    },
+    {
+      "index": 103,
+      "number": 1318,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1318",
+      "title": "fix(security): Enforce HTTPS-only transport and HSTS headers in production environment",
+      "labels": [
+        "bug",
+        "security"
+      ],
+      "category": "fix(security)"
+    },
+    {
+      "index": 104,
+      "number": 1319,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1319",
+      "title": "feat(observability): Export Soroban RPC latency histogram metrics in src/metrics.ts",
+      "labels": [
+        "enhancement",
+        "backend",
+        "observability"
+      ],
+      "category": "feat(observability)"
+    },
+    {
+      "index": 105,
+      "number": 1320,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1320",
+      "title": "fix(observability): Track contract TTL extension count and remaining ledgers as Prometheus gauge",
+      "labels": [
+        "bug",
+        "observability"
+      ],
+      "category": "fix(observability)"
+    },
+    {
+      "index": 106,
+      "number": 1321,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1321",
+      "title": "feat(observability): Add OpenTelemetry tracing spans to database query execution",
+      "labels": [
+        "enhancement",
+        "observability"
+      ],
+      "category": "feat(observability)"
+    },
+    {
+      "index": 107,
+      "number": 1322,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1322",
+      "title": "fix(observability): Add error rate alerts and threshold definitions in Prometheus alerting rules",
+      "labels": [
+        "bug",
+        "observability",
+        "operations"
+      ],
+      "category": "fix(observability)"
+    },
+    {
+      "index": 108,
+      "number": 1323,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1323",
+      "title": "feat(observability): Implement structured JSON logging for all audit trail events",
+      "labels": [
+        "enhancement",
+        "observability"
+      ],
+      "category": "feat(observability)"
+    },
+    {
+      "index": 109,
+      "number": 1324,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1324",
+      "title": "fix(observability): Export active connection count gauge from PostgreSQL pool",
+      "labels": [
+        "bug",
+        "observability"
+      ],
+      "category": "fix(observability)"
+    },
+    {
+      "index": 110,
+      "number": 1325,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1325",
+      "title": "feat(observability): Add Grafana dashboard definitions for WorkloadGovernor service KPIs",
+      "labels": [
+        "enhancement",
+        "observability",
+        "devops"
+      ],
+      "category": "feat(observability)"
+    },
+    {
+      "index": 111,
+      "number": 1326,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1326",
+      "title": "fix(observability): Mask sensitive contributor metadata and auth tokens in log outputs",
+      "labels": [
+        "bug",
+        "observability",
+        "security"
+      ],
+      "category": "fix(observability)"
+    },
+    {
+      "index": 112,
+      "number": 1327,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1327",
+      "title": "feat(observability): Export webhook delivery success and failure metrics",
+      "labels": [
+        "enhancement",
+        "observability"
+      ],
+      "category": "feat(observability)"
+    },
+    {
+      "index": 113,
+      "number": 1328,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1328",
+      "title": "fix(observability): Configure OpenTelemetry collector trace sampling rate for production",
+      "labels": [
+        "bug",
+        "observability"
+      ],
+      "category": "fix(observability)"
+    },
+    {
+      "index": 114,
+      "number": 1329,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1329",
+      "title": "fix(docs): Synchronize openapi.yaml with undocumented endpoints in docs/api-reference.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 115,
+      "number": 1330,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1330",
+      "title": "fix(docs): Document GET /api/contributors endpoint in docs/api-reference.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 116,
+      "number": 1331,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1331",
+      "title": "fix(docs): Document GET /api/events endpoint in docs/api-reference.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 117,
+      "number": 1332,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1332",
+      "title": "fix(docs): Document GET /api/v1/leaderboard endpoint in docs/api-reference.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 118,
+      "number": 1333,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1333",
+      "title": "fix(docs): Document GET /api/v1/audit/logs endpoint in docs/api-reference.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 119,
+      "number": 1334,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1334",
+      "title": "fix(docs): Document GET /docs Swagger endpoint in docs/api-reference.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 120,
+      "number": 1335,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1335",
+      "title": "feat(dx): Add pre-commit git hooks using shell script for automated lint and format checks",
+      "labels": [
+        "enhancement",
+        "dx"
+      ],
+      "category": "feat(dx)"
+    },
+    {
+      "index": 121,
+      "number": 1336,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1336",
+      "title": "fix(docs): Correct outdated Stellar SDK and Soroban CLI version references in README.md",
+      "labels": [
+        "bug",
+        "documentation"
+      ],
+      "category": "fix(docs)"
+    },
+    {
+      "index": 122,
+      "number": 1337,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1337",
+      "title": "docs(adr): Add Architecture Decision Record (ADR) for event indexer deduplication strategy",
+      "labels": [
+        "documentation",
+        "architecture"
+      ],
+      "category": "docs(adr)"
+    },
+    {
+      "index": 123,
+      "number": 1338,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1338",
+      "title": "fix(dx): Provide mock environment seed script for local database testing",
+      "labels": [
+        "enhancement",
+        "dx"
+      ],
+      "category": "fix(dx)"
+    },
+    {
+      "index": 124,
+      "number": 1339,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1339",
+      "title": "docs(runbooks): Add detailed runbook for Stellar network protocol upgrade handling",
+      "labels": [
+        "documentation",
+        "operations"
+      ],
+      "category": "docs(runbooks)"
+    },
+    {
+      "index": 125,
+      "number": 1340,
+      "html_url": "https://github.com/FaveTeamz/workload-governor/issues/1340",
+      "title": "fix(dx): Fix devcontainer configuration to install Node.js and Rust toolchain automatically",
+      "labels": [
+        "bug",
+        "dx"
+      ],
+      "category": "fix(dx)"
+    }
+  ]
+}

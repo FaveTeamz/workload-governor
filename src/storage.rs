@@ -7,13 +7,8 @@
 //!                      so the contract itself never gets archived.
 //!
 //! All key prefixes are distinct `symbol_short!` values — zero collision guarantee:
-//!   "g_apps", "app", "admin", "maint", "o_asgn", "asgn"
-//!   "mig_v2"  (migration flag, #602)
-//!   "ms_thr"  (multi-sig threshold, #603)
-//!   "ms_sig"  (multi-sig signers, #603)
-//!   "prop"    (governance proposal entry, #600)
-//!   "vote"    (governance vote entry, #600)
-//!   "g_cap"   (dynamic global cap override, #600)
+//!   "g", "a", "d", "m", "o", "s", "v", "t", "u", "p", "w", "c", "r", "n"
+//!   The one-character symbols minimize XDR string padding while remaining unique.
 
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec, symbol_short};
 
@@ -23,9 +18,13 @@ use crate::errors::ContractError;
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Ledgers for ~24 h at 5 s/ledger. Set to match the current Wave duration.
+/// Default application-entry TTL target: ~24 h at 5 s/ledger.
 /// Must be within [APP_TTL_MIN, APP_TTL_MAX].
 pub const APP_TTL_LEDGERS: u32 = 17_280;
+
+/// Default threshold and target for application-entry TTL extensions.
+pub const APP_TTL_THRESHOLD_LEDGERS: u32 = APP_TTL_LEDGERS;
+pub const APP_TTL_EXTEND_TO_LEDGERS: u32 = APP_TTL_LEDGERS;
 
 /// Minimum valid value for `APP_TTL_LEDGERS`.
 pub const APP_TTL_MIN: u32 = 1;
@@ -76,11 +75,11 @@ pub(crate) fn require_initialized(env: &Env, error: &ContractError) {
 // Temporary storage — Global Application Count
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("g_apps"), contributor: Address)`
+// Key: `(symbol_short!("g"), contributor: Address)`
 // Value: `u32`
 
 fn global_app_count_key(contributor: &Address) -> (Symbol, Address) {
-    (symbol_short!("g_apps"), contributor.clone())
+    (symbol_short!("g"), contributor.clone())
 }
 
 /// Returns the contributor's current global pending-application count (0 if absent/expired).
@@ -106,14 +105,18 @@ pub(crate) fn extend_global_app_count_ttl(env: &Env, contributor: &Address) {
     let key = global_app_count_key(contributor);
     env.storage()
         .temporary()
-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+        .extend_ttl(
+            &key,
+            get_app_ttl_threshold_ledgers(env),
+            get_app_ttl_extend_to_ledgers(env),
+        );
 }
 
 // ---------------------------------------------------------------------------
 // Temporary storage — Per-Issue Application Entry
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("app"), contributor: Address, org_id: Symbol, issue_id: u32)`
+// Key: `(symbol_short!("a"), contributor: Address, org_id: Symbol, issue_id: u32)`
 // Value: `bool` (presence sentinel — always `true`)
 
 fn app_entry_key(
@@ -122,7 +125,7 @@ fn app_entry_key(
     issue_id: u32,
 ) -> (Symbol, Address, Symbol, u32) {
     (
-        symbol_short!("app"),
+        symbol_short!("a"),
         contributor.clone(),
         org_id.clone(),
         issue_id,
@@ -175,18 +178,22 @@ pub(crate) fn extend_app_entry_ttl(
     let key = app_entry_key(contributor, org_id, issue_id);
     env.storage()
         .temporary()
-        .extend_ttl(&key, APP_TTL_LEDGERS, APP_TTL_LEDGERS);
+        .extend_ttl(
+            &key,
+            get_app_ttl_threshold_ledgers(env),
+            get_app_ttl_extend_to_ledgers(env),
+        );
 }
 
 // ---------------------------------------------------------------------------
 // Persistent storage — Admin
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("admin")`
+// Key: `symbol_short!("d")`
 // Value: `Address`
 
 fn admin_key() -> Symbol {
-    symbol_short!("admin")
+    symbol_short!("d")
 }
 
 /// Returns the stored admin address, or `None` if not yet initialized.
@@ -200,14 +207,52 @@ pub(crate) fn set_admin(env: &Env, admin: &Address) {
 }
 
 // ---------------------------------------------------------------------------
+// Persistent storage — Application TTL configuration
+// ---------------------------------------------------------------------------
+
+fn app_ttl_threshold_key() -> Symbol {
+    symbol_short!("app_thr")
+}
+
+fn app_ttl_extend_to_key() -> Symbol {
+    symbol_short!("app_ext")
+}
+
+/// Returns the configured application TTL extension threshold, or its default.
+pub(crate) fn get_app_ttl_threshold_ledgers(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&app_ttl_threshold_key())
+        .unwrap_or(APP_TTL_THRESHOLD_LEDGERS)
+}
+
+/// Returns the configured application TTL extension target, or its default.
+pub(crate) fn get_app_ttl_extend_to_ledgers(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&app_ttl_extend_to_key())
+        .unwrap_or(APP_TTL_EXTEND_TO_LEDGERS)
+}
+
+/// Stores the application TTL extension threshold and target.
+pub(crate) fn set_app_ttl_config(env: &Env, threshold_ledgers: u32, extend_to_ledgers: u32) {
+    env.storage()
+        .persistent()
+        .set(&app_ttl_threshold_key(), &threshold_ledgers);
+    env.storage()
+        .persistent()
+        .set(&app_ttl_extend_to_key(), &extend_to_ledgers);
+}
+
+// ---------------------------------------------------------------------------
 // Persistent storage — Maintainer Registration
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("maint"), maintainer: Address, org_id: Symbol)`
+// Key: `(symbol_short!("m"), maintainer: Address, org_id: Symbol)`
 // Value: `bool`
 
 fn maintainer_key(maintainer: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {
-    (symbol_short!("maint"), maintainer.clone(), org_id.clone())
+    (symbol_short!("m"), maintainer.clone(), org_id.clone())
 }
 
 /// Returns `true` if `maintainer` is registered for `org_id`.
@@ -229,11 +274,11 @@ pub(crate) fn set_maintainer(env: &Env, maintainer: &Address, org_id: &Symbol) {
 // Persistent storage — Org Assignment Count
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("o_asgn"), contributor: Address, org_id: Symbol)`
+// Key: `(symbol_short!("o"), contributor: Address, org_id: Symbol)`
 // Value: `u32`
 
 fn org_assignment_count_key(contributor: &Address, org_id: &Symbol) -> (Symbol, Address, Symbol) {
-    (symbol_short!("o_asgn"), contributor.clone(), org_id.clone())
+    (symbol_short!("o"), contributor.clone(), org_id.clone())
 }
 
 /// Returns the contributor's active assignment count for `org_id` (0 if absent).
@@ -271,7 +316,7 @@ pub(crate) fn remove_org_assignment_count(
 // Persistent storage — Active Assignment Entry
 // ---------------------------------------------------------------------------
 //
-// Key: `(symbol_short!("asgn"), org_id: Symbol, issue_id: u32, contributor: Address)`
+// Key: `(symbol_short!("s"), org_id: Symbol, issue_id: u32, contributor: Address)`
 // Value: `bool` (presence sentinel — always `true`)
 
 fn assignment_entry_key(
@@ -280,7 +325,7 @@ fn assignment_entry_key(
     contributor: &Address,
 ) -> (Symbol, Symbol, u32, Address) {
     (
-        symbol_short!("asgn"),
+        symbol_short!("s"),
         org_id.clone(),
         issue_id,
         contributor.clone(),
@@ -324,14 +369,57 @@ pub(crate) fn remove_assignment(
 }
 
 // ---------------------------------------------------------------------------
+// #826 — SC-001: Persistent assignment TTL extension constants and helpers
+// ---------------------------------------------------------------------------
+
+/// Minimum ledger threshold before a persistent assignment entry triggers TTL
+/// extension. ~7 days at 5 s/ledger — half of MAX to avoid redundant extends.
+pub const MIN_PERSISTENT_EXTEND_TTL: u32 = 120_960;
+
+/// Target TTL for persistent assignment entries after extension.
+/// ~30 days at 5 s/ledger, aligned with Stellar Wave network parameters.
+pub const MAX_PERSISTENT_EXTEND_TTL: u32 = 518_400;
+
+/// Extends the TTL of a persistent assignment entry.
+///
+/// Called whenever an assignment is read, validated, or transitioned so that
+/// active assignment records never expire under Soroban state rent rules.
+pub(crate) fn extend_assignment_ttl(
+    env: &Env,
+    org_id: &Symbol,
+    issue_id: u32,
+    contributor: &Address,
+) {
+    let key = assignment_entry_key(org_id, issue_id, contributor);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, MIN_PERSISTENT_EXTEND_TTL, MAX_PERSISTENT_EXTEND_TTL);
+}
+
+/// Extends the TTL of a persistent org assignment count entry.
+///
+/// Called on the same paths as `extend_assignment_ttl` to keep the count
+/// and the entry entries in sync.
+pub(crate) fn extend_org_assignment_count_ttl(
+    env: &Env,
+    contributor: &Address,
+    org_id: &Symbol,
+) {
+    let key = org_assignment_count_key(contributor, org_id);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, MIN_PERSISTENT_EXTEND_TTL, MAX_PERSISTENT_EXTEND_TTL);
+}
+
+// ---------------------------------------------------------------------------
 // #602 — Persistent storage: Migration flag
 // ---------------------------------------------------------------------------
 //
-// Key: `symbol_short!("mig_v2")`
+// Key: `symbol_short!("v")`
 // Value: `bool` (true once migration has run)
 
 fn migration_v2_flag_key() -> Symbol {
-    symbol_short!("mig_v2")
+    symbol_short!("v")
 }
 
 /// Returns `true` if the v1→v2 migration has already been executed.
@@ -389,15 +477,15 @@ pub(crate) fn remove_org_assignment_count_v1(
 // #603 — Persistent storage: Multi-sig threshold and signers
 // ---------------------------------------------------------------------------
 //
-// Threshold key: `symbol_short!("ms_thr")` → `u32`
-// Signers key:   `symbol_short!("ms_sig")` → `Vec<Address>`
+// Threshold key: `symbol_short!("t")` → `u32`
+// Signers key:   `symbol_short!("u")` → `Vec<Address>`
 
 fn multisig_threshold_key() -> Symbol {
-    symbol_short!("ms_thr")
+    symbol_short!("t")
 }
 
 fn multisig_signers_key() -> Symbol {
-    symbol_short!("ms_sig")
+    symbol_short!("u")
 }
 
 /// Returns the current multi-sig threshold (0 if not configured — single-admin mode).
@@ -434,10 +522,10 @@ pub(crate) fn set_multisig_signers(env: &Env, signers: &Vec<Address>) {
 // #600 — Persistent storage: Governance proposals
 // ---------------------------------------------------------------------------
 //
-// Proposal entry key: `(symbol_short!("prop"), proposal_id: u32)` → `GovernanceProposal`
-// Vote entry key:     `(symbol_short!("vote"), proposal_id: u32, voter: Address)` → `bool`
-// Global cap override:`symbol_short!("g_cap")` → `u32`
-// Proposal counter:   `symbol_short!("p_ctr")` → `u32`
+// Proposal entry key: `(symbol_short!("p"), proposal_id: u32)` → `GovernanceProposal`
+// Vote entry key:     `(symbol_short!("w"), proposal_id: u32, voter: Address)` → `bool`
+// Global cap override:`symbol_short!("c")` → `u32`
+// Proposal counter:   `symbol_short!("r")` → `u32`
 
 use soroban_sdk::contracttype;
 
@@ -460,19 +548,19 @@ pub struct GovernanceProposal {
 }
 
 fn proposal_key(proposal_id: u32) -> (Symbol, u32) {
-    (symbol_short!("prop"), proposal_id)
+    (symbol_short!("p"), proposal_id)
 }
 
 fn vote_key(proposal_id: u32, voter: &Address) -> (Symbol, u32, Address) {
-    (symbol_short!("vote"), proposal_id, voter.clone())
+    (symbol_short!("w"), proposal_id, voter.clone())
 }
 
 fn proposal_counter_key() -> Symbol {
-    symbol_short!("p_ctr")
+    symbol_short!("r")
 }
 
 fn global_cap_override_key() -> Symbol {
-    symbol_short!("g_cap")
+    symbol_short!("c")
 }
 
 /// Returns the next proposal ID and increments the counter.
@@ -530,4 +618,40 @@ pub(crate) fn set_global_cap_override(env: &Env, new_cap: u32) {
     env.storage()
         .persistent()
         .set(&global_cap_override_key(), &new_cap);
+}
+
+// ---------------------------------------------------------------------------
+// #828 SC-003 — Persistent storage: Admin action nonce
+// ---------------------------------------------------------------------------
+//
+// Key: `symbol_short!("n")`  →  `u32`
+//
+// A monotonic counter incremented on every privileged governance action.
+// Including the current nonce in the auth digest that `require_admin_auth`
+// verifies prevents authorisation replay across ledger forks or re-orgs.
+
+fn admin_nonce_key() -> Symbol {
+    symbol_short!("n")
+}
+
+/// Returns the current admin nonce (0 before the first privileged call).
+pub(crate) fn get_admin_nonce(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get::<_, u32>(&admin_nonce_key())
+        .unwrap_or(0)
+}
+
+/// Increments and persists the admin nonce, returning the **new** value.
+///
+/// Called at the start of every privileged admin operation so that:
+/// 1. The digest includes the pre-increment nonce value (replay protection).
+/// 2. Any previously collected signatures are invalidated for future calls.
+pub(crate) fn increment_admin_nonce(env: &Env) -> u32 {
+    let current = get_admin_nonce(env);
+    let next = current.saturating_add(1);
+    env.storage()
+        .persistent()
+        .set(&admin_nonce_key(), &next);
+    next
 }

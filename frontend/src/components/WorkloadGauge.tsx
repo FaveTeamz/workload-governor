@@ -1,4 +1,5 @@
 import React from 'react';
+import './WorkloadGauge.css';
 
 export interface WorkloadGaugeProps {
   /** Current usage count. Undefined/null is treated as 0. */

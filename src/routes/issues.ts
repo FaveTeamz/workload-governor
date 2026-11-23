@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { getCached, setCached } from '../cache';
-import { validateQuery, validateBody } from '../middleware/validation';
+import { validateQuery, validateBody, validateOrgIdParam } from '../middleware/validation';
 import { issueQuerySchema, bulkRegisterIssuesSchema, BulkRegisterIssuesInput } from '../schemas/issues';
 
 const router = Router();
+
+router.param('org_id', validateOrgIdParam);
 
 interface IssuesListParams {
   org_id?: string;

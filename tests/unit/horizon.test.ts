@@ -77,9 +77,9 @@ const MOCK_TX = {
 };
 
 /** Build a retryable HTTP error */
-function httpError(status: number): Error {
+function httpError(status: number, headers: Record<string, string> = {}): Error {
   return Object.assign(new Error(`HTTP ${status}`), {
-    response: { status },
+    response: { status, headers },
   });
 }
 
@@ -136,6 +136,31 @@ describe("HorizonService — baseline (existing coverage)", () => {
       const result = await service.fetchAccount(ACCOUNT_ID);
       expect(result.id).toBe(ACCOUNT_ID);
       expect(mockAccountCall).toHaveBeenCalledTimes(2);
+    });
+
+    it("honors Retry-After and adds full-jitter exponential backoff for 429", async () => {
+      jest.useFakeTimers();
+      const random = jest.spyOn(Math, "random").mockReturnValue(0.5);
+      mockAccountCall
+        .mockRejectedValueOnce(httpError(429, { "Retry-After": "2" }))
+        .mockResolvedValueOnce(MOCK_ACCOUNT);
+      const retryingService = new HorizonService("https://horizon-testnet.stellar.org", {
+        maxRetries: 2,
+        initialDelayMs: 100,
+        maxDelayMs: 1000,
+      });
+
+      const request = retryingService.fetchAccount(ACCOUNT_ID);
+      try {
+        await jest.advanceTimersByTimeAsync(2050);
+        const result = await request;
+
+        expect(result.id).toBe(ACCOUNT_ID);
+        expect(mockAccountCall).toHaveBeenCalledTimes(2);
+      } finally {
+        random.mockRestore();
+        jest.useRealTimers();
+      }
     });
 
     it("throws non-retryable errors immediately", async () => {

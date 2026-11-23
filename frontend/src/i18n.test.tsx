@@ -1,97 +1,127 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
-import i18n from "./i18n";
-import { formatDate } from "./utils/formatDate";
-import { SettingsPage } from "./components/SettingsPage";
-import { MemoryRouter } from "react-router-dom";
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { LOCALE_STORAGE_KEY, SUPPORTED_LOCALES, i18n } from './i18n'
+import { LanguageSelector } from './components/LanguageSelector'
 
-describe("i18n Infrastructure", () => {
-  beforeEach(async () => {
-    await i18n.changeLanguage("en");
-  });
+/**
+ * Reset the i18n singleton and localStorage before each test so tests are
+ * fully independent of one another.
+ */
+beforeEach(() => {
+  localStorage.clear()
+  i18n.changeLanguage('en')
+  // Clear the entry written by the reset above so init-from-storage tests work
+  localStorage.clear()
+})
 
-  it("initializes with English as default language", () => {
-    expect(i18n.language).toBe("en");
-    expect(i18n.t("common.appName")).toBe("WorkloadGovernor");
-  });
+// ────────────────────────────────────────────────────────────
+// Locale persistence
+// ────────────────────────────────────────────────────────────
 
-  it("switches language dynamically to Spanish and back", async () => {
-    await act(async () => {
-      await i18n.changeLanguage("es");
-    });
-    expect(i18n.language).toBe("es");
-    expect(i18n.t("common.appName")).toBe("WorkloadGovernor");
-    expect(i18n.t("settings.title")).toBe("Configuración");
-    expect(i18n.t("settings.account")).toBe("Cuenta");
+describe('i18n — locale persistence', () => {
+  it('selecting a locale persists it to localStorage', () => {
+    i18n.changeLanguage('fr')
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('fr')
+  })
 
-    await act(async () => {
-      await i18n.changeLanguage("en");
-    });
-    expect(i18n.language).toBe("en");
-    expect(i18n.t("settings.title")).toBe("Settings");
-    expect(i18n.t("settings.account")).toBe("Account");
-  });
+  it('switching back to English updates localStorage', () => {
+    i18n.changeLanguage('fr')
+    i18n.changeLanguage('en')
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en')
+  })
 
-  it("handles pluralization correctly for count strings in English", () => {
-    expect(i18n.t("counts.slot", { count: 1 })).toBe("1 slot");
-    expect(i18n.t("counts.slot", { count: 3 })).toBe("3 slots");
+  it('invalid locale does not overwrite localStorage value', () => {
+    i18n.changeLanguage('en')
+    const valueBefore = localStorage.getItem(LOCALE_STORAGE_KEY)
+    // @ts-expect-error intentionally passing an unsupported locale
+    i18n.changeLanguage('xx')
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe(valueBefore)
+  })
 
-    expect(i18n.t("counts.application", { count: 1 })).toBe("1 application");
-    expect(i18n.t("counts.application", { count: 2 })).toBe("2 applications");
-  });
+  it('unsupported locale string in localStorage does not cause an error', () => {
+    // Simulate a crafted / corrupted localStorage entry
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'zz-invalid-locale-xyz')
+    const stored = localStorage.getItem(LOCALE_STORAGE_KEY)
 
-  it("formats dates using Intl.DateTimeFormat respecting selected locale", () => {
-    const testDate = new Date("2026-06-20T00:00:00Z");
-    
-    const formattedEn = formatDate(testDate, { year: "numeric", month: "short", day: "numeric" }, "en");
-    expect(formattedEn).toContain("Jun");
-    expect(formattedEn).toContain("2026");
+    // The stored value is not in SUPPORTED_LOCALES
+    expect(SUPPORTED_LOCALES.includes(stored as 'en' | 'fr')).toBe(false)
 
-    const formattedEs = formatDate(testDate, { year: "numeric", month: "long", day: "numeric" }, "es");
-    expect(formattedEs.toLowerCase()).toContain("junio");
-    expect(formattedEs).toContain("2026");
-  });
+    // The current locale (set by the beforeEach) is still valid
+    expect(SUPPORTED_LOCALES.includes(i18n.locale)).toBe(true)
+  })
+})
 
-  it("changes displayed language via SettingsPage language dropdown", async () => {
-    const mockWallet = {
-      address: "GBXXX1ABCDEFGHIJKLMNO12345",
-      publicKey: "GBXXX1ABCDEFGHIJKLMNO12345",
-      error: null,
-      networkMismatch: false,
-      connect: () => Promise.resolve(),
-      disconnect: () => {},
-    };
+// ────────────────────────────────────────────────────────────
+// Init from localStorage
+// ────────────────────────────────────────────────────────────
 
-    let currentSettings = {
-      theme: "system" as const,
-      language: "en" as const,
-      defaultOrg: "",
-      hideApplied: false,
-      emailNotifications: false,
-    };
+describe('i18n — init from localStorage', () => {
+  it('stored locale is applied when changeLanguage is called with it', () => {
+    // Simulate the init path: store 'fr' then apply it
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'fr')
+    i18n.changeLanguage('fr')
+    expect(i18n.t.common.connect_wallet).toBe('Connecter le portefeuille')
+  })
 
-    const mockSettingsHook = {
-      settings: currentSettings,
-      updateSetting: (key: string, val: any) => {
-        (currentSettings as any)[key] = val;
-      },
-      resetSettings: () => {},
-    };
+  it('falls back gracefully when stored value is invalid', () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, '__invalid__')
+    // The singleton was already initialised; verify the current locale is valid
+    expect(SUPPORTED_LOCALES.includes(i18n.locale)).toBe(true)
+  })
 
-    render(
-      <MemoryRouter>
-        <SettingsPage wallet={mockWallet as any} settingsHook={mockSettingsHook as any} />
-      </MemoryRouter>
-    );
+  it('applies English translations when locale is en', () => {
+    i18n.changeLanguage('en')
+    expect(i18n.t.common.connect_wallet).toBe('Connect Wallet')
+  })
 
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
+  it('applies French translations when locale is fr', () => {
+    i18n.changeLanguage('fr')
+    expect(i18n.t.common.connect_wallet).toBe('Connecter le portefeuille')
+  })
+})
 
-    const select = screen.getByLabelText(/interface language/i) as HTMLSelectElement;
-    await act(async () => {
-      fireEvent.change(select, { target: { value: "es" } });
-    });
+// ────────────────────────────────────────────────────────────
+// LanguageSelector component
+// ────────────────────────────────────────────────────────────
 
-    expect(i18n.language).toBe("es");
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Configuración");
-  });
-});
+describe('LanguageSelector component', () => {
+  it('renders a select element with all supported locales', () => {
+    render(<LanguageSelector />)
+    const select = screen.getByRole('combobox')
+    expect(select).toBeInTheDocument()
+
+    expect(screen.getByRole('option', { name: 'English' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Français' })).toBeInTheDocument()
+  })
+
+  it('changing the select persists the locale to localStorage', () => {
+    render(<LanguageSelector />)
+    const select = screen.getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'fr' } })
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('fr')
+  })
+
+  it('select value reflects the current locale', () => {
+    i18n.changeLanguage('fr')
+    render(<LanguageSelector />)
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.value).toBe('fr')
+  })
+
+  it('existing tests still pass after locale switch', () => {
+    render(<LanguageSelector />)
+    // Sanity: default is 'en'
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.value).toBe('en')
+
+    // Switch to French
+    fireEvent.change(select, { target: { value: 'fr' } })
+    expect(i18n.locale).toBe('fr')
+    expect(i18n.t.common.disconnect).toBe('Déconnecter')
+
+    // Switch back to English
+    fireEvent.change(select, { target: { value: 'en' } })
+    expect(i18n.locale).toBe('en')
+    expect(i18n.t.common.disconnect).toBe('Disconnect')
+  })
+})

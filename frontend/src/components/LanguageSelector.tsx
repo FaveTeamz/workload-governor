@@ -1,63 +1,49 @@
-/**
- * LanguageSelector — dropdown for switching the active locale.
- *
- * Renders a <select> element listing all supported languages.
- * Persists the selection to localStorage under the key "wg_locale".
- *
- * Accessibility:
- * - Uses a native <select> for full keyboard support out of the box.
- * - Associates label via htmlFor / id pair.
- * - aria-label fallback for icon-only contexts.
- */
+import { useState, useEffect } from 'react'
+import { i18n, SUPPORTED_LOCALES } from '../i18n'
+import type { SupportedLocale } from '../i18n'
 
-import React, { useCallback } from "react";
-import { useTranslation } from "react-i18next";
-import { SUPPORTED_LANGUAGES, type SupportedLocale } from "../i18n";
-
-interface LanguageSelectorProps {
-  /** Whether to show the label text inline (false = icon-only mode, still accessible). */
-  showLabel?: boolean;
-  /** Additional CSS class names. */
-  className?: string;
+const LOCALE_LABELS: Record<SupportedLocale, string> = {
+  en: 'English',
+  fr: 'Français',
 }
 
-export function LanguageSelector({
-  showLabel = true,
-  className = "",
-}: LanguageSelectorProps) {
-  const { i18n, t } = useTranslation();
+/**
+ * A `<select>` that lets users switch the UI language.
+ *
+ * The selected locale is persisted to localStorage via `i18n.changeLanguage()`
+ * and survives page reloads.
+ */
+export function LanguageSelector() {
+  const [locale, setLocale] = useState<SupportedLocale>(i18n.locale)
 
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const locale = e.target.value as SupportedLocale;
-      i18n.changeLanguage(locale);
-      localStorage.setItem("wg_locale", locale);
-    },
-    [i18n]
-  );
+  useEffect(() => {
+    // Keep local state in sync when the locale changes elsewhere
+    return i18n.subscribe(setLocale)
+  }, [])
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value as SupportedLocale
+    i18n.changeLanguage(next)
+  }
 
   return (
-    <div className={`language-selector ${className}`.trim()}>
-      {showLabel && (
-        <label htmlFor="language-select" className="language-selector__label">
-          {t("settings.select_language")}
-        </label>
-      )}
+    <div className="language-selector">
+      <label htmlFor="locale-select" className="language-selector__label">
+        {i18n.t.common.language}
+      </label>
       <select
-        id="language-select"
-        value={i18n.language}
-        onChange={handleChange}
-        aria-label={t("settings.select_language")}
+        id="locale-select"
         className="language-selector__select"
+        value={locale}
+        onChange={handleChange}
+        aria-label="Select language"
       >
-        {SUPPORTED_LANGUAGES.map(({ code, nativeLabel }) => (
-          <option key={code} value={code}>
-            {nativeLabel}
+        {SUPPORTED_LOCALES.map((l) => (
+          <option key={l} value={l}>
+            {LOCALE_LABELS[l]}
           </option>
         ))}
       </select>
     </div>
-  );
+  )
 }
-
-export default LanguageSelector;

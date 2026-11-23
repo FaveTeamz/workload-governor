@@ -20,6 +20,9 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+permissions:
+  contents: read
+
 jobs:
   # ── 1. Lint ─────────────────────────────────────────────────────────────
   lint:
@@ -38,8 +41,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-lint-
@@ -62,19 +67,25 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+          targets: wasm32v1-none
 
       - name: Restore cargo cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Build WASM for upgrade tests
+        run: cargo build --target wasm32v1-none --release
 
       - name: Run tests with coverage
         run: |
@@ -88,6 +99,67 @@ jobs:
 
       - name: Upload mutation report
         if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: mutants.out/mutation-report.html
+          retention-days: 7
+
+  # ── 3. Build WASM & Size Budget Assertion ───────────────────────────────
+  build-wasm:
+    name: Build WASM & Size Budget Check
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable with wasm targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      - name: Build WASM binaries
+        run: |
+          cargo build --target wasm32v1-none --release
+          cargo build --target wasm32-unknown-unknown --release
+
+      - name: Assert WASM Binary Size Budget (< 64 KB)
+        run: |
+          bash scripts/test-contract.sh --check-size
+          WASM_SIZE=$(wc -c < target/wasm32v1-none/release/workload_governor.wasm)
+          echo "WASM_SIZE=$WASM_SIZE" >> $GITHUB_ENV
+          echo "### 📦 Contract WASM Size Check" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Size (bytes) | Max Limit (bytes) | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| wasm32v1-none | $WASM_SIZE | 65536 (64 KB) | ✅ PASS |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post WASM size breakdown comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const size = process.env.WASM_SIZE;
+            const body = `### 📦 Contract WASM Size Breakdown\n- **Binary size**: ${size} bytes\n- **Soroban Network Limit**: 65,536 bytes (64 KB)\n- **Status**: ${size <= 65536 ? '✅ Within budget' : '❌ Exceeds limit'}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Upload unoptimized WASM
         uses: actions/upload-artifact@v7
         with:
           name: workload-governor-wasm-unoptimized
@@ -110,15 +182,17 @@ jobs:
         with:
           targets: wasm32v1-none
 
-      - name: Restore cargo cache
+      - name: Restore cargo and target cache
         uses: actions/cache@v4
         with:
           path: |
-            mutants-report.txt
-            mutants.out/mutation-report.html
-            mutants.out/outcomes.json
-            mutants.out/caught.txt
-            mutants.out/missed.txt
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
+            target
+          key: ${{ runner.os }}-cargo-wasm-opt-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-opt-
 
       - name: Optimize WASM
         run: |
@@ -169,8 +243,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-fuzz-
@@ -197,7 +273,7 @@ jobs:
 
   # ── 6. Dependency Audit (cargo audit + cargo deny) ───────────────────────
   #
-  # Closes issue #605: supply-chain audit before mainnet deployment.
+  # Closes issue #605, #874: supply-chain audit before mainnet deployment.
   # Runs on every PR and push to main (not on the nightly fuzz schedule).
   audit:
     name: Dependency Audit
@@ -206,59 +282,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Restore cargo cache
-        uses: actions/cache@v4
+      - name: Check cargo-deny (licenses, bans, advisories)
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-audit-
+          command: check
+          arguments: licenses bans advisories
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
-      - name: Run cargo audit
-        run: |
-          echo "## 🔒 Dependency Vulnerability Audit" >> "$GITHUB_STEP_SUMMARY"
-          if cargo audit --json 2>&1 | tee audit-output.json; then
-            echo "✅ No vulnerabilities found" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "❌ Vulnerabilities detected — see audit-output.json" >> "$GITHUB_STEP_SUMMARY"
-            cat audit-output.json
-            exit 1
-          fi
-
-      - name: Upload audit report
-        if: always()
-        uses: actions/upload-artifact@v7
+      - name: Check RustSec advisories (cargo-audit)
+        uses: rustsec/audit-check@v2
         with:
-          name: cargo-audit-report-${{ github.run_id }}
-          path: audit-output.json
-          retention-days: 30
-
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-
-      - name: Run cargo deny check
-        run: |
-          echo "## 🔍 License & Duplicate Dependency Check" >> "$GITHUB_STEP_SUMMARY"
-          if cargo deny check 2>&1 | tee deny-output.txt; then
-            echo "✅ All license and duplicate checks passed" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "❌ cargo deny found issues — see deny-output.txt" >> "$GITHUB_STEP_SUMMARY"
-            cat deny-output.txt
-            exit 1
-          fi
-
-      - name: Upload deny report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: cargo-deny-report-${{ github.run_id }}
-          path: deny-output.txt
-          retention-days: 30
+          token: ${{ secrets.GITHUB_TOKEN }}

@@ -78,45 +78,45 @@ header()  { echo; echo "=== $* ==="; }
 # ---------------------------------------------------------------------------
 
 # K1 — Global App Count
-# ("g_apps", contributor: Address)
+# ("g", contributor: Address)
 encode_key_global_app_count() {
     local contributor="$1"
-    echo "tmp|2|g_apps|Symbol:Address|g_apps:${contributor}"
+    echo "tmp|2|g|Symbol:Address|g:${contributor}"
 }
 
 # K2 — App Entry
-# ("app", contributor: Address, org_id: Symbol, issue_id: u32)
+# ("a", contributor: Address, org_id: Symbol, issue_id: u32)
 encode_key_app_entry() {
     local contributor="$1" org_id="$2" issue_id="$3"
-    echo "tmp|4|app|Symbol:Address:Symbol:u32|app:${contributor}:${org_id}:${issue_id}"
+    echo "tmp|4|a|Symbol:Address:Symbol:u32|a:${contributor}:${org_id}:${issue_id}"
 }
 
 # K3 — Admin
-# "admin"  (scalar Symbol — NOT a tuple)
+# "d"  (scalar Symbol — NOT a tuple)
 encode_key_admin() {
     # Arity=0 signals a scalar (no tuple wrapping); PREFIX_SYM carries the full key
-    echo "per|0|admin|Symbol|admin"
+    echo "per|0|d|Symbol|d"
 }
 
 # K4 — Maintainer
-# ("maint", maintainer: Address, org_id: Symbol)
+# ("m", maintainer: Address, org_id: Symbol)
 encode_key_maintainer() {
     local maintainer="$1" org_id="$2"
-    echo "per|3|maint|Symbol:Address:Symbol|maint:${maintainer}:${org_id}"
+    echo "per|3|m|Symbol:Address:Symbol|m:${maintainer}:${org_id}"
 }
 
 # K5 — Org Assignment Count
-# ("o_asgn", contributor: Address, org_id: Symbol)
+# ("o", contributor: Address, org_id: Symbol)
 encode_key_org_assignment_count() {
     local contributor="$1" org_id="$2"
-    echo "per|3|o_asgn|Symbol:Address:Symbol|o_asgn:${contributor}:${org_id}"
+    echo "per|3|o|Symbol:Address:Symbol|o:${contributor}:${org_id}"
 }
 
 # K6 — Assignment Entry
-# ("asgn", org_id: Symbol, issue_id: u32, contributor: Address)
+# ("s", org_id: Symbol, issue_id: u32, contributor: Address)
 encode_key_assignment_entry() {
     local org_id="$1" issue_id="$2" contributor="$3"
-    echo "per|4|asgn|Symbol:Symbol:u32:Address|asgn:${org_id}:${issue_id}:${contributor}"
+    echo "per|4|s|Symbol:Symbol:u32:Address|s:${org_id}:${issue_id}:${contributor}"
 }
 
 # ---------------------------------------------------------------------------
@@ -271,6 +271,104 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Dynamic extraction and 64-bit Soroban Symbol hash collision detection
+# ---------------------------------------------------------------------------
+header "Soroban Symbol 64-bit Hash & Namespace Collision Detection"
+
+STORAGE_RS="${1:-src/storage.rs}"
+
+if [ ! -f "$STORAGE_RS" ]; then
+    fail "storage.rs not found at $STORAGE_RS"
+    exit 1
+fi
+
+# Extract all symbol_short!("...") occurrences from src/storage.rs
+EXTRACTED_SYMBOLS=$(grep -oE 'symbol_short!\("([^"]+)"\)' "$STORAGE_RS" | sed -E 's/symbol_short!\("([^"]+)"\)/\1/' | sort -u)
+
+info "Extracted storage symbols from $STORAGE_RS:"
+for sym in $EXTRACTED_SYMBOLS; do
+    echo "  - $sym"
+done
+
+# Function to compute 64-bit Soroban Symbol encoding
+# Soroban 6-bit per char encoding:
+#   '_'       = 1
+#   '0'..'9'  = 2..11
+#   'A'..'Z'  = 12..37
+#   'a'..'z'  = 38..63
+encode_soroban_symbol_64() {
+    local str="$1"
+    python3 -c "
+s = '$str'
+if len(s) > 10:
+    raise ValueError(f'Symbol too long: {s}')
+val = 0
+for ch in s:
+    if ch == '_':
+        c = 1
+    elif '0' <= ch <= '9':
+        c = ord(ch) - ord('0') + 2
+    elif 'A' <= ch <= 'Z':
+        c = ord(ch) - ord('A') + 12
+    elif 'a' <= ch <= 'z':
+        c = ord(ch) - ord('a') + 38
+    else:
+        raise ValueError(f'Invalid symbol character {ch}')
+    val = (val << 6) | c
+print(hex(val))
+"
+}
+
+# Check for Symbol 64-bit encoding collisions
+declare -A seen_sym_hashes
+SYMBOL_COLLISION_COUNT=0
+
+for sym in $EXTRACTED_SYMBOLS; do
+    sym_hash=$(encode_soroban_symbol_64 "$sym")
+    info "Symbol '$sym' -> 64-bit encoding: $sym_hash"
+    if [[ -v seen_sym_hashes["$sym_hash"] ]]; then
+        fail "SYMBOL 64-BIT HASH COLLISION DETECTED:"
+        fail "  Symbol: '$sym' collides with '${seen_sym_hashes[$sym_hash]}'"
+        fail "  Hash: $sym_hash"
+        (( SYMBOL_COLLISION_COUNT++ )) || true
+    else
+        seen_sym_hashes["$sym_hash"]="$sym"
+    fi
+done
+
+# Namespace overlap check: assert distinct byte prefixes for application, assignment, and admin keys
+header "Namespace Overlap & Prefix Assertion"
+APP_KEYS=("g" "a")
+ASGN_KEYS=("s" "o")
+ADMIN_KEYS=("d")
+
+for k in "${APP_KEYS[@]}"; do
+    for a in "${ADMIN_KEYS[@]}"; do
+        if [ "$k" = "$a" ]; then
+            fail "Namespace overlap between app key '$k' and admin key '$a'"
+            (( SYMBOL_COLLISION_COUNT++ )) || true
+        fi
+    done
+    for s in "${ASGN_KEYS[@]}"; do
+        if [ "$k" = "$s" ]; then
+            fail "Namespace overlap between app key '$k' and assignment key '$s'"
+            (( SYMBOL_COLLISION_COUNT++ )) || true
+        fi
+    done
+done
+
+for s in "${ASGN_KEYS[@]}"; do
+    for a in "${ADMIN_KEYS[@]}"; do
+        if [ "$s" = "$a" ]; then
+            fail "Namespace overlap between assignment key '$s' and admin key '$a'"
+            (( SYMBOL_COLLISION_COUNT++ )) || true
+        fi
+    done
+done
+
+ok "Application, assignment, and admin key namespaces are strictly partitioned."
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
@@ -278,15 +376,16 @@ header "Summary"
 
 TOTAL_KEYS=${#all_keys[@]}
 UNIQUE_KEYS=${#seen_keys[@]}
-TOTAL_COLLISIONS=$(( COLLISION_COUNT + CROSS_COLLISION_COUNT ))
+TOTAL_COLLISIONS=$(( COLLISION_COUNT + CROSS_COLLISION_COUNT + SYMBOL_COLLISION_COUNT ))
 
 echo "Total key instances generated : $TOTAL_KEYS"
 echo "Unique encodings              : $UNIQUE_KEYS"
+echo "Storage symbols parsed        : ${#seen_sym_hashes[@]}"
 echo "Collisions detected           : $TOTAL_COLLISIONS"
 echo
 
 if [[ "$TOTAL_COLLISIONS" -eq 0 ]]; then
-    ok "All key encodings are unique — zero collision guarantee holds."
+    ok "All key encodings and Soroban Symbol hashes are unique — zero collision guarantee holds."
     exit 0
 else
     fail "$TOTAL_COLLISIONS collision(s) detected. Storage key design is broken."

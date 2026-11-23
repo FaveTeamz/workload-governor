@@ -40,6 +40,41 @@ ADMIN_ADDR=$(stellar keys address "$ADMIN_KEY")
 MAINTAINER_ADDR=$(stellar keys address "$MAINTAINER_KEY")
 CONTRIBUTOR_ADDR=$(stellar keys address "$CONTRIBUTOR_KEY")
 
+# ---------------------------------------------------------------------------
+# Pre-flight Horizon RPC and Deployer Account checks (Issue #882)
+# ---------------------------------------------------------------------------
+HORIZON_URL="${HORIZON_URL:-https://horizon-testnet.stellar.org}"
+
+echo "==> [Pre-flight] Verifying Horizon RPC health at ${HORIZON_URL}..."
+if ! curl -sf --max-time 10 "${HORIZON_URL}/health" > /dev/null; then
+  echo "ERROR: Horizon RPC health endpoint failed at ${HORIZON_URL}/health." >&2
+  echo "Diagnostics: Stellar Testnet may be degraded or unreachable." >&2
+  exit 2
+fi
+
+if ! curl -sf --max-time 10 "${HORIZON_URL}/fee_stats" > /dev/null; then
+  echo "ERROR: Horizon RPC fee_stats endpoint failed at ${HORIZON_URL}/fee_stats." >&2
+  echo "Diagnostics: Stellar Testnet fee endpoint is not responding." >&2
+  exit 2
+fi
+
+echo "==> [Pre-flight] Verifying deployer account balance (>= 50 XLM)..."
+ACCOUNT_JSON=$(curl -sf --max-time 10 "${HORIZON_URL}/accounts/${ADMIN_ADDR}" || true)
+if [[ -n "$ACCOUNT_JSON" ]]; then
+  BALANCE=$(echo "$ACCOUNT_JSON" | grep -o '"asset_type":"native","balance":"[^"]*"' | head -n1 | cut -d'"' -f6)
+  if [[ -n "$BALANCE" ]]; then
+    INT_BALANCE=${BALANCE%%.*}
+    if [[ "$INT_BALANCE" -lt 50 ]]; then
+      echo "ERROR: Deployer account ${ADMIN_ADDR} has insufficient balance: ${BALANCE} XLM (< 50 XLM)." >&2
+      echo "Diagnostics: Request funds from Friendbot: curl -s 'https://friendbot.stellar.org?addr=${ADMIN_ADDR}'" >&2
+      exit 2
+    fi
+    echo "    Deployer account balance confirmed: ${BALANCE} XLM"
+  fi
+else
+  echo "WARNING: Could not fetch account balance for ${ADMIN_ADDR} — may be new/unfunded." >&2
+fi
+
 ORG_ID="smoke-org-1"
 ISSUE_1="smoke-issue-1"
 ISSUE_2="smoke-issue-2"
