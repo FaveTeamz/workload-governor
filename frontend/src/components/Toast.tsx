@@ -125,9 +125,42 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error("useToast must be used inside ToastProvider");
+    return {
+      toasts: [],
+      add: () => {},
+      remove: () => {},
+    };
   }
   return context;
+}
+
+export function ToastContainer({
+  toasts,
+  onRemove,
+}: {
+  toasts?: Toast[];
+  onRemove?: (id: number) => void;
+}) {
+  if (!toasts || toasts.length === 0) return null;
+  return (
+    <div className="toast-container" aria-label="Notifications">
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast toast-${toast.type}`}>
+          <span>{toast.message}</span>
+          {onRemove && (
+            <button
+              className="toast-close"
+              onClick={() => onRemove(toast.id)}
+              aria-label="Dismiss notification"
+              type="button"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ToastItem({

@@ -1,9 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for responsive layout tests (issue #318).
+ * Playwright configuration for responsive and visual regression tests.
+ * Configured with 0.2% max pixel difference threshold (issue #1288).
  *
- * Tests run against five viewport widths:
+ * Viewport widths tested:
  *  375px  — iPhone SE (mobile small)
  *  414px  — iPhone XR (mobile large)
  *  768px  — iPad (tablet breakpoint)
@@ -12,15 +13,17 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
+  testIgnore: '**/unit/**',
+  timeout: 60000,
   fullyParallel: true,
   retries: process.env['CI'] ? 2 : 0,
   reporter: process.env['CI'] ? 'github' : 'list',
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.02,
+      maxDiffPixelRatio: 0.002,
     },
   },
-  snapshotPathTemplate: '{testDir}/drawer.spec.ts-snapshots/{arg}{ext}',
+  snapshotPathTemplate: '{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}{ext}',
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
@@ -28,6 +31,12 @@ export default defineConfig({
   },
 
   projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+    },
     {
       name: 'mobile-375',
       use: {

@@ -17,7 +17,7 @@
  *   - Onboarding never shown again after completion or skip
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { KeyboardEvent } from "react";
 
 export const STORAGE_KEY = "wg_onboarding_done";
@@ -325,22 +325,13 @@ export function OnboardingWizard({ onComplete }: Props) {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// GetStartedButton — shown in header for users who previously completed
+// Replay / Get Started buttons
 // ---------------------------------------------------------------------------
-
-/**
- * Shown in the app header when onboarding has already been completed.
- * Allows the user to replay the wizard.
- */
-export function GetStartedButton() {
-  const [dismissed, setDismissed] = useState(
-    () => !!localStorage.getItem(STORAGE_KEY)
-  );
 
 interface ReplayButtonProps {
   label?: string;
