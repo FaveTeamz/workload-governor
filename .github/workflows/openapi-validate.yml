@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'src/routes/**'
+      - 'src/app.ts'
       - 'openapi.yaml'
       - 'docs/api-reference.md'
       - 'scripts/check-api-docs-sync.js'

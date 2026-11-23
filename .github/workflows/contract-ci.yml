@@ -32,6 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Configure sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
       - name: Install Rust stable with fmt + clippy
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -62,6 +70,14 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Configure sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Install Rust stable with llvm-tools
         uses: dtolnay/rust-toolchain@stable
@@ -112,6 +128,14 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Configure sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Install Rust stable with wasm targets
         uses: dtolnay/rust-toolchain@stable
@@ -235,6 +259,14 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Configure sccache
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
