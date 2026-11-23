@@ -9,6 +9,85 @@ WorkloadGovernor exposes two interfaces:
 
 ---
 
+## REST API — Streaming
+
+### `GET /api/events/stream` — Server-Sent Events (SSE)
+
+Establishes a persistent HTTP connection over which the server pushes live contract events to the client in real time. Replaces the need for clients to poll `GET /api/orgs/:orgId/issues`.
+
+**Query parameters**
+
+| Parameter     | Type   | Required | Description |
+|---------------|--------|----------|-------------|
+| `orgId`       | string | No       | Filter events to a specific organisation. Omit to receive events for all orgs. |
+| `contributor` | string | No       | Filter events to a specific contributor Stellar address (G…). |
+
+**Response headers**
+
+```
+Content-Type: text/event-stream; charset=utf-8
+Cache-Control: no-cache
+Connection: keep-alive
+X-Accel-Buffering: no
+```
+
+**Wire format**
+
+Events are delivered in the standard SSE text format:
+
+```
+event: application_created
+data: {"orgId":"stellar","issueId":42,"contributor":"GABCDEF...","createdAt":"2024-01-15T10:00:00.000Z"}
+
+```
+
+Keepalive comments are sent every 25 seconds to prevent reverse-proxy idle disconnects:
+
+```
+: heartbeat
+
+```
+
+**Event types**
+
+| Event type             | Description |
+|------------------------|-------------|
+| `application_created`  | A contributor applied for an issue. |
+| `issue_assigned`       | A maintainer assigned an issue to a contributor. |
+| `assignment_completed` | An assignment was marked complete. |
+| `assignment_revoked`   | An assignment was revoked by a maintainer. |
+| `keepalive`            | Periodic heartbeat — no data payload. |
+
+**Connection limits**
+
+A maximum of **5 concurrent SSE connections per IP address** is enforced. Connections beyond this limit receive an `error` event with `{"error":"Too many concurrent SSE connections from this IP"}` and the stream is closed.
+
+**Example — JavaScript EventSource**
+
+```js
+const stream = new EventSource(
+  "/api/events/stream?orgId=stellar&contributor=GABCDEF..."
+);
+
+stream.addEventListener("application_created", (e) => {
+  const payload = JSON.parse(e.data);
+  console.log("New application:", payload);
+});
+
+stream.addEventListener("error", () => {
+  console.warn("SSE connection lost — EventSource will reconnect automatically");
+});
+```
+
+**Example — curl**
+
+```bash
+curl -N "https://api.example.com/api/events/stream?orgId=stellar"
+```
+
+---
+
+
 ## Contract ID placeholder
 
 All CLI examples below use `<CONTRACT_ID>` as a placeholder for the deployed contract address (e.g. `CCHKV2NFHBZE3WX5DMPCDJXE6YSWCUHLHAVD3BPQ`). Replace it with your actual contract ID for testnet or mainnet.

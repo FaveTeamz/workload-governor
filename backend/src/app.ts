@@ -13,6 +13,7 @@
 
 import express from "express";
 import { healthHandler } from "./health.js";
+import { sseHandler } from "./routes/events.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
 import logger from "./logger.js";
@@ -35,6 +36,9 @@ app.use((req, _res, next) => {
 
 // Health check
 app.get("/api/health", healthHandler);
+
+// Server-Sent Events stream — live contract event push (#1233)
+app.get("/api/events/stream", sseHandler);
 
 // 404 fallback
 app.use((_req, res) => {
