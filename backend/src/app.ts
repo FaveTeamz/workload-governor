@@ -2,10 +2,14 @@
  * app.ts — WorkloadGovernor backend service entry point
  *
  * Mounts:
- *   GET /api/health  — health check (#309)
+ *   GET /api/health        — health check (#309)
  *
  * Starts:
  *   - Scheduler for TTL extension + GitHub sync (#311, #312)
+ *
+ * Logging:
+ *   - pino-http middleware replaces morgan for structured JSON HTTP access logs
+ *     with header redaction and status-code-based log levels (#1236)
  *
  * Tracing:
  *   - AWS X-Ray segment opened per request via xrayMiddleware (#634)
@@ -15,7 +19,7 @@ import express from "express";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
-import logger from "./logger.js";
+import logger, { pinoHttpMiddleware } from "./logger.js";
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
@@ -25,13 +29,12 @@ const app = express();
 // the active segment context. No-op when XRAY_ENABLED=false.
 app.use(xrayMiddleware());
 
-app.use(express.json());
+// Structured HTTP access logging via pino-http (#1236).
+// Replaces morgan — emits uniform JSON with method, URL, status, responseTime
+// and redacted sensitive headers on every request.
+app.use(pinoHttpMiddleware);
 
-// Request logger middleware
-app.use((req, _res, next) => {
-  logger.debug({ method: req.method, path: req.path }, "Incoming request");
-  next();
-});
+app.use(express.json());
 
 // Health check
 app.get("/api/health", healthHandler);
