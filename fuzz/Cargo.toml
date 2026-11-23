@@ -47,6 +47,7 @@ path = "fuzz_targets/fuzz_admin_threshold.rs"
 test = false
 doc = false
 
+# ── Issue #1279 — XDR signature payload decoding ──────────────────────────────
 [[bin]]
 name = "fuzz_xdr_envelope"
 path = "fuzz_targets/fuzz_xdr_envelope.rs"
