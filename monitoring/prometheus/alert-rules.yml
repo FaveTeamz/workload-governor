@@ -1,0 +1,11 @@
+groups:
+  - name: workload-governor-alerts
+    rules:
+      - alert: HighHttp5xxErrorRate
+        expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP 5xx error rate detected"
+          description: "HTTP 5xx error rate has exceeded 1% of total requests over a 5-minute rolling window (current: {{ $value | humanizePercentage }})."

@@ -5,6 +5,24 @@
 
 set -euo pipefail
 
+# Ensure Cargo and Node/npm are present in PATH for subshell execution
+export CARGO_HOME="${CARGO_HOME:-/usr/local/cargo}"
+export RUSTUP_HOME="${RUSTUP_HOME:-/usr/local/rustup}"
+export NVM_DIR="${NVM_DIR:-/usr/local/share/nvm}"
+export PATH="/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:${HOME}/.cargo/bin:${PATH}"
+
+if [ -s "${NVM_DIR}/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  source "${NVM_DIR}/nvm.sh"
+fi
+
+# Ensure user shell configuration files retain standard PATH
+for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+  if [ -f "${rc}" ] && ! grep -q "/usr/local/cargo/bin" "${rc}"; then
+    echo 'export PATH="/usr/local/cargo/bin:/usr/local/share/nvm/current/bin:$PATH"' >> "${rc}"
+  fi
+done
+
 echo "==> [post-create] Setting up WorkloadGovernor dev environment…"
 
 # ── Rust toolchain ──────────────────────────────────────────────────────────

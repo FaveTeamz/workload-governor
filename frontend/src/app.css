@@ -165,19 +165,54 @@ a, button, input, select, textarea {
   white-space: nowrap;
 }
 
-@media (max-width: 600px) {
+/* ============================================================
+   NavBar drawer — mobile slide-in from left (issue #555)
+   ============================================================ */
+
+/* Drawer: always in the DOM, offscreen by default */
+.navbar__drawer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  width: 280px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  z-index: 200;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease, visibility 0.3s ease;
+  visibility: hidden;
+  display: none; /* hidden on desktop; shown via media query below */
+  flex-direction: column;
+  padding: 24px 16px;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.navbar__drawer--open {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+/* Backdrop behind the drawer */
+.navbar__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 199;
+  display: none; /* hidden on desktop; shown via media query below */
+}
+
+@media (max-width: 767px) {
+  /* Show hamburger on mobile */
   .navbar__hamburger { display: flex; }
 
-  .navbar__menu {
-    display: none;
-    width: 100%;
-    padding: 12px 0;
-    border-top: 1px solid var(--color-border);
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .navbar__menu--open { display: flex; }
+  /* Hide the inline desktop menu on mobile */
+  .navbar__menu { display: none !important; }
+
+  /* Show drawer and backdrop on mobile */
+  .navbar__drawer { display: flex; }
+  .navbar__backdrop { display: block; }
 
   .navbar__wallet {
     flex-direction: column;
@@ -1194,6 +1229,25 @@ a, button, input, select, textarea {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================================================
+   Keyboard shortcut <kbd> chip — used in ShortcutsModal
+   ============================================================ */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: monospace;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  box-shadow: 0 1px 0 var(--color-border);
 }
 
 /* ============================================================

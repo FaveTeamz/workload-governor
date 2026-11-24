@@ -1,8 +1,8 @@
 # Storage Design
 
-WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixes to manage contract state.
+WorkloadGovernor uses three Soroban storage tiers and compact, distinct key prefixes to manage contract state.
 
-> **Why this design?** The rationale for the six-prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
+> **Why this design?** The rationale for the compact prefix schema — including alternatives considered and the collision-freedom proof — is documented in [ADR-001: Soroban Storage Key Design](adr/ADR-001-storage-key-design.md).
 
 ## Storage Tiers
 
@@ -14,13 +14,38 @@ WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixe
 
 ## Key Patterns
 
+## XDR Prefix Footprint
+
+An XDR-encoded `ScVal::Symbol` contains a 4-byte discriminant, a 4-byte string length, and string data padded to a 4-byte boundary. Therefore a 1–4 character prefix occupies 12 bytes, while a 5–8 character prefix occupies 16 bytes. Other tuple fields and tuple framing are unchanged by these prefix substitutions.
+
+| Storage key | Previous prefix | Previous bytes | Active prefix | Active bytes | Saved per key |
+|---|---:|---:|---:|---:|---:|
+| Global application count | `g_apps` | 16 | `g` | 12 | 4 |
+| Application entry | `app` | 12 | `a` | 12 | 0 |
+| Admin | `admin` | 16 | `d` | 12 | 4 |
+| Maintainer | `maint` | 16 | `m` | 12 | 4 |
+| Org assignment count | `o_asgn` | 16 | `o` | 12 | 4 |
+| Assignment entry | `asgn` | 12 | `s` | 12 | 0 |
+| Migration flag | `mig_v2` | 16 | `v` | 12 | 4 |
+| Multi-sig threshold | `ms_thr` | 16 | `t` | 12 | 4 |
+| Multi-sig signers | `ms_sig` | 16 | `u` | 12 | 4 |
+| Governance proposal | `prop` | 12 | `p` | 12 | 0 |
+| Governance vote | `vote` | 12 | `w` | 12 | 0 |
+| Global cap override | `g_cap` | 16 | `c` | 12 | 4 |
+| Proposal counter | `p_ctr` | 16 | `r` | 12 | 4 |
+| Admin action nonce | `adm_nc` | 16 | `n` | 12 | 4 |
+
+The profile measures the serialized prefix component, not the entire ledger-key envelope. The maximum saving is 4 bytes per key because XDR padding makes every symbol from 1 through 4 characters the same encoded size. Shorter names than four characters do not reduce the serialized size further.
+
+**Upgrade compatibility:** A prefix is part of the storage key identity. This change is not compatible with existing deployed state by itself: persistent entries written with the old prefixes require an explicit storage migration before upgrading, and pending temporary entries must be allowed to expire or migrated consistently. Do not upgrade a live instance to this schema without that migration.
+
 ### 1 — Global Application Count
 
 | Field | Value |
 |---|---|
 | Tier | Temporary |
 | Key type | `(Symbol, Address)` |
-| Prefix | `"g_apps"` |
+| Prefix | `"g"` |
 | Value | `u32` |
 | TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
 
@@ -28,7 +53,7 @@ WorkloadGovernor uses three Soroban storage tiers and seven distinct key prefixe
 
 **Example key:**
 ```
-("g_apps", GBFZB...XK2Q)
+("g", GBFZB...XK2Q)
 ```
 
 **Example value:** `3`
@@ -43,7 +68,7 @@ When the count drops to zero the entry is removed. On every application submissi
 |---|---|
 | Tier | Temporary |
 | Key type | `(Symbol, Address, Symbol, u32)` |
-| Prefix | `"app"` |
+| Prefix | `"a"` |
 | Value | `bool` (always `true`, presence sentinel) |
 | TTL | `APP_TTL_LEDGERS` = 17 280 ledgers (~24 h) |
 
@@ -51,7 +76,7 @@ When the count drops to zero the entry is removed. On every application submissi
 
 **Example key:**
 ```
-("app", GBFZB...XK2Q, "stellar-org", 42)
+("a", GBFZB...XK2Q, "stellar-org", 42)
 ```
 
 **Example value:** `true`
@@ -89,14 +114,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `Symbol` |
-| Prefix | `"admin"` |
+| Prefix | `"d"` |
 | Value | `Address` |
 
 **Purpose:** Stores the single admin `Address` set during `initialize`. Reading `None` is the initialisation guard — it means the contract has not been set up yet.
 
 **Example key:**
 ```
-"admin"
+"d"
 ```
 
 **Example value:** `GCEZW...SJ3P` (Stellar address)
@@ -109,14 +134,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `(Symbol, Address, Symbol)` |
-| Prefix | `"maint"` |
+| Prefix | `"m"` |
 | Value | `bool` (always `true`, presence sentinel) |
 
 **Purpose:** Records that address `M` is an authorised maintainer for org `O`. The write is idempotent.
 
 **Example key:**
 ```
-("maint", GABC1...9KLM, "stellar-org")
+("m", GABC1...9KLM, "stellar-org")
 ```
 
 **Example value:** `true`
@@ -129,14 +154,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `(Symbol, Address, Symbol)` |
-| Prefix | `"o_asgn"` |
+| Prefix | `"o"` |
 | Value | `u32` |
 
 **Purpose:** Tracks how many active assignments contributor `C` holds within org `O`. Capped at the effective org cap (default `ORG_ASSIGNMENT_LIMIT = 4`, overridable via `set_org_cap`). Entry is removed when count reaches zero.
 
 **Example key:**
 ```
-("o_asgn", GBFZB...XK2Q, "stellar-org")
+("o", GBFZB...XK2Q, "stellar-org")
 ```
 
 **Example value:** `2`
@@ -149,14 +174,14 @@ When the contributor's last application is withdrawn or assigned, the index entr
 |---|---|
 | Tier | Persistent |
 | Key type | `(Symbol, Symbol, u32, Address)` |
-| Prefix | `"asgn"` |
+| Prefix | `"s"` |
 | Value | `bool` (always `true`, presence sentinel) |
 
 **Purpose:** Records that contributor `C` is actively assigned to issue `I` in org `O`. Key order is `(org_id, issue_id, contributor)` so lookups by issue are efficient.
 
 **Example key:**
 ```
-("asgn", "stellar-org", 42, GBFZB...XK2Q)
+("s", "stellar-org", 42, GBFZB...XK2Q)
 ```
 
 **Example value:** `true`
@@ -172,7 +197,7 @@ When the contributor's last application is withdrawn or assigned, the index entr
 | Prefix | `"o_cap"` |
 | Value | `u32` |
 
-**Purpose:** Stores a per-org override for the assignment cap set by a registered maintainer via `set_org_cap`. When absent callers fall back to `ORG_ASSIGNMENT_LIMIT = 4`. Valid range: `[1, 20]`.
+**Purpose:** Stores a per-org override for the maximum number of active assignments a contributor may hold within a specific organisation. When absent callers fall back to `ORG_ASSIGNMENT_LIMIT = 4`. Valid range: `[1, 20]`.
 
 **Example key:**
 ```
@@ -180,6 +205,52 @@ When the contributor's last application is withdrawn or assigned, the index entr
 ```
 
 **Example value:** `8`
+
+**Who writes it:** Admin only, via the `set_org_cap(admin, org_id, cap)` contract function introduced in v0.2. No other role can write this key. The value is validated at write time — values outside `[1, 20]` are rejected with `InvalidOrgCap` (code 16).
+
+**Default behaviour when absent:** The key is optional. `assign_issue` reads it with `unwrap_or(ORG_ASSIGNMENT_LIMIT)`, so any org without an explicit cap entry behaves as if the global default of 4 were stored. Adding a new org does not require writing this key unless a non-default cap is needed.
+
+**Interaction with `OrgAssignmentLimitReached` (error 7):** In `assign_issue`, after the contributor's org assignment count is fetched from `("o_asgn", contributor, org_id)`, the effective cap is determined by reading this key:
+
+```rust
+let cap = storage::get_org_cap(&env, &org_id).unwrap_or(ORG_ASSIGNMENT_LIMIT);
+if asgn_count >= cap {
+    panic_with_error!(&env, ContractError::OrgAssignmentLimitReached);
+}
+```
+
+A contributor blocked by error 7 in an org with a raised cap is blocked at the *org's* cap, not the global default. See [docs/error-reference.md — Error 7](error-reference.md#error-7--orgassignmentlimitreached) for resolution steps.
+
+**Upgrade path:** To raise the cap for an org in production:
+
+1. Confirm the request comes from the platform governance process (see [docs/runbooks/cap-emergency-increase.md](runbooks/cap-emergency-increase.md)).
+2. Call `set_org_cap` as the admin:
+
+   ```bash
+   stellar contract invoke \
+     --id "$CONTRACT_ID" \
+     --network testnet \
+     --source <admin-account> \
+     -- set_org_cap \
+     --admin <ADMIN_ADDRESS> \
+     --org_id <ORG_ID> \
+     --cap <NEW_CAP>
+   ```
+
+3. Verify the stored value:
+
+   ```bash
+   stellar contract invoke \
+     --id "$CONTRACT_ID" \
+     --network testnet \
+     -- get_org_cap \
+     --org_id <ORG_ID>
+   # Expected: <NEW_CAP>
+   ```
+
+The cap change takes effect immediately for subsequent `assign_issue` calls. Existing assignments are not affected.
+
+See [docs/admin-guide.md](admin-guide.md) for the full org cap management procedure.
 
 ---
 
@@ -299,18 +370,26 @@ Refer to `docs/runbooks/incident-response.md` for the full remediation playbook.
 
 ## Key Collision Proof
 
-All eight prefixes are distinct `symbol_short!` values:
+The current storage prefixes are distinct one-character `symbol_short!` values:
 
 | # | Prefix | Rust literal |
 |---|---|---|
-| 1 | `g_apps` | `symbol_short!("g_apps")` |
-| 2 | `app` | `symbol_short!("app")` |
-| 3 | `app_idx` | `symbol_short!("app_idx")` |
-| 4 | `admin` | `symbol_short!("admin")` |
-| 5 | `maint` | `symbol_short!("maint")` |
-| 6 | `o_asgn` | `symbol_short!("o_asgn")` |
-| 7 | `asgn` | `symbol_short!("asgn")` |
-| 8 | `o_cap` | `symbol_short!("o_cap")` |
+| 1 | `g` | `symbol_short!("g")` |
+| 2 | `a` | `symbol_short!("a")` |
+| 3 | `d` | `symbol_short!("d")` |
+| 4 | `m` | `symbol_short!("m")` |
+| 5 | `o` | `symbol_short!("o")` |
+| 6 | `s` | `symbol_short!("s")` |
+| 7 | `v` | `symbol_short!("v")` |
+| 8 | `t` | `symbol_short!("t")` |
+| 9 | `u` | `symbol_short!("u")` |
+| 10 | `p` | `symbol_short!("p")` |
+| 11 | `w` | `symbol_short!("w")` |
+| 12 | `c` | `symbol_short!("c")` |
+| 13 | `r` | `symbol_short!("r")` |
+| 14 | `n` | `symbol_short!("n")` |
+
+The legacy `o_asgn` prefix remains only in the v1 migration reader and is not used for current writes.
 
 ### Formal Argument
 
@@ -510,3 +589,31 @@ Assume 100 contributors each submit 3 applications, 30 are assigned, 30 complete
 - Do not let the contract instance TTL lapse — bump it regularly or rely on the `bump_instance` call made on every state-changing transaction.
 - For orgs with > 5 000 contributors, raise `APP_TTL_LEDGERS` only if the Wave duration requires it — a longer TTL multiplies the temporary rent cost proportionally.
 - Monitor the `("o_cap", org_id)` key: each distinct org adds one persistent entry of ~35 bytes (negligible unless there are thousands of orgs).
+
+---
+
+## Off-chain Redis Cache Architecture
+
+In addition to on-chain Soroban storage, WorkloadGovernor uses an off-chain Redis caching layer (`src/services/redis.ts`) to serve high-throughput read traffic, enforce transaction idempotency, and provide distributed synchronization across backend instances.
+
+### Key Namespaces and TTL Policies
+
+| Key Pattern | Description | TTL | Invalidation Trigger |
+|-------------|-------------|-----|----------------------|
+| `idemp:<key>` | Idempotency token storage preventing double execution | 86,400 s (24 h) | Natural TTL expiry |
+| `lock:<resource>` | Distributed Redlock mutex for critical sections | 30 s | Explicit release on operation completion |
+| `cache:org:<org_id>` | Cached organization metadata and active issue capacities | 300 s (5 min) | Contract events (`applied`, `assigned`, `completed`) |
+| `cache:contributor:<address>` | Cached global application count and active assignment list | 60 s (1 min) | Contract events (`applied`, `withdrawn`, `revoked`) |
+
+### Cache Invalidation Flow
+
+When state changes on-chain, Soroban contract events are ingested by the off-chain indexer service, which publishes cache eviction messages to purge stale entries:
+
+```mermaid
+flowchart LR
+    A["Soroban Smart Contract"] -->|"Emit Event"| B["Event Indexer Service"]
+    B -->|"Parse Event"| C["Redis Cache Service"]
+    C -->|"DEL cache:org:<org_id>"| D["Organization Cache"]
+    C -->|"DEL cache:contributor:<address>"| E["Contributor Cache"]
+```
+

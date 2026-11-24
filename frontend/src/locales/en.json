@@ -77,5 +77,8 @@
     "assignment_other": "{{count}} assignments",
     "issue_one": "{{count}} issue",
     "issue_other": "{{count}} issues"
+  },
+  "error": {
+    "boundary_fallback": "Something went wrong. Please try again."
   }
 }

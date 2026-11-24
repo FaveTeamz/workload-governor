@@ -4,13 +4,54 @@ What to do when a bug is discovered in a deployed WorkloadGovernor contract.
 
 > **Pause strategy**: Soroban contracts have no built-in pause mechanism. The current mitigation is to upgrade to a "frozen" WASM that rejects all state-changing calls until a fix is deployed. See step 3.
 
-## Severity Levels
+## Disaster Recovery Metrics
 
-| Level | Definition | Response time |
-|-------|------------|--------------|
-| P0 | Funds at risk / state corruption in progress | Immediate |
-| P1 | Incorrect cap enforcement / data inconsistency | < 1 hour |
-| P2 | UI/API bug with no on-chain impact | Next business day |
+These objectives apply to the WorkloadGovernor backend (PostgreSQL on Amazon
+RDS) and any stateful infrastructure. They are binding targets for all
+incident response activities.
+
+| Metric | Target | Basis |
+|--------|--------|-------|
+| **RPO** (Recovery Point Objective) | **< 15 minutes** | RDS automated backups run continuously with PITR granularity of ~5 minutes; manual snapshots capture the state at any point within the 7-day retention window |
+| **RTO** (Recovery Time Objective) | **< 30 minutes** | Covers detection, decision, PITR restore initiation, ECS task restart, and health-check validation |
+
+### Infrastructure assumptions
+
+- **Backup retention:** 7 days of automated RDS backups (`backup_retention_period = 7`).
+- **Backup window:** 03:00–04:00 UTC daily (`backup_window = "03:00-04:00"`).
+- **PITR granularity:** ~5 minutes (AWS RDS continuous backup).
+- **Deletion protection:** enabled (`deletion_protection = true`) — the instance
+  cannot be deleted via Terraform or the AWS console without explicitly
+  disabling this flag first.
+- **Encryption at rest:** enabled (`storage_encrypted = true`).
+
+> These metrics assume the RDS instance is reachable from the production VPC
+> and that operator credentials are available. Network partitions or credential
+> loss extend RTO and must be treated as a SEV-1 in their own right.
+
+---
+
+## Severity Matrix
+
+Severity levels map contract/backend problems to response SLAs and
+communication channels. Use the highest applicable level when in doubt.
+
+| Level | Definition | Initial response | Update cadence | Communication channels |
+|-------|------------|-----------------|----------------|------------------------|
+| **SEV-1** | Funds at risk, active state corruption, or full service outage. RPO/RTO breach imminent. | **Immediate** (< 5 min) | Every 15 min | Page on-call admin via PagerDuty; post in `#incidents`; notify engineering lead |
+| **SEV-2** | Incorrect cap enforcement, data inconsistency affecting multiple users, partial service degradation. | < 15 min | Every 30 min | Post in `#incidents`; notify on-call admin; open GitHub issue tagged `incident` |
+| **SEV-3** | Single-user data inconsistency, non-critical API errors, degraded performance with no data loss. | < 1 hour | Every 2 hours | Post in `#incidents`; open GitHub issue tagged `incident` |
+| **SEV-4** | UI/API cosmetic bug, documentation gap, no on-chain or database impact. | Next business day | As needed | Open GitHub issue tagged `bug` |
+
+### Severity ↔ legacy priority mapping
+
+Existing runbook sections use P0/P1/P2 labels. The mapping is:
+
+| Legacy | SEV equivalent |
+|--------|----------------|
+| P0 | SEV-1 |
+| P1 | SEV-2 or SEV-3 (depending on scope) |
+| P2 | SEV-4 |
 
 ---
 
@@ -162,7 +203,122 @@ stellar contract info \
 
 ---
 
-## Contacts
+## Disaster Recovery Checklists
+
+Use these checklists when data corruption is confirmed or suspected. They run
+in parallel with the contract-level steps above.
+
+### Database (PostgreSQL on RDS) — PITR Recovery
+
+> Target: restore to a consistent point within the last 15 minutes (RPO).
+> Complete all steps within 30 minutes of incident declaration (RTO).
+
+- [ ] **T+0 min** — Declare incident at SEV-1/SEV-2 and open incident channel.
+- [ ] **T+1 min** — Freeze application writes: scale ECS service to 0 tasks.
+  ```bash
+  aws ecs update-service \
+    --cluster workload-governor-prod \
+    --service workload-governor \
+    --desired-count 0 \
+    --region us-east-1
+  ```
+- [ ] **T+2 min** — Identify the latest safe restore point (choose a timestamp
+  at least 5 minutes before the first corruption event).
+  ```bash
+  # List automated backups to confirm PITR coverage
+  aws rds describe-db-instances \
+    --db-instance-identifier workload-governor-prod \
+    --query "DBInstances[0].{LatestRestorableTime:LatestRestorableTime,BackupRetentionPeriod:BackupRetentionPeriod}" \
+    --region us-east-1
+  ```
+- [ ] **T+3 min** — Initiate PITR restore to a new instance.
+  ```bash
+  RESTORE_TIME="2026-09-25T22:35:00Z"   # replace with chosen safe point (ISO 8601 UTC)
+  aws rds restore-db-instance-to-point-in-time \
+    --source-db-instance-identifier workload-governor-prod \
+    --target-db-instance-identifier workload-governor-prod-pitr \
+    --restore-time "$RESTORE_TIME" \
+    --region us-east-1
+  ```
+- [ ] **T+5 min** — While restore is running, update the application's
+  `DATABASE_URL` secret in Secrets Manager to point to the new endpoint
+  (retrieve the endpoint once the instance status is `available`).
+  ```bash
+  # Poll until available (typically 10–20 min for RDS PITR)
+  aws rds wait db-instance-available \
+    --db-instance-identifier workload-governor-prod-pitr \
+    --region us-east-1
+
+  NEW_ENDPOINT=$(aws rds describe-db-instances \
+    --db-instance-identifier workload-governor-prod-pitr \
+    --query "DBInstances[0].Endpoint.Address" \
+    --output text \
+    --region us-east-1)
+  echo "New endpoint: $NEW_ENDPOINT"
+  ```
+- [ ] **T+20 min** — Update the `DATABASE_URL` secret to the new endpoint and
+  restart ECS tasks against the restored instance.
+  ```bash
+  # Retrieve current secret, update host, write back
+  CURRENT=$(aws secretsmanager get-secret-value \
+    --secret-id workload-governor/prod/database-url \
+    --query SecretString --output text --region us-east-1)
+  # Edit $CURRENT to replace the hostname with $NEW_ENDPOINT, then:
+  aws secretsmanager put-secret-value \
+    --secret-id workload-governor/prod/database-url \
+    --secret-string "$UPDATED_URL" \
+    --region us-east-1
+
+  aws ecs update-service \
+    --cluster workload-governor-prod \
+    --service workload-governor \
+    --desired-count 2 \
+    --force-new-deployment \
+    --region us-east-1
+  ```
+- [ ] **T+25 min** — Run health checks and data integrity spot-checks.
+  ```bash
+  curl -sf "https://<prod-domain>/api/health" | jq .
+  # Expected: {"status":"ok"}
+  ```
+- [ ] **T+30 min** — Confirm RTO met; post status update in incident channel.
+- [ ] After incident is resolved: rename or delete the old corrupted instance
+  (only after post-mortem is complete and `deletion_protection` is disabled).
+
+> For schema-migration rollback scenarios, see
+> [docs/runbooks/db-rollback.md](./db-rollback.md) — PITR and snapshot
+> procedures are cross-referenced there.
+
+---
+
+### Redis — Cache / Session Recovery
+
+Redis is used for caching and session state only. It holds no source-of-truth
+data, so RPO/RTO for Redis is lower-priority than for PostgreSQL.
+
+- [ ] **Identify the Redis failure mode:**
+  - If the Redis node is unavailable → traffic falls back to the database;
+    expect elevated DB latency but no data loss. Proceed to step below.
+  - If Redis contains corrupted session state → flush and restart.
+- [ ] **Flush and restart** (cache corruption):
+  ```bash
+  # Connect to ElastiCache Redis cluster (via bastion or VPC endpoint)
+  redis-cli -h <elasticache-endpoint> -p 6379 FLUSHALL
+  ```
+  Then restart the ECS service to re-warm the cache on first requests.
+- [ ] **Failover to a replica** (node failure):
+  ```bash
+  aws elasticache failover-replication-group \
+    --replication-group-id workload-governor-cache \
+    --node-group-id 0001 \
+    --primary-cluster-id <replica-node-id> \
+    --region us-east-1
+  ```
+- [ ] Verify cache is healthy by checking `GET /api/health` and confirming
+  response times return to baseline (< 200 ms p95).
+- [ ] Log the flush/failover action in the incident channel with timestamp.
+
+---
 
 | Role | Contact |
 |------|---------|

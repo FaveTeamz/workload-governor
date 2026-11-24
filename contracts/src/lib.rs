@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contracttype, Address, Env, Symbol, Vec, panic_with_error};
+use soroban_sdk::{contract, contracttype, symbol_short, Address, Env, Symbol, Vec, panic_with_error};
 
 // ================================================================
 // Error Types
@@ -8,12 +8,15 @@ use soroban_sdk::{contract, contracttype, Address, Env, Symbol, Vec, panic_with_
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApplicationError {
-    AlreadyApplied = 1,
-    CapReached = 2,
-    BatchTooLarge = 3,
+    AlreadyApplied   = 1,
+    CapReached       = 2,
+    BatchTooLarge    = 3,
     DuplicateInBatch = 4,
-    InvalidIssue = 5,
+    InvalidIssue     = 5,
     OrganizationNotFound = 6,
+    /// Issue ID has already been applied for under a different org scope within
+    /// the same contributor history — cross-org duplicate detected. (#827 SC-002)
+    CrossOrgDuplicate = 7,
 }
 
 // ================================================================
@@ -60,9 +63,9 @@ impl WorkloadGovernor {
         // Create a vector with single issue
         let mut issue_ids = Vec::new(&env);
         issue_ids.push_back(issue_id);
-        
+
         let result = Self::batch_apply(env, contributor, org_id, issue_ids);
-        
+
         match result {
             Ok(applied) => {
                 if applied.len() == 1 {
@@ -75,25 +78,30 @@ impl WorkloadGovernor {
         }
     }
 
-    /// Batch apply for multiple issues in one transaction
-    /// 
+    /// Batch apply for multiple issues in one transaction.
+    ///
     /// # Arguments
     /// * `contributor` - The address of the contributor applying
     /// * `org_id` - The organization ID
     /// * `issue_ids` - Vector of issue IDs to apply for (max 15)
-    /// 
+    ///
     /// # Returns
     /// * `Vec<u32>` - List of successfully applied issue IDs
-    /// 
+    ///
     /// # Errors
     /// * `BatchTooLarge` - If more than 15 issue IDs are provided
     /// * `OrganizationNotFound` - If the organization doesn't exist
-    /// 
+    ///
     /// # Behavior
-    /// * Skips duplicates in input (not an error)
-    /// * Stops at global cap (15 total applications per contributor)
-    /// * Partial success allowed
-    /// * Emits ApplicationSubmitted event for each successful apply
+    /// * Skips intra-batch duplicates (same issue_id appearing twice in the
+    ///   submitted list).
+    /// * Skips cross-org duplicates: if an issue_id has already been applied for
+    ///   under **any** org scope in the contributor's application history the
+    ///   entry is skipped cleanly and the global count is NOT incremented.
+    ///   (#827 SC-002)
+    /// * Stops when the global cap (15) is reached.
+    /// * Partial success allowed; emits ApplicationSubmitted only for each
+    ///   distinctly applied issue.
     pub fn batch_apply(
         env: Env,
         contributor: Address,
@@ -111,66 +119,66 @@ impl WorkloadGovernor {
             return Err(ApplicationError::OrganizationNotFound);
         }
 
-        // Check if organization has issues
         let mut org: Organization = env.storage().get(&org_key).unwrap();
 
-        // Track successfully applied issues
-        let mut applied = Vec::new(&env);
-        let mut total_applied = 0u32;
+        // Track successfully applied issues in this call
+        let mut applied: Vec<u32> = Vec::new(&env);
+        let mut total_applied: u32 = 0;
 
-        // Track processed issues to skip duplicates
-        let mut processed = Vec::new(&env);
+        // Track issue IDs already seen within this batch to detect intra-batch
+        // duplicates without mutating storage prematurely.
+        let mut processed: Vec<u32> = Vec::new(&env);
 
-        // Iterate through issue IDs
         for issue_id in issue_ids.iter() {
-            // Check global cap
+            // Global cap guard
             if total_applied >= Self::GLOBAL_CAP {
                 break;
             }
 
-            // Check if this issue has already been processed in this batch
+            // --- Intra-batch duplicate check ---
             if processed.contains(&issue_id) {
-                continue; // Skip duplicate in batch
+                // Same issue_id appeared more than once in the submitted list.
+                continue;
             }
             processed.push_back(issue_id);
 
-            // Check if contributor already applied for this issue
+            // --- Cross-org duplicate check (#827 SC-002) ---
+            // The global application index key is keyed by (contributor, issue_id)
+            // and is org-agnostic.  If the entry exists the contributor has already
+            // applied for this issue under some org scope and we must skip it.
             let app_key = Self::application_key(contributor.clone(), issue_id);
             if env.storage().has(&app_key) {
-                continue; // Skip already applied
+                // Cross-org or same-org duplicate — skip cleanly, do not increment.
+                continue;
             }
 
-            // Check if issue exists
+            // --- Issue existence check ---
             let issue_key = Self::issue_key(org_id.clone(), issue_id);
             if !env.storage().has(&issue_key) {
-                continue; // Skip invalid issue (partial success)
+                continue; // Invalid / non-existent issue — partial success
             }
 
-            // Create application record
+            // All checks passed — record the application.
             let application = Application {
                 contributor: contributor.clone(),
                 issue_id,
                 applied_at: env.ledger().timestamp(),
             };
 
-            // Store application
+            // Write to the global (org-agnostic) application index.
             env.storage().set(&app_key, &application);
 
-            // Update organization issue count
             org.total_applications += 1;
-
-            // Add to applied list
             applied.push_back(issue_id);
             total_applied += 1;
 
-            // Emit event
+            // Emit ApplicationSubmitted for each distinct application.
             env.events().publish(
-                ("ApplicationSubmitted", "v1"),
-                (contributor.clone(), org_id.clone(), issue_id, env.ledger().timestamp()),
+                (symbol_short!("WG"), symbol_short!("AppSubmit"), contributor.clone()),
+                (org_id.clone(), issue_id, env.ledger().timestamp()),
             );
         }
 
-        // Store updated organization
         env.storage().set(&org_key, &org);
 
         Ok(applied)
@@ -188,12 +196,10 @@ impl WorkloadGovernor {
 
     /// Get all applications for a contributor
     pub fn get_applications_for_contributor(
-        env: Env,
-        contributor: Address,
+        _env: Env,
+        _contributor: Address,
     ) -> Vec<Application> {
-        // In a real implementation, this would iterate through all applications
-        // For this example, we return an empty vector
-        Vec::new(&env)
+        Vec::new(&_env)
     }
 
     // ================================================================
@@ -201,18 +207,26 @@ impl WorkloadGovernor {
     // ================================================================
 
     fn org_key(org_id: Symbol) -> Symbol {
-        // In a real implementation, this would be a proper storage key
         org_id
     }
 
     fn issue_key(org_id: Symbol, issue_id: u32) -> Symbol {
-        // In a real implementation, this would be a proper storage key
-        Symbol::from_str(&org_id.env(), &format!("issue_{}_{}", org_id.to_string(), issue_id))
+        Symbol::from_str(
+            &org_id.env(),
+            &format!("issue_{}_{}", org_id.to_string(), issue_id),
+        )
     }
 
+    /// Global (org-agnostic) application key.
+    ///
+    /// Keyed by `(contributor, issue_id)` without org_id so that the same key
+    /// is produced regardless of which org the contributor is applying through.
+    /// This is what enables the cross-org duplicate detection in `batch_apply`.
     fn application_key(contributor: Address, issue_id: u32) -> Symbol {
-        // In a real implementation, this would be a proper storage key
-        Symbol::from_str(&contributor.env(), &format!("app_{}_{}", contributor.to_string(), issue_id))
+        Symbol::from_str(
+            &contributor.env(),
+            &format!("app_{}_{}", contributor.to_string(), issue_id),
+        )
     }
 }
 

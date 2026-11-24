@@ -51,14 +51,21 @@ exports.down = (pgm) => {
     ifExists: true,
   });
 
-  pgm.dropConstraint('contract_events', 'contract_events_ledger_tx_event_unique', {
-    ifExists: true,
-  });
+  pgm.sql(`
+    ALTER TABLE contract_events
+      DROP CONSTRAINT IF EXISTS contract_events_ledger_tx_event_unique;
+  `);
 
-  // Restore the original two-column unique constraint
-  pgm.addConstraint(
-    'contract_events',
-    'contract_events_tx_hash_event_index_key',
-    'UNIQUE (tx_hash, event_index)',
-  );
+  // Safely restore the original two-column unique constraint
+  pgm.sql(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'contract_events_tx_hash_event_index_key'
+      ) THEN
+        ALTER TABLE contract_events
+          ADD CONSTRAINT contract_events_tx_hash_event_index_key UNIQUE (tx_hash, event_index);
+      END IF;
+    END $$;
+  `);
 };
