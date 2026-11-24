@@ -1,10 +1,10 @@
 /**
  * Migration: 3_add_events_org_created_idx
  *
- * Adds a composite index on (org_id, created_at DESC) on the events table
- * to optimize queries fetching org events ordered by recency.
+ * Adds a composite index on (org_id, created_at DESC) on the contract_events
+ * table to optimize queries fetching org events ordered by recency.
  *
- * Fixes issue #858: [DB-001] Composite index on events table for org_id and created_at query optimization.
+ * Fixes issue #1249: Add down-migration for 3_add_events_org_created_idx.js index.
  */
 
 'use strict';
@@ -13,8 +13,8 @@
  * @param {import('node-pg-migrate').MigrationBuilder} pgm
  */
 exports.up = (pgm) => {
-  pgm.createIndex('events', ['org_id', { name: 'created_at', sort: 'DESC' }], {
-    name: 'idx_events_org_created',
+  pgm.createIndex('contract_events', ['org_id', { name: 'created_at', sort: 'DESC' }], {
+    name: 'contract_events_org_id_created_at_idx',
     ifNotExists: true,
   });
 };
@@ -23,8 +23,8 @@ exports.up = (pgm) => {
  * @param {import('node-pg-migrate').MigrationBuilder} pgm
  */
 exports.down = (pgm) => {
-  pgm.dropIndex('events', ['org_id', { name: 'created_at', sort: 'DESC' }], {
-    name: 'idx_events_org_created',
+  pgm.dropIndex('contract_events', ['org_id', { name: 'created_at', sort: 'DESC' }], {
+    name: 'contract_events_org_id_created_at_idx',
     ifExists: true,
   });
 };
