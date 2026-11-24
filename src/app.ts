@@ -16,6 +16,7 @@ import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
+import { metricsHandler } from './metrics';
 
 export function createApp(): express.Application {
   const app = express();
@@ -37,6 +38,9 @@ export function createApp(): express.Application {
   app.use(express.json());
   app.use(express.static('public'));
   app.use(correlationIdMiddleware);
+
+  // Protect metrics with METRICS_TOKEN when configured; keep it outside API-key auth.
+  app.get('/metrics', metricsHandler);
 
   // Rate limiting middleware
   app.use(globalLimiter);

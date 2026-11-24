@@ -26,9 +26,14 @@
  */
 
 import { SorobanRpc, xdr as stellarXdr, scValToNative } from '@stellar/stellar-sdk';
-import { pool } from './db';
+import { getCheckpoint, pool, saveCheckpoint } from './db';
 import { logger } from './logger';
 import { publishLiveEvent } from './services/event-bus';
+import {
+  indexerLatestLedgerSequence,
+  recordIndexerEventProcessed,
+  updateIndexerProgress,
+} from './metrics';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -43,6 +48,7 @@ const RPC_URL =
 
 const POLL_INTERVAL_MS = 5_000;
 const ERROR_BACKOFF_MS = 10_000;
+const EVENT_PAGE_SIZE = 200;
 
 // ---------------------------------------------------------------------------
 // Event types
@@ -211,6 +217,7 @@ export class EventIndexer {
   /** Paging cursor for the next RPC call. Undefined means start from resume ledger. */
   private cursor: string | undefined;
   private isRunning = false;
+  private lastIndexedLedger = 0;
 
   constructor() {
     this.server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
@@ -245,27 +252,40 @@ export class EventIndexer {
   // ── Cursor / resume ──────────────────────────────────────────────────────
 
   /**
-   * On restart, re-process from the last finalized ledger to handle reorgs.
-   * Uses the highest ledger_seq stored in contract_events as the resume point.
+   * On restart, resume from the latest persisted checkpoint or indexed event.
    *
    * Because INSERT uses ON CONFLICT DO NOTHING, replaying events from the
    * resume ledger is safe — already-indexed events are silently skipped.
    * This prevents duplicates even if the cursor is lost (fixes issue #575).
    */
   private async initCursor(): Promise<void> {
+    let checkpointLedger = 0;
+    try {
+      const checkpoint = await getCheckpoint(CONTRACT_ID);
+      checkpointLedger = checkpoint?.last_ledger ?? 0;
+    } catch (err) {
+      logger.warn({
+        message: 'Could not read indexer checkpoint',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     try {
       const { rows } = await pool.query<{ max_ledger: string | null }>(
         'SELECT MAX(ledger_seq) AS max_ledger FROM contract_events',
       );
       const maxLedger = rows[0]?.max_ledger != null ? parseInt(rows[0].max_ledger, 10) : null;
 
-      if (maxLedger !== null && maxLedger > 0) {
-        // Use the last finalized ledger as the start cursor so we re-fetch
+      this.lastIndexedLedger = Math.max(checkpointLedger, maxLedger ?? 0);
+      indexerLatestLedgerSequence.set(this.lastIndexedLedger);
+
+      if (this.lastIndexedLedger > 0) {
+        // Use the latest persisted ledger as the start cursor so we re-fetch
         // that ledger's events and handle any potential reorg.
         // The cursor format expected by getEvents is "<ledger>-<tx>-<event>"
         // Passing just the ledger number as a numeric string is also accepted.
-        this.cursor = String(maxLedger);
-        logger.info({ message: 'Resuming indexer from ledger', ledger: maxLedger });
+        this.cursor = String(this.lastIndexedLedger);
+        logger.info({ message: 'Resuming indexer from ledger', ledger: this.lastIndexedLedger });
       } else {
         this.cursor = undefined;
         logger.info({ message: 'Starting indexer from genesis (no stored events)' });
@@ -293,10 +313,12 @@ export class EventIndexer {
             },
           ],
           cursor: this.cursor,
-          limit: 200,
+          limit: EVENT_PAGE_SIZE,
         });
 
         const events = response.events as unknown as RpcEvent[];
+        const latestNetworkLedger = response.latestLedger;
+        updateIndexerProgress(latestNetworkLedger, this.lastIndexedLedger);
 
         if (events.length > 0) {
           let persisted = 0;
@@ -315,15 +337,28 @@ export class EventIndexer {
 
           // Advance cursor to the last event's pagingToken
           const last = events[events.length - 1];
-          this.cursor = last.pagingToken ?? last.id;
+          const lastEventLedger = parseInt(last.ledger, 10);
+          this.cursor = events.length < EVENT_PAGE_SIZE
+            ? String(latestNetworkLedger)
+            : last.pagingToken ?? last.id;
 
           logger.info({
             message: 'Indexed event batch',
-            ledger: parseInt(events[events.length - 1].ledger, 10),
+            ledger: lastEventLedger,
             total: events.length,
             persisted,
             skipped,
           });
+
+          await this.persistIndexerProgress(
+            events.length < EVENT_PAGE_SIZE
+              ? latestNetworkLedger
+              : lastEventLedger,
+            latestNetworkLedger,
+          );
+        } else {
+          this.cursor = String(latestNetworkLedger);
+          await this.persistIndexerProgress(latestNetworkLedger, latestNetworkLedger);
         }
 
         await sleep(POLL_INTERVAL_MS);
@@ -429,6 +464,8 @@ export class EventIndexer {
     const inserted = (result as { rowCount?: number }).rowCount === 1;
 
     if (inserted) {
+      recordIndexerEventProcessed(record.event_type);
+
       // Publish live update for real-time subscribers
       const liveType =
         record.event_type === 'applied'
@@ -448,6 +485,14 @@ export class EventIndexer {
     }
 
     return inserted;
+  }
+
+  private async persistIndexerProgress(indexedLedger: number, networkLedger: number): Promise<void> {
+    if (indexedLedger > this.lastIndexedLedger) {
+      await saveCheckpoint(CONTRACT_ID, indexedLedger);
+      this.lastIndexedLedger = indexedLedger;
+    }
+    updateIndexerProgress(networkLedger, this.lastIndexedLedger);
   }
 }
 

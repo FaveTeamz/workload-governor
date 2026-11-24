@@ -12,6 +12,7 @@
  *   cache_hits_total (counter) — cache hits/misses by cache name, result
  *   db_pool_active (gauge) — active database connections
  *   db_pool_idle (gauge) — idle database connections
+ *   indexer_* (gauges/counter) — ledger progress and indexed contract events
  *
  * Secured with METRICS_TOKEN environment variable (optional).
  * If METRICS_TOKEN is set, requests must include "Authorization: Bearer <token>" header.
@@ -25,6 +26,12 @@ import { pool } from "./db";
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 const DEFAULT_BUCKETS = [0.001, 0.01, 0.1, 0.5, 1, 2, 5, 10];
+const INDEXER_EVENT_METRIC_TYPES: Record<string, string> = {
+  applied: "apply",
+  assigned: "assign",
+  completed: "complete",
+  revoked: "revoke",
+};
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +89,44 @@ export const dbPoolIdle = new Gauge({
     this.set(pool.idleCount);
   },
 });
+
+export const indexerLatestLedgerSequence = new Gauge({
+  name: "indexer_latest_ledger_sequence",
+  help: "Highest ledger sequence fully processed by the event indexer",
+  registers: [register],
+});
+
+export const stellarNetworkLatestLedgerSequence = new Gauge({
+  name: "stellar_network_latest_ledger_sequence",
+  help: "Latest ledger sequence reported by the Stellar RPC node",
+  registers: [register],
+});
+
+export const indexerLagLedgers = new Gauge({
+  name: "indexer_lag_ledgers",
+  help: "Difference between the latest Stellar ledger and the latest indexed ledger",
+  registers: [register],
+});
+
+export const indexerEventsProcessedTotal = new Counter({
+  name: "indexer_events_processed_total",
+  help: "Total contract events newly persisted by the indexer",
+  labelNames: ["event_type"],
+  registers: [register],
+});
+
+export function updateIndexerProgress(networkLedger: number, indexedLedger: number): void {
+  stellarNetworkLatestLedgerSequence.set(networkLedger);
+  indexerLatestLedgerSequence.set(indexedLedger);
+  indexerLagLedgers.set(networkLedger - indexedLedger);
+}
+
+export function recordIndexerEventProcessed(eventType: string): void {
+  const label = INDEXER_EVENT_METRIC_TYPES[eventType];
+  if (label) {
+    indexerEventsProcessedTotal.labels(label).inc();
+  }
+}
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 

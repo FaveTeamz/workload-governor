@@ -4,6 +4,27 @@ This document describes the distributed tracing setup, X-Ray service map, and op
 
 ---
 
+## Prometheus Indexer Metrics
+
+The application exposes Prometheus text-format metrics at `GET /metrics`. When
+`METRICS_TOKEN` is configured, send it as a bearer token in the `Authorization`
+header.
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `indexer_latest_ledger_sequence` | Gauge | — | Highest ledger fully processed and checkpointed by the event indexer |
+| `stellar_network_latest_ledger_sequence` | Gauge | — | Latest ledger sequence reported by the Stellar RPC node |
+| `indexer_lag_ledgers` | Gauge | — | Stellar network ledger minus the latest indexed ledger |
+| `indexer_events_processed_total` | Counter | `event_type` | Newly persisted contract events, labeled `apply`, `assign`, `complete`, or `revoke` |
+
+The metrics are updated during each event polling cycle. The counter increases
+only for events newly inserted into the database; duplicates and event types
+outside the four listed actions are not counted. Prometheus rule
+[`monitoring/prometheus/alerting_rules.yml`](../monitoring/prometheus/alerting_rules.yml)
+defines `IndexerLagCritical`, which fires when lag exceeds 50 ledgers for 5 minutes.
+
+---
+
 ## Distributed Tracing — AWS X-Ray
 
 The backend uses [AWS X-Ray](https://aws.amazon.com/xray/) to trace every inbound request through all downstream service calls.

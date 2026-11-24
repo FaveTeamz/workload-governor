@@ -1,0 +1,11 @@
+groups:
+  - name: indexer
+    rules:
+      - alert: IndexerLagCritical
+        expr: indexer_lag_ledgers > 50
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Event indexer is critically behind the Stellar network"
+          description: "The event indexer has been more than 50 ledgers behind for over 5 minutes."
