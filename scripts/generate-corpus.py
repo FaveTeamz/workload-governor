@@ -42,6 +42,17 @@ Boundary values deliberately covered (issue #835):
   batch vec len = 0      (empty payload)
   batch vec len = 15     (fills the global cap exactly)
   batch vec len = 16     (exceeds the global cap by 1)
+Stellar address formats covered (issue #1070):
+  G-addresses — standard Ed25519 public keys (StrKey-encoded, 56 chars, prefix G)
+  M-addresses — multiplexed (muxed) accounts (StrKey-encoded, prefix M)
+               M-addresses embed a 64-bit account ID inside the base-32 payload
+  C-addresses — contract accounts (StrKey-encoded, 56 chars, prefix C)
+               C-addresses represent Soroban smart-contract addresses
+
+Example address shapes used in seeds:
+  G…  (56 chars, uppercase base-32)
+  M…  (68-69 chars, uppercase base-32, embeds u64 mux ID)
+  C…  (56 chars, uppercase base-32)
 """
 
 import argparse
@@ -478,6 +489,156 @@ SEEDS_ADMIN_THRESHOLD = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Stellar address format helpers (issue #1070)
+# ---------------------------------------------------------------------------
+# These helpers produce byte sequences whose ASCII representation matches the
+# character patterns of real Stellar address types.  The fuzz targets accept
+# the raw bytes and map each byte into the allowed character set, so the exact
+# StrKey checksum is not required — what matters is that the *prefix* byte and
+# *length* range exercise the address-format branches in the contract.
+#
+# Stellar StrKey character set (base-32 variant):
+#   A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 2 3 4 5 6 7
+#
+# Address type summary:
+#   G-address (56 chars)  — standard Ed25519 public key (StrKey version 6)
+#   M-address (69 chars)  — multiplexed/muxed account (StrKey version 12)
+#                          Embeds a 64-bit account ID in the payload
+#   C-address (56 chars)  — Soroban contract account (StrKey version 14)
+#
+# For fuzzing purposes we encode the address as raw ASCII bytes so the target's
+# byte-to-char mapping exercises recognisable address-type prefixes.
+# The fuzz targets do not validate StrKey checksums.
+
+# Canonical representative test vectors.
+
+# G-address (56 chars): standard Ed25519 public key
+_G_ADDR_1 = b"GBTEST1234ABCDEFGHIJKLMNOPQRSTUVWXYZ2345678901234567GAAA"
+_G_ADDR_2 = b"GCEZNTESTADDRESS11111111111111111111111111111111111111AA"
+
+# M-address (69 chars): muxed account — longer due to embedded mux ID.
+# Real M-addresses are 69 characters long in StrKey encoding.
+_M_ADDR_1     = b"MA7QYNF7SOWQ3GLR2BGMZEHXR47BF4GSTCEZNTESTADDRESS1111111111111111AAAB"
+_M_ADDR_2     = b"MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+# Minimum-length M-address stub (tests short-payload branch)
+_M_ADDR_SHORT = b"MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+# Maximum-field mux ID — 0xFFFFFFFFFFFFFFFF embedded at start of payload
+_M_ADDR_MAX_ID = b"MZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZAB"
+
+# C-address (56 chars): contract account — same length as G-address
+_C_ADDR_1    = b"CCEZNTESTCONTRACT11111111111111111111111111111111111111AB"
+_C_ADDR_2    = b"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+# Contract address with maximum-entropy payload
+_C_ADDR_HIGH = b"CZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZAB"
+
+
+def pack_apply_addr(issue_id: int, addr: bytes) -> bytes:
+    """Pack an apply seed using a Stellar address as the org_id field.
+
+    The fuzz target reads the first 4 bytes as a little-endian u32 issue_id and
+    the remaining bytes as the org_id symbol payload.  Passing a Stellar address
+    as the org payload exercises address-format parsing in downstream handlers.
+    """
+    return struct.pack("<I", issue_id & 0xFFFFFFFF) + addr
+
+
+def pack_apply_with_flag_addr(issue_id: int, addr: bytes,
+                               apply_flag: int) -> bytes:
+    """Pack an assign seed using a Stellar address as the org_id field."""
+    data = bytearray(pack_apply_addr(issue_id, addr))
+    if len(data) > 5:
+        data[5] = (data[5] & 0xFE) | (apply_flag & 1)
+    else:
+        data += bytearray([apply_flag & 1])
+    return bytes(data)
+
+
+# ---------------------------------------------------------------------------
+# M-address seeds for fuzz_apply (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_APPLY_MADDR = [
+    ("seed_m_addr_apply_1",
+     pack_apply_addr(1, _M_ADDR_1),
+     "M-muxed address as org_id, issue_id=1 — standard M-address length (69 chars)"),
+    ("seed_m_addr_apply_2",
+     pack_apply_addr(42, _M_ADDR_2),
+     "M-muxed address as org_id, issue_id=42 — all-A M-address"),
+    ("seed_m_addr_apply_short",
+     pack_apply_addr(10, _M_ADDR_SHORT),
+     "Short M-address stub as org_id — minimum-length muxed address branch"),
+    ("seed_m_addr_apply_max_id",
+     pack_apply_addr(0xFFFFFFFE, _M_ADDR_MAX_ID),
+     "M-address with max mux ID, near-max issue_id — boundary combination"),
+    ("seed_m_addr_apply_zero_issue",
+     pack_apply_addr(0, _M_ADDR_1),
+     "M-address as org_id, issue_id=0 — zero boundary (contract rejects)"),
+    ("seed_m_addr_apply_max_issue",
+     pack_apply_addr(0xFFFFFFFF, _M_ADDR_1),
+     "M-address as org_id, issue_id=u32::MAX — max boundary (contract rejects)"),
+]
+
+# ---------------------------------------------------------------------------
+# C-address seeds for fuzz_apply (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_APPLY_CADDR = [
+    ("seed_c_addr_apply_1",
+     pack_apply_addr(1, _C_ADDR_1),
+     "C-contract address as org_id, issue_id=1 — standard C-address (56 chars)"),
+    ("seed_c_addr_apply_2",
+     pack_apply_addr(99, _C_ADDR_2),
+     "C-contract address as org_id, issue_id=99 — all-A C-address"),
+    ("seed_c_addr_apply_high",
+     pack_apply_addr(255, _C_ADDR_HIGH),
+     "High-entropy C-address as org_id, issue_id=255 — byte boundary"),
+    ("seed_c_addr_apply_max_issue",
+     pack_apply_addr(0xFFFFFFFF, _C_ADDR_1),
+     "C-address as org_id, issue_id=u32::MAX — contract rejects with InvalidIssueId"),
+    ("seed_c_addr_apply_zero_issue",
+     pack_apply_addr(0, _C_ADDR_1),
+     "C-address as org_id, issue_id=0 — zero boundary (contract rejects)"),
+    ("seed_c_addr_apply_max_minus1",
+     pack_apply_addr(0xFFFFFFFE, _C_ADDR_2),
+     "C-address as org_id, issue_id=u32::MAX-1 — near-max boundary"),
+]
+
+# ---------------------------------------------------------------------------
+# M-address seeds for fuzz_assign (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_ASSIGN_MADDR = [
+    ("seed_m_addr_assign_with_apply",
+     pack_apply_with_flag_addr(1, _M_ADDR_1, apply_flag=1),
+     "M-address as org_id, issue_id=1, with prior apply — standard assign path"),
+    ("seed_m_addr_assign_no_apply",
+     pack_apply_with_flag_addr(1, _M_ADDR_1, apply_flag=0),
+     "M-address as org_id, issue_id=1, no prior apply — ApplicationNotFound path"),
+    ("seed_m_addr_assign_max_id_with_apply",
+     pack_apply_with_flag_addr(0xFFFFFFFE, _M_ADDR_MAX_ID, apply_flag=1),
+     "M-address max mux ID, issue_id=u32::MAX-1, with apply — boundary combination"),
+    ("seed_m_addr_assign_short_with_apply",
+     pack_apply_with_flag_addr(42, _M_ADDR_SHORT, apply_flag=1),
+     "Short M-address, issue_id=42, with apply — minimum-length muxed address"),
+]
+
+# ---------------------------------------------------------------------------
+# C-address seeds for fuzz_assign (issue #1070)
+# ---------------------------------------------------------------------------
+SEEDS_ASSIGN_CADDR = [
+    ("seed_c_addr_assign_with_apply",
+     pack_apply_with_flag_addr(1, _C_ADDR_1, apply_flag=1),
+     "C-address as org_id, issue_id=1, with prior apply — contract address assign path"),
+    ("seed_c_addr_assign_no_apply",
+     pack_apply_with_flag_addr(1, _C_ADDR_1, apply_flag=0),
+     "C-address as org_id, issue_id=1, no prior apply — ApplicationNotFound"),
+    ("seed_c_addr_assign_high_with_apply",
+     pack_apply_with_flag_addr(255, _C_ADDR_HIGH, apply_flag=1),
+     "High-entropy C-address, issue_id=255, with apply — byte boundary"),
+    ("seed_c_addr_assign_max_minus1_with_apply",
+     pack_apply_with_flag_addr(0xFFFFFFFE, _C_ADDR_2, apply_flag=1),
+     "C-address, issue_id=u32::MAX-1, with apply — near-max boundary"),
+]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -488,8 +649,8 @@ def main() -> None:
     root = args.corpus_dir
 
     targets = [
-        ("fuzz_apply",            SEEDS_APPLY),
-        ("fuzz_assign",           SEEDS_ASSIGN),
+        ("fuzz_apply",            SEEDS_APPLY + SEEDS_APPLY_MADDR + SEEDS_APPLY_CADDR),
+        ("fuzz_assign",           SEEDS_ASSIGN + SEEDS_ASSIGN_MADDR + SEEDS_ASSIGN_CADDR),
         ("fuzz_batch_apply",      SEEDS_BATCH),
         ("fuzz_withdraw",         SEEDS_WITHDRAW),
         ("fuzz_revoke",           SEEDS_REVOKE),

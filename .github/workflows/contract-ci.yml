@@ -20,6 +20,9 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+permissions:
+  contents: read
+
 jobs:
   # ── 1. Lint ─────────────────────────────────────────────────────────────
   lint:
@@ -38,8 +41,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-lint-
@@ -62,19 +67,25 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+          targets: wasm32v1-none
 
       - name: Restore cargo cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Build WASM for upgrade tests
+        run: cargo build --target wasm32v1-none --release
 
       - name: Run tests with coverage
         run: |
@@ -111,8 +122,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-wasm-
@@ -123,7 +136,28 @@ jobs:
           cargo build --target wasm32-unknown-unknown --release
 
       - name: Assert WASM Binary Size Budget (< 64 KB)
-        run: bash scripts/test-contract.sh --check-size
+        run: |
+          bash scripts/test-contract.sh --check-size
+          WASM_SIZE=$(wc -c < target/wasm32v1-none/release/workload_governor.wasm)
+          echo "WASM_SIZE=$WASM_SIZE" >> $GITHUB_ENV
+          echo "### 📦 Contract WASM Size Check" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Size (bytes) | Max Limit (bytes) | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| wasm32v1-none | $WASM_SIZE | 65536 (64 KB) | ✅ PASS |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post WASM size breakdown comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const size = process.env.WASM_SIZE;
+            const body = `### 📦 Contract WASM Size Breakdown\n- **Binary size**: ${size} bytes\n- **Soroban Network Limit**: 65,536 bytes (64 KB)\n- **Status**: ${size <= 65536 ? '✅ Within budget' : '❌ Exceeds limit'}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
 
       - name: Upload unoptimized WASM
         uses: actions/upload-artifact@v7
@@ -148,15 +182,17 @@ jobs:
         with:
           targets: wasm32v1-none
 
-      - name: Restore cargo cache
+      - name: Restore cargo and target cache
         uses: actions/cache@v4
         with:
           path: |
-            mutants-report.txt
-            mutants.out/mutation-report.html
-            mutants.out/outcomes.json
-            mutants.out/caught.txt
-            mutants.out/missed.txt
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
+            target
+          key: ${{ runner.os }}-cargo-wasm-opt-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-opt-
 
       - name: Optimize WASM
         run: |
@@ -207,8 +243,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cache/sccache
             target
           key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-fuzz-
@@ -245,12 +283,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Check cargo-deny (licenses, bans, advisories)
-        uses: EmbarkStudios/cargo-deny-action@v1
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
           arguments: licenses bans advisories
 
       - name: Check RustSec advisories (cargo-audit)
-        uses: rustsec/audit-check@v1
+        uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

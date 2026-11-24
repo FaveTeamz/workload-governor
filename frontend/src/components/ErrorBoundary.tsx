@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
-import i18n from "../i18n";
+import { ErrorState } from "./ErrorState";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,7 +21,11 @@ export interface ErrorBoundaryProps {
   resetKey?: string | number;
   /** Called after the boundary resets */
   onReset?: () => void;
-  /** Telemetry callback sending error metadata and stack trace */
+  /**
+   * Telemetry callback invoked in componentDidCatch with the caught error
+   * and its React component stack.  Use this to forward error details to
+   * a monitoring service (e.g. Sentry, Datadog).
+   */
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
   /** Base URL prepended to /api/errors (defaults to '') */
   apiBase?: string;
@@ -42,9 +46,17 @@ export interface ErrorBoundaryState {
 /**
  * React class-based error boundary.
  *
- * Catches errors thrown in any descendant, renders a localized fallback UI with a
- * "Try Again" button, reports errors to the onError telemetry hook and POST /api/errors,
- * and resets automatically when `resetKey` changes.
+ * When a descendant throws, renders the user-friendly {@link ErrorState}
+ * component with a "Try Again" action button instead of an unstyled string.
+ *
+ * Telemetry:
+ * - Calls the `onError` prop with `(error, errorInfo)` so callers can forward
+ *   the full stack trace (including the React component stack) to a monitoring
+ *   service.
+ * - Posts the error payload to `POST /api/errors` for backend logging.
+ *
+ * Auto-reset: the boundary resets automatically when `resetKey` changes so
+ * navigating away from the broken page clears the error state.
  */
 export class ErrorBoundary extends Component<
   ErrorBoundaryProps,
@@ -65,16 +77,20 @@ export class ErrorBoundary extends Component<
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
 
-    // Telemetry callback
+    // ── Telemetry callback ────────────────────────────────────────────────────
+    // Forward the full error + React component stack to the caller so they
+    // can relay it to their monitoring service (Sentry, Datadog, etc.).
     if (this.props.onError) {
       try {
         this.props.onError(error, errorInfo);
       } catch {
-        // Never allow telemetry errors to crash the error boundary
+        // Never allow telemetry errors to crash the error boundary itself
       }
     }
 
-    // Backend error logger
+    // ── Backend error logger ──────────────────────────────────────────────────
+    // POST the error payload (message, JS stack, React component stack) to the
+    // backend telemetry endpoint for server-side aggregation.
     this.logError({
       message: error.message,
       stack: error.stack,
@@ -82,7 +98,7 @@ export class ErrorBoundary extends Component<
     });
   }
 
-  /** Auto-reset when navigation key changes */
+  /** Auto-reset when navigation key changes (e.g. route change). */
   componentDidUpdate(prevProps: ErrorBoundaryProps): void {
     if (
       this.state.hasError &&
@@ -117,34 +133,23 @@ export class ErrorBoundary extends Component<
       return this.props.children;
     }
 
+    // Prefer caller-supplied custom fallback over the built-in ErrorState UI
     if (this.props.fallback) {
       return this.props.fallback;
     }
 
-    const fallbackMessage = i18n.t("error.boundary_fallback", {
-      defaultValue: "Something went wrong. Please try again.",
-    });
-
+    // Render the styled ErrorState component with a "Try Again" retry action.
+    // The error message is surfaced as a subtitle override so developers can
+    // diagnose the failure from the UI in non-production environments.
     return (
-      <div
-        role="alert"
-        aria-live="assertive"
-        className={`error-boundary error-boundary--${this.props.variant ?? "default"}`}
-        style={{ padding: "2rem", textAlign: "center" }}
-      >
-        <h2>{fallbackMessage}</h2>
-        {this.state.error?.message && (
-          <p className="error-boundary__message">{this.state.error.message}</p>
-        )}
-        <button
-          type="button"
-          onClick={this.handleRetry}
-          aria-label="Retry (Try Again)"
-          className="btn btn-primary error-boundary__retry-btn"
-        >
-          Try Again
-        </button>
-      </div>
+      <ErrorState
+        variant="server-error"
+        message={
+          this.state.error?.message ??
+          "An unexpected error occurred. Please try again or return to the dashboard."
+        }
+        onRetry={this.handleRetry}
+      />
     );
   }
 }

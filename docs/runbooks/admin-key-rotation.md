@@ -67,6 +67,19 @@ Before starting, confirm every item:
       Manager, etc.) where the admin secret is stored.
 - [ ] Incident ticket or change-management record is open (production only).
 
+## Zero-Downtime Rollover Checklist
+
+To ensure zero downtime during key rollover across backend API and event indexer services:
+
+- [ ] **Dual-Key Compatibility Mode**: Pre-deploy backend services configured to recognize both `OLD_ADMIN_KEY` and `NEW_ADMIN_KEY` as valid callers.
+- [ ] **On-Chain Proposal Execution**: Execute `propose_admin` on-chain using current admin keypair.
+- [ ] **On-Chain Acceptance Confirmation**: Execute `accept_admin` on-chain using new admin keypair; wait for ledger confirmation.
+- [ ] **Secrets Manager Update**: Update `STELLAR_ADMIN_SECRET` in AWS Secrets Manager / Vault to the new keypair with automated version staging.
+- [ ] **Rolling Service Restart**: Trigger zero-downtime rolling restart (Kubernetes Deployment rollout) of backend and indexer workloads.
+- [ ] **Health & Metric Probes**: Verify all HTTP `/health` and `/ready` probes return 200 OK.
+- [ ] **Audit Trail Verification**: Verify `AdminTransferred` event is ingested into PostgreSQL database and emitted to audit log.
+- [ ] **Decommission Old Key**: Revoke and archive `OLD_ADMIN_SECRET` from active configuration stores.
+
 ---
 
 ## Pre-Flight Checks

@@ -97,6 +97,8 @@ Key design decisions are documented in [docs/adr/](docs/adr/).
 | [ADR-004](docs/adr/ADR-004-postgresql-over-sqlite.md) | Use PostgreSQL Instead of SQLite for the Backend Database | Accepted |
 | [ADR-005](docs/adr/ADR-005-nextjs-frontend.md) | Use Next.js for the Frontend | Accepted |
 | [ADR-006](docs/adr/ADR-006-two-step-admin-transfer.md) | Use a Two-Step Propose/Accept Pattern for Admin Transfer | Accepted |
+| [ADR-008](docs/adr/ADR-008-multisig-governance.md) | Multi-signature Threshold Governance for Emergency Cap Modifications | Accepted |
+| [ADR-009](docs/adr/ADR-009-indexer-event-deduplication.md) | Composite Unique Constraint and Checkpoint Table for Event Indexer Deduplication | Accepted |
 
 ## Operations
 
@@ -108,17 +110,21 @@ Step-by-step operator runbooks for production scenarios:
 | [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Two-step admin key transfer procedure |
 | [docs/runbooks/cap-emergency-increase.md](docs/runbooks/cap-emergency-increase.md) | Governance vote + contract upgrade to raise contributor caps |
 | [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | What to do when a bug is found post-deploy (freeze strategy included) |
+| [docs/runbooks/protocol-upgrade.md](docs/runbooks/protocol-upgrade.md) | Network protocol upgrade handling, testnet verification, and rollback |
 
 ## Building
+
+Requires Rust stable with `wasm32v1-none` target and Stellar CLI (Soroban SDK v22+ compatible):
 
 ```bash
 # Install the Stellar CLI and wasm32v1-none target
 rustup target add wasm32v1-none
+cargo install --locked stellar-cli
 
-# Build the WASM
+# Build the WASM contract
 stellar contract build
 
-# Or manually
+# Or manually via cargo
 cargo build --target wasm32v1-none --release
 
 # Optimize (required before mainnet deployment)
@@ -178,6 +184,7 @@ cargo +nightly fuzz run fuzz_lifecycle fuzz/corpus/fuzz_lifecycle -- -max_total_
 | `fuzz_withdraw` | apply → withdraw counter invariant; double-withdraw safety |
 | `fuzz_revoke` | apply → assign → revoke org-count invariant |
 | `fuzz_lifecycle` | Full lifecycle: apply → withdraw → assign → complete / revoke; three invariants checked after every step: `global_count ≤ 15`, `org_count ≤ cap`, applied and assigned are mutually exclusive |
+| `fuzz_xdr_envelope` | Arbitrary/malformed byte buffers fed into the XDR decoder; verifies no unexpected panic or memory violation occurs during `TransactionEnvelope` decoding (binary and base64 paths) |
 
 Any corpus inputs that triggered bugs are committed to `fuzz/corpus/`.
 

@@ -8,7 +8,7 @@
  * scroll. Skeleton cards are shown while the next page loads. A "no more
  * issues" sentinel is displayed when all pages have been fetched.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import {
@@ -19,8 +19,16 @@ import type { Difficulty } from '../hooks/useOrgIssues';
 import type { IssueStatus } from '../hooks/useOrgIssues';
 import { useToast } from '../components/Toast';
 import { IssueCardSkeleton } from '../components/SkeletonScreens';
-import TxConfirmModal from '../components/TxConfirmModal';
 import { useTxModal } from '../hooks/useTxModal';
+
+/**
+ * Code-split: TxConfirmModal and the Stellar XDR serialization library it
+ * pulls in are excluded from the initial bundle.  The chunk is fetched on
+ * demand the first time a user triggers a transaction confirmation dialog.
+ */
+const TxConfirmModal = lazy(
+  () => import('../components/TxConfirmModal')
+);
 import './OrgIssuesPage.css';
 
 const GLOBAL_CAP = 15;
@@ -605,7 +613,11 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
           )}
         </div>
       )}
-      <TxConfirmModal modal={txModal} />
+      {/* Lazy-loaded: TxConfirmModal chunk is only fetched when a
+          transaction confirmation is needed, keeping the initial bundle small. */}
+      <Suspense fallback={null}>
+        <TxConfirmModal modal={txModal} />
+      </Suspense>
     </main>
   );
 }

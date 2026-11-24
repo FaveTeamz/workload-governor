@@ -12,8 +12,8 @@
  *   --dry-run             Log event statistics without inserting into the DB
  *   --batch-size <n>      Number of events to process per RPC fetch (default: 100)
  *   --resume              Resume from the last saved ledger in .backfill-checkpoint.json
- *   --start-ledger <n>    Ledger sequence to start from (ignored when --resume is used)
- *   --end-ledger <n>      Ledger sequence to stop at (inclusive)
+ *   --from-ledger <n>     Ledger sequence to start from (ignored when --resume is used)
+ *   --to-ledger <n>       Ledger sequence to stop at (inclusive)
  */
 
 import 'dotenv/config';
@@ -191,10 +191,10 @@ async function runBackfill(options: {
   dryRun: boolean;
   batchSize: number;
   resume: boolean;
-  startLedger?: number;
-  endLedger?: number;
+  fromLedger?: number;
+  toLedger?: number;
 }): Promise<void> {
-  const { dryRun, batchSize, resume, endLedger } = options;
+  const { dryRun, batchSize, resume, fromLedger, toLedger } = options;
 
   const server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
@@ -221,8 +221,8 @@ async function runBackfill(options: {
     } else {
       console.log('[backfill] No checkpoint found — starting from the beginning');
     }
-  } else if (options.startLedger !== undefined) {
-    currentLedger = options.startLedger;
+  } else if (fromLedger !== undefined) {
+    currentLedger = fromLedger;
     console.log(`[backfill] Starting from ledger ${currentLedger}`);
   }
 
@@ -242,6 +242,7 @@ async function runBackfill(options: {
           contractIds: [CONTRACT_ID],
         },
       ],
+      startLedger: cursor === undefined ? fromLedger : undefined,
       cursor,
       limit: batchSize,
     };
@@ -265,10 +266,14 @@ async function runBackfill(options: {
       break;
     }
 
-    stats.totalFetched += events.events.length;
+    const inRangeEvents = (events.events as unknown as ContractEventResource[]).filter((event) => {
+      const ledger = Number(event.ledger);
+      return (fromLedger === undefined || ledger >= fromLedger) &&
+        (toLedger === undefined || ledger <= toLedger);
+    });
+    stats.totalFetched += inRangeEvents.length;
 
-    for (const raw of events.events as unknown[]) {
-      const event = raw as ContractEventResource;
+    for (const event of inRangeEvents) {
       const parsed = parseEvent(event);
 
       if (!parsed) {
@@ -277,14 +282,6 @@ async function runBackfill(options: {
       }
 
       stats.totalParsed++;
-
-      // Stop if we have passed the requested end ledger.
-      if (endLedger !== undefined && parsed.ledger > endLedger) {
-        console.log(`[backfill] Reached end-ledger ${endLedger} — stopping`);
-        printSummary(stats, dryRun);
-        if (!dryRun) await pool.end();
-        return;
-      }
 
       if (dryRun) {
         // In dry-run mode just accumulate stats.
@@ -300,10 +297,18 @@ async function runBackfill(options: {
       }
     }
 
-    // Advance cursor.
-    const lastEvent = events.events[events.events.length - 1] as unknown as ContractEventResource;
+    const passedToLedger = toLedger !== undefined &&
+      (events.events as unknown as ContractEventResource[]).some((event) => Number(event.ledger) > toLedger);
+    if (passedToLedger) {
+      console.log(`[backfill] Reached to-ledger ${toLedger} — stopping`);
+      break;
+    }
+
+    // Advance cursor to the last event included in the requested range.
+    const lastEvent = inRangeEvents[inRangeEvents.length - 1];
+    if (!lastEvent) break;
     cursor = lastEvent.pagingToken;
-    const lastLedger = parseInt(lastEvent.ledger, 10);
+    const lastLedger = Number(lastEvent.ledger);
 
     if (currentLedger === undefined || lastLedger > currentLedger) {
       const delta =
@@ -397,16 +402,38 @@ const argv = yargs(hideBin(process.argv))
   .option('start-ledger', {
     alias: 's',
     type: 'number',
+    description: 'Ledger sequence number to start from (alias: --from-ledger)',
+  })
+  .option('from-ledger', {
+    type: 'number',
     description: 'Ledger sequence number to start from (ignored when --resume is set)',
   })
   .option('end-ledger', {
     alias: 'e',
     type: 'number',
+    description: 'Ledger sequence number to stop at (inclusive; alias: --to-ledger)',
+  })
+  .option('to-ledger', {
+    type: 'number',
     description: 'Ledger sequence number to stop at (inclusive)',
+  })
+  .check((args) => {
+    const startLedger = args['from-ledger'] ?? args['start-ledger'];
+    const endLedger = args['to-ledger'] ?? args['end-ledger'];
+    if (startLedger !== undefined && (!Number.isInteger(startLedger) || startLedger < 1)) {
+      throw new Error('--from-ledger must be a positive integer');
+    }
+    if (endLedger !== undefined && (!Number.isInteger(endLedger) || endLedger < 1)) {
+      throw new Error('--to-ledger must be a positive integer');
+    }
+    if (startLedger !== undefined && endLedger !== undefined && startLedger > endLedger) {
+      throw new Error('--from-ledger must be less than or equal to --to-ledger');
+    }
+    return true;
   })
   .example('$0 --dry-run', 'Estimate event volume without writing to the DB')
   .example(
-    '$0 --batch-size 500 --start-ledger 1000000',
+    '$0 --batch-size 500 --from-ledger 1000000 --to-ledger 1001000',
     'Backfill from ledger 1,000,000 with large batches',
   )
   .example('$0 --resume', 'Continue a previously interrupted backfill')
@@ -417,8 +444,8 @@ runBackfill({
   dryRun: argv['dry-run'],
   batchSize: argv['batch-size'],
   resume: argv['resume'],
-  startLedger: argv['start-ledger'],
-  endLedger: argv['end-ledger'],
+  fromLedger: argv['from-ledger'] ?? argv['start-ledger'],
+  toLedger: argv['to-ledger'] ?? argv['end-ledger'],
 }).catch((err) => {
   console.error('[backfill] Fatal error:', err instanceof Error ? err.message : String(err));
   process.exit(1);

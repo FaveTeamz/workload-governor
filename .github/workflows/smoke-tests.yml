@@ -12,6 +12,9 @@ on:
         default: testnet
         required: false
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     name: Smoke test all 13 contract functions

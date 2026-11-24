@@ -53,6 +53,16 @@ If you prefer to interact with the deployed contract directly via CLI rather tha
 building from source, see [docs/contributor-guide.md](docs/contributor-guide.md)
 for a complete CLI workflow walkthrough — no frontend required.
 
+### Pre-Commit Hook Setup
+
+To automatically validate linting, TypeScript types, OpenAPI documentation sync, and CHANGELOG formatting before committing:
+
+```bash
+# Install the automated pre-commit hook into your local git repository
+ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
 ---
 
 ## Reporting Bugs

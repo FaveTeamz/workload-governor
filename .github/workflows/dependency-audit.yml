@@ -36,6 +36,10 @@ permissions:
   security-events: write   # required for SARIF upload
   pull-requests: write     # required to post PR comment
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   # ──────────────────────────────────────────────────────────────────────

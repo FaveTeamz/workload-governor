@@ -2,6 +2,8 @@ name: Release WASM Artifacts
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*'
 
@@ -12,6 +14,7 @@ jobs:
   build-release:
     name: Build WASM & Create GitHub Release
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,7 +46,7 @@ jobs:
           cat SHA256SUMS.txt
 
       - name: Create GitHub Release and Upload Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/workload_governor.wasm

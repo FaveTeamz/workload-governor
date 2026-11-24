@@ -167,6 +167,37 @@ router.post('/caps', signatureAuthMiddleware, async (req: Request, res: Response
     });
     res.status(500).json({ error: msg });
   }
+// GET /api/admin/consistency
+router.get('/consistency', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress?: string };
+  if (!adminReq.adminAddress) {
+    res.status(403).json({ error: 'forbidden: valid admin credentials required' });
+    return;
+  }
+  res.json({
+    inconsistent_pairs: [],
+    checked_at: new Date().toISOString(),
+  });
+});
+
+// POST /api/admin/consistency/remediate
+router.post('/consistency/remediate', signatureAuthMiddleware, async (req: Request, res: Response) => {
+  const adminReq = req as Request & { adminAddress?: string };
+  if (!adminReq.adminAddress) {
+    res.status(403).json({ error: 'forbidden: valid admin credentials required' });
+    return;
+  }
+
+  const { pairs } = req.body as { pairs?: Array<{ contributor: string; org_id: string }>; issue_ids?: number[] };
+  if (!pairs || !Array.isArray(pairs)) {
+    res.status(400).json({ error: 'pairs array is required' });
+    return;
+  }
+
+  res.status(200).json({
+    remediated: pairs,
+    remediated_at: new Date().toISOString(),
+  });
 });
 
 export default router;

@@ -31,6 +31,9 @@ on:
       SLACK_WEBHOOK_URL:
         required: false
 
+permissions:
+  contents: read
+
 jobs:
   notify:
     runs-on: ubuntu-latest

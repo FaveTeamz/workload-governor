@@ -138,28 +138,30 @@ key = concat(category_tag_byte, contributor_pubkey, org_id_bytes, issue_id_bytes
 
 ---
 
-## Decision — Six-Prefix Flat Key Schema
+## Decision — Compact Flat Key Schema
 
-The contract uses **six distinct `Symbol` prefixes** as the first element of every storage key tuple. Each prefix maps one-to-one to a logical category:
+The contract uses distinct `Symbol` prefixes as the first element of every storage key tuple. The primary application and assignment keys are:
 
 | Prefix | Full key shape | Tier | Purpose |
 |---|---|---|---|
-| `"g_apps"` | `("g_apps", contributor: Address)` | Temporary | Global pending-application counter |
-| `"app"` | `("app", contributor: Address, org_id: Symbol, issue_id: u32)` | Temporary | Per-issue application sentinel |
-| `"admin"` | `"admin"` (bare `Symbol`) | Persistent | Admin address |
-| `"maint"` | `("maint", maintainer: Address, org_id: Symbol)` | Persistent | Maintainer authorisation |
-| `"o_asgn"` | `("o_asgn", contributor: Address, org_id: Symbol)` | Persistent | Per-org assignment counter |
-| `"asgn"` | `("asgn", org_id: Symbol, issue_id: u32, contributor: Address)` | Persistent | Per-assignment sentinel |
+| `"g"` | `("g", contributor: Address)` | Temporary | Global pending-application counter |
+| `"a"` | `("a", contributor: Address, org_id: Symbol, issue_id: u32)` | Temporary | Per-issue application sentinel |
+| `"d"` | `"d"` (bare `Symbol`) | Persistent | Admin address |
+| `"m"` | `("m", maintainer: Address, org_id: Symbol)` | Persistent | Maintainer authorisation |
+| `"o"` | `("o", contributor: Address, org_id: Symbol)` | Persistent | Per-org assignment counter |
+| `"s"` | `("s", org_id: Symbol, issue_id: u32, contributor: Address)` | Persistent | Per-assignment sentinel |
 
-The `"o_cap"` key `("o_cap", org_id)` stores per-org assignment cap overrides in persistent storage and uses the same prefix scheme.
+The `"c"` key stores the global application cap override in persistent storage. Other compact prefixes are `v` (migration flag), `t`/`u` (multi-sig threshold/signers), `p`/`w` (governance proposal/vote), `r` (proposal counter), and `n` (admin nonce). The legacy `o_asgn` symbol is retained only for the v1 migration reader.
 
 ### Collision-freedom proof
 
-For any two entries from different categories, the first element of their key tuples differs (`"g_apps" ≠ "app" ≠ "admin" ≠ "maint" ≠ "o_asgn" ≠ "asgn"`). Soroban XDR equality requires every element to match; therefore two entries from different categories can never share a key. Within the same category, subsequent elements encode the full identifying context, so intra-category collisions are also impossible given unique `(contributor, org, issue)` triples.
+For any two entries from different categories, their prefix symbols are distinct. Soroban XDR equality requires every element to match; therefore two entries from different categories can never share a key. Within the same category, subsequent elements encode the full identifying context, so intra-category collisions are also impossible given unique `(contributor, org, issue)` triples.
 
 ### TTL isolation
 
-Temporary entries (`"g_apps"`, `"app"`) expire with the Wave. Persistent entries survive until the contract is archived. Because the tier is determined by the `Env::storage().temporary()` vs `.persistent()` call site — not the key — entries of different tiers with the same key shape would still be stored in different sub-ledgers. The separate prefixes make accidental cross-tier TTL bumping impossible at the source-code level.
+Temporary entries (`"g"`, `"a"`) expire with the Wave. Persistent entries survive until the contract is archived. Because the tier is determined by the `Env::storage().temporary()` vs `.persistent()` call site — not the key — entries of different tiers with the same key shape would still be stored in different sub-ledgers. The separate prefixes make accidental cross-tier TTL bumping impossible at the source-code level.
+
+The compact prefix schema supersedes the original textual prefixes. Because a prefix is part of a ledger key, existing deployments require a complete state migration before upgrading; this change alone must only be used with a fresh deployment.
 
 ---
 

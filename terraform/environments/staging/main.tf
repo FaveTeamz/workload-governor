@@ -18,7 +18,7 @@ terraform {
     bucket         = "workload-governor-tfstate"
     key            = "staging/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "workload-governor-tflock"
+    dynamodb_table = "workload-governor-terraform-locks"
     encrypt        = true
   }
 }
