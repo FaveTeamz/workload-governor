@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { ZodSchema, ZodError, z } from 'zod';
+import { ValidationError } from '../errors';
 
 export interface ValidationSchemas {
   body?: ZodSchema;
@@ -10,6 +11,45 @@ export interface ValidationSchemas {
 export interface FieldError {
   field: string;
   message: string;
+}
+
+/**
+ * Strict slug pattern for organization identifiers (#1235).
+ *
+ * Rules:
+ *   - First character must be a lowercase letter or digit (not `_` or `-`)
+ *   - Remaining 1–31 characters may be lowercase letters, digits, `_`, or `-`
+ *   - Total length: 2–32 characters
+ *
+ * Valid:   stellar, soroban-governor, org_123
+ * Invalid: Stellar, org name, org$, _leading-underscore, a (single char)
+ */
+const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{1,31}$/;
+
+/**
+ * Express `router.param` handler that validates and normalises `:orgId`.
+ *
+ * Returns 400 Bad Request immediately when the value does not match the slug
+ * pattern, preventing invalid strings from reaching database queries or
+ * Soroban symbol conversions.  Valid values are normalised to lowercase before
+ * being forwarded so downstream handlers can rely on a canonical form.
+ */
+export function validateOrgIdParam(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  value: string,
+): void {
+  const normalised = value.toLowerCase();
+  if (!ORG_ID_PATTERN.test(normalised)) {
+    res.status(400).json({
+      error: 'Invalid organization identifier format. Must be lowercase alphanumeric between 2 and 32 characters.',
+    });
+    return;
+  }
+  // Store the normalised (lowercase) value so all downstream handlers see it.
+  req.params['orgId'] = normalised;
+  next();
 }
 
 /**
@@ -42,6 +82,7 @@ export function validateBody<S extends ZodSchema>(schema: S): RequestHandler {
     if (!result.success) {
       res.status(400).json({
         error: 'validation failed',
+        message: 'Request body validation failed',
         details: formatZodErrors(result.error),
       });
       return;
@@ -63,6 +104,7 @@ export function validateQuery<S extends ZodSchema>(schema: S): RequestHandler {
     if (!result.success) {
       res.status(400).json({
         error: 'validation failed',
+        message: 'Request query validation failed',
         details: formatZodErrors(result.error),
       });
       return;
@@ -117,6 +159,7 @@ export function validateRequest(schemas: ValidationSchemas): RequestHandler {
     if (allErrors.length > 0) {
       res.status(400).json({
         error: 'validation failed',
+        message: 'Request validation failed',
         details: allErrors,
       });
       return;
