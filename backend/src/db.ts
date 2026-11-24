@@ -13,6 +13,8 @@
  *   DB_CONNECTION_TIMEOUT: ms to wait for a connection   (default: 5000)
  */
 
+// Register pg instrumentation before loading the pg module.
+import "./tracing.js";
 import pg from "pg";
 
 const { Pool } = pg;
