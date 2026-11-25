@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { IssueCard } from '../../../frontend/src/components/IssueCard';
-import IssueCardGrid from '../../../frontend/components/IssueCard';
+import IssueCardGrid from '../../../frontend/src/components/IssueCardGrid';
 
 interface IssueCardMockProps {
   id: string;

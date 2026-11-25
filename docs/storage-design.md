@@ -617,3 +617,27 @@ flowchart LR
     C -->|"DEL cache:contributor:<address>"| E["Contributor Cache"]
 ```
 
+
+## Application Retention: Soft Delete and Archival (#1252)
+
+Withdrawn or expired applications are **soft-deleted**, not removed. Migration
+`7_add_soft_delete_and_archive.js` makes these changes:
+
+- It adds `applications.deleted_at` (set on soft delete) and `applications.archived_at`.
+- It adds a partial index `idx_applications_deleted_at` that covers only soft-deleted rows.
+- It creates `applications_archive`, which has the same columns as `applications`.
+
+**Live queries** add `deleted_at IS NULL`. That predicate is exported as
+`ACTIVE_APPLICATION_FILTER` from `backend/src/applicationRetention.ts`, and it is
+applied in the contributor, issue and org routes and in `issueService`.
+
+**Retention policy:** a nightly job (`runApplicationArchivalJob` in `backend/src/scheduler.ts`)
+runs at 03:30 UTC. It moves rows soft-deleted more than **90 days** ago into
+`applications_archive` and stamps each one with `archived_at`. It works in batches of 500
+using `FOR UPDATE SKIP LOCKED`, so live reads and writes on `applications` are never
+blocked. It stops after 200 batches per run and continues the next night if a backlog
+remains. Archived rows stay queryable for audits and historical analytics.
+
+**Rollback:** the down migration removes the columns, the index and the archive table.
+It refuses to run while `applications_archive` still has rows, so archived history is
+never discarded or put back as live data by accident. Export the archive first.

@@ -235,7 +235,7 @@ export class IssueService {
     // Available count (open and not fully assigned)
     const availableResult = await query.clone()
       .where('status', 'open')
-      .whereRaw('COALESCE((SELECT COUNT(*) FROM applications WHERE applications.issue_id = issues.id AND applications.status = \'pending\'), 0) < issues.max_applicants')
+      .whereRaw('COALESCE((SELECT COUNT(*) FROM applications WHERE applications.issue_id = issues.id AND applications.status = \'pending\' AND applications.deleted_at IS NULL), 0) < issues.max_applicants')
       .whereNotExists(
         db('assignments')
           .whereRaw('assignments.issue_id = issues.id')

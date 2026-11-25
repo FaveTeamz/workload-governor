@@ -5,7 +5,7 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@tokens': resolve(__dirname, 'src/tokens.json') },
+    alias: { '@': resolve(__dirname, 'src'), '@tokens': resolve(__dirname, 'src/tokens.json') },
   },
   css: {
     // Disable PostCSS processing in the test environment so missing plugins

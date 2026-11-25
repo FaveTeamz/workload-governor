@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
-import EventHistoryTable, { type EventRow } from '../../../components/EventHistoryTable';
+import EventHistoryTable, { type EventRow } from '../LiveEventHistoryTable';
 
 // ---------------------------------------------------------------------------
 // Helpers

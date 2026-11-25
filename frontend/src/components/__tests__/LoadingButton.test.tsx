@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import LoadingButton from '../../../components/LoadingButton';
+import LoadingButton from '../LoadingButton';
 
 describe('LoadingButton', () => {
   it('shows a loading state and prevents clicks while pending', () => {

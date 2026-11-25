@@ -1,4 +1,4 @@
-import { AnimatedCount } from "../../components/AnimatedCount";
+import { AnimatedCount } from "./AnimatedCount";
 
 export interface GaugeProps {
   /** Current count value (e.g. number of pending applications). */

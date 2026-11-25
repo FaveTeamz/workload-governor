@@ -3,7 +3,7 @@
 # Standard developer commands for smart contract, backend, and frontend.
 # Run 'make help' for a list of all documented targets.
 
-.PHONY: all setup build build-wasm build-all test test-contract test-backend \
+.PHONY: all setup build build-wasm build-all bench test test-contract test-backend \
         test-frontend test-all lint-all dev fuzz-list fuzz-build fuzz-apply \
         fuzz-ci clean help
 
@@ -78,6 +78,9 @@ test-frontend: ## Run frontend test suite
 	npm --prefix frontend test
 
 test-all: test-contract test-backend test-frontend ## Run all test suites across contract, backend, and frontend
+
+bench: ## Leaderboard EXPLAIN ANALYZE benchmarks (needs DATABASE_URL); appends results to bench-results/
+	BENCH_RESULTS_FILE=bench-results/leaderboard.jsonl npx jest --config jest.config.ts --runInBand tests/perf
 
 # ---------------------------------------------------------------------------
 # Lint Targets

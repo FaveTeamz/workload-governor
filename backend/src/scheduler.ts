@@ -19,6 +19,7 @@ import pool from "./db.js";
 import logger from "./logger.js";
 import { extendApplicationTtlBatch, type ApplicationRef } from "./soroban.js";
 import { runFullSync } from "./github.js";
+import { archiveStaleApplications } from "./applicationRetention.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -215,6 +216,26 @@ export async function runGitHubSyncJob(): Promise<void> {
   }
 }
 
+// ─── Application archival (issue #1252) ──────────────────────────────────────
+
+/**
+ * Moves applications soft-deleted more than 90 days ago into
+ * applications_archive. Runs in short batches with SKIP LOCKED, so live
+ * queries on `applications` are never blocked.
+ */
+export async function runApplicationArchivalJob(): Promise<void> {
+  const start = Date.now();
+  try {
+    const { archived, batches, complete } = await archiveStaleApplications(pool);
+    logger.info(
+      { archived, batches, complete, durationMs: Date.now() - start },
+      complete ? "Application archival job complete" : "Application archival job paused (backlog remains)",
+    );
+  } catch (err) {
+    logger.error({ err, durationMs: Date.now() - start }, "Application archival job failed");
+  }
+}
+
 // ─── Indexer Checkpoint Persistence (issue #849) ─────────────────────────────
 
 export interface CheckpointRecord {
@@ -354,6 +375,7 @@ export interface SchedulerHandle {
  * Schedules:
  *   - TTL extension:  every 6 hours  (cron: "0 *\/6 * * *")
  *   - GitHub sync:    every 15 min   (cron: "0,15,30,45 * * * *")
+ *   - Archival:       daily 03:30    (cron: "30 3 * * *")
  */
 export function startScheduler(): SchedulerHandle {
   // Run TTL extension immediately on start so we don't wait 6 h on first boot
@@ -386,8 +408,19 @@ export function startScheduler(): SchedulerHandle {
     { timezone: "UTC" },
   );
 
+  // Off-peak daily sweep of soft-deleted applications (#1252)
+  const archivalTask = cron.schedule(
+    "30 3 * * *",
+    () => {
+      runApplicationArchivalJob().catch((err) =>
+        logger.error({ err }, "Scheduled application archival job failed"),
+      );
+    },
+    { timezone: "UTC" },
+  );
+
   logger.info(
-    { ttl: "every 6 hours", githubSync: "every 15 minutes" },
+    { ttl: "every 6 hours", githubSync: "every 15 minutes", archival: "daily 03:30 UTC" },
     "Scheduler started",
   );
 
@@ -395,6 +428,7 @@ export function startScheduler(): SchedulerHandle {
     stop() {
       ttlTask.stop();
       syncTask.stop();
+      archivalTask.stop();
       logger.info("Scheduler stopped");
     },
   };

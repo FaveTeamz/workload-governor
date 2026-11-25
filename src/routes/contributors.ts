@@ -136,6 +136,7 @@ router.get('/:address/activity', async (req: Request, res: Response) => {
                COUNT(*) AS cnt
         FROM applications
         WHERE contributor = $1
+          AND deleted_at IS NULL
           AND created_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
         GROUP BY 1
       ),
@@ -206,7 +207,7 @@ router.get('/:address/summary', async (req: Request, res: Response) => {
     const appCountsResult = await pool.query<{ org_id: string; cnt: string }>(
       `SELECT org_id, COUNT(*) AS cnt
        FROM applications
-       WHERE contributor = $1
+       WHERE contributor = $1 AND deleted_at IS NULL
        GROUP BY org_id`,
       [address],
     );

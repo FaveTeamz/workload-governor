@@ -1,9 +1,9 @@
 'use client';
 
-import NavBar from '@/components/NavBar';
-import IssueCardGrid from '@/components/IssueCard';
-import EventHistoryTable from '@/components/EventHistoryTable';
-import EmptyState from '@/components/EmptyState';
+import { NavBar } from '@/components/NavBar';
+import IssueCardGrid from '@/components/IssueCardGrid';
+import { EventHistoryTable, type ContractEvent } from '@/components/EventHistoryTable';
+import { EmptyState } from '@/components/EmptyState';
 import TxConfirmModal from '@/components/TxConfirmModal';
 import { useTxModal } from '@/hooks/useTxModal';
 import { useState } from 'react';
@@ -15,9 +15,9 @@ const sampleIssues = [
   { id: 'issue_3', title: 'Improve error messages', org: 'org_stellar_002', status: 'open' as const, reward: 30 },
 ];
 
-const sampleEvents = [
-  { id: 'evt_1', eventType: 'applied', org: 'org_stellar_001', issueId: 'issue_1', contributor: 'GAEZI...', timestamp: '2026-07-01T12:00:00Z' },
-  { id: 'evt_2', eventType: 'assigned', org: 'org_stellar_001', issueId: 'issue_2', contributor: 'GAEZI...', timestamp: '2026-07-10T09:00:00Z' },
+const sampleEvents: ContractEvent[] = [
+  { id: 'evt_1', event_type: 'application', org_id: 'org_stellar_001', issue_id: 'issue_1', contributor: 'GAEZI...', timestamp: '2026-07-01T12:00:00Z', tx_hash: '' },
+  { id: 'evt_2', event_type: 'assignment', org_id: 'org_stellar_001', issue_id: 'issue_2', contributor: 'GAEZI...', timestamp: '2026-07-10T09:00:00Z', tx_hash: '' },
 ];
 
 export default function DashboardPage() {
@@ -80,7 +80,7 @@ export default function DashboardPage() {
           {sampleEvents.length > 0 ? (
             <EventHistoryTable events={sampleEvents} />
           ) : (
-            <EmptyState variant="no-history" />
+            <EmptyState variant="no-events" />
           )}
         </section>
 

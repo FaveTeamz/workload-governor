@@ -15,7 +15,7 @@
  */
 
 import { useState, useEffect, type ReactNode } from "react";
-import FadeInCard from "../../components/FadeInCard";
+import FadeInCard from "./FadeInCard";
 
 // ---------------------------------------------------------------------------
 // SkeletonLoader — handles 300 ms min display + aria-busy management

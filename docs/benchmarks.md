@@ -207,3 +207,49 @@ Common sources of unexpected size growth:
 - Using `String` or `Vec<T>` from `std` instead of `soroban_sdk`
 - Enabling a dependency feature that pulls in `std`
 - Removing `#[no_std]` from `src/lib.rs`
+
+
+## Leaderboard Query Benchmarks (PostgreSQL)
+
+`tests/perf/leaderboardQuery.test.ts` runs `EXPLAIN (ANALYZE, COSTS, BUFFERS, FORMAT JSON)`
+on the exact SQL `GET /api/v1/leaderboard` executes (`buildLeaderboardQuery` in
+`src/routes/leaderboard.ts`) for each filter combination: all-time, 30 days, 7 days,
+single org, single org + 7 days, and `limit=100`.
+
+```bash
+DATABASE_URL=postgres://user:pass@localhost:5432/workload_governor make bench
+```
+
+The test is skipped when `DATABASE_URL` is unset. It works in its own
+`bench_leaderboard_perf` schema and drops the schema afterwards.
+
+**Dataset:** 2,000 contributors, 50,000 applications, 10,000 assignments and 8,000
+completions, stored as `contract_events` rows spread over 120 days and 20 orgs.
+
+**Assertions** (each one fails the test):
+
+| Check | Threshold | Override |
+|---|---|---|
+| Planner `Total Cost` | `< 2000` | `LEADERBOARD_MAX_COST` |
+| `Execution Time` | `< 35 ms` | `LEADERBOARD_MAX_TIME_MS` |
+| `Seq Scan` on `contract_events` | none allowed | n/a |
+
+The query stays fast because of the partial covering index
+`idx_contract_events_completed_contributor (contributor, org_id, timestamp) WHERE event_type = 'completed'`
+(migration `5_leaderboard_completed_idx.js`). Every case runs as an Index Only Scan.
+
+**Baseline** (PostgreSQL 16, local Docker, JIT off):
+
+| Query | Total Cost | Execution Time | Scan |
+|---|---|---|---|
+| all-time | 928 | 4.4 ms | Index Only Scan |
+| last 30 days | 729 | 2.2 ms | Index Only Scan |
+| last 7 days | 654 | 0.6 ms | Index Only Scan |
+| single org | 649 | 0.5 ms | Index Only Scan |
+| limit 100 | 985 | 2.6 ms | Index Only Scan |
+| all-time **without** the partial index | 2397 | 13.7 ms | Seq Scan (fails the test) |
+
+**Tracking across commits:** `make bench` sets `BENCH_RESULTS_FILE=bench-results/leaderboard.jsonl`.
+Each run appends one JSON line with the commit SHA (`GITHUB_SHA` or `git rev-parse HEAD`), the
+thresholds, and each query's cost, time and scan nodes. Upload that file as a CI artifact, or
+compare lines between commits to spot regressions.
