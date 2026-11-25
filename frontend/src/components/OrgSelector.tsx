@@ -17,6 +17,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useBookmarkedOrgs } from "../hooks/useBookmarkedOrgs";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,13 +122,16 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
 
   // ── Filtered options ────────────────────────────────────────────────────────
 
-  const filtered: Org[] = [
-    ALL_ORGS_OPTION,
-    ...orgs.filter((o) =>
-      o.name.toLowerCase().includes(query.toLowerCase()) ||
-      o.id.toLowerCase().includes(query.toLowerCase())
-    ),
-  ];
+  // Bookmarked orgs are pinned under "Favorite Organizations", right after
+  // "All Orgs" (#1264). Keyboard navigation follows this same order.
+  const { isBookmarked, toggleBookmark } = useBookmarkedOrgs();
+  const matching = orgs.filter((o) =>
+    o.name.toLowerCase().includes(query.toLowerCase()) ||
+    o.id.toLowerCase().includes(query.toLowerCase())
+  );
+  const favorites = matching.filter((o) => isBookmarked(o.id));
+  const others = matching.filter((o) => !isBookmarked(o.id));
+  const filtered: Org[] = [ALL_ORGS_OPTION, ...favorites, ...others];
 
   // ── Selection ────────────────────────────────────────────────────────────────
 
@@ -318,7 +322,21 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
               No organisations match "{query}"
             </li>
           ) : (
-            filtered.map((org, idx) => (
+            filtered.flatMap((org, idx) => [
+              ...(favorites.length > 0 && idx === 1
+                ? [
+                    <li key="__favorites__" role="presentation" className="org-selector__group-label">
+                      Favorite Organizations
+                    </li>,
+                  ]
+                : []),
+              ...(favorites.length > 0 && idx === favorites.length + 1 && others.length > 0
+                ? [
+                    <li key="__all-orgs__" role="presentation" className="org-selector__group-label">
+                      All Organizations
+                    </li>,
+                  ]
+                : []),
               <li
                 key={org.id || "__all__"}
                 id={`org-option-${org.id || "all"}`}
@@ -349,11 +367,29 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
                     {org.activeIssueCount}
                   </span>
                 )}
+                {org.id !== "" && (
+                  <button
+                    type="button"
+                    className={`org-selector__bookmark${isBookmarked(org.id) ? " org-selector__bookmark--on" : ""}`}
+                    aria-label="Bookmark organization"
+                    aria-pressed={isBookmarked(org.id)}
+                    title={isBookmarked(org.id) ? `Remove ${org.name} from favorites` : `Add ${org.name} to favorites`}
+                    tabIndex={-1}
+                    onMouseDown={(e) => {
+                      // Toggle the bookmark without selecting the org or closing the list.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleBookmark(org.id);
+                    }}
+                  >
+                    {isBookmarked(org.id) ? "★" : "☆"}
+                  </button>
+                )}
                 {selectedOrg.id === org.id && (
                   <span className="org-selector__checkmark" aria-hidden="true">✓</span>
                 )}
-              </li>
-            ))
+              </li>,
+            ])
           )}
         </ul>
       )}

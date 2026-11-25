@@ -2508,6 +2508,33 @@ a, button, input, select, textarea {
   flex-shrink: 0;
 }
 
+/* Org bookmarks (#1264) */
+.org-selector__group-label {
+  padding: 6px 12px 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  cursor: default;
+}
+
+.org-selector__bookmark {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.org-selector__bookmark--on,
+.org-selector__bookmark:hover {
+  color: var(--color-warning, #d97706);
+}
+
 .org-selector__no-results {
   padding: 12px;
   color: var(--color-muted);

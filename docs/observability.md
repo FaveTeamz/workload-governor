@@ -147,3 +147,30 @@ XRAY_ENABLED=true AWS_XRAY_DAEMON_ADDRESS=127.0.0.1:2000 npm run dev
 ```
 
 Segments appear in the [X-Ray console](https://console.aws.amazon.com/xray/home) within ~30 seconds.
+
+
+## Database Health Probes (#1256)
+
+`GET /api/health` reports database health under `database`:
+
+```json
+{
+  "status": "healthy",
+  "database": {
+    "primary": { "status": "up", "latencyMs": 2, "writable": true },
+    "replica": { "status": "up", "latencyMs": 1, "replicationLagSeconds": 0.2 }
+  }
+}
+```
+
+- **Primary.** The primary is `writable` when `pg_is_in_recovery()` is false and
+  `transaction_read_only` is `off`. If it is not writable (a standby after failover,
+  read-only mode) or unreachable, the response is HTTP 503. `txid_current()` is not
+  used, because it allocates a transaction id on every probe.
+- **Replica.** The replica is checked only when `DATABASE_REPLICA_URL` is set. It
+  reports `replicationLagSeconds`, from `now() - pg_last_xact_replay_timestamp()`.
+  A replica that is unreachable, or that lags more than `REPLICA_MAX_LAG_SECONDS`
+  (default 30), makes the overall status `degraded` but keeps HTTP 200, because
+  reads can fall back to the primary.
+- **Readiness.** `GET /api/ready` checks only that the primary is writable (200 or
+  503). Use it for Kubernetes readiness probes.

@@ -16,16 +16,31 @@
  *     ]
  *   }
  *
+ *     database: {
+ *       primary:  { status: "up" | "down", latencyMs: number, writable: boolean },
+ *       replica?: { status: "up" | "down" | "lagging", latencyMs: number,
+ *                   replicationLagSeconds: number | null }
+ *     }
+ *   }
+ *
  * HTTP status:
  *   200 — all dependencies healthy
  *   503 — any critical dependency (DB or Soroban RPC) is unhealthy or
- *          DB latency exceeds 2000ms (degraded)
+ *          DB latency exceeds 2000ms (degraded), or the primary is not
+ *          writable (#1256)
+ *
+ * GET /api/ready (#1256) checks only the primary database: 200 when it accepts
+ * writes, 503 otherwise. It suits Kubernetes readiness probes.
+ *
+ * The replica (DATABASE_REPLICA_URL, optional) is not critical. When it is down
+ * or lags more than REPLICA_MAX_LAG_SECONDS (default 30) behind, the overall
+ * status is "degraded" but the HTTP status stays 200.
  *
  * Each check has a 2-second timeout. The handler itself resolves within ~3s.
  */
 
 import type { Request, Response } from "express";
-import pool from "./db.js";
+import pool, { getReplicaPool } from "./db.js";
 import { getLatestLedger } from "./soroban.js";
 import logger from "./logger.js";
 import Redis from "ioredis";
@@ -49,9 +64,31 @@ interface DependencyResult {
 
 type OverallStatus = "healthy" | "degraded" | "unhealthy";
 
+export interface PrimaryDbStatus {
+  status:    "up" | "down";
+  latencyMs: number;
+  writable:  boolean;
+}
+
+export interface ReplicaDbStatus {
+  status:                "up" | "down" | "lagging";
+  latencyMs:             number;
+  /** Seconds since the last replayed transaction; null if unknown or not a standby. */
+  replicationLagSeconds: number | null;
+}
+
 interface HealthResponse {
   status:       OverallStatus;
   dependencies: DependencyResult[];
+  database: {
+    primary:  PrimaryDbStatus;
+    replica?: ReplicaDbStatus;
+  };
+}
+
+/** Minimal query interface, so the checks can be tested with a stub. */
+export interface Queryable {
+  query: (sql: string) => Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null }>;
 }
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -101,6 +138,51 @@ async function withTimeout<T>(
       error:      err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+const REPLICA_MAX_LAG_SECONDS = Number(process.env.REPLICA_MAX_LAG_SECONDS ?? 30);
+
+/**
+ * Primary write capability (#1256). The server must not be a standby, and the
+ * session must not default to read-only. `txid_current()` is deliberately not
+ * used: it allocates a transaction id on every call, and a frequently polled
+ * probe would burn XIDs.
+ */
+export async function checkPrimaryDatabase(db: Queryable = pool): Promise<PrimaryDbStatus> {
+  const { result, latency_ms, error } = await withTimeout("postgres_primary", async () => {
+    const res = await db.query(
+      "SELECT pg_is_in_recovery() AS in_recovery, current_setting('transaction_read_only') AS read_only",
+    );
+    const row = res.rows[0] ?? {};
+    return row.in_recovery === false && row.read_only === "off";
+  });
+  if (error) {
+    logger.warn({ error }, "Health check: postgres primary unreachable");
+    return { status: "down", latencyMs: latency_ms, writable: false };
+  }
+  return { status: "up", latencyMs: latency_ms, writable: result === true };
+}
+
+/** Read replica reachability and replication lag (#1256). */
+export async function checkReplicaDatabase(db: Queryable): Promise<ReplicaDbStatus> {
+  const { result, latency_ms, error } = await withTimeout("postgres_replica", async () => {
+    const res = await db.query(
+      "SELECT pg_is_in_recovery() AS in_recovery, pg_last_wal_replay_lsn()::text AS replay_lsn, " +
+        "EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) AS lag_seconds",
+    );
+    return res.rows[0] ?? {};
+  });
+  if (error || !result) {
+    logger.warn({ error }, "Health check: postgres replica unreachable");
+    return { status: "down", latencyMs: latency_ms, replicationLagSeconds: null };
+  }
+  const lag = result.in_recovery === true && result.lag_seconds != null ? Number(result.lag_seconds) : null;
+  const lagging = lag !== null && lag > REPLICA_MAX_LAG_SECONDS;
+  return {
+    status: lagging ? "lagging" : "up",
+    latencyMs: latency_ms,
+    replicationLagSeconds: lag,
+  };
 }
 
 /** Check PostgreSQL by running SELECT 1 and measuring round-trip latency. */
@@ -209,20 +291,27 @@ const CRITICAL_DEPS = new Set(["postgres", "soroban_rpc"]);
 export async function healthHandler(_req: Request, res: Response): Promise<void> {
   const start = Date.now();
 
-  const [postgres, redis, sorobanRpc, horizon, github] = await Promise.all([
+  const replica = getReplicaPool();
+  const [postgres, redis, sorobanRpc, horizon, github, primaryDb, replicaDb] = await Promise.all([
     checkDatabase(),
     checkRedis(),
     checkSorobanRpc(),
     checkHorizon(),
     checkGitHub(),
+    checkPrimaryDatabase(),
+    replica ? checkReplicaDatabase(replica) : Promise.resolve(undefined),
   ]);
 
   const dependencies: DependencyResult[] = [postgres, redis, sorobanRpc, horizon, github];
 
-  const criticalDown = dependencies.some(
-    (d) => CRITICAL_DEPS.has(d.name) && (d.status === "unhealthy" || d.status === "degraded"),
-  );
-  const anyDown = dependencies.some((d) => d.status === "unhealthy");
+  const criticalDown =
+    !primaryDb.writable ||
+    dependencies.some(
+      (d) => CRITICAL_DEPS.has(d.name) && (d.status === "unhealthy" || d.status === "degraded"),
+    );
+  const anyDown =
+    dependencies.some((d) => d.status === "unhealthy") ||
+    (replicaDb !== undefined && replicaDb.status !== "up");
 
   const overallStatus: OverallStatus = criticalDown
     ? "unhealthy"
@@ -230,7 +319,11 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
     ? "degraded"
     : "healthy";
 
-  const body: HealthResponse = { status: overallStatus, dependencies };
+  const body: HealthResponse = {
+    status: overallStatus,
+    dependencies,
+    database: replicaDb ? { primary: primaryDb, replica: replicaDb } : { primary: primaryDb },
+  };
   const httpStatus = criticalDown ? 503 : 200;
 
   logger.info(
@@ -239,4 +332,17 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
   );
 
   res.status(httpStatus).json(body);
+}
+
+/**
+ * GET /api/ready (#1256) — readiness: 200 only while the primary database
+ * accepts writes, so a pod pointed at a standby or read-only primary is taken
+ * out of rotation.
+ */
+export async function readyHandler(_req: Request, res: Response): Promise<void> {
+  const primary = await checkPrimaryDatabase();
+  res.status(primary.writable ? 200 : 503).json({
+    status: primary.writable ? "ready" : "not_ready",
+    database: { primary },
+  });
 }

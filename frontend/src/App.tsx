@@ -9,6 +9,7 @@ import { IssueCard } from "./components/IssueCard";
 import type { IssueStatus } from "./components/IssueCard";
 import { ToastContainer, useToast } from "./components/Toast";
 import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useWallet } from "./hooks/useWallet";
 import { useKeyboardShortcuts, type ShortcutHandler } from "./hooks/useKeyboardShortcuts";
 import "./app.css";
@@ -140,6 +141,8 @@ export default function App() {
       />
 
       <main id="main-content" className="app-main" tabIndex={-1}>
+        {/* A crash in one view shows a per-view fallback and resets on navigation (#1265). */}
+        <ErrorBoundary variant="view" label={hash || "#/"} resetKey={hash}>
         {hash === "#/activity" ? (
           <ActivityPage />
         ) : (
@@ -178,6 +181,7 @@ export default function App() {
             <ActivityFeed apiBase="/api" network="testnet" />
           </>
         )}
+        </ErrorBoundary>
       </main>
 
       <OnboardingWizard />

@@ -83,3 +83,25 @@ pool.on("error", (err: Error, client?: any) => {
 });
 
 export default pool;
+
+/**
+ * Optional read-replica pool (#1256), configured with DATABASE_REPLICA_URL.
+ * `null` when no replica is configured; created on first use.
+ */
+let replicaPool: pg.Pool | null | undefined;
+
+export function getReplicaPool(): pg.Pool | null {
+  if (replicaPool === undefined) {
+    const url = process.env.DATABASE_REPLICA_URL;
+    replicaPool = url
+      ? new Pool({
+          connectionString: url,
+          ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+          max: 2,
+          idleTimeoutMillis: idleTimeout,
+          connectionTimeoutMillis: acquireTimeout,
+        })
+      : null;
+  }
+  return replicaPool;
+}

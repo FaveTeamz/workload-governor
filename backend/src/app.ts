@@ -3,6 +3,7 @@
  *
  * Mounts:
  *   GET /api/health  — health check (#309)
+ *   GET /api/ready   — readiness: primary DB writable (#1256)
  *
  * Starts:
  *   - Scheduler for TTL extension + GitHub sync (#311, #312)
@@ -12,7 +13,7 @@
  */
 
 import express from "express";
-import { healthHandler } from "./health.js";
+import { healthHandler, readyHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
 import logger from "./logger.js";
@@ -35,6 +36,7 @@ app.use((req, _res, next) => {
 
 // Health check
 app.get("/api/health", healthHandler);
+app.get("/api/ready", readyHandler);
 
 // 404 fallback
 app.use((_req, res) => {
