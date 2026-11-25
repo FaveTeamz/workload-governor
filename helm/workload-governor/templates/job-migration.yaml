@@ -1,0 +1,57 @@
+{{- if .Values.migrations.enabled }}
+# Runs database migrations once per install/upgrade, before the new pods
+# start (#1255). scripts/migrate.js holds a PostgreSQL advisory lock while it
+# migrates, so even if several runners start (retries, overlapping releases)
+# migrations are applied one at a time. It fails after
+# MIGRATION_LOCK_TIMEOUT_MS instead of hanging.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "vesting-backend.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "vesting-backend.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "vesting-backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrations
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vesting-backend.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ include "vesting-backend.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "scripts/migrate.js", "up"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "vesting-backend.fullname" . }}-config
+            {{- if .Values.externalSecrets.enabled }}
+            - secretRef:
+                name: {{ include "vesting-backend.fullname" . }}-secrets
+            {{- end }}
+          env:
+            - name: MIGRATION_LOCK_TIMEOUT_MS
+              value: {{ .Values.migrations.lockTimeoutMs | quote }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

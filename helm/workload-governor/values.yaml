@@ -164,6 +164,16 @@ config:
   # -- Log level: debug | info | warn | error
   LOG_LEVEL: "info"
 
+# ─── Database migrations (#1255) ────────────────────────────────────────────
+migrations:
+  # -- Run `node scripts/migrate.js up` as a pre-install/pre-upgrade hook Job.
+  # The runner takes a PostgreSQL advisory lock, so concurrent runs are serialized.
+  enabled: false
+  # -- Give up (and fail the Job) if the lock is not acquired within this many ms
+  lockTimeoutMs: 60000
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+
 # ─── Secrets via External Secrets Operator ───────────────────────────────────
 externalSecrets:
   # -- Enable ExternalSecret resource (requires external-secrets operator)

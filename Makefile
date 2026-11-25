@@ -4,7 +4,7 @@
 # Run 'make help' for a list of all documented targets.
 
 .PHONY: all setup build build-wasm build-all test test-contract test-backend \
-        test-frontend test-all lint-all dev fuzz-list fuzz-build fuzz-apply \
+        test-frontend test-all lint-all dev dev-frontend build-frontend fuzz-list fuzz-build fuzz-apply \
         fuzz-ci clean help
 
 # ---------------------------------------------------------------------------
@@ -73,6 +73,12 @@ test-contract: ## Run contract tests and verify storage key collision freedom
 
 test-backend: ## Run backend unit and integration tests
 	npm --prefix backend test
+
+dev-frontend: ## Start the Vite dev server for the frontend
+	npm --prefix frontend run dev
+
+build-frontend: ## Build the frontend with Vite into frontend/dist
+	npm --prefix frontend run build
 
 test-frontend: ## Run frontend test suite
 	npm --prefix frontend test

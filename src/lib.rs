@@ -623,6 +623,16 @@ impl WorkloadGovernor {
         storage::get_global_app_count(&env, &contributor)
     }
 
+    /// Returns `true` if `maintainer` is registered as a maintainer of `org_id`.
+    ///
+    /// Read-only view (no auth) so clients can decide whether to show
+    /// maintainer-only actions before a transaction would fail on-chain with
+    /// an unauthorized-maintainer error (#1261).
+    pub fn is_maintainer(env: Env, maintainer: Address, org_id: Symbol) -> bool {
+        require_valid_org_id(&env, &org_id);
+        storage::is_maintainer(&env, &maintainer, &org_id)
+    }
+
     /// Returns the contributor's active assignment count for the given org (0 if absent).
     pub fn get_org_assignment_count(env: Env, contributor: Address, org_id: Symbol) -> u32 {
         require_valid_org_id(&env, &org_id);

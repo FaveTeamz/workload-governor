@@ -11,6 +11,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
+import { useMaintainerStatus } from '../hooks/useMaintainerAuth';
 import {
   useInfiniteOrgIssues,
   type OrgIssue,
@@ -185,6 +186,8 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { add: addToast } = useToast();
   const txModal = useTxModal();
+  // Contract-backed maintainer check (#1261): contributors see a read-only notice.
+  const maintainer = useMaintainerStatus(org_id ?? '', apiBase);
 
   const {
     issues,
@@ -441,6 +444,18 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
           ↺ Refresh
         </button>
       </div>
+
+      {wallet.publicKey && maintainer.isLoading && (
+        <p className="org-issues-page__role" role="status" aria-live="polite">
+          Checking maintainer access…
+        </p>
+      )}
+      {wallet.publicKey && !maintainer.isLoading && !maintainer.isMaintainer && (
+        <p className="org-issues-page__role" role="status" data-testid="read-only-banner">
+          Connected as Contributor (Read-Only Mode)
+          {maintainer.error ? ' — maintainer status could not be verified.' : ''}
+        </p>
+      )}
 
       {!wallet.publicKey && (
         <div className="org-issues-page__connect">

@@ -175,6 +175,28 @@ export class SorobanService {
       .build();
   }
 
+  /**
+   * Read-only `is_maintainer(maintainer, org_id)` view call (#1261), run as a
+   * simulation, so nothing is signed or submitted. Throws SorobanRpcError when
+   * the RPC or the simulation fails; callers must not treat that as "false".
+   */
+  async isMaintainer(maintainer: string, orgId: string): Promise<boolean> {
+    // Simulation needs a well-formed source account, not a funded one.
+    const tx = this.buildRaw(maintainer, '0', 'is_maintainer', [
+      new Address(maintainer).toScVal(),
+      nativeToScVal(orgId, { type: 'symbol' }),
+    ]);
+    const sim = await this.measureRpc('simulateTransaction', () => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(sim)) {
+      throw new SorobanRpcError(`is_maintainer simulation failed: ${sim.error}`);
+    }
+    const retval = (sim as SorobanRpc.Api.SimulateTransactionSuccessResponse).result?.retval;
+    if (!retval) {
+      throw new SorobanRpcError('is_maintainer simulation returned no value');
+    }
+    return scValToNative(retval) === true;
+  }
+
   buildRawTransaction(
     sourceAddress: string,
     sequence: string,

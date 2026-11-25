@@ -254,6 +254,21 @@ export async function migrate(): Promise<void> {
       PRIMARY KEY (contributor, org_id, issue_id)
     );
 
+    -- Every assignment belongs to an application (#1253, migration 8 validates
+    -- and moves existing orphans). NOT VALID here so startup never fails on old
+    -- orphan rows, while new inserts/updates are still checked.
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_assignments_application') THEN
+        ALTER TABLE assignments
+          ADD CONSTRAINT fk_assignments_application
+          FOREIGN KEY (contributor, org_id, issue_id)
+          REFERENCES applications (contributor, org_id, issue_id)
+          ON DELETE RESTRICT
+          NOT VALID;
+      END IF;
+    END $$;
+
     CREATE TABLE IF NOT EXISTS api_keys (
       id             SERIAL PRIMARY KEY,
       key_hash       TEXT NOT NULL UNIQUE,
