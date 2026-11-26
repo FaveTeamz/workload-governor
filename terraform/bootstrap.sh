@@ -130,7 +130,33 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5 — Tag the bucket
+# Step 5 — Enforce TLS on S3 bucket (idempotent)
+# ---------------------------------------------------------------------------
+echo "[CONFIG] Enforcing TLS-only requests on '$BUCKET'"
+aws s3api put-bucket-policy \
+  --bucket "$BUCKET" \
+  --policy '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Sid": "EnforceTLSRequestsOnly",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::'"$BUCKET"'",
+        "arn:aws:s3:::'"$BUCKET"'/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }]
+  }' \
+  --region "$REGION"
+
+# ---------------------------------------------------------------------------
+# Step 6 — Tag the bucket
 # ---------------------------------------------------------------------------
 echo "[CONFIG] Tagging bucket '$BUCKET'"
 aws s3api put-bucket-tagging \
