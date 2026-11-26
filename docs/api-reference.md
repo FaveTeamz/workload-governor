@@ -576,6 +576,16 @@ stellar contract invoke \
 
 The WorkloadGovernor backend exposes a REST API for querying issues, contributor state, and building Soroban transactions. The API is mounted at the root of the deployed service.
 
+### Table of Contents & Navigation Index
+
+- **Health:** [`GET /health`](#get-health)
+- **Organizations:** [`GET /orgs`](#get-orgs), [`GET /orgs/{orgId}/cap`](#get-orgsorgidcap), [`PUT /orgs/{orgId}/cap`](#put-orgsorgidcap), [`GET /orgs/{orgId}/issues`](#get-orgsorgidissues), [`POST /orgs/{orgId}/issues`](#post-orgsorgidissues), [`GET /orgs/{orgId}/applications`](#get-orgsorgidapplications), [`POST /orgs/{orgId}/issues/{issueId}/apply`](#post-orgsorgidissuesissueidapply), [`DELETE /orgs/{orgId}/issues/{issueId}/apply`](#delete-orgsorgidissuesissueidapply), [`GET /orgs/{orgId}/assignments`](#get-orgsorgidassignments), [`GET /orgs/{orgId}/events`](#get-orgsorgidevents), [`GET /orgs/:org_id/stats`](#get-orgsorg_idstats)
+- **Contributors:** [`GET /api/contributors`](#get-apicontributors), [`GET /api/contributors/:address`](#get-apicontributorsaddress), [`GET /api/contributors/:address/applications`](#get-apicontributorsaddressapplications), [`GET /api/contributors/:address/assignments`](#get-apicontributorsaddressassignments), [`GET /contributors/{address}/stats`](#get-contributorsaddressstats), [`GET /contributors/{address}/summary`](#get-contributorsaddresssummary)
+- **Issues:** [`GET /api/issues`](#get-apiissues)
+- **Transactions & Verification:** [`POST /verify-xdr`](#post-verify-xdr), [`POST /api/transactions/apply`](#post-apitransactionsapply), [`POST /api/transactions/withdraw`](#post-apitransactionswithdraw), [`POST /api/transactions/assign`](#post-apitransactionsassign), [`POST /api/transactions/complete`](#post-apitransactionscomplete), [`POST /api/transactions/revoke`](#post-apitransactionsrevoke)
+- **Events & Leaderboard:** [`GET /api/events`](#get-apievents), [`GET /api/v1/leaderboard`](#get-apiv1leaderboard)
+- **Admin & Audit:** [`GET /audit`](#get-audit), [`GET /admin/consistency`](#get-adminconsistency), [`POST /admin/consistency/remediate`](#post-adminconsistencyremediate), [`POST /api/admin/maintainers`](#post-apiadminmaintainers), [`GET /api/v1/audit/logs`](#get-apiv1auditlogs)
+
 ### Authentication
 
 Most read endpoints are unauthenticated. Admin endpoints require the `x-admin-token` header:
@@ -1122,6 +1132,73 @@ GET /api/issues?org_id=rust_foundation&status=open
 ---
 
 ### Contributors
+
+#### `GET /api/contributors/:address`
+
+Query a contributor's current application workload, completed tasks, active organizations, and remaining quota. This endpoint provides frontend developers and third-party dashboards with a consolidated profile payload to inspect workload gauges, active assignments, and global application limits.
+
+**Auth:** None
+
+**Path parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | Yes | Stellar G-address of the contributor (e.g. `GB7B5432...`) |
+
+**Response `200`**
+```json
+{
+  "address": "GB7B5432ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX",
+  "globalPendingApplications": 7,
+  "globalCap": 15,
+  "remainingQuota": 8,
+  "activeAssignmentsCount": 2,
+  "organizations": [
+    { "orgId": "stellar", "activeAssignments": 1, "orgCap": 4 }
+  ],
+  "completedAssignmentsTotal": 14
+}
+```
+
+**Errors**
+
+| Status | Code | Description |
+|---|---|---|
+| `400` | `INVALID_ADDRESS` | Invalid Stellar address format |
+| `404` | `NOT_FOUND` | Contributor not found or has no recorded activity |
+| `500` | `INTERNAL_SERVER_ERROR` | Internal server or database error |
+
+**Example: cURL**
+
+```bash
+curl -X GET "https://api.workload-governor.org/api/contributors/GB7B5432ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX" \
+  -H "Accept: application/json"
+```
+
+**Example: JavaScript / TypeScript (`fetch`)**
+
+```typescript
+const address = "GB7B5432ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX";
+const response = await fetch(`https://api.workload-governor.org/api/contributors/${encodeURIComponent(address)}`, {
+  method: "GET",
+  headers: {
+    "Accept": "application/json",
+  },
+});
+
+if (response.status === 400) {
+  throw new Error("Invalid Stellar address provided");
+} else if (response.status === 404) {
+  throw new Error("Contributor not found");
+} else if (!response.ok) {
+  throw new Error(`Failed to fetch contributor profile: ${response.status}`);
+}
+
+const profile = await response.json();
+console.log(`Contributor ${profile.address} has ${profile.globalPendingApplications}/${profile.globalCap} applications`);
+```
+
+---
 
 #### `GET /api/contributors/:address/applications`
 
