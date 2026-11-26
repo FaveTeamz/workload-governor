@@ -3,6 +3,7 @@
  *
  * Tests migration up -> down -> up reversibility and schema idempotency.
  * Fixes issue #859: [DB-002] Automated down migration and verification script for event deduplication.
+ * Fixes issue #1249: Add down-migration for 3_add_events_org_created_idx.js index.
  */
 
 describe('Database migrations idempotency', () => {
@@ -38,5 +39,28 @@ describe('Database migrations idempotency', () => {
       expect.objectContaining({ name: 'idx_contract_events_dedup', ifExists: true })
     );
     expect(mockPgm.sql).toHaveBeenCalled();
+  });
+
+  it('3_add_events_org_created_idx up and down execute without throwing', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const migration = require('../../../migrations/3_add_events_org_created_idx');
+    const mockPgm = {
+      createIndex: jest.fn(),
+      dropIndex: jest.fn(),
+    };
+
+    expect(() => migration.up(mockPgm)).not.toThrow();
+    expect(mockPgm.createIndex).toHaveBeenCalledWith(
+      'events',
+      expect.arrayContaining(['org_id']),
+      expect.objectContaining({ name: 'idx_events_org_created', ifNotExists: true })
+    );
+
+    expect(() => migration.down(mockPgm)).not.toThrow();
+    expect(mockPgm.dropIndex).toHaveBeenCalledWith(
+      'events',
+      expect.arrayContaining(['org_id']),
+      expect.objectContaining({ name: 'idx_events_org_created', ifExists: true })
+    );
   });
 });

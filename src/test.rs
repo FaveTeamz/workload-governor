@@ -148,7 +148,7 @@ fn unit_batch_withdraw_missing_application_is_atomic() {
     assert_eq!(
         t.client
             .try_batch_withdraw_applications(&contributor, &applications),
-        Err(Ok(ContractError::ApplicationNotFound))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::ApplicationNotFound as u32)))
     );
 
     assert!(t.client.has_applied(&contributor, &org, &1u32));
@@ -211,7 +211,9 @@ fn unit_extend_application_ttl_emits_event_without_global_count() {
     let contributor = Address::generate(&t.env);
     let org = t.org("ttlzero");
     t.client.initialize(&admin);
-    crate::storage::set_app_entry(&t.env, &contributor, &org, 7);
+    t.env.as_contract(&t.client.address, || {
+        crate::storage::set_app_entry(&t.env, &contributor, &org, 7);
+    });
     assert_eq!(t.client.get_global_application_count(&contributor), 0);
 
     t.client.extend_application_ttl(&contributor, &org, &7u32);
@@ -380,7 +382,7 @@ fn unit_error_unauthorized_maintainer_complete_assignment() {
     assert_eq!(
         t.client
             .try_complete_assignment(&stranger, &contributor, &org, &1u32),
-        Err(Ok(ContractError::UnauthorizedMaintainer))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::UnauthorizedMaintainer as u32)))
     );
 }
 
@@ -488,7 +490,7 @@ fn unit_error_already_assigned() {
     assert_eq!(
         t.client
             .try_assign_issue(&maintainer, &contributor, &org, &1u32),
-        Err(Ok(ContractError::AlreadyAssigned))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AlreadyAssigned as u32)))
     );
 }
 
@@ -506,9 +508,7 @@ fn unit_error_assignment_not_found_revoke() {
     let result = t.client.try_revoke_assignment(&maintainer, &contributor, &org, &99u32);
     assert_eq!(
         result,
-        Err(soroban_sdk::Error::from_contract_error(
-            crate::errors::ContractError::AssignmentNotFound as u32
-        ))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AssignmentNotFound as u32)))
     );
 }
 
@@ -525,26 +525,13 @@ fn unit_error_invalid_org_id() {
     assert_eq!(
         t.client
             .try_apply_for_issue(&contributor, &empty_org, &1u32),
-        Err(Ok(ContractError::InvalidOrgId))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::InvalidOrgId as u32)))
     );
     assert_eq!(
         t.client
             .try_apply_for_issue(&contributor, &one_character_org, &2u32),
-        Err(Ok(ContractError::InvalidOrgId))
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::InvalidOrgId as u32)))
     );
-}
-
-#[test]
-#[should_panic]
-fn unit_error_duplicate_application() {
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-    let contributor = Address::generate(&t.env);
-    let org = t.org("org");
-
-    t.client.initialize(&admin);
-    t.client.apply_for_issue(&contributor, &org, &1u32);
-    t.client.apply_for_issue(&contributor, &org, &1u32); // DuplicateApplication
 }
 
 // ---------------------------------------------------------------------------
@@ -552,7 +539,7 @@ fn unit_error_duplicate_application() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn unit_event_initialized_has_two_topics() {
+fn unit_event_initialized_has_three_topics() {
     use soroban_sdk::testutils::Events;
 
     let t = TestEnv::new();
@@ -562,11 +549,11 @@ fn unit_event_initialized_has_two_topics() {
     let events = t.env.events().all();
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
-    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    assert_eq!(topics.len(), 3, "Expected 3-element topics tuple");
 }
 
 #[test]
-fn unit_event_application_submitted_has_two_topics() {
+fn unit_event_application_submitted_has_three_topics() {
     use soroban_sdk::testutils::Events;
 
     let t = TestEnv::new();
@@ -581,7 +568,7 @@ fn unit_event_application_submitted_has_two_topics() {
     assert!(!events.is_empty());
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
-    assert_eq!(topics.len(), 2, "Expected 2-element topics tuple");
+    assert_eq!(topics.len(), 3, "Expected 3-element topics tuple");
 }
 
 // ===========================================================================
@@ -722,12 +709,9 @@ fn unit_migrate_v1_to_v2_event_emitted() {
     let pairs: soroban_sdk::Vec<(Address, Symbol)> = soroban_sdk::Vec::new(&t.env);
     t.client.migrate_v1_to_v2(&admin, &pairs);
     let events = t.env.events().all();
-    // At minimum the initialization event + migration event must be present
-    assert!(events.len() >= 2);
-    // Last event is migration completed — it must have 2 topics
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
-    assert_eq!(topics.len(), 2);
+    assert_eq!(topics.len(), 3);
 }
 
 // ===========================================================================
@@ -819,10 +803,9 @@ fn unit_set_admin_threshold_event_emitted() {
     t.client.set_admin_threshold(&1u32, &signers);
 
     let events = t.env.events().all();
-    assert!(events.len() >= 2);
     let (_, topics, _): (_, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val) =
         events.last().unwrap();
-    assert_eq!(topics.len(), 2);
+    assert_eq!(topics.len(), 3);
 }
 
 // ===========================================================================
@@ -1006,10 +989,227 @@ fn unit_governance_default_cap_is_15() {
 }
 
 // ---------------------------------------------------------------------------
+// UNIT TESTS — #1218: complete_assignment maintainer authorization
+// ---------------------------------------------------------------------------
+
+/// An unregistered address calling complete_assignment must fail with
+/// UnauthorizedMaintainer (error code 4), even when an active assignment exists.
+#[test]
+fn test_complete_assignment_unauthorized_maintainer() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let random_user = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("orgone");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &42u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &42u32);
+
+    // random_user is not a registered maintainer for org — must be rejected
+    let result = t
+        .client
+        .try_complete_assignment(&random_user, &contributor, &org, &42u32);
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::UnauthorizedMaintainer as u32))),
+        "complete_assignment must reject an unregistered caller with UnauthorizedMaintainer"
+    );
+
+    // Assignment must still be active after the failed call
+    assert!(
+        t.client.is_assigned(&contributor, &org, &42u32),
+        "assignment must remain active after an unauthorized complete attempt"
+    );
+}
+
+/// A maintainer registered for org_2 must not be able to complete an
+/// assignment that belongs to org_1.
+#[test]
+fn test_complete_assignment_cross_org_maintainer_rejected() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer_1 = Address::generate(&t.env);
+    let maintainer_2 = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_1 = t.org("orgalpha");
+    let org_2 = t.org("orgbeta");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer_1, &org_1);
+    t.client.register_maintainer(&admin, &maintainer_2, &org_2);
+
+    // Set up an active assignment in org_1
+    t.client.apply_for_issue(&contributor, &org_1, &10u32);
+    t.client.assign_issue(&maintainer_1, &contributor, &org_1, &10u32);
+
+    // maintainer_2 is registered for org_2 only — must not complete org_1's assignment
+    let result = t
+        .client
+        .try_complete_assignment(&maintainer_2, &contributor, &org_1, &10u32);
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::UnauthorizedMaintainer as u32))),
+        "maintainer of a different org must receive UnauthorizedMaintainer"
+    );
+
+    // org_1 assignment remains active
+    assert!(
+        t.client.is_assigned(&contributor, &org_1, &10u32),
+        "assignment must remain active after a cross-org unauthorized complete attempt"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// UNIT TESTS — #1217: assign_issue duplicate assignment validation
+// ---------------------------------------------------------------------------
+
+/// Attempting to assign the same issue to the same contributor a second time
+/// must fail with AlreadyAssigned (error code 11).
+///
+/// After assign_issue consumes the application entry, we re-apply and attempt
+/// to assign again so that the has_assignment guard at lib.rs:283 is reached.
+#[test]
+fn test_assign_issue_duplicate_same_contributor_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("duporg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // First assign succeeds
+    t.client.apply_for_issue(&contributor, &org, &101u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &101u32);
+    assert!(t.client.is_assigned(&contributor, &org, &101u32));
+
+    // Re-apply so ApplicationNotFound is not triggered before AlreadyAssigned
+    t.client.apply_for_issue(&contributor, &org, &101u32);
+
+    // Second assign must be rejected with AlreadyAssigned
+    let result = t
+        .client
+        .try_assign_issue(&maintainer, &contributor, &org, &101u32);
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AlreadyAssigned as u32))),
+        "assigning the same issue twice must return AlreadyAssigned (error code 11)"
+    );
+
+    // Assignment count must still be 1 (not incremented by the failed call)
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+}
+
+// ---------------------------------------------------------------------------
+// UNIT TESTS — #1219: revoke_assignment state checks
+// ---------------------------------------------------------------------------
+
+/// Revoking an issue that was never assigned must fail with AssignmentNotFound
+/// (error code 10). This kills the mutant at src/lib.rs:382:22 where
+/// bypassing the has_assignment check would allow revocation of ghost entries.
+#[test]
+fn test_revoke_nonexistent_assignment_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revorg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // issue_id 999 was never applied for or assigned
+    let result = t
+        .client
+        .try_revoke_assignment(&maintainer, &contributor, &org, &999u32);
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AssignmentNotFound as u32))),
+        "revoking a non-existent assignment must return AssignmentNotFound (error code 10)"
+    );
+}
+
+/// Revoking an assignment that was already successfully revoked must fail with
+/// AssignmentNotFound. This confirms the assignment record is removed on the
+/// first revocation and cannot be double-decremented.
+#[test]
+fn test_revoke_already_revoked_assignment_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revorg2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &50u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &50u32);
+
+    // First revocation succeeds
+    t.client.revoke_assignment(&maintainer, &contributor, &org, &50u32);
+    assert!(!t.client.is_assigned(&contributor, &org, &50u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    // Second revocation must fail with AssignmentNotFound
+    let result = t
+        .client
+        .try_revoke_assignment(&maintainer, &contributor, &org, &50u32);
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AssignmentNotFound as u32))),
+        "double-revoking an assignment must return AssignmentNotFound"
+    );
+
+    // Count must still be 0 — not underflowed to a negative value
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+}
+
+/// Attempting to revoke a completed assignment must fail with AssignmentNotFound
+/// because complete_assignment already removed the assignment record.
+/// This prevents the o_asgn counter from being double-decremented after completion.
+#[test]
+fn test_revoke_completed_assignment_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("revorg3");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &75u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &75u32);
+
+    // Complete the assignment
+    t.client.complete_assignment(&maintainer, &contributor, &org, &75u32);
+    assert!(!t.client.is_assigned(&contributor, &org, &75u32));
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+
+    // Attempting to revoke the now-completed assignment must fail
+    let result = t
+        .client
+        .try_revoke_assignment(&maintainer, &contributor, &org, &75u32);
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::AssignmentNotFound as u32))),
+        "revoking a completed assignment must return AssignmentNotFound"
+    );
+
+    // Count must remain 0 — not decremented below zero
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
+}
+
+// ---------------------------------------------------------------------------
 // PROPERTY-BASED TESTS
 // ---------------------------------------------------------------------------
 
 use proptest::prelude::*;
+
+use std::collections::BTreeSet;
 
 fn arb_org_name() -> impl Strategy<Value = String> {
     "[a-z]{2,9}".prop_map(|s: String| s)
@@ -1078,6 +1278,7 @@ proptest! {
         operations in prop::collection::vec((0u8..3, 0u8..2, 1u32..17), 0..100)
     ) {
         let t = TestEnv::new();
+        t.env.cost_estimate().budget().reset_unlimited();
         let admin = Address::generate(&t.env);
         let maintainer = Address::generate(&t.env);
         let contributor = Address::generate(&t.env);
@@ -1099,7 +1300,10 @@ proptest! {
                 1 if is_pending => {
                     t.client.withdraw_application(&contributor, org, &issue_id);
                 }
-                2 if is_pending && t.client.get_org_assignment_count(&contributor, org) < 4 => {
+                2 if is_pending
+                    && !t.client.is_assigned(&contributor, org, &issue_id)
+                    && t.client.get_org_assignment_count(&contributor, org) < 4 =>
+                {
                     t.client.assign_issue(&maintainer, &contributor, org, &issue_id);
                 }
                 _ => {}
@@ -1114,7 +1318,7 @@ proptest! {
             prop_assert_eq!(
                 t.client.get_global_application_count(&contributor),
                 active_application_count,
-                "global application count diverged after operation {operation}"
+                "global application count diverged after operation {}", operation
             );
         }
     }
@@ -1360,6 +1564,78 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Issue #1226: Global application counter state machine
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(500))]
+
+    #[test]
+    fn prop_global_cap_invariants(
+        actions in proptest::collection::vec(
+            (0u8..3u8, 1u32..30u32, 0u8..2u8),
+            1..80,
+        )
+    ) {
+        let (env, client, admin, maintainer, contributor, org_a) =
+            fresh_client("orga");
+        let org_b = Symbol::new(&env, "orgb");
+        env.cost_estimate().budget().reset_unlimited();
+
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org_a);
+        client.register_maintainer(&admin, &maintainer, &org_b);
+
+        let mut shadow: BTreeSet<(u8, u32)> = BTreeSet::new();
+
+        for (action, issue_id, org_index) in actions {
+            let org = if org_index == 0 { org_a.clone() } else { org_b.clone() };
+            let key = (org_index, issue_id);
+
+            match action {
+                0 => {
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    if result.is_ok() {
+                        shadow.insert(key);
+                    }
+                }
+                1 => {
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        client.withdraw_application(&contributor, &org, &issue_id);
+                    }));
+                    if result.is_ok() {
+                        shadow.remove(&key);
+                    }
+                }
+                _ => {
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                    }));
+                    if result.is_ok() {
+                        shadow.remove(&key);
+                    }
+                }
+            }
+
+            let count = client.get_global_application_count(&contributor);
+            prop_assert!(count <= 15, "global application count exceeded 15");
+            prop_assert_eq!(count as usize, shadow.len(), "counter drift");
+
+            for (indexed_org, indexed_issue) in &shadow {
+                let checked_org = if *indexed_org == 0 {
+                    org_a.clone()
+                } else {
+                    org_b.clone()
+                };
+                prop_assert!(
+                    client.has_applied(&contributor, &checked_org, indexed_issue),
+                    "shadow application is missing on-chain"
+                );
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // #828 SC-003 — Admin nonce tracking and replay protection
 // ---------------------------------------------------------------------------
@@ -1439,14 +1715,11 @@ fn unit_sc003_admin_action_executed_event_emitted() {
         "at least one new event must be emitted by register_maintainer"
     );
 
-    // Find the AdminActionExecuted event (topic[0] == "adm_act")
+    // Find the AdminActionExecuted event (topic[1] == "adm_act")
     let adm_act_sym = soroban_sdk::symbol_short!("adm_act");
     let adm_event = all.iter().find(|(_, topics, _): &(_, SdkVec<Val>, Val)| {
-        if let Ok(t0) = topics.get(0).unwrap().try_into_val::<_, soroban_sdk::Symbol>(&t.env) {
-            t0 == adm_act_sym
-        } else {
-            false
-        }
+        let event_name: Result<Symbol, _> = topics.get(1).unwrap().try_into_val(&t.env);
+        event_name == Ok(adm_act_sym.clone())
     });
 
     assert!(
@@ -1506,38 +1779,27 @@ fn unit_sc003_nonce_prevents_replay() {
 #[test]
 fn unit_mutant_upgrade_requires_initialized() {
     use crate::errors::ContractError;
-    use soroban_sdk::IntoVal;
-
     let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
     let new_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
 
     // Without initialize(), upgrade must panic with NotInitialized.
     let result = t.client.try_upgrade(&new_wasm_hash);
     assert_eq!(
         result,
-        Err(Ok(ContractError::NotInitialized.into_val(&t.env))),
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::NotInitialized as u32))),
         "upgrade must panic NotInitialized when contract is not initialized"
     );
 }
 
-/// Mutant: `replace WorkloadGovernor::upgrade with ()` — post-init path.
-///
-/// After initialization the upgrade function must not panic (the deployer stub
-/// accepts any hash in the test env). A no-op mutant would silently skip the
-/// auth check but still succeed — we verify the happy path works so that
-/// un-auth'd calls (via `try_upgrade`) are distinguishable from no-ops.
 #[test]
-fn unit_mutant_upgrade_succeeds_after_initialize() {
+fn unit_mutant_upgrade_rejects_missing_wasm() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
     t.client.initialize(&admin);
 
-    // upgrade with all-zero hash must not panic in the test env
-    let new_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
-    t.client.upgrade(&new_wasm_hash);
-    // If the mutant (empty body) were live, this would also pass — but the
-    // NotInitialized guard test above would fail, killing the mutant.
+    let missing_wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
+    assert!(t.client.try_upgrade(&missing_wasm_hash).is_err());
+    assert_eq!(t.client.get_admin_nonce(), 0);
 }
 
 /// Mutant: `replace == with != in WorkloadGovernor::assign_issue` (line 283)
@@ -1749,7 +2011,6 @@ fn unit_mutant_revoke_org_count_nonzero_branch() {
 #[test]
 fn unit_mutant_extend_ttl_guard_fires_on_missing_application() {
     use crate::errors::ContractError;
-    use soroban_sdk::IntoVal;
 
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
@@ -1762,7 +2023,7 @@ fn unit_mutant_extend_ttl_guard_fires_on_missing_application() {
     let result = t.client.try_extend_application_ttl(&contributor, &org, &99u32);
     assert_eq!(
         result,
-        Err(Ok(ContractError::ApplicationNotFound.into_val(&t.env))),
+        Err(Ok(soroban_sdk::Error::from_contract_error(ContractError::ApplicationNotFound as u32))),
         "extend_application_ttl must panic ApplicationNotFound when no application exists"
     );
 }

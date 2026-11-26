@@ -44,7 +44,12 @@ fn require_valid_issue_id(env: &Env, issue_id: u32) {
 
 #[inline]
 fn require_valid_org_id(env: &Env, org_id: &Symbol) {
-    if org_id.len() < 2 || org_id.len() > 32 {
+    use soroban_sdk::{SymbolStr, TryFromVal};
+    let Ok(symbol) = SymbolStr::try_from_val(env, &org_id.to_symbol_val()) else {
+        panic_with_error!(env, ContractError::InvalidOrgId);
+    };
+    let name: &str = symbol.as_ref();
+    if !(2..=32).contains(&name.len()) {
         panic_with_error!(env, ContractError::InvalidOrgId);
     }
 }
@@ -469,6 +474,7 @@ impl WorkloadGovernor {
     /// Panics with `InvalidIssueId` if issue_id is 0 or u32::MAX.
     /// Panics with `ApplicationNotFound` if no pending application exists.
     /// Silently skips the global count TTL if that key is absent.
+    /// Emits the `app_ttl` event on success.
     pub fn extend_application_ttl(env: Env, contributor: Address, org_id: Symbol, issue_id: u32) {
         require_valid_org_id(&env, &org_id);
         require_valid_issue_id(&env, issue_id); // #601
