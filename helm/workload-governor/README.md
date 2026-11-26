@@ -186,6 +186,19 @@ ingress:
 | `externalSecrets.secretStoreKind` | `ClusterSecretStore` | Store kind |
 | `externalSecrets.refreshInterval` | `1h` | Refresh interval |
 | `externalSecrets.secrets` | See values.yaml | Secret key mappings |
+| `existingSecret` | `""` | Reference a Kubernetes Secret in the release namespace when External Secrets Operator is disabled |
+
+For AWS Secrets Manager or Vault, configure the corresponding `SecretStore`
+or `ClusterSecretStore`, then set `externalSecrets.secretStoreName` and
+`externalSecrets.secretStoreKind`. Each `externalSecrets.secrets` item maps
+`remoteRef.key` and an optional `remoteRef.property` to a workload environment
+variable through `secretKey`.
+
+For a pre-created Kubernetes Secret, set `externalSecrets.enabled=false`
+and `existingSecret` to its name. The deployment imports its keys as
+environment variables. Store and rotate secret values through the mechanism
+that provisions the Secret.
+
 
 Secrets synced by default:
 

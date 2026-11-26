@@ -48,6 +48,9 @@ spec:
             {{- if .Values.externalSecrets.enabled }}
             - secretRef:
                 name: {{ include "vesting-backend.fullname" . }}-secrets
+            {{- else if .Values.existingSecret }}
+            - secretRef:
+                name: {{ .Values.existingSecret | quote }}
             {{- end }}
           {{- with .Values.extraEnv }}
           env:

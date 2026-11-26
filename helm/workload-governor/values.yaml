@@ -164,6 +164,9 @@ config:
   # -- Log level: debug | info | warn | error
   LOG_LEVEL: "info"
 
+# -- Name of a pre-created Kubernetes Secret when externalSecrets.enabled is false.
+existingSecret: ""
+
 # ─── Secrets via External Secrets Operator ───────────────────────────────────
 externalSecrets:
   # -- Enable ExternalSecret resource (requires external-secrets operator)
