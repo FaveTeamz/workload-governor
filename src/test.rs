@@ -156,6 +156,34 @@ fn unit_batch_withdraw_missing_application_is_atomic() {
 }
 
 #[test]
+fn unit_batch_withdraw_emits_an_event_for_each_application() {
+    use soroban_sdk::{symbol_short, testutils::Events, TryIntoVal};
+
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("batch");
+    t.client.initialize(&admin);
+    let mut applications = Vec::new(&t.env);
+    for issue_id in 1..=5 {
+        t.client.apply_for_issue(&contributor, &org, &issue_id);
+        applications.push_back((org.clone(), issue_id));
+    }
+
+    t.client.batch_withdraw_applications(&contributor, &applications);
+
+    let events = t.env.events().all();
+    assert_eq!(events.len(), 5);
+    for (index, (_, topics, data)) in events.iter().enumerate() {
+        let name: Symbol = topics.get(1).unwrap().try_into_val(&t.env).unwrap();
+        let (event_org, issue): (Symbol, u32) = data.try_into_val(&t.env).unwrap();
+        assert_eq!(name, symbol_short!("withdrew"));
+        assert_eq!(event_org, org);
+        assert_eq!(issue, index as u32 + 1);
+    }
+}
+
+#[test]
 fn unit_register_maintainer_idempotent() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
