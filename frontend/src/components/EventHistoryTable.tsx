@@ -302,6 +302,9 @@ export function EventHistoryTable({
             <table className="table eht-table">
               <caption className="table__caption">
                 {filtered.length} event{filtered.length !== 1 ? "s" : ""}
+                <span className="visually-hidden">
+                  {sortDir === "desc" ? ", newest first" : ", oldest first"}
+                </span>
                 {filter !== "all" ? ` · ${FILTER_OPTIONS.find((o) => o.value === filter)?.label}` : ""}
               </caption>
               <thead>

@@ -291,6 +291,16 @@ export function OrgSelector({ apiBase = "/api", onSelect, orgs: propOrgs }: OrgS
           }}
           onKeyDown={handleKeyDown}
         />
+        {selectedOrg.id && (
+          <button
+            className="org-selector__chevron"
+            type="button"
+            aria-label={`Clear organisation filter ${selectedOrg.name}`}
+            onClick={() => selectOrg(ALL_ORGS_OPTION)}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
         <button
           className="org-selector__chevron"
           tabIndex={-1}
