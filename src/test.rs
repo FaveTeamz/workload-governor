@@ -292,6 +292,25 @@ fn unit_application_ttl_config_defaults_and_admin_override() {
 }
 
 #[test]
+fn unit_application_ttl_config_rejects_invalid_values_without_changing_state() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    t.client.initialize(&admin);
+    t.client.set_application_ttl_config(&100, &500);
+
+    for (threshold, target) in [(0, 500), (501, 500), (1, crate::storage::APP_TTL_MAX + 1)] {
+        assert_eq!(
+            t.client.try_set_application_ttl_config(&threshold, &target),
+            Err(Ok(soroban_sdk::Error::from_contract_error(
+                ContractError::InvalidApplicationTtl as u32
+            )))
+        );
+    }
+    assert_eq!(t.client.get_app_ttl_threshold_ledgers(), 100);
+    assert_eq!(t.client.get_app_ttl_extend_to_ledgers(), 500);
+}
+
+#[test]
 fn unit_saturating_sub_zero_floor_global() {
     let t = TestEnv::new();
     let admin = Address::generate(&t.env);
