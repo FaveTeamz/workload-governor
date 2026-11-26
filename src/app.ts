@@ -23,7 +23,15 @@ import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
 import { metricsHandler, metricsMiddleware } from './metrics';
 
-export function createApp(): express.Application {
+export interface AppOptions {
+  /**
+   * Rate-limit store for /api/verify-xdr. Inject a fresh MemoryStore in tests
+   * to prevent cross-test counter pollution. Defaults to a new MemoryStore.
+   */
+  verifyXdrStore?: Store;
+}
+
+export function createApp(options: AppOptions = {}): express.Application {
   const app = express();
   app.use(metricsMiddleware());
 
@@ -135,6 +143,22 @@ export function createApp(): express.Application {
   app.use('/', orgsRouter);
 
   app.use(errorHandler);
+
+  /** 15 requests per minute per IP, applied only to /api/verify-xdr */
+  const verifyXdrLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    store: options.verifyXdrStore ?? new MemoryStore(),
+    message: { error: 'Too many requests, please try again later.' },
+  });
+
+  // Rate limit applied first, then a tighter body parser (64 KB cap) for the
+  // CPU-intensive XDR verification endpoint.
+  app.use('/api/verify-xdr', verifyXdrLimiter);
+  app.use('/api/verify-xdr', express.json({ limit: '64kb' }));
+  app.use('/api/verify-xdr', xdrRouter);
 
   return app;
 }
