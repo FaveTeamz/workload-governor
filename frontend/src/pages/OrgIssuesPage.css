@@ -172,10 +172,9 @@
 
 /* ── Issue row ──────────────────────────────────────────────────── */
 .org-issue-row {
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  align-items: stretch;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-lg);
@@ -241,6 +240,8 @@
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+  margin-top: auto;
+  justify-content: flex-end;
 }
 
 /* ── Buttons ────────────────────────────────────────────────────── */
@@ -303,15 +304,25 @@
 .org-issue-row__tx-link:hover { text-decoration: underline; }
 
 /* ── Skeleton ───────────────────────────────────────────────────── */
-.org-issue-row--skeleton {
-  height: 70px;
-  background: var(--color-border);
-  animation: pulse 1.5s ease-in-out infinite;
+.org-issue-row__loading-overlay {
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  animation: org-issue-skeleton-reveal 200ms ease-out both;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+@keyframes org-issue-skeleton-reveal {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .org-issue-row__loading-overlay {
+    animation-duration: 1ms;
+  }
+
+  .org-issue-row .skeleton-shimmer {
+    animation: none;
+  }
 }
 
 /* ── Error / empty ──────────────────────────────────────────────── */
@@ -353,5 +364,4 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin-top: var(--space-3);
 }

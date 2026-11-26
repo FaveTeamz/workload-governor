@@ -371,10 +371,18 @@
   animation: cpp-pulse 1.5s ease-in-out infinite;
 }
 
-.cpp-skeleton--title   { height: 32px; width: 240px; margin-bottom: var(--space-2); }
-.cpp-skeleton--subtitle{ height: 20px; width: 320px; }
-.cpp-skeleton--gauge   { height: 200px; margin-bottom: var(--space-6); }
-.cpp-skeleton--section { height: 120px; }
+.cpp-skeleton--title { height: 36px; width: 200px; }
+.cpp-skeleton--subtitle { height: 24px; width: 144px; }
+.cpp-skeleton--share { height: 44px; width: 128px; }
+.cpp-skeleton--heading { height: 27px; width: 160px; }
+.cpp-skeleton--gauge { height: 160px; width: 160px; border-radius: 50%; }
+.cpp-skeleton--section { min-height: 56px; background: var(--color-border); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cpp-skeleton {
+    animation: none;
+  }
+}
 
 @keyframes cpp-pulse {
   0%, 100% { opacity: 1; }

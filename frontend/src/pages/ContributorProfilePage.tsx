@@ -297,13 +297,26 @@ function WithdrawSection({ address, apiBase, onWithdrawn }: WithdrawSectionProps
 
 function SkeletonProfile() {
   return (
-    <main className="cpp" id="main-content" tabIndex={-1}>
-      <div className="cpp-header">
-        <div className="cpp-skeleton cpp-skeleton--title" aria-busy="true" aria-label="Loading profile…" />
-        <div className="cpp-skeleton cpp-skeleton--subtitle" aria-busy="true" />
+    <main className="cpp" id="main-content" tabIndex={-1} aria-busy="true" aria-label="Loading profile…">
+      <div className="cpp-header" aria-hidden="true">
+        <div className="cpp-header__identity">
+          <div className="cpp-skeleton cpp-skeleton--title" />
+          <div className="cpp-skeleton cpp-skeleton--subtitle" />
+        </div>
+        <div className="cpp-header__actions">
+          <div className="cpp-skeleton cpp-skeleton--share" />
+        </div>
       </div>
-      <div className="cpp-skeleton cpp-skeleton--gauge" aria-busy="true" />
-      <div className="cpp-skeleton cpp-skeleton--section" aria-busy="true" />
+      <div className="cpp-gauge-section" aria-hidden="true">
+        <div className="cpp-section-title cpp-skeleton cpp-skeleton--heading" />
+        <div className="cpp-gauge-wrap">
+          <div className="cpp-skeleton cpp-skeleton--gauge" />
+        </div>
+      </div>
+      <div className="cpp-orgs-section" aria-hidden="true">
+        <div className="cpp-section-title cpp-skeleton cpp-skeleton--heading" />
+        <div className="cpp-org-row cpp-skeleton cpp-skeleton--section" />
+      </div>
     </main>
   );
 }
