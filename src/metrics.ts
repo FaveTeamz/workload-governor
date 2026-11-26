@@ -146,6 +146,13 @@ export const sorobanMinApplicationTtlLedgers = new Gauge({
   registers: [register],
 });
 
+export const indexerEventsProcessed = new Counter({
+  name: "indexer_events_processed_total",
+  help: "Contract events newly persisted by the indexer",
+  labelNames: ["event_type"],
+  registers: [register],
+});
+
 export const indexerLastProcessedLedger = new Gauge({
   name: "indexer_last_processed_ledger",
   help: "Last ledger committed by the event indexer",

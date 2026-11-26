@@ -32,7 +32,7 @@ import { SorobanRpc } from '@stellar/stellar-sdk';
 import { EventValidationError, validateContractEvent } from './contractEventSchema';
 import { pool, getCheckpoint, saveCheckpoint, IndexerCheckpoint } from './db';
 import { logger } from './logger';
-import { indexerLastProcessedLedger, indexerLedgerLag } from './metrics';
+import { indexerLastProcessedLedger, indexerLedgerLag, indexerEventsProcessed } from './metrics';
 import { publishLiveEvent } from './services/event-bus';
 import { getCache, setCache } from './services/redis';
 
@@ -465,6 +465,7 @@ export class EventIndexer {
   // ── Poll loop ────────────────────────────────────────────────────────────
 
   private async pollForEvents(): Promise<void> {
+    let lastProcessedLedger = this.lastCheckpointLedger;
     while (this.isRunning) {
       try {
         const response = await this.server.getEvents({
@@ -480,8 +481,11 @@ export class EventIndexer {
 
         const events = response.events as unknown as RpcEvent[];
 
+        if (events.length === 0 && typeof response.latestLedger === 'number' && lastProcessedLedger > 0) {
+          indexerLedgerLag.set(Math.max(0, response.latestLedger - lastProcessedLedger));
+        }
+
         if (events.length > 0) {
-<<<<<<< HEAD
           let persisted = 0;
           let skipped = 0;
           let reorgAbortedBatch = false;
@@ -495,6 +499,8 @@ export class EventIndexer {
                 prevHash: raw.prevLedgerHash ?? null,
               });
               if (continuity.reorgDetected) {
+                lastProcessedLedger = this.lastCheckpointLedger;
+                indexerLastProcessedLedger.set(lastProcessedLedger);
                 reorgAbortedBatch = true;
                 break;
               }
@@ -525,7 +531,8 @@ export class EventIndexer {
               skipped,
             });
 
-            indexerLastProcessedLedger.set(lastLedger);
+            lastProcessedLedger = lastLedger;
+            indexerLastProcessedLedger.set(lastProcessedLedger);
             if (typeof response.latestLedger === 'number') {
               indexerLedgerLag.set(Math.max(0, response.latestLedger - lastLedger));
             }
@@ -691,6 +698,8 @@ export class EventIndexer {
     const inserted = (result as { rowCount?: number }).rowCount === 1;
 
     if (inserted) {
+      indexerEventsProcessed.inc({ event_type: record.event_type });
+
       // Publish live update for real-time subscribers
       const liveType =
         record.event_type === 'applied'
@@ -718,7 +727,6 @@ export class EventIndexer {
     }
 
     return inserted;
-  }
   }
 }
 

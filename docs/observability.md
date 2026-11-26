@@ -28,6 +28,24 @@ The field rules apply in every environment. Sensitive values embedded in log mes
 
 ---
 
+## Prometheus Indexer Metrics
+
+The application exposes Prometheus text-format metrics at `GET /metrics`. When
+`METRICS_TOKEN` is configured, send it as a bearer token in the `Authorization`
+header.
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `indexer_last_processed_ledger` | Gauge | — | Latest ledger processed by the indexer |
+| `indexer_ledger_lag` | Gauge | — | Stellar network ledger minus the last processed ledger |
+| `indexer_events_processed_total` | Counter | `event_type` | Contract events newly persisted by the indexer |
+
+The counter is incremented after an insert succeeds. Duplicate rows do not
+increment it. The [Prometheus rule](../monitoring/prometheus/alerting_rules.yml)
+fires when the reported lag exceeds 50 ledgers for five minutes.
+
+---
+
 ## Distributed Tracing — AWS X-Ray
 
 The backend uses [AWS X-Ray](https://aws.amazon.com/xray/) to trace every inbound request through all downstream service calls.
