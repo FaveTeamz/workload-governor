@@ -50,9 +50,9 @@ rustup target add wasm32v1-none
 ### Stellar CLI
 
 ```bash
-cargo install stellar-cli --features opt --locked
+cargo install --locked stellar-cli
 stellar --version
-# stellar 21.x.x or newer
+# stellar 22.x.x or newer
 ```
 
 ### Node.js (backend and frontend)
@@ -87,7 +87,7 @@ cargo install cargo-fuzz --locked
 |------|-----------------|---------|
 | Rust (stable) | 1.78 | Contract + tests |
 | Rust (nightly) | latest | Fuzz targets |
-| stellar-cli | 21.0 | Contract invocation |
+| stellar-cli | ≥ 22.0 | Contract invocation |
 | Node.js | 20.x | Backend + frontend |
 | npm | 10.x | Package manager |
 | PostgreSQL | 16.x | Backend database (via Docker) |

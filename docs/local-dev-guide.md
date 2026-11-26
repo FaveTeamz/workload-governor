@@ -56,7 +56,7 @@ A devcontainer gives you a pre-configured Linux environment with every tool alre
 |---|---|
 | Rust (stable) | ≥ 1.78 |
 | `wasm32v1-none` target | auto-added |
-| Stellar CLI | ≥ 21.x |
+| Stellar CLI | ≥ 22.x |
 | Node.js | 20 LTS |
 | PostgreSQL client (`psql`) | via Docker Compose service |
 | Redis client (`redis-cli`) | via Docker Compose service |
@@ -93,7 +93,7 @@ Install and verify each tool before starting.
 |---|---|---|
 | Rust + Cargo | stable ≥ 1.78 | `curl https://sh.rustup.rs -sSf \| sh` |
 | `wasm32v1-none` target | — | `rustup target add wasm32v1-none` |
-| Stellar CLI | ≥ 21.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
+| Stellar CLI | ≥ 22.x | [Install guide](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli) |
 | Node.js | ≥ 20 LTS | [nodejs.org](https://nodejs.org) |
 | Docker + Compose | ≥ 24 | [docker.com](https://www.docker.com/get-started) |
 | Freighter wallet | latest | [Chrome extension](https://www.freighter.app/) |
