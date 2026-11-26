@@ -53,19 +53,17 @@ multisig guardian, or a timelock, see
 
 ## Prerequisites
 
-Before starting, confirm every item:
+Confirm every item before starting:
 
 - [ ] Current admin keypair (`OLD_ADMIN_SECRET`) is accessible and the source
       account is funded with XLM for fees.
-- [ ] New admin keypair is **already generated** and the account is funded on
-      the target network.
-- [ ] Both keypairs are available in the Stellar CLI identity store (or as
-      environment variables).
-- [ ] Contract ID is known.
-- [ ] Network (testnet / mainnet) is identified.
-- [ ] You have read-write access to the secrets manager (vault, AWS Secrets
-      Manager, etc.) where the admin secret is stored.
-- [ ] Incident ticket or change-management record is open (production only).
+- [ ] You have authority to generate or retrieve the replacement keypair.
+- [ ] Contract ID and target network (testnet / mainnet) are known.
+- [ ] You have AWS CLI access with write permissions to Secrets Manager in the
+      production account (Phases 5–6).
+- [ ] You have ECS access to restart the backend service (Phase 6).
+- [ ] An incident ticket or change-management record is open (production
+      rotations only).
 
 ## Zero-Downtime Rollover Checklist
 
@@ -84,14 +82,13 @@ To ensure zero downtime during key rollover across backend API and event indexer
 
 ## Pre-Flight Checks
 
-Run these queries **before** executing the rotation. Any unexpected result is a
-reason to halt and investigate.
+Run these before executing the rotation. Any unexpected result is a reason to
+halt and investigate.
 
-### 1. Verify the current admin is stored correctly
+### 1. Verify the current admin is recognised on-chain
 
 ```bash
-# Attempt an admin-gated read as the current admin.
-# If this fails, the key is already wrong — do not proceed.
+# This call is admin-gated; if it fails the key is already wrong — stop.
 stellar contract invoke \
   --id "$CONTRACT_ID" \
   --network "$NETWORK" \
@@ -100,7 +97,7 @@ stellar contract invoke \
   --admin "$OLD_ADMIN_ADDRESS" \
   --maintainer "$OLD_ADMIN_ADDRESS" \
   --org_id preflight_check
-# Expected: null (idempotent registration succeeds)
+# Expected: null
 ```
 
 ### 2. Confirm the new admin account is funded
@@ -120,35 +117,31 @@ stellar account show "$NEW_ADMIN_ADDRESS" --network "$NETWORK"
 
 ### 4. Check for in-flight transactions
 
-Review recent activity on the contract and both accounts before proceeding.
+Review recent activity on both accounts in the Stellar explorer before
+proceeding. Do not rotate during a high-traffic wave window.
 
 ---
 
-## Execution Steps
-
-### Step 0 — Set environment variables
+## Phase 1 — Generate a Fresh Admin Keypair
 
 ```bash
-export NETWORK=testnet         # or mainnet
-export CONTRACT_ID=<CONTRACT_ID>
-export OLD_ADMIN_KEY=old-admin-identity   # stellar keys name
-export OLD_ADMIN_ADDRESS=$(stellar keys address "$OLD_ADMIN_KEY")
-export NEW_ADMIN_KEY=new-admin-identity
-export NEW_ADMIN_ADDRESS=$(stellar keys address "$NEW_ADMIN_KEY")
+export NEW_ADMIN_KEY=new-admin-$(date +%Y%m%d)   # name in stellar CLI keystore
 
-echo "Rotating from: $OLD_ADMIN_ADDRESS"
-echo "Rotating to:   $NEW_ADMIN_ADDRESS"
+stellar keys generate --global "$NEW_ADMIN_KEY" --network "$NETWORK"
+export NEW_ADMIN_ADDRESS=$(stellar keys address "$NEW_ADMIN_KEY")
+echo "New admin address: $NEW_ADMIN_ADDRESS"
 ```
 
-### Step 1 — Generate and fund the new admin keypair (if not yet done)
+Fund the new account before the transfer:
 
 ```bash
-stellar keys generate --global "$NEW_ADMIN_KEY" --network "$NETWORK"
+# Testnet — Friendbot
+curl -s "https://friendbot.stellar.org/?addr=$NEW_ADMIN_ADDRESS" | jq .
 
-# Testnet: fund with Friendbot
-curl "https://friendbot.stellar.org/?addr=$NEW_ADMIN_ADDRESS"
-
-# Mainnet: transfer a small XLM balance to cover fees (minimum 1 XLM)
+# Mainnet — transfer a small XLM balance (minimum 1 XLM for fees)
+# stellar payment send --amount 2 --asset XLM \
+#   --destination "$NEW_ADMIN_ADDRESS" \
+#   --source "$FUNDING_KEY" --network mainnet
 ```
 
 ### Step 2 — Propose the transfer (current admin signs)
@@ -230,32 +223,117 @@ stellar contract invoke \
   --admin "$OLD_ADMIN_ADDRESS" \
   --maintainer "$OLD_ADMIN_ADDRESS" \
   --org_id should_fail
-# Expected: error — Error(Contract, #3) UnauthorizedAdmin
-# This error is CORRECT and confirms the rotation succeeded.
+# Expected: Error(Contract, #3) UnauthorizedAdmin
+# This error CONFIRMS the rotation succeeded.
+```
+
+**Do not proceed to Phase 5 until Phase 4 returns `UnauthorizedAdmin`.**
+
+---
+
+## Phase 5 — Update AWS Secrets Manager
+
+Secrets are stored as individual secrets under the naming convention
+`<service_name>-<VAR_NAME>` (e.g. `workload-governor-ADMIN_SECRET`). Update
+the admin secret and revoke access to the old value.
+
+### 5a. Write the new admin secret
+
+```bash
+export AWS_REGION=us-east-1          # adjust to your deployment region
+export SERVICE_NAME=workload-governor
+
+# Write new secret value (the stellar CLI-format secret key)
+NEW_ADMIN_SECRET_VALUE=$(stellar keys export "$NEW_ADMIN_KEY" --network "$NETWORK")
+
+aws secretsmanager put-secret-value \
+  --region "$AWS_REGION" \
+  --secret-id "${SERVICE_NAME}-ADMIN_SECRET" \
+  --secret-string "$NEW_ADMIN_SECRET_VALUE"
+
+echo "Secret updated."
 ```
 
 ### Step 7 — Rotate the secret in the secrets manager
 
 Immediately after on-chain confirmation of Step 4:
 
-1. Store the new admin secret in your vault / AWS Secrets Manager.
-2. Revoke access to the old admin secret for all principals.
-3. Delete or archive the old admin secret (do not leave it accessible).
-4. Update any CI/CD pipelines that reference `CI_ADMIN_SECRET`.
+```bash
+aws secretsmanager describe-secret \
+  --region "$AWS_REGION" \
+  --secret-id "${SERVICE_NAME}-ADMIN_SECRET" \
+  --query 'LastChangedDate'
+# Expected: timestamp within the last few minutes
+```
+
+### 5c. Revoke access to the old admin secret
+
+1. If the old secret value is a versioned string in the same secret, deprecate
+   the previous version:
+
+   ```bash
+   OLD_VERSION_ID=$(aws secretsmanager list-secret-version-ids \
+     --region "$AWS_REGION" \
+     --secret-id "${SERVICE_NAME}-ADMIN_SECRET" \
+     --query 'Versions[?contains(VersionStages, `AWSPREVIOUS`)].VersionId' \
+     --output text)
 
 ### Step 8 — Update the `.github/workflows/contract-ci.yml` secret reference
 
-If the CI pipeline uses the admin key for testnet smoke tests:
+2. Update any CI/CD pipelines that reference `CI_ADMIN_SECRET`:
+   - Go to **Settings → Secrets and variables → Actions** in the GitHub repo.
+   - Update `CI_ADMIN_SECRET` with the new admin's secret key.
+   - Trigger a CI run to confirm the pipeline still passes.
 
-1. Go to **Settings → Secrets and variables → Actions** in the GitHub repo.
-2. Update `CI_ADMIN_SECRET` with the new admin's secret key.
-3. Trigger a CI run to confirm the pipeline still passes.
+3. If the old private key was stored offline (HSM, 1Password, etc.), revoke or
+   delete it from that store and document the deletion in the incident ticket.
 
 ---
 
-## Verification Checklist
+## Phase 6 — Backend Restart and Health Verification
 
-After completing all steps, confirm:
+The backend ECS service injects secrets at task launch via `valueFrom`. To pick
+up the new `ADMIN_SECRET` without downtime, force a rolling replacement of the
+running tasks.
+
+### 6a. Identify the ECS cluster and service
+
+```bash
+export ECS_CLUSTER=workload-governor-production    # adjust as needed
+export ECS_SERVICE=workload-governor-backend
+
+aws ecs describe-services \
+  --region "$AWS_REGION" \
+  --cluster "$ECS_CLUSTER" \
+  --services "$ECS_SERVICE" \
+  --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}'
+```
+
+### 6b. Force a new deployment (rolling restart)
+
+```bash
+aws ecs update-service \
+  --region "$AWS_REGION" \
+  --cluster "$ECS_CLUSTER" \
+  --service "$ECS_SERVICE" \
+  --force-new-deployment
+echo "Rolling restart initiated."
+```
+
+### 6c. Wait for stability
+
+```bash
+aws ecs wait services-stable \
+  --region "$AWS_REGION" \
+  --cluster "$ECS_CLUSTER" \
+  --services "$ECS_SERVICE"
+echo "Service stable."
+```
+
+This command blocks until all running tasks are on the new revision. Default
+timeout is 10 minutes (ECS CLI); if it times out see Troubleshooting below.
+
+### 6d. Verify backend health
 
 - [ ] `register_maintainer` succeeds with the new admin key.
 - [ ] `register_maintainer` fails with `UnauthorizedAdmin` using the old admin key.
@@ -292,44 +370,36 @@ The two-step design provides a narrow recovery window:
 
 ## Multi-Sig Recommendation for Production
 
-For high-value production deployments, do not store admin authority in a single
-keypair. Instead:
+For production deployments, do not store admin authority in a single keypair.
 
-### Option A — Stellar multisig
-
-Add multiple signers to the admin Stellar account with a threshold of 2-of-3
-or 3-of-5:
+**Option A — Stellar multisig (threshold signing):**
 
 ```bash
-# Add a second signer to the admin account with weight 1
+# Add a second signer with weight 1 to the admin account
 stellar account signer-add \
-  --account "$ADMIN_ADDRESS" \
+  --account "$OLD_ADMIN_ADDRESS" \
   --signer "$SIGNER_2_ADDRESS" \
   --weight 1 \
   --network mainnet \
-  --source "$ADMIN_KEY"
+  --source "$OLD_ADMIN_KEY"
 
-# Set thresholds: low=1, med=2, high=2
+# Require 2-of-N for medium and high threshold operations
 stellar account threshold-set \
-  --account "$ADMIN_ADDRESS" \
+  --account "$OLD_ADMIN_ADDRESS" \
   --low 1 --med 2 --high 2 \
   --network mainnet \
-  --source "$ADMIN_KEY"
+  --source "$OLD_ADMIN_KEY"
 ```
 
-Any transaction signed by the admin account now requires ≥2 of the registered
-signers, preventing single-key compromise.
+**Option B — Hardware Security Module:**
 
-### Option B — Hardware Security Module (HSM)
+Store the admin private key in a YubiKey, AWS CloudHSM, or equivalent. Signing
+requires physical access or quorum approval, eliminating remote key theft.
 
-Store the admin private key in an HSM (YubiKey, AWS CloudHSM, or similar).
-Signing operations require physical access or quorum approval, eliminating
-remote key theft.
+**Option C — Multi-party computation wallet:**
 
-### Option C — Multi-party computation (MPC)
-
-Use an MPC wallet (e.g. Fireblocks, Fordefi) to distribute key material across
-multiple parties. No single party ever holds the full key.
+Use Fireblocks, Fordefi, or similar MPC wallet to distribute key material. No
+single party ever holds the full private key.
 
 ---
 
