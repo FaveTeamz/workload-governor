@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { EmptyState } from "./EmptyState";
 import { Badge } from "./Badge";
 import type { BadgeVariant } from "./Badge";
+import "./EventHistoryTable.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ function formatTimestamp(iso: string): string {
 
 // ── Copy-to-clipboard button ──────────────────────────────────────────────────
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label = "transaction hash" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -79,7 +80,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       className="eht-copy-btn"
       onClick={handleCopy}
-      aria-label={copied ? "Copied!" : `Copy transaction hash ${text}`}
+      aria-label={copied ? "Copied!" : `Copy ${label} ${text}`}
       title={copied ? "Copied!" : "Copy to clipboard"}
       type="button"
     >
@@ -298,8 +299,11 @@ export function EventHistoryTable({
         <EmptyState variant="no-events" />
       ) : (
         <>
-          <div className="table-wrap" role="region" aria-label="Event history table" tabIndex={0}>
-            <table className="table eht-table">
+          <button type="button" className="eht-mobile-sort btn btn-ghost btn-sm" onClick={toggleSort}>
+            {sortDir === "desc" ? "Newest first" : "Oldest first"} <SortIndicator dir={sortDir} />
+          </button>
+          <div className="table-wrap eht-card-wrap" role="region" aria-label="Event history table" tabIndex={0}>
+            <table className="table eht-table" role="table">
               <caption className="table__caption">
                 {filtered.length} event{filtered.length !== 1 ? "s" : ""}
                 <span className="visually-hidden">
@@ -332,20 +336,20 @@ export function EventHistoryTable({
                   <th scope="col">Transaction Hash</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {pageItems.map((ev) => (
-                  <tr key={ev.id} className="eht-row">
-                    <td>
+                  <tr key={ev.id} className="eht-row" role="row">
+                    <td role="cell" data-label="Event Type">
                       <Badge variant={EVENT_BADGE[ev.event_type] ?? "neutral"}>
                         {ev.event_type}
                       </Badge>
                     </td>
-                    <td>{ev.org_id}</td>
-                    <td className="eht-issue-id">{ev.issue_id}</td>
-                    <td>
+                    <td role="cell" data-label="Org">{ev.org_id}</td>
+                    <td className="eht-issue-id" role="cell" data-label="Issue ID">{ev.issue_id}</td>
+                    <td role="cell" data-label="Timestamp">
                       <time dateTime={ev.timestamp}>{formatTimestamp(ev.timestamp)}</time>
                     </td>
-                    <td className="eht-txhash-cell">
+                    <td className="eht-txhash-cell" role="cell" data-label="Transaction Hash">
                       <a
                         href={`https://stellar.expert/explorer/testnet/tx/${ev.tx_hash}`}
                         target="_blank"
@@ -358,6 +362,12 @@ export function EventHistoryTable({
                       </a>
                       <CopyButton text={ev.tx_hash} />
                     </td>
+                    {ev.contributor && (
+                      <td className="eht-mobile-contributor" role="cell" data-label="Contributor">
+                        <span title={ev.contributor}>{truncateHash(ev.contributor)}</span>
+                        <CopyButton text={ev.contributor} label="contributor address" />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

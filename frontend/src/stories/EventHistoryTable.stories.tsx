@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { EventHistoryTable } from "../components/EventHistoryTable";
 import type { ContractEvent } from "../components/EventHistoryTable";
 
@@ -9,7 +9,7 @@ function makeEvent(overrides: Partial<ContractEvent> & { id: string }): Contract
     issue_id: "42",
     timestamp: new Date().toISOString(),
     tx_hash: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-    contributor: "GBXXX1ABCDEFGHIJKLMNO12345",
+    contributor: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
     ...overrides,
   };
 }
@@ -26,6 +26,12 @@ const meta: Meta<typeof EventHistoryTable> = {
   title: "Components/EventHistoryTable",
   component: EventHistoryTable,
   parameters: {
+    viewport: {
+      options: {
+        phone375: { name: "375 px phone", styles: { width: "375px", height: "667px" } },
+        phone390: { name: "390 px phone", styles: { width: "390px", height: "844px" } },
+      },
+    },
     docs: {
       description: {
         component:
@@ -59,4 +65,18 @@ export const ManyEvents: Story = {
       })
     ),
   },
+};
+
+export const Mobile375: Story = {
+  globals: { viewport: { value: "phone375", isRotated: false } },
+  args: { events: SAMPLE_EVENTS },
+  parameters: { chromatic: { viewports: [375] } },
+  decorators: [(Story) => <div style={{ maxWidth: 375 }}><Story /></div>],
+};
+
+export const Mobile390: Story = {
+  ...Mobile375,
+  globals: { viewport: { value: "phone390", isRotated: false } },
+  parameters: { chromatic: { viewports: [390] } },
+  decorators: [(Story) => <div style={{ maxWidth: 390 }}><Story /></div>],
 };
