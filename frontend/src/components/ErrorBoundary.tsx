@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { ErrorState } from "./ErrorState";
+import "./ErrorBoundary.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,8 +30,12 @@ export interface ErrorBoundaryProps {
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
   /** Base URL prepended to /api/errors (defaults to '') */
   apiBase?: string;
-  /** Optional variant (e.g. 'page' or 'panel') */
-  variant?: "page" | "panel" | string;
+  /**
+   * Optional variant (e.g. 'page' or 'panel'). `"view"` renders the per-view
+   * fallback (#1265): illustration, "Something went wrong displaying this
+   * view", a "Reload View" button and collapsible technical details.
+   */
+  variant?: "page" | "panel" | "view" | string;
   /** Optional label for boundary identification */
   label?: string;
 }
@@ -76,6 +81,13 @@ export class ErrorBoundary extends Component<
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.setState({ errorInfo });
+
+    // Developer-facing log, tagged with the boundary label (#1265).
+    console.error(
+      `[ErrorBoundary${this.props.label ? `:${this.props.label}` : ""}]`,
+      error,
+      errorInfo.componentStack,
+    );
 
     // ── Telemetry callback ────────────────────────────────────────────────────
     // Forward the full error + React component stack to the caller so they
@@ -138,6 +150,16 @@ export class ErrorBoundary extends Component<
       return this.props.fallback;
     }
 
+    if (this.props.variant === "view") {
+      return (
+        <ViewErrorFallback
+          error={this.state.error}
+          componentStack={this.state.errorInfo?.componentStack ?? undefined}
+          onReload={this.handleRetry}
+        />
+      );
+    }
+
     // Render the styled ErrorState component with a "Try Again" retry action.
     // The error message is surfaced as a subtitle override so developers can
     // diagnose the failure from the UI in non-production environments.
@@ -152,4 +174,48 @@ export class ErrorBoundary extends Component<
       />
     );
   }
+}
+
+
+// ── Per-view fallback (#1265) ────────────────────────────────────────────────
+
+interface ViewErrorFallbackProps {
+  error?: Error;
+  componentStack?: string;
+  onReload: () => void;
+}
+
+/**
+ * Fallback for a single view: the rest of the app (navigation, toasts) keeps
+ * working. "Reload View" re-mounts only the failed view. The technical details
+ * stay collapsed by default.
+ */
+export function ViewErrorFallback({ error, componentStack, onReload }: ViewErrorFallbackProps) {
+  const details = [error?.name && error?.message ? `${error.name}: ${error.message}` : error?.message, error?.stack, componentStack]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return (
+    <section className="view-error" role="alert" aria-live="assertive">
+      <svg className="view-error__icon" viewBox="0 0 24 24" width="48" height="48" aria-hidden="true">
+        <path
+          d="M12 2 1 21h22L12 2Zm0 6 7.5 13h-15L12 8Zm-1 4v4h2v-4h-2Zm0 6v2h2v-2h-2Z"
+          fill="currentColor"
+        />
+      </svg>
+      <h2 className="view-error__title">Something went wrong displaying this view</h2>
+      <p className="view-error__message">
+        The rest of the app is still working. Reload this view to try again.
+      </p>
+      <button type="button" className="view-error__reload" onClick={onReload}>
+        Reload View
+      </button>
+      {details && (
+        <details className="view-error__details">
+          <summary>Technical details</summary>
+          <pre>{details}</pre>
+        </details>
+      )}
+    </section>
+  );
 }

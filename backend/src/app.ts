@@ -3,6 +3,7 @@
  *
  * Mounts:
  *   GET /api/health  — health check (#309)
+ *   GET /api/ready   — readiness: primary DB writable (#1256)
  *
  * Starts:
  *   - Scheduler for TTL extension + GitHub sync (#311, #312)
@@ -19,7 +20,7 @@
 import { correlationMiddleware, shutdownTracing, xrayMiddleware } from "./tracing.js";
 import express from "express";
 import helmet from "helmet";
-import { healthHandler } from "./health.js";
+import { healthHandler, readyHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
 import logger, { pinoHttpMiddleware } from "./logger.js";
 import { adminAuth } from "./middleware/adminAuth.js";
@@ -84,6 +85,7 @@ export function createApp(): express.Application {
   app.use(express.json());
   app.use(rateLimiterMiddleware);
   app.get("/api/health", healthHandler);
+  app.get("/api/ready", readyHandler);
   app.get("/api/events/stream", sseHandler);
   app.use("/api/admin", adminAuth, adminRouter);
 

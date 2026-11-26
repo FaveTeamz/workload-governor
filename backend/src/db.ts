@@ -217,3 +217,20 @@ export async function migrate(): Promise<void> {
     dir: "migrations",
   });
 }
+let replicaPool: pg.Pool | null | undefined;
+
+export function getReplicaPool(): pg.Pool | null {
+  if (replicaPool === undefined) {
+    const url = process.env.DATABASE_REPLICA_URL;
+    replicaPool = url
+      ? new Pool({
+          connectionString: url,
+          ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+          max: 2,
+          idleTimeoutMillis: idleTimeout,
+          connectionTimeoutMillis: acquireTimeout,
+        })
+      : null;
+  }
+  return replicaPool;
+}
