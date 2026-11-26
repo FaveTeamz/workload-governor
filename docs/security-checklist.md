@@ -316,3 +316,13 @@ licences, banned crates, and approved crate sources.
   new advisories against the pinned dependency tree.
 - `cargo update` must be gated on a clean `cargo audit` and `cargo deny check`
   pass before the updated `Cargo.lock` may be merged.
+
+### GitHub Actions and Container Scanning Policy
+
+- All workflows declare explicit `permissions:`, with `contents: read` as the
+  default and write access granted only to publishing or security jobs.
+- Core GitHub actions use supported v4 releases.
+- Production container images are scanned by Trivy before push to GHCR.
+- Critical or High CVEs fail the publishing job unless documented in
+  `.trivyignore` with an expiry date.
+- Trivy SARIF results are uploaded to GitHub Code Scanning.

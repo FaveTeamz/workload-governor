@@ -36,10 +36,10 @@ jobs:
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       # ── Build frontend ────────────────────────────────────────────────────
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'

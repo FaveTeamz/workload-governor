@@ -29,8 +29,10 @@ jobs:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Rust stable with fmt + clippy
         uses: dtolnay/rust-toolchain@stable
@@ -60,8 +62,10 @@ jobs:
     name: Test & Coverage
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Rust stable with llvm-tools
         uses: dtolnay/rust-toolchain@stable
@@ -99,7 +103,7 @@ jobs:
 
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: mutation-report
           path: mutants.out/mutation-report.html
@@ -110,8 +114,10 @@ jobs:
     name: Build WASM & Size Budget Check
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Rust stable with wasm targets
         uses: dtolnay/rust-toolchain@stable
@@ -160,7 +166,7 @@ jobs:
             });
 
       - name: Upload unoptimized WASM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/workload_governor.wasm
@@ -174,8 +180,10 @@ jobs:
     # Run on every push to main AND on every PR (so the artifact is available
     # for review). Acceptance criterion: artifact uploaded on every main merge.
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Rust stable with wasm32v1-none target
         uses: dtolnay/rust-toolchain@stable
@@ -221,7 +229,7 @@ jobs:
           [ "$SIZE" -le 22528 ] || (echo "❌ WASM exceeds 22 KB deployment gate (${SIZE} bytes). Target is < 20 KB. Reduce binary size before merging." && exit 1)
 
       - name: Upload optimized WASM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
@@ -233,8 +241,10 @@ jobs:
     name: Fuzz (10 min)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -264,7 +274,7 @@ jobs:
 
       - name: Upload fuzz artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz-artifacts-${{ github.run_id }}
           path: fuzz/artifacts/
@@ -279,8 +289,10 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Check cargo-deny (licenses, bans, advisories)
         uses: EmbarkStudios/cargo-deny-action@v2

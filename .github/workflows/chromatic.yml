@@ -24,6 +24,8 @@ jobs:
   chromatic:
     name: Capture visual snapshots
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     defaults:
       run:
@@ -32,7 +34,7 @@ jobs:
     steps:
       # ── Checkout ───────────────────────────────────────────────
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           # Full history is required for Chromatic to detect which commits
           # introduced visual changes and to build accurate baselines.
@@ -40,7 +42,7 @@ jobs:
 
       # ── Node setup ─────────────────────────────────────────────
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"

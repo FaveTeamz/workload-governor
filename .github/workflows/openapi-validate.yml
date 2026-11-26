@@ -22,10 +22,12 @@ jobs:
   docs-sync:
     name: API reference docs in sync with OpenAPI spec
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -43,16 +45,18 @@ jobs:
   contract-tests:
     name: OpenAPI response-shape contract tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     env:
       NODE_ENV: test
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -67,6 +71,8 @@ jobs:
   validate-api:
     name: Validate OpenAPI spec against live server
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -99,10 +105,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'

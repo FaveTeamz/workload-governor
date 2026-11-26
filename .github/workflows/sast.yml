@@ -20,11 +20,14 @@ jobs:
   semgrep:
     name: Semgrep SAST scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     container:
       image: semgrep/semgrep
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       # ── Run Semgrep with project rule packs ────────────────────────────────
       # Rule packs:

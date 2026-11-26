@@ -37,13 +37,13 @@ jobs:
     name: Build WASM
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -56,7 +56,7 @@ jobs:
         run: cargo build --target wasm32v1-none --release
 
       - name: Upload unoptimized WASM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/workload_governor.wasm
@@ -70,13 +70,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-wasm
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -89,7 +89,7 @@ jobs:
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download unoptimized WASM
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/
@@ -111,7 +111,7 @@ jobs:
           echo "| Optimized   | $(( OPT / 1024 )) KB |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload optimized WASM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
@@ -132,13 +132,13 @@ jobs:
     outputs:
       contract_id: ${{ steps.deploy.outputs.contract_id }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download optimized WASM
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: wasm/
@@ -289,13 +289,13 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.target == 'mainnet'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download optimized WASM
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: wasm/
