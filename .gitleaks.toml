@@ -6,8 +6,8 @@ useDefault = true
 
 [[rules]]
 id = "stellar-secret-seed"
-description = "Unmasked Stellar secret seed / private key"
-regex = '''(?i)\bS[A-Z0-9]{55}\b'''
+description = "Unmasked Stellar Ed25519 secret seed (StrKey)"
+regex = '''\bS[A-Z2-7]{55}\b'''
 keywords = ["stellar", "seed", "secret", "private"]
 
 [[rules]]
