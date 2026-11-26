@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./tokens.css";
 import "./i18n";
 import App from "./App";
+import { ThemeProvider } from "./context/ThemeContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LiveUpdatesProvider } from "./hooks/useLiveUpdates";
 import { ToastProvider } from "./components/Toast";
@@ -15,7 +16,9 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <ToastProvider>
           <LiveUpdatesProvider>
-            <App />
+            <ThemeProvider>
+              <App />
+            </ThemeProvider>
           </LiveUpdatesProvider>
         </ToastProvider>
       </BrowserRouter>

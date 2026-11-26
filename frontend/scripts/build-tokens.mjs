@@ -33,54 +33,13 @@ lines.push("   ============================================================= */"
 lines.push("");
 lines.push(":root {");
 
-// ── Colors ─────────────────────────────────────────────────────────────────
-lines.push("  /* ── Color: Primary (purple/indigo) ── */");
-for (const [scale, value] of Object.entries(tokens.color.primary)) {
-  lines.push(`  --color-primary-${scale}: ${value};`);
+// Write the primitive color scales once.
+for (const [group, scale] of Object.entries(tokens.color)) {
+  if (group === "$type" || group === "semantic") continue;
+  for (const [step, token] of Object.entries(scale)) {
+    lines.push(`  --color-${group}-${step}: ${token.$value.hex};`);
+  }
 }
-lines.push("");
-
-lines.push("  /* ── Color: Secondary (slate) ── */");
-for (const [scale, value] of Object.entries(tokens.color.secondary)) {
-  lines.push(`  --color-secondary-${scale}: ${value};`);
-}
-lines.push("");
-
-lines.push("  /* ── Color: Accent (amber) ── */");
-for (const [scale, value] of Object.entries(tokens.color.accent)) {
-  lines.push(`  --color-accent-${scale}: ${value};`);
-}
-lines.push("");
-
-lines.push("  /* ── Color: Success ── */");
-for (const [scale, value] of Object.entries(tokens.color.success)) {
-  lines.push(`  --color-success-${scale}: ${value};`);
-}
-lines.push("");
-
-lines.push("  /* ── Color: Warning ── */");
-for (const [scale, value] of Object.entries(tokens.color.warning)) {
-  lines.push(`  --color-warning-${scale}: ${value};`);
-}
-lines.push("");
-
-lines.push("  /* ── Color: Error ── */");
-for (const [scale, value] of Object.entries(tokens.color.error)) {
-  lines.push(`  --color-error-${scale}: ${value};`);
-}
-lines.push("");
-
-lines.push("  /* ── Semantic surface tokens (dark-mode defaults) ── */");
-for (const [key, value] of Object.entries(tokens.color.semantic)) {
-  lines.push(`  --color-${key}: ${value};`);
-}
-lines.push("");
-
-lines.push("  /* shorthand aliases kept for backward compat */");
-lines.push("  --color-primary:      var(--color-primary-500);");
-lines.push("  --color-primary-dark: var(--color-primary-600);");
-lines.push("  --color-complete:     var(--color-success-500);");
-lines.push("  --color-revoke:       var(--color-error-500);");
 lines.push("");
 
 // ── Typography ──────────────────────────────────────────────────────────────
@@ -144,16 +103,52 @@ for (const [key, value] of Object.entries(tokens.transition)) {
 
 lines.push("}");
 lines.push("");
-lines.push("@media (prefers-color-scheme: light) {");
-lines.push("  :root {");
-lines.push("    --color-bg:      #f8fafc;");
-lines.push("    --color-surface: #ffffff;");
-lines.push("    --color-border:  #e2e8f0;");
-lines.push("    --color-text:    #0f172a;");
-lines.push("    --color-muted:   #64748b;");
-lines.push("  }");
-lines.push("}");
-lines.push("");
+const aliases = {
+  bg: "background-primary",
+  surface: "background-surface",
+  border: "border-default",
+  text: "text-primary",
+  muted: "text-muted",
+  focus: "border-focus",
+  primary: "action-primary",
+  "primary-dark": "action-hover",
+  complete: "status-success",
+  revoke: "status-error",
+  brand: "action-primary",
+  "brand-hover": "action-hover",
+};
+
+function writeTheme(selector, name, indent = "") {
+  const theme = tokens.color.semantic[name];
+  lines.push(`${indent}${selector} {`);
+  lines.push(`${indent}  color-scheme: ${name === "light" ? "light" : "dark"};`);
+  for (const [group, slots] of Object.entries(theme)) {
+    for (const [slot, token] of Object.entries(slots)) {
+      lines.push(`${indent}  --color-${group}-${toKebab(slot)}: ${token.$value.hex};`);
+    }
+  }
+  for (const [alias, target] of Object.entries(aliases)) {
+    lines.push(`${indent}  --color-${alias}: var(--color-${target});`);
+  }
+  if (name === "highContrast") {
+    for (const [token, width] of Object.entries({ "shadow-sm": 1, shadow: 2, "shadow-lg": 3, "elevation-1": 1, "elevation-2": 2, "elevation-3": 3, "elevation-4": 4 })) {
+      lines.push(`${indent}  --${token}: 0 0 0 ${width}px var(--color-border-default);`);
+    }
+  }
+  lines.push(`${indent}}`, "");
+}
+
+writeTheme(':root, [data-theme="light"]', "light");
+const system = ':root:where(:not([data-theme]), [data-theme="system"])';
+lines.push("@media (prefers-color-scheme: dark) {");
+writeTheme(system, "dark", "  ");
+lines.push("}", "");
+writeTheme('[data-theme="dark"], :root.theme-dark', "dark");
+writeTheme(':root.theme-light', "light");
+lines.push("@media (prefers-contrast: more) {");
+writeTheme(system, "highContrast", "  ");
+lines.push("}", "");
+writeTheme('[data-theme="high-contrast"]', "highContrast");
 
 writeFileSync(outputPath, lines.join("\n"), "utf8");
 console.log("✓  Generated src/tokens.css");

@@ -1,37 +1,36 @@
 import type { Preview } from '@storybook/react-vite';
 import '../src/tokens.css';
 import '../src/app.css';
-import type { Preview } from '@storybook/react-vite'
-import '../src/tokens.css'
-import '../src/app.css'
 
 const preview: Preview = {
-  parameters: {
-    backgrounds: {
-      default: 'dark',
-      values: [
-        { name: 'dark',  value: '#0f1117' },
-        { name: 'light', value: '#f8fafc' },
-      ],
-    },
-    controls: {
-      matchers: {
-        color: /(background|color)$/i,
-        date: /Date$/i,
+  globalTypes: {
+    theme: {
+      description: 'Application color theme',
+      toolbar: {
+        icon: 'contrast',
+        items: [
+          { value: 'system', title: 'System' },
+          { value: 'light', title: 'Light' },
+          { value: 'dark', title: 'Dark' },
+          { value: 'high-contrast', title: 'High contrast' },
+        ],
       },
     },
-    a11y: {
-      test: 'todo',
+  },
+  initialGlobals: { theme: 'system' },
+  decorators: [
+    (Story, { globals }) => (
+      <div data-theme={globals.theme} style={{ color: 'var(--color-text)', background: 'var(--color-bg)' }}>
+        <Story />
+      </div>
+    ),
+  ],
+  parameters: {
+    controls: {
+      matchers: { color: /(background|color)$/i, date: /Date$/i },
     },
+    a11y: { test: 'todo' },
   },
 };
 
 export default preview;
-        date:  /Date$/i,
-      },
-    },
-    a11y: { test: 'error' },
-  },
-}
-
-export default preview
