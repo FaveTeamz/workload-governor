@@ -42,6 +42,7 @@ export function ActivityProgressRing({ value, max, streakDays, badgeLevel }: Act
         </span>
       </div>
       <span><span aria-hidden="true">{badge.icon}</span> {badge.label}</span>
+      <span className="activity-ring__summary" aria-hidden="true">{completed} / {limit} this week</span>
     </div>
   );
 }

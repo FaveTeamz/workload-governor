@@ -46,6 +46,8 @@
 
 .activity-ring__counter strong { font-size: 1.25rem; }
 
+.activity-ring__summary { color: var(--color-muted, currentColor); }
+
 @media (prefers-reduced-motion: reduce) {
   .activity-ring__progress { transition: none; }
 }

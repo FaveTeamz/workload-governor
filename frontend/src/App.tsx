@@ -3,6 +3,7 @@ import { NavBar } from "./components/NavBar";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
+import { ContributorActivity } from "./components/ContributorActivity";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { ActivityPage } from "./components/ActivityPage";
 import { IssueCard } from "./components/IssueCard";
@@ -175,6 +176,7 @@ export default function App() {
               onComplete={handleComplete}
               onRevoke={handleRevoke}
             />
+            {wallet.publicKey && <ContributorActivity key={wallet.publicKey} address={wallet.publicKey} />}
             <ActivityFeed apiBase="/api" network="testnet" />
           </>
         )}
