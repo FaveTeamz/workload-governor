@@ -6,17 +6,19 @@ import "./i18n";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LiveUpdatesProvider } from "./hooks/useLiveUpdates";
+import { ToastProvider } from "./components/Toast";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {/* Top-level error boundary — closes #280 */}
     <ErrorBoundary variant="full">
-      <LiveUpdatesProvider>
-        <App />
-      </LiveUpdatesProvider>
+      <BrowserRouter>
+        <ToastProvider>
+          <LiveUpdatesProvider>
+            <App />
+          </LiveUpdatesProvider>
+        </ToastProvider>
+      </BrowserRouter>
     </ErrorBoundary>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
   </StrictMode>
 );

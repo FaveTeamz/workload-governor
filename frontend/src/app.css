@@ -169,29 +169,32 @@ a, button, input, select, textarea {
    NavBar drawer — mobile slide-in from left (issue #555)
    ============================================================ */
 
-/* Drawer: always in the DOM, offscreen by default */
-.navbar__drawer {
-  position: fixed;
-  left: 0;
-  top: 0;
-  height: 100vh;
-  width: 280px;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
-  z-index: 200;
-  transform: translateX(-100%);
-  transition: transform 0.3s ease, visibility 0.3s ease;
-  visibility: hidden;
-  display: none; /* hidden on desktop; shown via media query below */
-  flex-direction: column;
-  padding: 24px 16px;
-  gap: 12px;
-  overflow-y: auto;
-}
+/* Drawer on mobile: offscreen by default, slide in when open */
+@media (max-width: 767px) {
+  .navbar__drawer {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 280px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    z-index: 1200;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease, visibility 0.3s ease;
+    visibility: hidden;
+    display: none;
+    flex-direction: column;
+    padding: 24px 16px;
+    gap: 12px;
+    overflow-y: auto;
+  }
 
-.navbar__drawer--open {
-  transform: translateX(0);
-  visibility: visible;
+  .navbar__drawer--open {
+    transform: translateX(0);
+    visibility: visible;
+    display: flex !important;
+  }
 }
 
 /* Backdrop behind the drawer */
@@ -199,7 +202,7 @@ a, button, input, select, textarea {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 199;
+  z-index: 1150;
   display: none; /* hidden on desktop; shown via media query below */
 }
 
@@ -207,8 +210,9 @@ a, button, input, select, textarea {
   /* Show hamburger on mobile */
   .navbar__hamburger { display: flex; }
 
-  /* Hide the inline desktop menu on mobile */
-  .navbar__menu { display: none !important; }
+  /* Hide the inline desktop menu on mobile when closed */
+  .navbar__menu:not(.navbar__menu--open) { display: none !important; }
+  .navbar__menu--open { display: flex !important; z-index: 1200; }
 
   /* Show drawer and backdrop on mobile */
   .navbar__drawer { display: flex; }
@@ -1864,6 +1868,8 @@ a, button, input, select, textarea {
 .eb-panel__retry { flex-shrink: 0; align-self: center; }
 
 .eb-details--panel { width: 100%; flex-basis: 100%; }
+
+/* ============================================================
    Badge — design system
    ============================================================ */
 .badge {
@@ -2281,6 +2287,13 @@ a, button, input, select, textarea {
   object-fit: cover;
 }
 .org-selector__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+}
+
+/* ============================================================
    ErrorRecovery — contract-aware error messages (closes #326)
    Uses --er-accent CSS variable injected by the component.
    ============================================================ */

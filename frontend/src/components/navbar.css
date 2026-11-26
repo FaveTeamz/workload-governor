@@ -30,8 +30,8 @@
   --focus-ring: 0 0 0 2px #3b82f6;
   --radius-sm: 4px;
   --radius-md: 8px;
-  --z-dropdown: 100;
-  --z-overlay: 200;
+  --z-dropdown: 1000;
+  --z-overlay: 1100;
 }
 
 /* ── Base navbar ── */
@@ -339,7 +339,8 @@
 }
 
 .navbar__lang-selector .language-selector__label {
-  display: none; /* icon-only mode in navbar */
+  display: none;
+  /* icon-only mode in navbar */
 }
 
 .navbar__lang-selector .language-selector__select {
@@ -359,7 +360,8 @@
 
 /* ── Hamburger (mobile only) ── */
 .navbar__hamburger {
-  display: none; /* hidden on desktop */
+  display: none;
+  /* hidden on desktop */
   flex-direction: column;
   justify-content: space-between;
   width: 24px;
@@ -385,73 +387,201 @@
   transition: transform 0.2s, opacity 0.2s;
 }
 
-/* ── Mobile breakpoint ── */
-@media (max-width: 767px) {
+/* ── Brand wrap ── */
+.navbar__brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ── Network badge ── */
+.navbar__network-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.navbar__network-badge--testnet {
+  background: #78350f;
+  color: #fde68a;
+  border: 1px solid #b45309;
+}
+
+.navbar__network-badge--mainnet {
+  background: #14532d;
+  color: #bbf7d0;
+  border: 1px solid #16a34a;
+}
+
+/* ── Backdrop for mobile drawer ── */
+.navbar__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1150;
+}
+
+/* ── Light mode overrides ── */
+[data-theme="light"] .navbar,
+[data-theme="light"] .navbar__menu {
+  --navbar-bg: #ffffff;
+  --navbar-text: #0f172a;
+  --navbar-text-muted: #64748b;
+  --navbar-border: #e2e8f0;
+  --navbar-hover-bg: #f1f5f9;
+  --navbar-active-bg: #e2e8f0;
+}
+
+@media (prefers-color-scheme: light) {
+
+  :root:not([data-theme="dark"]) .navbar,
+  :root:not([data-theme="dark"]) .navbar__menu {
+    --navbar-bg: #ffffff;
+    --navbar-text: #0f172a;
+    --navbar-text-muted: #64748b;
+    --navbar-border: #e2e8f0;
+    --navbar-hover-bg: #f1f5f9;
+    --navbar-active-bg: #e2e8f0;
+  }
+}
+
+/* ── Desktop & Tablet breakpoint (>=768px) ── */
+@media (min-width: 768px) {
   .navbar {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 0.5rem 1rem;
-  }
-
-  /* Show hamburger */
-  .navbar__hamburger {
     display: flex;
-  }
-
-  /* Hide nav links by default on mobile */
-  .navbar__links {
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    gap: 0;
-    border-top: 1px solid var(--navbar-border);
-    padding-top: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  /* Show when open */
-  .navbar__links--open {
-    display: flex;
-  }
-
-  .navbar__link {
-    padding: 0.75rem 0.5rem;
-    border-radius: 0;
-    border-bottom: 1px solid var(--navbar-border);
-  }
-
-  .navbar__org-switcher {
-    width: 100%;
-  }
-
-  .navbar__org-button {
-    width: 100%;
+    align-items: center;
     justify-content: space-between;
+    height: var(--navbar-height);
+    padding: 0 1.5rem;
   }
 
-  .navbar__org-dropdown {
-    position: static;
-    box-shadow: none;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
+  .navbar__hamburger {
+    display: none !important;
+  }
+
+  .navbar__menu {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    margin-left: 1.5rem;
+  }
+
+  .navbar__drawer,
+  .navbar__drawer-wrapper,
+  .navbar__drawer-inner {
+    position: static !important;
+    transform: none !important;
+    visibility: visible !important;
+    display: flex !important;
+    flex-direction: row !important;
+    height: auto !important;
+    width: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    overflow: visible !important;
+    flex: 1;
+  }
+
+  .navbar__links {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
   .navbar__wallet {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.5rem;
+    margin-left: auto;
+    padding-top: 0 !important;
+    border-top: none !important;
+  }
+}
+
+/* ── Mobile breakpoint (<768px) ── */
+@media (max-width: 767px) {
+  .navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--navbar-height);
+    padding: 0 1rem;
+  }
+
+  .navbar__hamburger {
+    display: flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .navbar__menu {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 80vw;
+    background: var(--navbar-bg, #0f172a);
+    border-right: 1px solid var(--navbar-border, #1e293b);
+    z-index: 1200;
+    padding: 1.5rem 1rem;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+    flex-direction: column;
+  }
+
+  .navbar__menu--open {
+    display: flex !important;
+  }
+
+  .navbar__drawer-wrapper,
+  .navbar__drawer-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 1.5rem;
+  }
+
+  .navbar__links {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .navbar__wallet {
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
-    padding: 0.5rem;
-    width: 100%;
+    gap: 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--navbar-border);
+    margin-top: auto;
   }
 
   .navbar__btn {
     width: 100%;
     text-align: center;
-  }
-
-  /* Actions bar stays in the header row */
-  .navbar__actions {
-    order: -1; /* place before the growing links area */
   }
 }

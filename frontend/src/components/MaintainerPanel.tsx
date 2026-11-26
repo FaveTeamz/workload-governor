@@ -119,11 +119,11 @@ function AppRow({
   }
 
   return (
-    <li className="panel-row" onKeyDown={handleKeyDown} data-shortcut-item tabIndex={0}>
-      {/* data-shortcut-item + tabIndex make this row focusable and discoverable by J/K nav (closes #281) */}
     <li
       className="panel-row"
       data-testid="pending-application"
+      data-shortcut-item
+      tabIndex={0}
       onKeyDown={handleKeyDown}
     >
       <div className="row-info">
@@ -204,9 +204,12 @@ function AssignRow({
   }
 
   return (
-    <li className="panel-row" data-shortcut-item tabIndex={0}>
-      {/* data-shortcut-item + tabIndex make this row focusable and discoverable by J/K nav (closes #281) */}
-    <li className="panel-row" data-testid="active-assignment">
+    <li
+      className="panel-row"
+      data-testid="active-assignment"
+      data-shortcut-item
+      tabIndex={0}
+    >
       <div className="row-info">
         <span className="contributor" title={asgn.contributor} aria-label={`Contributor: ${asgn.contributor}`}>
           {truncate(asgn.contributor)}
