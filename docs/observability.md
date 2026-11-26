@@ -189,3 +189,17 @@ XRAY_ENABLED=true AWS_XRAY_DAEMON_ADDRESS=127.0.0.1:2000 npm run dev
 ```
 
 Segments appear in the [X-Ray console](https://console.aws.amazon.com/xray/home) within ~30 seconds.
+
+## PostgreSQL connection pool
+
+The `/metrics` endpoint reports current connection counts from the database pool.
+
+| Metric | Description |
+|---|---|
+| `pg_pool_total_connections` | Total connections allocated in the pool |
+| `pg_pool_idle_connections` | Connections available for queries |
+| `db_pool_active` | Connections checked out from the pool |
+| `pg_pool_waiting_requests` | Requests queued for a connection |
+
+`DatabasePoolWaitingRequestsHigh` alerts when more than five requests are queued
+for a minute. Check long-running queries and transactions before increasing the pool size.

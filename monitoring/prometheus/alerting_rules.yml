@@ -9,3 +9,13 @@ groups:
         annotations:
           summary: "Event indexer is critically behind the Stellar network"
           description: "The event indexer has been more than 50 ledgers behind for over 5 minutes."
+  - name: database
+    rules:
+      - alert: DatabasePoolWaitingRequestsHigh
+        expr: pg_pool_waiting_requests > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection pool has high waiting requests"
+          description: "{{ $value }} requests have been waiting for more than one minute."
