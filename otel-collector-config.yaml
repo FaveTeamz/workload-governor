@@ -10,12 +10,38 @@ processors:
   batch:
     timeout: 1s
     send_batch_size: 1024
+  filter/healthcheck:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.target"] == "/health"'
+        - 'attributes["http.target"] == "/ready"'
+        - 'attributes["http.target"] == "/metrics"'
+        - 'attributes["http.target"] == "/api/health"'
+        - 'attributes["http.route"] == "/health"'
+        - 'attributes["http.route"] == "/ready"'
+        - 'attributes["http.route"] == "/metrics"'
+        - 'attributes["http.route"] == "/api/health"'
+        - 'name == "/health"'
+        - 'name == "/ready"'
+        - 'name == "/metrics"'
+        - 'name == "/api/health"'
   tail_sampling:
     decision_wait: 5s
     num_traces: 10000
     expected_new_traces_per_sec: 1000
     policies:
       [
+        {
+          name: drop-health-checks,
+          type: string_attribute,
+          string_attribute: {
+            key: http.target,
+            values: ["/health", "/ready", "/metrics", "/api/health"],
+            enabled_regex_matching: false,
+            invert_match: true
+          }
+        },
         {
           name: error-policy,
           type: status_code,
@@ -41,7 +67,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [tail_sampling, batch]
+      processors: [filter/healthcheck, tail_sampling, batch]
       exporters: [debug]
     metrics:
       receivers: [otlp]

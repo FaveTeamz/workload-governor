@@ -1,11 +1,13 @@
 /**
- * tracing.ts — AWS X-Ray distributed tracing integration
+ * tracing.ts — AWS X-Ray and OpenTelemetry distributed tracing integration
  *
  * Provides:
  *   - Configured aws-xray-sdk-core instance
+ *   - Intelligent sampling (5% production ratio, 100% errors, 0% health probes)
  *   - xrayMiddleware()   — Express middleware: opens/closes a segment per request
  *   - tracedFetch()      — wraps global fetch with an X-Ray HTTP subsegment
  *   - tracedDbQuery()    — wraps pg Pool.query with an X-Ray subsegment
+ *   - OpenTelemetry interfaces & samplers (AlwaysOn, AlwaysOff, TraceIdRatioBased, ParentBased)
  *
  * Usage:
  *   // app.ts
@@ -47,10 +49,20 @@ if (XRAY_ENABLED) {
   logger.info("X-Ray tracing disabled (XRAY_ENABLED=false)");
 }
 
+// ─── Excluded health check endpoints ──────────────────────────────────────────
+
+const EXCLUDED_HEALTH_PATHS = new Set([
+  "/health",
+  "/ready",
+  "/metrics",
+  "/api/health",
+]);
+
 // ─── Express middleware ────────────────────────────────────────────────────────
 
 /**
- * Express middleware that opens an X-Ray segment for each incoming request
+ * Express middleware that opens an X-Ray segment for incoming requests
+ * using intelligent ratio sampling (5% healthy calls, 100% errors, 0% health probes)
  * and closes it when the response finishes.
  *
  * Attach before all route handlers in app.ts.
@@ -64,32 +76,63 @@ export function xrayMiddleware() {
       return next();
     }
 
+    // Health check filter: Drop 100% of traces for /health, /ready, /metrics, /api/health
+    if (EXCLUDED_HEALTH_PATHS.has(req.path)) {
+      return next();
+    }
+
     const traceHeader = req.headers["x-amzn-trace-id"] as string | undefined;
-    const segment = new AWSXRay.Segment(
-      SERVICE_NAME,
-      traceHeader ? AWSXRay.utils.processTraceData(traceHeader).root : undefined,
-      traceHeader ? AWSXRay.utils.processTraceData(traceHeader).parent : undefined,
-    );
+    const traceData = traceHeader ? AWSXRay.utils.processTraceData(traceHeader) : undefined;
+    const parentSampled = traceData?.sampled === "1";
 
-    // Annotate with HTTP method + URL for the service map
-    segment.addAnnotation("http_method", req.method);
-    segment.addAnnotation("http_url",    req.path);
+    // Production ratio sampling: Sample 5% of healthy requests, or respect upstream sampled parent
+    const sampleDecision = parentSampled || (Math.random() < 0.05);
 
-    // Make the segment available to downstream subsegment creators
-    AWSXRay.setSegment(segment);
+    let segment: AWSXRay.Segment | undefined;
+    if (sampleDecision) {
+      segment = new AWSXRay.Segment(
+        SERVICE_NAME,
+        traceData?.root,
+        traceData?.parent,
+      );
+
+      // Annotate with HTTP method + URL for the service map
+      segment.addAnnotation("http_method", req.method);
+      segment.addAnnotation("http_url",    req.path);
+
+      // Make the segment available to downstream subsegment creators
+      AWSXRay.setSegment(segment);
+    }
 
     res.on("finish", () => {
-      segment.addAnnotation("http_status", res.statusCode);
-      if (res.statusCode >= 400 && res.statusCode < 500) {
-        segment.addError(new Error(`HTTP ${res.statusCode}`));
-      } else if (res.statusCode >= 500) {
+      // Always sample 100% of error traces (HTTP 5xx)
+      if (res.statusCode >= 500) {
+        if (!segment) {
+          segment = new AWSXRay.Segment(
+            SERVICE_NAME,
+            traceData?.root,
+            traceData?.parent,
+          );
+          segment.addAnnotation("http_method", req.method);
+          segment.addAnnotation("http_url", req.path);
+        }
+        segment.addAnnotation("http_status", res.statusCode);
         segment.addFaultFlag();
+        segment.close();
+        return;
       }
-      segment.close();
+
+      if (segment) {
+        segment.addAnnotation("http_status", res.statusCode);
+        if (res.statusCode >= 400 && res.statusCode < 500) {
+          segment.addError(new Error(`HTTP ${res.statusCode}`));
+        }
+        segment.close();
+      }
     });
 
     res.on("close", () => {
-      if (!segment.isClosed()) {
+      if (segment && !segment.isClosed()) {
         segment.close(new Error("Connection closed before response"));
       }
     });
@@ -199,7 +242,7 @@ export async function tracedDbQuery<R extends QueryResultRow = QueryResultRow>(
 
 export { AWSXRay };
 
-// ─── OpenTelemetry distributed tracing integration ───────────────────────────
+// ─── OpenTelemetry distributed tracing & sampling integration ─────────────────
 
 export enum SpanStatusCode {
   UNSET = 0,
@@ -259,6 +302,158 @@ export interface Tracer {
     fn: (span: Span) => T,
   ): T;
 }
+
+// ─── Samplers ─────────────────────────────────────────────────────────────────
+
+export enum SamplingDecision {
+  NOT_RECORD = 0,
+  RECORD = 1,
+  RECORD_AND_SAMPLE = 2,
+}
+
+export interface SamplingResult {
+  decision: SamplingDecision;
+  attributes?: Record<string, unknown>;
+  traceState?: unknown;
+}
+
+export interface Sampler {
+  shouldSample(
+    context?: SpanContext,
+    traceId?: string,
+    spanName?: string,
+    spanKind?: number,
+    attributes?: Record<string, unknown>,
+    links?: unknown[],
+  ): SamplingResult;
+  toString(): string;
+}
+
+/** Samples 100% of spans unconditionally */
+export class AlwaysOnSampler implements Sampler {
+  shouldSample(): SamplingResult {
+    return { decision: SamplingDecision.RECORD_AND_SAMPLE };
+  }
+  toString(): string {
+    return "AlwaysOnSampler";
+  }
+}
+
+/** Drops 100% of spans unconditionally */
+export class AlwaysOffSampler implements Sampler {
+  shouldSample(): SamplingResult {
+    return { decision: SamplingDecision.NOT_RECORD };
+  }
+  toString(): string {
+    return "AlwaysOffSampler";
+  }
+}
+
+/** Samples a fixed ratio of traces (e.g. 0.05 = 5%) deterministically based on trace ID */
+export class TraceIdRatioBasedSampler implements Sampler {
+  private readonly ratio: number;
+  private readonly idUpperBound: number;
+
+  constructor(ratio: number = 0.05) {
+    this.ratio = Math.max(0, Math.min(1, ratio));
+    this.idUpperBound = this.ratio * 0xffffffff;
+  }
+
+  shouldSample(
+    _context?: SpanContext,
+    traceId?: string,
+    _spanName?: string,
+    _spanKind?: number,
+    attributes?: Record<string, unknown>,
+  ): SamplingResult {
+    if (this.ratio <= 0) return { decision: SamplingDecision.NOT_RECORD };
+    if (this.ratio >= 1) return { decision: SamplingDecision.RECORD_AND_SAMPLE };
+
+    const idToHash = traceId ? traceId.slice(-8) : randomHex(4);
+    const intVal = parseInt(idToHash, 16) || Math.floor(Math.random() * 0xffffffff);
+    const decision = intVal <= this.idUpperBound
+      ? SamplingDecision.RECORD_AND_SAMPLE
+      : SamplingDecision.NOT_RECORD;
+
+    return { decision, attributes };
+  }
+
+  toString(): string {
+    return `TraceIdRatioBasedSampler{ratio=${this.ratio}}`;
+  }
+}
+
+/** Respects upstream client sampling decisions or delegates to root sampler */
+export class ParentBasedSampler implements Sampler {
+  constructor(private readonly root: Sampler = new TraceIdRatioBasedSampler(0.05)) {}
+
+  shouldSample(
+    context?: SpanContext,
+    traceId?: string,
+    spanName?: string,
+    spanKind?: number,
+    attributes?: Record<string, unknown>,
+  ): SamplingResult {
+    if (!context || !context.traceId) {
+      return this.root.shouldSample(context, traceId, spanName, spanKind, attributes);
+    }
+    const isSampled = (context.traceFlags & 1) === 1;
+    return {
+      decision: isSampled ? SamplingDecision.RECORD_AND_SAMPLE : SamplingDecision.NOT_RECORD,
+      attributes,
+    };
+  }
+
+  toString(): string {
+    return `ParentBasedSampler{root=${this.root.toString()}}`;
+  }
+}
+
+/**
+ * Intelligent production trace sampler:
+ * - Drops 100% of health check / probe requests (/health, /ready, /metrics, /api/health)
+ * - Always samples 100% of error traces (HTTP 5xx, errors)
+ * - Samples 5% of healthy traces using TraceIdRatioBasedSampler(0.05)
+ * - Supports ParentBasedSampler to propagate upstream client decisions
+ */
+export class ProductionTraceSampler implements Sampler {
+  private readonly parentBasedSampler: ParentBasedSampler;
+
+  constructor(ratio: number = 0.05) {
+    this.parentBasedSampler = new ParentBasedSampler(new TraceIdRatioBasedSampler(ratio));
+  }
+
+  shouldSample(
+    context?: SpanContext,
+    traceId?: string,
+    spanName?: string,
+    spanKind?: number,
+    attributes?: Record<string, unknown>,
+  ): SamplingResult {
+    const target = (attributes?.["http.target"] ?? attributes?.["http_url"] ?? spanName) as string | undefined;
+
+    // Drop health check and metrics endpoints
+    if (target && EXCLUDED_HEALTH_PATHS.has(target)) {
+      return { decision: SamplingDecision.NOT_RECORD };
+    }
+
+    // Always sample error traces (HTTP 5xx)
+    const statusCode = attributes?.["http.status_code"] ?? attributes?.["http_status"];
+    if (typeof statusCode === "number" && statusCode >= 500) {
+      return { decision: SamplingDecision.RECORD_AND_SAMPLE, attributes };
+    }
+
+    return this.parentBasedSampler.shouldSample(context, traceId, spanName, spanKind, attributes);
+  }
+
+  toString(): string {
+    return "ProductionTraceSampler{5% healthy, 100% error, 0% health}";
+  }
+}
+
+export const defaultSampler: Sampler = new ProductionTraceSampler(0.05);
+
+// ─── Tracer implementation ────────────────────────────────────────────────────
 
 function randomHex(bytes: number): string {
   let hex = "";
@@ -429,4 +624,3 @@ export function getTracer(name: string = SERVICE_NAME): Tracer {
 }
 
 export const tracer: Tracer = getTracer(SERVICE_NAME);
-
