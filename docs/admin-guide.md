@@ -27,7 +27,42 @@ If step 2 never happens, nothing changes: the current admin stays active. To cor
 
 ---
 
-## TTL Management
+## Administrative Authentication & Remediation Endpoints
+
+Administrative endpoints under `/api/admin/*` perform sensitive operations such as force-resynchronizing off-chain database counts with on-chain Soroban storage, registering maintainers, and adjusting governance caps. All `/api/admin/*` endpoints strictly enforce administrator authorization via the `adminAuth` middleware.
+
+### Authentication Mechanisms
+
+Clients must authenticate using one of two methods:
+
+#### 1. Bearer API Key
+Pass the configured administrative API key in the `Authorization` header:
+```http
+Authorization: Bearer <ADMIN_API_KEY>
+```
+
+#### 2. Ed25519 Cryptographic Signature
+Prove control of the on-chain admin account address by providing cryptographic signature headers:
+- `X-Admin-Address`: Stellar public key (`G...`)
+- `X-Admin-Timestamp`: Current UTC Unix timestamp (seconds or milliseconds)
+- `X-Admin-Signature`: Base64 detached Ed25519 signature of `<METHOD>:<PATH>:<TIMESTAMP>` (or `<TIMESTAMP>`)
+
+**Replay Attack Protection:** Signatures are strictly rejected if the timestamp deviates by more than 300 seconds (5 minutes) from server time.
+
+### Error Responses
+- **401 Unauthorized**: Missing required authentication headers.
+- **403 Forbidden**: Invalid API key, invalid signature, or timestamp outside the 300-second window.
+
+### Administrative Remediation Endpoints
+
+- `POST /api/admin/reconcile-counts`: Force-resynchronizes off-chain database counts with on-chain Soroban storage.
+- `POST /api/admin/sync-contract`: Synchronizes contract state with the database cache.
+- `POST /api/admin/maintainers`: Generates unsigned XDR transaction to register an organization maintainer.
+- `POST /api/admin/caps`: Updates global and per-org workload limits.
+- `GET /api/admin/consistency`: Inspects inconsistency between on-chain and off-chain states.
+- `POST /api/admin/consistency/remediate`: Resolves detected state discrepancies.
+
+All invocations produce immutable audit logs capturing the admin actor identity, IP address, and timestamp.
 
 ### What is TTL?
 
