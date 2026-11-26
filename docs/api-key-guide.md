@@ -153,11 +153,22 @@ export ADMIN_TOKEN
 
 ## Key Permissions and Scope
 
-The `x-admin-token` is a single shared secret — there are no per-scope or
-per-user tokens at the REST layer. All holders of the token have full access to
-every admin endpoint.
+The `apiKeyAuth` middleware in `backend/src/app.ts` authenticates external organization maintainers and automated webhook publishers. It accepts authentication via `X-API-Key: <key>`, `Authorization: Bearer <key>`, or `x-admin-token: <key>`.
 
-**Endpoints gated by `x-admin-token`**
+### Authentication & Authorization Specification (`apiKeyAuth`)
+
+| Feature | Mechanism / Rule | Failure Status |
+|---|---|---|
+| Header formats | `X-API-Key: <key>`, `Authorization: Bearer <key>`, or `x-admin-token: <key>` | `401 Unauthorized` |
+| Malformed Bearer | Empty tokens, missing scheme, or non-Bearer prefixes | `401 Unauthorized` |
+| Non-ASCII characters | Keys must be printable ASCII (`\x20-\x7E`); Unicode and control chars rejected | `401 Unauthorized` |
+| Expiration | Keys exceeding `expiresAt` timestamp rejected | `401 Unauthorized` |
+| Revocation | Keys marked `revoked: true` rejected | `403 Forbidden` |
+| Scope enforcement | Read-only keys blocked from mutation methods (`POST`, `PUT`, `PATCH`, `DELETE`) | `403 Forbidden` |
+| Timing attack mitigation | SHA-256 fixed-length hashing + `crypto.timingSafeEqual` constant-time comparison | Constant time |
+| Context decoration | Populates `req.org`, `req.apiKeyScopes`, and `req.rateLimitKey` | N/A |
+
+**Endpoints gated by `apiKeyAuth`**
 
 | Endpoint | Action |
 |---|---|

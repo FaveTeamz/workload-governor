@@ -3,6 +3,7 @@
  *
  * Mounts:
  *   GET /api/health  — health check (#309)
+ *   POST/GET /api/maintainers — protected API routes (#1287)
  *
  * Starts:
  *   - Scheduler for TTL extension + GitHub sync (#311, #312)
@@ -22,6 +23,26 @@ import { xrayMiddleware } from "./tracing.js";
 import { adminAuth } from "./middleware/adminAuth.js";
 import adminRouter from "./routes/admin.js";
 import logger from "./logger.js";
+import {
+  apiKeyAuth,
+  registerApiKey,
+  revokeApiKey,
+  clearApiKeys,
+  constantTimeCompare,
+  ApiKeyRecord,
+  ApiKeyAuthOptions,
+} from "./apiKeyAuth.js";
+
+// Export middleware and utilities for external consumers and unit tests
+export {
+  apiKeyAuth,
+  registerApiKey,
+  revokeApiKey,
+  clearApiKeys,
+  constantTimeCompare,
+  ApiKeyRecord,
+  ApiKeyAuthOptions,
+};
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
