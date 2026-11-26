@@ -322,7 +322,7 @@
     display: none;
   }
 
-  .eht-table tbody .eht-row {
+  .eht-card-wrap .eht-table tbody .eht-row {
     display: flex;
     flex-direction: column;
     padding: 1rem;
@@ -336,6 +336,11 @@
     min-width: 0;
     padding: 0.25rem 0;
     overflow-wrap: anywhere;
+  }
+
+  .eht-table td .badge {
+    max-width: 100%;
+    white-space: normal;
   }
 
   .eht-table td[data-label]::before {
