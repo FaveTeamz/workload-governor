@@ -51,7 +51,7 @@ jobs:
 
       # ── Fail fast: lint and type-check run before tests ──────────────────
 
-      - name: Lint (oxlint / next lint)
+      - name: Lint (oxlint)
         run: npm run lint
 
       - name: Type-check

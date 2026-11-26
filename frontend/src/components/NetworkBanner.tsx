@@ -4,9 +4,7 @@ const FAUCET_URL = "https://friendbot.stellar.org";
 
 /** URL polled to determine Horizon connectivity. Can be overridden in tests. */
 const HEALTH_URL =
-  (typeof process !== "undefined" &&
-    (process.env as Record<string, string | undefined>)
-      .NEXT_PUBLIC_HORIZON_HEALTH_URL) ??
+  (import.meta.env.VITE_HORIZON_HEALTH_URL as string | undefined) ??
   "https://horizon-testnet.stellar.org/";
 
 const POLL_INTERVAL_MS = 5_000;
@@ -47,10 +45,7 @@ export default function NetworkBanner({
   pollIntervalMs = POLL_INTERVAL_MS,
 }: NetworkBannerProps = {}) {
   const network =
-    (typeof process !== "undefined" &&
-      (process.env as Record<string, string | undefined>)
-        .NEXT_PUBLIC_STELLAR_NETWORK) ??
-    "testnet";
+    (import.meta.env.VITE_STELLAR_NETWORK as string | undefined) ?? "testnet";
   const isTestnet = network === "testnet";
 
   // true  = Horizon is reachable

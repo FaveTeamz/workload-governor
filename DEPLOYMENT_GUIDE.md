@@ -115,3 +115,17 @@ stellar contract invoke \
   --network testnet \
   -- get_global_cap
 ```
+
+## Database Migrations (Rolling Deploys)
+
+`npm run migrate:up` / `migrate:down` run `scripts/migrate.js`. The runner takes
+a PostgreSQL session advisory lock (key `748392019482`) on its own connection
+before invoking `node-pg-migrate`, so replicas that start at the same time
+apply migrations one at a time instead of racing on `pgmigrations` (#1255).
+
+- The lock is released in a `finally` block, whether the migration succeeds or fails.
+- A runner that cannot acquire the lock within `MIGRATION_LOCK_TIMEOUT_MS`
+  (default `60000`) exits non-zero with a clear message instead of hanging.
+- On Kubernetes, set `migrations.enabled: true` in the Helm values to run
+  migrations once per install or upgrade as a `pre-install,pre-upgrade` hook Job
+  (`templates/job-migration.yaml`). The pods then start against an already-migrated schema.

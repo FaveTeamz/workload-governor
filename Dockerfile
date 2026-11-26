@@ -34,6 +34,10 @@ ENV PORT=${PORT}
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/package*.json ./
+# Migration files and the advisory-locked runner (#1255), used by the Helm
+# migration Job: `node scripts/migrate.js up`.
+COPY --chown=node:node migrations ./migrations
+COPY --chown=node:node scripts/migrate.js scripts/migrate-lock.js ./scripts/
 
 USER node:node
 

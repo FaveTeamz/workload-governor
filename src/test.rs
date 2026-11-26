@@ -93,6 +93,26 @@ fn unit_revoke_lifecycle() {
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 0);
 }
 
+/// #1261: `is_maintainer` is a read-only view clients can query before
+/// showing maintainer-only actions.
+#[test]
+fn unit_is_maintainer_view() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("acme");
+    let other_org = t.org("other");
+
+    t.client.initialize(&admin);
+    assert!(!t.client.is_maintainer(&maintainer, &org));
+
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    assert!(t.client.is_maintainer(&maintainer, &org));
+    assert!(!t.client.is_maintainer(&maintainer, &other_org));
+    assert!(!t.client.is_maintainer(&contributor, &org));
+}
+
 #[test]
 fn unit_withdraw_application() {
     let t = TestEnv::new();

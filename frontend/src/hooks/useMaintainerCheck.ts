@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { fetchIsMaintainer } from "./useMaintainerAuth";
 
 /**
  * Verifies that the current wallet address is a registered maintainer for
  * the given org.  Redirects to /403 if not.
  */
-export function useMaintainerCheck(orgId: string, maintainerAddress: string | null) {
+export function useMaintainerCheck(orgId: string, maintainerAddress: string | null, apiBase = "/api") {
   const navigate = useNavigate();
   const [checked, setChecked] = useState(false);
 
@@ -17,11 +18,8 @@ export function useMaintainerCheck(orgId: string, maintainerAddress: string | nu
 
     async function verify() {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = (globalThis as any).__contract_client__;
-        const ok: boolean = c
-          ? await c.is_maintainer(maintainerAddress, orgId)
-          : false;
+        // Contract `is_maintainer` view via the backend (#1261).
+        const ok = await fetchIsMaintainer(maintainerAddress as string, orgId, apiBase);
         if (!ok) navigate("/403", { replace: true });
         else setChecked(true);
       } catch {
@@ -30,7 +28,7 @@ export function useMaintainerCheck(orgId: string, maintainerAddress: string | nu
     }
 
     verify();
-  }, [maintainerAddress, orgId, navigate]);
+  }, [maintainerAddress, orgId, navigate, apiBase]);
 
   return checked;
 }
