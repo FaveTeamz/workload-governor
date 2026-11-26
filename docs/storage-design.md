@@ -37,6 +37,8 @@ An XDR-encoded `ScVal::Symbol` contains a 4-byte discriminant, a 4-byte string l
 
 The profile measures the serialized prefix component, not the entire ledger-key envelope. The maximum saving is 4 bytes per key because XDR padding makes every symbol from 1 through 4 characters the same encoded size. Shorter names than four characters do not reduce the serialized size further.
 
+The proposed two- and three-character prefixes occupy the same 12 bytes as the active one-character prefixes. Keeping the active prefixes preserves the identities of entries already written under this schema.
+
 **Upgrade compatibility:** A prefix is part of the storage key identity. This change is not compatible with existing deployed state by itself: persistent entries written with the old prefixes require an explicit storage migration before upgrading, and pending temporary entries must be allowed to expire or migrated consistently. Do not upgrade a live instance to this schema without that migration.
 
 ### 1 — Global Application Count
