@@ -20,10 +20,11 @@ import { apiKeyAuth } from './middleware/api-key-auth';
 import { correlationIdMiddleware } from './logger';
 import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
-import { metricsHandler } from './metrics';
+import { metricsHandler, metricsMiddleware } from './metrics';
 
 export function createApp(): express.Application {
   const app = express();
+  app.use(metricsMiddleware());
 
   // Enforce HTTPS-only transport and HSTS headers in production environment
   if (process.env.NODE_ENV === 'production') {

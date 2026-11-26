@@ -203,3 +203,10 @@ The `/metrics` endpoint reports current connection counts from the database pool
 
 `DatabasePoolWaitingRequestsHigh` alerts when more than five requests are queued
 for a minute. Check long-running queries and transactions before increasing the pool size.
+
+## HTTP error rate and latency alerts
+
+`HighHttp5xxErrorRate` alerts when server errors exceed 1% of requests for five
+minutes. `HighHttpLatencyP95` alerts when the 95th-percentile request duration
+exceeds 500 ms for five minutes. Check the status and route labels in
+`http_requests_total` and the request duration histogram to identify affected routes.

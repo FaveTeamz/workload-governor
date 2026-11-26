@@ -175,26 +175,13 @@ export const indexerLedgerLag = new Gauge({
 export function metricsMiddleware() {
   return (req: Request, res: Response, next: () => void) => {
     const start = Date.now();
-    const originalSend = res.send;
-
-    // Override res.send to capture status code when response is sent
-    res.send = function (data: any) {
-      const durationSecs = (Date.now() - start) / 1000;
-      const status = res.statusCode;
-      const method = req.method;
-      // Normalize path to avoid cardinality explosion (remove IDs, etc.)
-      const path = normalizePath(req.path);
-
-      httpRequestsTotal.labels(method, path, String(status)).inc();
-      httpRequestDurationSeconds.labels(method, path, String(status)).observe(durationSecs);
-
-      logger.debug(
-        { method, path, status, durationMs: Date.now() - start },
-        "HTTP request completed",
-      );
-
-      return originalSend.call(this, data);
-    };
+    res.once("finish", () => {
+      const duration = (Date.now() - start) / 1000;
+      const path = typeof req.route?.path === "string" ? req.route.path : "unmatched";
+      const labels = { method: req.method, path, status: String(res.statusCode) };
+      httpRequestsTotal.inc(labels);
+      httpRequestDurationSeconds.observe(labels, duration);
+    });
 
     next();
   };
@@ -230,28 +217,6 @@ export async function metricsHandler(req: Request, res: Response): Promise<void>
     logger.error({ error: err instanceof Error ? err.message : String(err) }, "Failed to generate metrics");
     res.status(500).json({ error: "Failed to generate metrics" });
   }
-}
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-/**
- * Normalize request path to avoid cardinality explosion.
- * Replaces numeric IDs and UUIDs with placeholders.
- * 
- * Examples:
- *   /api/users/123 → /api/users/:id
- *   /api/issues/abc-def-123 → /api/issues/:id
- *   /api/metrics → /api/metrics (unchanged)
- */
-function normalizePath(path: string): string {
-  // Replace numeric IDs
-  let normalized = path.replace(/\/\d+(?=\/|$)/g, "/:id");
-  // Replace UUIDs (simplified pattern)
-  normalized = normalized.replace(
-    /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi,
-    "/:id",
-  );
-  return normalized;
 }
 
 export default {

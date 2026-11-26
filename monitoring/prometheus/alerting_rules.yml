@@ -19,3 +19,13 @@ groups:
         annotations:
           summary: "PostgreSQL connection pool has high waiting requests"
           description: "{{ $value }} requests have been waiting for more than one minute."
+  - name: http-latency
+    rules:
+      - alert: HighHttpLatencyP95
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 HTTP request latency exceeds 500 ms"
+          description: "P95 request latency exceeded 500 ms for five minutes."
