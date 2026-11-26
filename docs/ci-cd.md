@@ -12,6 +12,21 @@ This document covers the GitHub Actions CI setup, Slack integration, and deploym
 | Backend Integration | `backend-integration.yml` | Push and PR to `main` |
 | Staging Deploy | `staging-deploy.yml` | Push to `main` |
 
+### Frontend CI
+
+Frontend CI runs on Node.js 20 and 22, caches npm dependencies from
+`frontend/package-lock.json`, and runs the frontend lint, test, and build steps.
+In addition to `frontend/**`, changes to the root package manifests, TypeScript
+configuration, `openapi.yaml`, or the frontend workflow trigger the job.
+
+### API and contract checks
+
+The backend CI workflow runs `scripts/check-api-docs-sync.js --strict` on every
+pull request. The OpenAPI validation workflow also runs when route handlers,
+their app-level mounts, the spec, or the API reference change. Contract CI
+checks the optimized WASM size, reports it in the job summary, and enforces the
+network size limit.
+
 ## Slack Notifications
 
 CI failures on `main` are announced in Slack automatically. The reusable workflow is in `.github/workflows/notify-slack.yml`.
