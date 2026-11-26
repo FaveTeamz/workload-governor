@@ -1006,6 +1006,80 @@ fn unit_governance_default_cap_is_15() {
 }
 
 // ---------------------------------------------------------------------------
+// UNIT TESTS — #1218: complete_assignment maintainer authorization
+// ---------------------------------------------------------------------------
+
+/// An unregistered address calling complete_assignment must fail with
+/// UnauthorizedMaintainer (error code 4), even when an active assignment exists.
+#[test]
+fn test_complete_assignment_unauthorized_maintainer() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let random_user = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("orgone");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &42u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &42u32);
+
+    // random_user is not a registered maintainer for org — must be rejected
+    let result = t
+        .client
+        .try_complete_assignment(&random_user, &contributor, &org, &42u32);
+    assert_eq!(
+        result,
+        Err(Ok(crate::errors::ContractError::UnauthorizedMaintainer)),
+        "complete_assignment must reject an unregistered caller with UnauthorizedMaintainer"
+    );
+
+    // Assignment must still be active after the failed call
+    assert!(
+        t.client.is_assigned(&contributor, &org, &42u32),
+        "assignment must remain active after an unauthorized complete attempt"
+    );
+}
+
+/// A maintainer registered for org_2 must not be able to complete an
+/// assignment that belongs to org_1.
+#[test]
+fn test_complete_assignment_cross_org_maintainer_rejected() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer_1 = Address::generate(&t.env);
+    let maintainer_2 = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org_1 = t.org("orgalpha");
+    let org_2 = t.org("orgbeta");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer_1, &org_1);
+    t.client.register_maintainer(&admin, &maintainer_2, &org_2);
+
+    // Set up an active assignment in org_1
+    t.client.apply_for_issue(&contributor, &org_1, &10u32);
+    t.client.assign_issue(&maintainer_1, &contributor, &org_1, &10u32);
+
+    // maintainer_2 is registered for org_2 only — must not complete org_1's assignment
+    let result = t
+        .client
+        .try_complete_assignment(&maintainer_2, &contributor, &org_1, &10u32);
+    assert_eq!(
+        result,
+        Err(Ok(crate::errors::ContractError::UnauthorizedMaintainer)),
+        "maintainer of a different org must receive UnauthorizedMaintainer"
+    );
+
+    // org_1 assignment remains active
+    assert!(
+        t.client.is_assigned(&contributor, &org_1, &10u32),
+        "assignment must remain active after a cross-org unauthorized complete attempt"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // PROPERTY-BASED TESTS
 // ---------------------------------------------------------------------------
 
