@@ -1,35 +1,16 @@
 import nock from "nock";
-import { HorizonService, HorizonAccount, HorizonTransaction, HorizonEvent } from "../HorizonService";
+import { HorizonService } from "../HorizonService";
 import { HorizonError } from "../HorizonError";
 import { SpanStatusCode, Tracer, Span, SpanStatus, SpanEvent } from "../tracing";
 
-const BASE = "https://horizon-testnet.stellar.org";
-const ACCOUNT_ID = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
-
-const MOCK_ACCOUNT: HorizonAccount = {
-  id: ACCOUNT_ID,
-  sequence: "1234567890",
-  balances: [{ balance: "100.0000000", asset_type: "native" }],
-};
-
-const MOCK_TRANSACTION: HorizonTransaction = {
-  id: "tx-123",
-  hash: "e5a7b8c9d0",
-  ledger: 500123,
-  created_at: "2026-09-25T12:00:00Z",
-  fee_charged: 100,
-  operation_count: 1,
-  successful: true,
-};
-
-const MOCK_EVENTS: HorizonEvent[] = [
-  {
-    id: "0000500123-0000000001",
-    type: "contract",
-    ledger: 500123,
-    created_at: "2026-09-25T12:00:00Z",
-  },
-];
+import {
+  ACCOUNT_ID,
+  HORIZON_TESTNET_URL as BASE,
+  MOCK_ACCOUNT,
+  MOCK_EVENTS,
+  MOCK_LEDGER,
+  MOCK_TRANSACTION,
+} from "../__mocks__/horizon";
 
 class MockSpan implements Span {
   public attributes: Record<string, unknown> = {};
@@ -201,7 +182,7 @@ describe("HorizonService", () => {
 
   it("uses the default Horizon testnet base URL when constructed without arguments", async () => {
     const defaultSvc = new HorizonService();
-    nock("https://horizon-testnet.stellar.org")
+    nock(BASE)
       .get(`/accounts/${ACCOUNT_ID}`)
       .reply(200, MOCK_ACCOUNT);
 
@@ -215,7 +196,7 @@ describe("HorizonService", () => {
     it("fetches events, records span attributes including target URL, method, and latency", async () => {
       nock(BASE)
         .get("/events?start_ledger=500100&limit=10")
-        .reply(200, { _embedded: { records: MOCK_EVENTS }, latest_ledger: 500123 });
+        .reply(200, { _embedded: { records: MOCK_EVENTS }, latest_ledger: MOCK_LEDGER.sequence });
 
       const events = await svc.fetchEvents(500100, undefined, 10);
 
