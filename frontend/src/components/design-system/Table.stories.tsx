@@ -4,7 +4,7 @@ import { Badge } from "./Badge";
 import type { BadgeVariant } from "./Badge";
 
 const meta = {
-  title: "Design System/Table",
+  title: "Design System/Table Component",
   component: Table,
   tags: ["autodocs"],
   parameters: {

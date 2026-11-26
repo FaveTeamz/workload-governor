@@ -32,7 +32,10 @@ const meta: Meta<ButtonProps> = {
   title: 'Design System/Button',
   component: Button,
   tags: ['autodocs'],
-  parameters: { layout: 'centered' },
+  parameters: {
+    layout: 'centered',
+    chromatic: { delay: 300, pauseAnimationAtEnd: true },
+  },
   argTypes: {
     variant: {
       control: 'select',

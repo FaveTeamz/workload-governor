@@ -4,7 +4,7 @@ import { Modal } from "./Modal";
 import { Button } from "./Button";
 
 const meta = {
-  title: "Design System/Modal",
+  title: "Design System/Modal Component",
   component: Modal,
   tags: ["autodocs"],
   parameters: {

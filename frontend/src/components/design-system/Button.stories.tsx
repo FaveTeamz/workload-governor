@@ -2,11 +2,12 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { Button } from "./Button";
 
 const meta = {
-  title: "Design System/Button",
+  title: "Design System/Button Component",
   component: Button,
   tags: ["autodocs"],
   parameters: {
     layout: "centered",
+    chromatic: { delay: 300, pauseAnimationAtEnd: true },
   },
   argTypes: {
     variant: {
