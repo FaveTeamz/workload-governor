@@ -25,10 +25,11 @@ import { getRequestId } from "./tracing.js";
 
 const { Pool } = pg;
 
-const acquireTimeout = parseInt(process.env.DB_ACQUIRE_TIMEOUT ?? process.env.DB_CONNECTION_TIMEOUT ?? "10000", 10);
-const idleTimeout = parseInt(process.env.DB_IDLE_TIMEOUT ?? "30000", 10);
-const poolMin = parseInt(process.env.DB_POOL_MIN ?? "2", 10);
-const poolMax = parseInt(process.env.DB_POOL_MAX ?? "20", 10);
+const acquireTimeout  = parseInt(process.env.DB_ACQUIRE_TIMEOUT  ?? process.env.DB_CONNECTION_TIMEOUT ?? "5000",  10);
+const idleTimeout     = parseInt(process.env.DB_IDLE_TIMEOUT     ?? "30000", 10);
+const poolMin         = parseInt(process.env.DB_POOL_MIN         ?? "4",     10);
+const poolMax         = parseInt(process.env.DB_POOL_MAX         ?? "20",    10);
+const maxLifetimeSec  = parseInt(process.env.DB_MAX_LIFETIME_SEC ?? "1800",  10);
 
 const poolConfig = process.env.DATABASE_URL
   ? {
@@ -38,6 +39,7 @@ const poolConfig = process.env.DATABASE_URL
       max: poolMax,
       idleTimeoutMillis: idleTimeout,
       connectionTimeoutMillis: acquireTimeout,
+      maxLifetimeSeconds: maxLifetimeSec,
     }
   : {
       host:     process.env.PGHOST     ?? "localhost",
@@ -49,11 +51,13 @@ const poolConfig = process.env.DATABASE_URL
       max: poolMax,
       idleTimeoutMillis: idleTimeout,
       connectionTimeoutMillis: acquireTimeout,
+      maxLifetimeSeconds: maxLifetimeSec,
     };
 
 export const pool = new Pool(poolConfig);
 
-// Connection pool leak protection and acquisition tracking (closes #860)
+// ─── Slow-acquire tracking (closes #860) ─────────────────────────────────────
+
 const SLOW_ACQUIRE_THRESHOLD_MS = 3000;
 const originalConnect = pool.connect.bind(pool);
 
@@ -63,32 +67,64 @@ const originalConnect = pool.connect.bind(pool);
     const client = await (originalConnect as any)(...args);
     const duration = Date.now() - startTime;
     if (duration > SLOW_ACQUIRE_THRESHOLD_MS) {
-      console.warn(
-        `[db] Slow connection acquisition detected: ${duration}ms (threshold: ${SLOW_ACQUIRE_THRESHOLD_MS}ms). Pool stats: total=${pool.totalCount}, idle=${pool.idleCount}, waiting=${pool.waitingCount}`,
-        new Error("Slow acquire trace").stack
+      logger.warn(
+        {
+          duration_ms: duration,
+          threshold_ms: SLOW_ACQUIRE_THRESHOLD_MS,
+          pool: getPoolMetrics(),
+        },
+        "[db] Slow connection acquisition detected",
       );
     }
     return client;
   } catch (err: any) {
     const duration = Date.now() - startTime;
-    console.error(
-      `[db] Connection acquire failed after ${duration}ms: ${err.message}. Pool stats: total=${pool.totalCount}, idle=${pool.idleCount}, waiting=${pool.waitingCount}`
+    logger.error(
+      { err, duration_ms: duration, pool: getPoolMetrics() },
+      "[db] Connection acquire failed",
     );
     throw err;
   }
 };
 
-// Log and alert on unexpected idle-client errors and clean up (fixes #561, #860)
+// ─── Idle-client error handler (fixes #561, #860, #1251) ─────────────────────
+
 pool.on("error", (err: Error, client?: any) => {
-  console.error("[db] Unexpected error on idle DB client:", err.message, err.stack);
+  logger.error({ err }, "[db] Unexpected error on idle DB client");
   if (client) {
     try {
-      client.release?.(true); // destroy client on fatal error
+      client.release?.(true); // destroy the client so the pool allocates a fresh one
     } catch {
-      // ignore
+      // ignore secondary errors during cleanup
     }
   }
 });
+
+// ─── Pool metrics (implements #1251) ─────────────────────────────────────────
+
+export interface PoolMetrics {
+  /** Total connections currently managed by the pool (active + idle) */
+  totalCount: number;
+  /** Connections sitting idle, ready to be acquired */
+  idleCount: number;
+  /** Callers waiting for a connection to become available */
+  waitingCount: number;
+}
+
+/**
+ * Returns a snapshot of the current connection pool state.
+ * Export these values to Prometheus by calling getPoolMetrics() inside your
+ * metrics handler:
+ *
+ *   gauge.set({ pool: 'primary' }, getPoolMetrics().totalCount);
+ */
+export function getPoolMetrics(): PoolMetrics {
+  return {
+    totalCount:   pool.totalCount,
+    idleCount:    pool.idleCount,
+    waitingCount: pool.waitingCount,
+  };
+}
 
 export default pool;
 
@@ -160,4 +196,17 @@ export async function taggedQuery<R extends pg.QueryResultRow = pg.QueryResultRo
   const reqId = getRequestId();
   const taggedSql = reqId ? `/* reqId: ${reqId} */ ${sql}` : sql;
   return values ? pool.query<R>(taggedSql, values) : pool.query<R>(taggedSql);
+}
+export async function migrate(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is not set");
+  }
+  const { default: pgMigrateRun } = await import("node-pg-migrate");
+  await pgMigrateRun({
+    direction: "up",
+    databaseUrl,
+    migrationsTable: "pgmigrations",
+    dir: "migrations",
+  });
 }
