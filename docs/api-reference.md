@@ -1735,45 +1735,87 @@ curl "${API_BASE_URL%/}/api/v1/leaderboard?timeframe=month&limit=10"
 
 #### `GET /api/v1/audit/logs`
 
-Retrieve paginated audit log entries tracking administrative and security events.
+Query tamper-evident governance and compliance audit log entries. Each audit log record is part of a cryptographically linked SHA-256 hash chain providing non-repudiation for SOC 2 and institutional audits.
 
-**Auth:** Bearer token
+> [!IMPORTANT]
+> **Authentication Required:** This endpoint requires administrative privileges. Requesters must provide `Authorization: Bearer <ADMIN_KEY>` or valid Ed25519 admin signature headers (`X-Admin-Address`, `X-Admin-Signature`, `X-Admin-Timestamp`). Unauthenticated or invalid requests will be rejected with HTTP 401 or 403.
+
+**Auth:** Bearer token (`Authorization: Bearer <ADMIN_KEY>`)
 
 **Query parameters**
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `event_type` | string | — | Filter by event type (`cap_update`, `maintainer_register`, `api_key_created`, `api_key_revoked`) |
-| `actor` | string | — | Filter by admin address or actor |
+| `event_type` / `action` | string | — | Filter by audit event type (`cap_update`, `maintainer_register`, `api_key_created`, `api_key_revoked`) |
+| `actor` | string | — | Filter by admin address or actor public key (Stellar G-address) |
+| `startDate` | string | — | ISO-8601 timestamp filter for log entry creation lower bound |
+| `endDate` | string | — | ISO-8601 timestamp filter for log entry creation upper bound |
 | `limit` | integer | `50` | Maximum entries to return (`1`–`500`) |
-| `offset` | integer | `0` | Number of entries to skip |
+| `offset` | integer | `0` | Number of entries to skip for pagination |
+
+#### Cryptographic Hash Chain Structure
+
+Every audit log entry contains hash chain fields to ensure integrity and prevent silent retroactive alteration:
+
+- **`prev_hash`** (string): SHA-256 hash of the immediately preceding audit log record (the initial entry links to `GENESIS_HASH`).
+- **`entry_hash`** (string): SHA-256 digest calculated over `${prev_hash}|${event_type}|${actor}|${resource}|${previous_value}|${new_value}|${created_at}`.
+- **`signature`** (string, optional): Ed25519 digital signature proving cryptographic authority of the action.
+
+**cURL Example**
+```bash
+curl -X GET "https://api.workloadgovernor.org/api/v1/audit/logs?event_type=cap_update&limit=20" \
+  -H "Authorization: Bearer s3cr3t-adm1n-k3y" \
+  -H "Accept: application/json"
+```
+
+**JavaScript Fetch Example**
+```javascript
+const response = await fetch("https://api.workloadgovernor.org/api/v1/audit/logs?limit=25", {
+  headers: {
+    "Authorization": "Bearer " + process.env.ADMIN_API_KEY,
+    "Accept": "application/json"
+  }
+});
+const data = await response.json();
+console.log(`Retrieved ${data.logs.length} audit logs. Total: ${data.pagination.total}`);
+```
 
 **Response `200`**
 ```json
 {
   "logs": [
     {
-      "id": 1,
+      "id": 42,
       "event_type": "cap_update",
       "actor": "GDXYZ4RSAQE6SLNHXPK4KFHDPKQJKZWQIAMHUVBDKN7MNP3U2XVTEST",
-      "ip_address": "127.0.0.1",
+      "ip_address": "192.168.1.10",
       "resource": "global_cap",
       "previous_value": 15,
       "new_value": 20,
-      "metadata": {},
-      "created_at": "2026-10-19T12:00:00Z"
+      "metadata": {
+        "reason": "Quarterly governance capacity expansion",
+        "proposalId": "PROP-2026-04"
+      },
+      "created_at": "2026-11-20T14:32:00.000Z",
+      "prev_hash": "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890",
+      "entry_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "3045022100e4b8..."
     }
   ],
   "pagination": {
     "total": 1,
-    "limit": 50,
+    "limit": 20,
     "offset": 0,
-    "has_more": false
+    "hasMore": false
   }
 }
 ```
 
-**Errors:** `401`, `500`
+**Errors:**
+- `400 Bad Request`: Invalid query parameters or date formats.
+- `401 Unauthorized`: Missing or malformed `Authorization` header.
+- `403 Forbidden`: Provided credentials do not possess administrative audit rights.
+- `500 Internal Server Error`: Database failure or hash verification fault.
 
 ---
 
