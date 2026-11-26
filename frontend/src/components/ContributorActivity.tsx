@@ -1,4 +1,5 @@
 import { useActivityStats } from '../hooks/useActivityStats';
+import { ActivityProgressRing } from './ActivityProgressRing';
 import { ActivityChart } from './ActivityChart';
 import { StreakBadge } from './StreakBadge';
 import { Button } from './Button';
@@ -25,7 +26,7 @@ export function ContributorActivity({
   address,
   apiBase = '/api',
 }: ContributorActivityProps) {
-  const { activity, loading, error, refetch } = useActivityStats(apiBase, address);
+  const { activity, summary, loading, error, refetch } = useActivityStats(apiBase, address);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (loading && activity.length === 0) {
@@ -56,7 +57,17 @@ export function ContributorActivity({
     <div className="contributor-activity">
       <div className="contributor-activity__header">
         <h2 className="contributor-activity__title">Activity</h2>
-        <StreakBadge activity={activity} />
+        {summary ? (
+          <ActivityProgressRing
+            value={summary.weeklyCompleted}
+            max={5}
+            streakDays={summary.streakDays}
+            badgeLevel={summary.streakDays >= 30 ? 'platinum'
+              : summary.streakDays >= 14 ? 'gold'
+              : summary.streakDays >= 7 ? 'silver'
+              : 'bronze'}
+          />
+        ) : <StreakBadge activity={activity} />}
       </div>
 
       <ActivityChart activity={activity} />
