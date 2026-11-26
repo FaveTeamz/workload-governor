@@ -12,8 +12,14 @@ export interface MonthlyActivity {
   completed: number;
 }
 
+interface ActivitySummary {
+  streakDays: number;
+  weeklyCompleted: number;
+}
+
 export interface ActivityStatsResult {
   activity: MonthlyActivity[];
+  summary: ActivitySummary | null;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -35,6 +41,7 @@ export function useActivityStats(
   address: string,
 ): ActivityStatsResult {
   const [activity, setActivity] = useState<MonthlyActivity[]>([]);
+  const [summary, setSummary] = useState<ActivitySummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -59,10 +66,14 @@ export function useActivityStats(
           const body = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
-        return res.json() as Promise<{ activity: MonthlyActivity[] }>;
+        return res.json() as Promise<{ activity: MonthlyActivity[] } & Partial<ActivitySummary>>;
       })
-      .then(({ activity: data }) => {
-        if (!cancelled) setActivity(data);
+      .then(({ activity: data, streakDays, weeklyCompleted }) => {
+        if (cancelled) return;
+        setActivity(data);
+        setSummary(typeof streakDays === 'number' && typeof weeklyCompleted === 'number'
+          ? { streakDays, weeklyCompleted }
+          : null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -79,5 +90,5 @@ export function useActivityStats(
     };
   }, [apiBase, address, tick]);
 
-  return { activity, loading, error, refetch };
+  return { activity, summary, loading, error, refetch };
 }

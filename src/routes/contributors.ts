@@ -177,7 +177,30 @@ router.get('/:address/activity', async (req: Request, res: Response) => {
       completed: Number(r.completed),
     }));
 
-    res.json({ activity });
+    const { rows: [summary] } = await pool.query<{ streak_days: number; weekly_completed: number }>(
+      `WITH today AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date AS day
+      ), daily AS (
+        SELECT (timestamp AT TIME ZONE 'UTC')::date AS day, COUNT(*) AS completed
+        FROM contract_events
+        WHERE contributor = $1 AND event_type = 'completed' AND timestamp <= CURRENT_TIMESTAMP
+        GROUP BY 1
+      ), ranked AS (
+        SELECT day, completed, MAX(day) OVER () AS latest_day,
+               ROW_NUMBER() OVER (ORDER BY day DESC)::int AS position
+        FROM daily
+      )
+      SELECT COUNT(*) FILTER (
+               WHERE latest_day >= today.day - 1 AND ranked.day = latest_day - (position - 1)
+             )::int AS streak_days,
+             COALESCE(SUM(completed) FILTER (
+               WHERE ranked.day >= date_trunc('week', today.day::timestamp)::date
+             ), 0)::int AS weekly_completed
+      FROM today LEFT JOIN ranked ON true`,
+      [address],
+    );
+
+    res.json({ activity, streakDays: summary.streak_days, weeklyCompleted: summary.weekly_completed });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'internal server error';
     res.status(500).json({ error: msg });

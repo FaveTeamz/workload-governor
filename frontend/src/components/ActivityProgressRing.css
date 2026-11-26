@@ -1,0 +1,53 @@
+.activity-ring {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  color: var(--color-text, currentColor);
+  font-size: 0.8125rem;
+}
+
+.activity-ring--bronze { --activity-ring-fill: #bf7948; }
+.activity-ring--silver { --activity-ring-fill: #8394a9; }
+.activity-ring--gold { --activity-ring-fill: #bf900f; }
+.activity-ring--platinum { --activity-ring-fill: #8585eb; }
+
+.activity-ring__meter {
+  display: grid;
+  place-items: center;
+  width: 6rem;
+}
+
+.activity-ring__meter > * { grid-area: 1 / 1; }
+
+.activity-ring__meter svg {
+  display: block;
+  width: 100%;
+  fill: none;
+  stroke-width: 8;
+}
+
+.activity-ring__track { stroke: var(--color-border, #a3a3a3); }
+
+.activity-ring__progress {
+  stroke: var(--activity-ring-fill);
+  stroke-dashoffset: var(--activity-ring-offset);
+  transition: stroke-dashoffset 0.8s ease-in-out;
+}
+
+@starting-style {
+  .activity-ring__progress { stroke-dashoffset: 100; }
+}
+
+.activity-ring__counter {
+  display: grid;
+  justify-items: center;
+  line-height: 1.15;
+}
+
+.activity-ring__counter strong { font-size: 1.25rem; }
+
+.activity-ring__summary { color: var(--color-muted, currentColor); }
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-ring__progress { transition: none; }
+}

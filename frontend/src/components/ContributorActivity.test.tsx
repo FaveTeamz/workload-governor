@@ -221,6 +221,18 @@ describe('ContributorActivity', () => {
     );
   });
 
+  it('shows weekly progress and the daily milestone when the API supplies a summary', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...MOCK_RESPONSE, streakDays: 14, weeklyCompleted: 3 }),
+    } as Response);
+
+    render(<ContributorActivity address="GABC123" />);
+
+    expect(await screen.findByRole('img', { name: /3 of 5 weekly tasks completed, 60%.*14 day streak/ })).toBeTruthy();
+    expect(screen.getByText('Gold')).toBeTruthy();
+  });
+
   it('renders the Activity heading', async () => {
     render(<ContributorActivity address="GABC123" />);
     await waitFor(() =>

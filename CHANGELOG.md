@@ -16,6 +16,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 - Rename Helm chart helpers and defaults to `workload-governor` for consistent Kubernetes resource names. (#1299)
 
 ### Added
+- Add an animated contributor progress ring for weekly completions and daily streak milestones. (#1274)
 - Add detailed operational runbook in `docs/runbooks/protocol-upgrade.md` covering Stellar network protocol upgrade handling, testnet verification, WASM rebuilds, and emergency rollback safeguards. (#1123)
 - Add `npm run db:seed` script in `scripts/seed-mock-data.ts` to populate local database with mock organizations, open issues, pending applications, and assignments. (#1122)
 - Document composite unique constraints and checkpoint persistence for event indexer deduplication in `docs/adr/ADR-009-indexer-event-deduplication.md`. (#1121)
