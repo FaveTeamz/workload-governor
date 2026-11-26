@@ -1,6 +1,6 @@
 # Visual Regression Testing with Chromatic
 
-WorkloadGovernor uses [Chromatic](https://www.chromatic.com/) to catch unintended visual changes to the design-system components. Every pull request that touches `frontend/` automatically captures pixel-level snapshots of all Storybook stories and compares them against the approved baseline.
+WorkloadGovernor uses [Chromatic](https://www.chromatic.com/) to catch unintended visual changes to the design-system components. The workflow runs for changes to frontend source, static assets, dependencies, Storybook and build configuration, or the workflow itself. GitHub withholds the project token from fork and Dependabot PRs, so the snapshot job skips those PRs.
 
 ---
 
@@ -82,6 +82,10 @@ The first time the workflow runs it has nothing to compare against, so all stori
    - Click **Deny** if the change is a regression that must be fixed before merging.
 5. Once all stories are accepted, Chromatic re-triggers the GitHub status check and the PR can be merged.
 
+### Button focus-ring baseline
+
+Button stories wait 300 ms before capture and pause CSS animations at the end of their cycle. For #1275, compare the existing and new focus-ring borders on the Button snapshots and accept only the intended differences. Record the Chromatic build link and review result on the PR, then rerun the workflow.
+
 ### Accepting changes in bulk
 
 If a broad refactor (e.g. renaming a CSS token) intentionally changes many stories, use the **Accept all** button at the top of the Chromatic build page. Add a comment on the PR explaining why all changes were accepted in bulk.
@@ -102,7 +106,8 @@ File: `.github/workflows/chromatic.yml`
 | Setting | Value | Reason |
 |---------|-------|--------|
 | `fetch-depth` | `0` (full) | Chromatic needs the full git history to detect ancestry and build accurate TurboSnap change graphs |
-| `exitZeroOnChanges` | `true` on `main`, `false` on PRs | Merges to `main` auto-accept the new baseline; PRs block until diffs are reviewed |
+| `exitZeroOnChanges` | `false` | Unaccepted visual diffs fail the PR workflow |
+| `autoAcceptChanges` | `main` | Captures on main establish the baseline for later PRs |
 | `onlyChanged` | `true` | Only re-snapshots stories whose source files changed — speeds up CI once the baseline is established |
 | `storybookBuildDir` | `frontend/storybook-static` | Pre-built locally to separate build failures from visual diff failures |
 

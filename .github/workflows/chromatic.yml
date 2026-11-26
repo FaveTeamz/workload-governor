@@ -1,17 +1,31 @@
 name: Chromatic Visual Regression
 
-# Run on every PR and on pushes to main so baselines stay current.
+# Capture changes to Storybook inputs on PRs and on main.
 on:
   push:
     branches:
       - main
     paths:
-      - "frontend/**"
+      - "frontend/src/**"
+      - "frontend/.storybook/**"
+      - "frontend/public/**"
+      - "frontend/package*.json"
+      - "frontend/*config.*"
+      - "frontend/tsconfig*.json"
+      - "frontend/index.html"
+      - ".github/workflows/chromatic.yml"
   pull_request:
     branches:
       - main
     paths:
-      - "frontend/**"
+      - "frontend/src/**"
+      - "frontend/.storybook/**"
+      - "frontend/public/**"
+      - "frontend/package*.json"
+      - "frontend/*config.*"
+      - "frontend/tsconfig*.json"
+      - "frontend/index.html"
+      - ".github/workflows/chromatic.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,6 +37,8 @@ permissions:
 jobs:
   chromatic:
     name: Capture visual snapshots
+    # GitHub does not expose the project token to fork or Dependabot PRs.
+    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
 
     defaults:
@@ -76,7 +92,8 @@ jobs:
           # Exit with a non-zero code when there are unreviewed visual diffs
           # on pull requests. Pushes to main are auto-accepted as the new baseline.
           exitOnceUploaded: false
-          exitZeroOnChanges: ${{ github.event_name == 'push' }}
+          exitZeroOnChanges: false
+          autoAcceptChanges: main
 
           # Only re-snapshot stories whose source files changed. Speeds up CI
           # considerably once the baseline is established.
