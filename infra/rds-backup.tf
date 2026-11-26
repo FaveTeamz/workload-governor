@@ -59,6 +59,12 @@ variable "db_vpc_security_group_ids" {
   type        = list(string)
 }
 
+variable "kms_key_arn" {
+  description = "ARN of the Customer-Managed KMS key used to encrypt RDS storage and automated snapshots. Obtain from the kms module output rds_key_arn."
+  type        = string
+  default     = null
+}
+
 # ── RDS instance with backup and recovery settings ────────────────────────────
 
 resource "aws_db_instance" "main" {
@@ -70,6 +76,7 @@ resource "aws_db_instance" "main" {
   allocated_storage = var.db_allocated_storage
   storage_type      = "gp3"
   storage_encrypted = true
+  kms_key_id        = var.kms_key_arn
 
   db_name  = var.db_name
   username = var.db_username

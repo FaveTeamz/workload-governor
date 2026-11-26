@@ -49,6 +49,12 @@ module "networking" {
   project     = var.project
 }
 
+module "kms" {
+  source      = "./modules/kms"
+  environment = terraform.workspace
+  project     = var.project
+}
+
 module "database" {
   source             = "./modules/database"
   environment        = terraform.workspace
@@ -56,6 +62,7 @@ module "database" {
   vpc_id             = module.networking.vpc_id
   private_subnet_ids = module.networking.private_subnet_ids
   db_secret_arn      = module.secrets.db_password_arn
+  kms_key_id         = module.kms.rds_key_arn
 }
 
 module "cache" {
