@@ -2,9 +2,10 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Button } from '../components/Button'
 
 const meta: Meta<typeof Button> = {
-  title:     'Design System/Button',
+  title:     'Design System/Button Examples',
   component: Button,
   tags:      ['autodocs'],
+  parameters: { chromatic: { delay: 300, pauseAnimationAtEnd: true } },
   argTypes: {
     variant: { control: 'select', options: ['primary', 'secondary', 'ghost'] },
     size:    { control: 'select', options: ['sm', 'md'] },

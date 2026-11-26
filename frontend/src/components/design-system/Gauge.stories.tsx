@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { Gauge } from "./Gauge";
 
 const meta = {
-  title: "Design System/Gauge",
+  title: "Design System/Gauge Component",
   component: Gauge,
   tags: ["autodocs"],
   parameters: {
