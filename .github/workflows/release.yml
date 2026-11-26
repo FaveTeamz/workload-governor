@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -15,6 +13,9 @@ jobs:
     name: Build WASM & Create GitHub Release
     runs-on: ubuntu-latest
     environment: production
+    if: github.repository == 'FaveTeamz/workload-governor' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

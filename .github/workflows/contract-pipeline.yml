@@ -30,13 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -57,14 +57,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
           targets: wasm32v1-none
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -132,13 +132,13 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -151,7 +151,7 @@ jobs:
         run: cargo build --target wasm32v1-none --release
 
       - name: Upload unoptimized WASM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-unoptimized
           path: target/wasm32v1-none/release/workload_governor.wasm
@@ -170,13 +170,13 @@ jobs:
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
       )
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -217,7 +217,7 @@ jobs:
           echo "WASM size check passed: ${WASM_SIZE} bytes ≤ ${LIMIT_BYTES} bytes."
 
       - name: Upload optimized WASM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: target/wasm32v1-none/release/workload_governor.optimized.wasm
@@ -235,7 +235,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           # Need full history to push the contracts.json update
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -244,7 +244,7 @@ jobs:
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download optimized WASM
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: wasm
@@ -320,7 +320,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -328,7 +328,7 @@ jobs:
         run: cargo install --locked stellar-cli --features opt
 
       - name: Download optimized WASM
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: workload-governor-wasm-optimized
           path: wasm
@@ -385,11 +385,11 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@nightly
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -411,7 +411,7 @@ jobs:
 
       - name: Upload fuzz artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: fuzz-artifacts
           path: fuzz/artifacts/

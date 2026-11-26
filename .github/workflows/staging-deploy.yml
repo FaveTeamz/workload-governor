@@ -24,7 +24,7 @@ jobs:
       id-token: write   # OIDC for AWS auth
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       # ── Build & push Docker image ────────────────────────────────────────
       - name: Log in to GHCR
@@ -36,7 +36,7 @@ jobs:
 
       - name: Build and push Docker image
         id: push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true

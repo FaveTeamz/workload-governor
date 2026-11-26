@@ -18,14 +18,16 @@ jobs:
   coverage-backend:
     name: Backend Coverage (V8 / Istanbul)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     env:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -50,14 +52,16 @@ jobs:
   coverage-frontend:
     name: Frontend Coverage (Istanbul / jsdom)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     env:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -82,9 +86,11 @@ jobs:
   coverage-contract:
     name: Contract Coverage (llvm-cov)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -92,12 +98,10 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Cache Rust build artifacts
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry

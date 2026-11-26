@@ -23,7 +23,7 @@ jobs:
       RESTORE_ID: rds-backup-verify-${{ github.run_id }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       # ── Auth ───────────────────────────────────────────────────────────────
       - name: Configure AWS credentials
