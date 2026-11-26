@@ -1,0 +1,52 @@
+# ── Local dependency installs ─────────────────────────────────────────────────
+# These are reinstalled inside the deps stage via npm ci.
+node_modules
+
+# ── Build outputs ─────────────────────────────────────────────────────────────
+.next
+out
+dist
+storybook-static
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Test files & coverage ─────────────────────────────────────────────────────
+coverage/
+test-results/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+tests/
+
+# ── Storybook / dev-only config ───────────────────────────────────────────────
+.storybook/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Editor / tooling ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.sw?
+.DS_Store
+
+# ── Vitest / Playwright config ────────────────────────────────────────────────
+vitest.config.ts
+vitest.shims.d.ts
+playwright.config.ts
+
+# ── TypeScript build info (generated artefacts) ───────────────────────────────
+*.tsbuildinfo
+
+# ── Readme / docs ─────────────────────────────────────────────────────────────
+README.md
