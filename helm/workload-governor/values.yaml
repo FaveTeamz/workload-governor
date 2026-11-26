@@ -227,3 +227,7 @@ extraVolumes: []
 extraVolumeMounts: []
 # - name: tmp
 #   mountPath: /tmp
+
+# -- Publish the overview dashboard for Grafana sidecar discovery.
+dashboard:
+  enabled: false
