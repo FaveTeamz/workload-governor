@@ -14,7 +14,7 @@
 import pino from "pino";
 import pinoHttp from "pino-http";
 
-const isDev = process.env.NODE_ENV !== "production";
+import { getRequestId } from "./tracing.js";
 
 export const REDACT_PATHS = [
   "req.headers.authorization",
@@ -34,10 +34,80 @@ export const REDACT_PATHS = [
   "*.password",
 ];
 
+const isDev = process.env.NODE_ENV !== "production";
+
 export const logger = pino(
   {
     level: process.env.LOG_LEVEL ?? (isDev ? "debug" : "info"),
     base: { service: "workload-governor" },
     timestamp: pino.stdTimeFunctions.isoTime,
+    mixin() {
+      const reqId = getRequestId();
+      return reqId ? { reqId } : {};
+    },
     redact: {
       paths: REDACT_PATHS,
+      censor: "[REDACTED]",
+    },
+  },
+  isDev
+    ? pino.transport({ target: "pino-pretty", options: { colorize: true } })
+    : pino.destination(1), // stdout
+);
+
+/**
+ * pino-http middleware — structured HTTP access logs (#1236).
+ *
+ * Drop-in replacement for morgan. Inherits the pino logger instance above so
+ * that request logs and application logs share identical format, timestamp and
+ * redaction rules, and can be correlated by request ID.
+ *
+ * Log level selection:
+ *   - 2xx / 3xx → info
+ *   - 4xx       → warn
+ *   - 5xx       → error  (includes err.stack in log output)
+ *
+ * Every log line includes:
+ *   method, url, statusCode, responseTime (ms), req.remoteAddress,
+ *   req.headers["user-agent"]
+ */
+export const pinoHttpMiddleware = pinoHttp({
+  logger,
+  // Assign log level by HTTP status code.
+  customLogLevel(_req, res, err) {
+    if (err || res.statusCode >= 500) return "error";
+    if (res.statusCode >= 400) return "warn";
+    return "info";
+  },
+  // Include full error stack on 5xx responses.
+  customErrorMessage(_req, res) {
+    return `HTTP ${res.statusCode} server error`;
+  },
+  // Redact sensitive request headers in the serialised req object.
+  serializers: {
+    req(req) {
+      return {
+        id:        req.id,
+        method:    req.method,
+        url:       req.url,
+        remoteAddress: req.remoteAddress,
+        userAgent: req.headers?.["user-agent"],
+        // Redact before serialisation as a belt-and-suspenders measure.
+        headers: {
+          ...req.headers,
+          authorization: req.headers?.authorization  ? "[REDACTED]" : undefined,
+          cookie:        req.headers?.cookie          ? "[REDACTED]" : undefined,
+          "x-api-key":   req.headers?.["x-api-key"]  ? "[REDACTED]" : undefined,
+        },
+      };
+    },
+    res(res) {
+      return {
+        statusCode:   res.statusCode,
+        responseTime: (res as any).responseTime,
+      };
+    },
+  },
+});
+
+export default logger;

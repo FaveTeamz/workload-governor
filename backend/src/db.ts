@@ -21,6 +21,7 @@
 import pg, { PoolClient } from "pg";
 import Redis from "ioredis";
 import logger from "./logger.js";
+import { getRequestId } from "./tracing.js";
 
 const { Pool } = pg;
 
@@ -135,3 +136,28 @@ redisClient.on("reconnecting", (delay: number) => {
 redisClient.on("end", () => {
   logger.warn("[redis] Connection ended — no further reconnection attempts");
 });
+// ─── Correlation-tagged query helper (#1234) ──────────────────────────────────
+
+/**
+ * Execute a SQL query with a leading comment that embeds the current request's
+ * correlation ID.  The comment appears verbatim in PostgreSQL slow-query logs
+ * and pg_stat_activity, making it straightforward to match a database query to
+ * the HTTP request that triggered it.
+ *
+ * Example comment prepended to the SQL:
+ *   /* reqId: 550e8400-e29b-41d4-a716-446655440000 *\/
+ *
+ * Falls back to running the query untagged when called outside a request context
+ * (e.g. from a background scheduler), so callers never need to guard the call.
+ *
+ * @param sql    — SQL query string (may already contain parameters as $1, $2, …)
+ * @param values — Optional parameterised values array
+ */
+export async function taggedQuery<R extends pg.QueryResultRow = pg.QueryResultRow>(
+  sql: string,
+  values?: unknown[],
+): Promise<pg.QueryResult<R>> {
+  const reqId = getRequestId();
+  const taggedSql = reqId ? `/* reqId: ${reqId} */ ${sql}` : sql;
+  return values ? pool.query<R>(taggedSql, values) : pool.query<R>(taggedSql);
+}
