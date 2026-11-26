@@ -43,27 +43,33 @@ jobs:
       - name: Post Slack notification
         if: env.SLACK_WEBHOOK_URL != ''
         shell: bash
+        env:
+          INPUT_WORKFLOW_NAME: ${{ inputs.workflow_name }}
+          INPUT_STATUS: ${{ inputs.status }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          INPUT_ACTOR: ${{ inputs.actor }}
+          INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
+          INPUT_RUN_URL: ${{ inputs.run_url }}
         run: |
-          SHORT_SHA="${{ inputs.commit_sha }}"
-          SHORT_SHA="${SHORT_SHA:0:7}"
+          SHORT_SHA="${INPUT_COMMIT_SHA:0:7}"
 
-          if [ "${{ inputs.status }}" = "failure" ]; then
+          if [ "$INPUT_STATUS" = "failure" ]; then
             COLOR="danger"
             EMOJI=":x:"
-            TEXT="${EMOJI} *${{ inputs.workflow_name }}* failed on \`main\`"
+            TEXT="${EMOJI} *${INPUT_WORKFLOW_NAME}* failed on \`main\`"
           else
             COLOR="good"
             EMOJI=":white_check_mark:"
-            TEXT="${EMOJI} *${{ inputs.workflow_name }}* is green again on \`main\`"
+            TEXT="${EMOJI} *${INPUT_WORKFLOW_NAME}* is green again on \`main\`"
           fi
 
           PAYLOAD=$(jq -n \
             --arg text "$TEXT" \
             --arg color "$COLOR" \
             --arg sha  "$SHORT_SHA" \
-            --arg run_url "${{ inputs.run_url }}" \
-            --arg actor "${{ inputs.actor }}" \
-            --arg msg "${{ inputs.commit_message }}" \
+            --arg run_url "$INPUT_RUN_URL" \
+            --arg actor "$INPUT_ACTOR" \
+            --arg msg "$INPUT_COMMIT_MESSAGE" \
             '{
               attachments: [{
                 color:    $color,

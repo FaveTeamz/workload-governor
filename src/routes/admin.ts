@@ -167,6 +167,8 @@ router.post('/caps', signatureAuthMiddleware, async (req: Request, res: Response
     });
     res.status(500).json({ error: msg });
   }
+});
+
 // GET /api/admin/consistency
 router.get('/consistency', signatureAuthMiddleware, async (req: Request, res: Response) => {
   const adminReq = req as Request & { adminAddress?: string };
