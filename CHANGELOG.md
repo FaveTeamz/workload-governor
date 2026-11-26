@@ -12,6 +12,8 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ### Fixed
 - Validate contract event topics and data against the XDR ABI before indexing, and preserve rejected events in `indexer_quarantine` for inspection. (#1030)
 - Enable sccache for contract compilation and trigger frontend CI for root shared configuration changes. (#1290, #1291)
+- Cancel obsolete pull-request workflow runs without cancelling runs on `main`, and validate source-change changelog entries. (#1297, #1298)
+- Rename Helm chart helpers and defaults to `workload-governor` for consistent Kubernetes resource names. (#1299)
 
 ### Added
 - Add detailed operational runbook in `docs/runbooks/protocol-upgrade.md` covering Stellar network protocol upgrade handling, testnet verification, WASM rebuilds, and emergency rollback safeguards. (#1123)
@@ -21,6 +23,9 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 
 ### Fixed
 - Fix devcontainer configuration to ensure Node.js and Rust toolchains are automatically installed and available in standard PATH for all terminal sessions. (#1124)
+
+### Security
+- Run the production container as the unprivileged `node` user and its group. (#1300)
 
 ---
 

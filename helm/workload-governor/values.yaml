@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# vesting-backend Helm chart – default values
+# workload-governor Helm chart – default values
 # Override any value with --set key=value or -f custom-values.yaml
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -77,7 +77,7 @@ ingress:
     # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # uncomment to enable cert-manager TLS
   # -- Ingress hostname rules
   hosts:
-    - host: vesting-backend.example.com
+    - host: workload-governor.example.com
       paths:
         - path: /
           pathType: Prefix
@@ -86,7 +86,7 @@ ingress:
   tls:
     - secretName: ""  # leave empty to auto-generate as <release-name>-tls
       hosts:
-        - vesting-backend.example.com
+        - workload-governor.example.com
 
 # ─── Resources ───────────────────────────────────────────────────────────────
 resources:
@@ -210,7 +210,7 @@ affinity:
               - key: app.kubernetes.io/name
                 operator: In
                 values:
-                  - vesting-backend
+                  - workload-governor
           topologyKey: kubernetes.io/hostname
 
 # -- Extra environment variables injected directly (non-secret)

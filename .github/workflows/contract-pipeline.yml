@@ -13,8 +13,8 @@ on:
 
 # Cancel in-flight runs for the same branch on new push
 concurrency:
-  group: contract-pipeline-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always

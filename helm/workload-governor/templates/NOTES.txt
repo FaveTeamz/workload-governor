@@ -1,8 +1,8 @@
-🚀 vesting-backend deployed successfully!
+🚀 workload-governor deployed successfully!
 
 Release:   {{ .Release.Name }}
 Namespace: {{ .Release.Namespace }}
-Version:   {{ include "vesting-backend.imageTag" . }}
+Version:   {{ include "workload-governor.imageTag" . }}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ACCESS
@@ -12,7 +12,7 @@ Version:   {{ include "vesting-backend.imageTag" . }}
   https://{{ .host }}/health
 {{- end }}
 {{- else }}
-  kubectl port-forward svc/{{ include "vesting-backend.fullname" . }} 3000:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  kubectl port-forward svc/{{ include "workload-governor.fullname" . }} 3000:{{ .Values.service.port }} -n {{ .Release.Namespace }}
   Then visit: http://localhost:3000/health
 {{- end }}
 
@@ -26,7 +26,7 @@ Version:   {{ include "vesting-backend.imageTag" . }}
    helm upgrade {{ .Release.Name }} . --set config.CONTRACT_ID=<YOUR_CONTRACT_ID>
 
 3. Confirm pods are running:
-   kubectl get pods -l app.kubernetes.io/name={{ include "vesting-backend.name" . }} -n {{ .Release.Namespace }}
+   kubectl get pods -l app.kubernetes.io/name={{ include "workload-governor.name" . }} -n {{ .Release.Namespace }}
 
 4. Check logs:
-   kubectl logs -l app.kubernetes.io/name={{ include "vesting-backend.name" . }} -n {{ .Release.Namespace }} --tail=50
+   kubectl logs -l app.kubernetes.io/name={{ include "workload-governor.name" . }} -n {{ .Release.Namespace }} --tail=50
