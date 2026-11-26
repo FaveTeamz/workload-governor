@@ -29,6 +29,8 @@
  *   SQLite is NOT used in any test path for this module.
  */
 
+import { createHmac, timingSafeEqual } from "crypto";
+import type { Request, Response } from "express";
 import pool from "./db.js";
 import logger from "./logger.js";
 
@@ -369,4 +371,217 @@ export async function runFullSync(): Promise<SyncResult[]> {
     }
   }
   return results;
+}
+
+// ─── Webhook security ─────────────────────────────────────────────────────────
+
+/**
+ * Validate that a URL received in a webhook payload is safe to fetch.
+ *
+ * Rules enforced:
+ *   - Protocol must be `https:`
+ *   - Hostname must be exactly `api.github.com`
+ *
+ * This blocks SSRF vectors including:
+ *   - AWS EC2/ECS instance-metadata (169.254.169.254, fd00:ec2::254)
+ *   - Loopback (localhost, 127.x.x.x, ::1)
+ *   - RFC-1918 private ranges (10.x, 172.16-31.x, 192.168.x)
+ *   - Other cloud metadata endpoints
+ *
+ * Returns the parsed `URL` object on success; throws `Error` on any violation.
+ */
+export function validateGitHubApiUrl(rawUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`Invalid URL: ${rawUrl}`);
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Only HTTPS protocol allowed, got: ${parsed.protocol}`);
+  }
+
+  if (parsed.hostname !== "api.github.com") {
+    throw new Error(`Target host must be api.github.com, got: ${parsed.hostname}`);
+  }
+
+  return parsed;
+}
+
+/**
+ * Verify the GitHub webhook HMAC-SHA256 signature.
+ *
+ * GitHub signs the raw request body with the shared webhook secret and sends
+ * the digest in the `X-Hub-Signature-256` header as `sha256=<hex>`.
+ *
+ * Uses `timingSafeEqual` to prevent timing-based secret discovery.
+ *
+ * @param rawBody   - The raw request body bytes (Buffer from `express.raw`).
+ * @param signature - The full header value, e.g. `"sha256=abc123..."`.
+ * @param secret    - The webhook secret configured in GitHub.
+ * @returns `true` when the signature is valid; `false` otherwise.
+ */
+export function verifyWebhookSignature(
+  rawBody:   Buffer,
+  signature: string,
+  secret:    string,
+): boolean {
+  if (!signature.startsWith("sha256=")) {
+    return false;
+  }
+
+  const expected = createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  const provided = signature.slice("sha256=".length);
+
+  // Both buffers must be the same length for timingSafeEqual
+  if (provided.length !== expected.length) {
+    return false;
+  }
+
+  return timingSafeEqual(
+    Buffer.from(expected, "hex"),
+    Buffer.from(provided, "hex"),
+  );
+}
+
+// ─── Webhook event types ──────────────────────────────────────────────────────
+
+export interface WebhookIssuePayload {
+  action: string;
+  issue: {
+    id:       number;
+    number:   number;
+    title:    string;
+    html_url: string;
+    state:    string;
+    url:      string;
+  };
+  repository: {
+    name:      string;
+    full_name: string;
+    owner: { login: string };
+  };
+}
+
+// ─── Express handler ──────────────────────────────────────────────────────────
+
+/**
+ * POST /api/github/webhook
+ *
+ * Processes incoming GitHub issue webhook events.
+ *
+ * Security model:
+ *   1. HMAC-SHA256 signature (X-Hub-Signature-256) verified BEFORE the JSON
+ *      body is parsed or any URL in the payload is inspected.
+ *   2. Any URL present in the payload is validated against the strict allowlist
+ *      (api.github.com / HTTPS only) before it is ever fetched.
+ *
+ * Mount this handler AFTER `express.raw({ type: 'application/json' })` so the
+ * raw bytes are available on `req.body` for HMAC verification.
+ */
+export function githubWebhookHandler(req: Request, res: Response): void {
+  // ── 1. Signature verification ────────────────────────────────────────────
+  const signature = req.headers["x-hub-signature-256"];
+  if (typeof signature !== "string" || !signature) {
+    logger.warn("Webhook rejected: missing X-Hub-Signature-256 header");
+    res.status(401).json({ error: "Missing webhook signature" });
+    return;
+  }
+
+  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET ?? "";
+  if (!webhookSecret) {
+    logger.error("GITHUB_WEBHOOK_SECRET is not configured — rejecting all webhooks");
+    res.status(500).json({ error: "Webhook secret not configured" });
+    return;
+  }
+
+  const rawBody = req.body as Buffer;
+  if (!Buffer.isBuffer(rawBody)) {
+    logger.warn("Webhook rejected: body is not a Buffer (check express.raw middleware)");
+    res.status(400).json({ error: "Invalid request body encoding" });
+    return;
+  }
+
+  if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+    logger.warn("Webhook rejected: invalid HMAC signature");
+    res.status(401).json({ error: "Invalid webhook signature" });
+    return;
+  }
+
+  // ── 2. Parse JSON payload (only after signature is verified) ─────────────
+  let payload: WebhookIssuePayload;
+  try {
+    payload = JSON.parse(rawBody.toString("utf8")) as WebhookIssuePayload;
+  } catch {
+    logger.warn("Webhook rejected: malformed JSON body");
+    res.status(400).json({ error: "Malformed JSON payload" });
+    return;
+  }
+
+  // ── 3. Validate every URL in the payload before it can be fetched ─────────
+  try {
+    validateGitHubApiUrl(payload.issue.url);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ url: payload.issue.url }, `Webhook rejected: unsafe issue URL — ${msg}`);
+    res.status(400).json({ error: `Unsafe URL in payload: ${msg}` });
+    return;
+  }
+
+  // ── 4. Dispatch on action ─────────────────────────────────────────────────
+  const { action, issue, repository } = payload;
+  const owner = repository.owner.login;
+  const repo  = repository.name;
+
+  logger.info({ action, owner, repo, issueNumber: issue.number }, "GitHub webhook received");
+
+  // Async processing — errors are logged but do not alter the 202 response
+  // because GitHub retries on non-2xx responses, which could loop.
+  void processWebhookEvent(action, owner, repo, issue).catch((err: unknown) => {
+    logger.error({ err, action, owner, repo, issueNumber: issue.number }, "Webhook processing error");
+  });
+
+  res.status(202).json({ accepted: true });
+}
+
+/**
+ * Persist the webhook event to the database.
+ * Called asynchronously — network or DB errors are caught by the caller.
+ */
+async function processWebhookEvent(
+  action:  string,
+  owner:   string,
+  repo:    string,
+  issue:   WebhookIssuePayload["issue"],
+): Promise<void> {
+  if (action === "opened" || action === "reopened") {
+    await pool.query(
+      /* sql */ `
+      INSERT INTO github_issues
+        (id, owner, repo, number, title, html_url, state, labels, author, created_at, updated_at, synced_at)
+      VALUES ($1, $2, $3, $4, $5, $6, 'open', '{}', NULL, NOW(), NOW(), NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        title      = EXCLUDED.title,
+        html_url   = EXCLUDED.html_url,
+        state      = 'open',
+        updated_at = NOW(),
+        synced_at  = NOW()
+      `,
+      [issue.id, owner, repo, issue.number, issue.title, issue.html_url],
+    );
+  } else if (action === "closed") {
+    await pool.query(
+      /* sql */ `
+      UPDATE github_issues
+      SET state = 'closed', synced_at = NOW()
+      WHERE id = $1
+      `,
+      [issue.id],
+    );
+  }
+  // Other actions (labeled, unlabeled, etc.) are intentionally ignored.
 }
