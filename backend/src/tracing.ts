@@ -644,3 +644,50 @@ export function getTracer(name: string = SERVICE_NAME): Tracer {
 }
 
 export const tracer: Tracer = getTracer(SERVICE_NAME);
+
+// ─── Prometheus Webhook Metrics ───────────────────────────────────────────────
+
+export interface MetricCounter {
+  inc(value?: number): void;
+  labels(...args: any[]): { inc(value?: number): void };
+}
+
+export interface MetricHistogram {
+  observe(val: number): void;
+  labels(...args: any[]): { observe(val: number): void };
+}
+
+let githubWebhooksReceivedTotalInstance: MetricCounter;
+let githubWebhookProcessingDurationSecondsInstance: MetricHistogram;
+
+try {
+  // Use prom-client if available
+  const promClient = require("prom-client");
+  githubWebhooksReceivedTotalInstance = new promClient.Counter({
+    name: "github_webhooks_received_total",
+    help: "Total incoming GitHub webhooks received",
+    labelNames: ["event_type", "status"],
+    registers: [promClient.register],
+  });
+  githubWebhookProcessingDurationSecondsInstance = new promClient.Histogram({
+    name: "github_webhook_processing_duration_seconds",
+    help: "Duration of GitHub webhook processing in seconds",
+    labelNames: ["event_type", "status"],
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+    registers: [promClient.register],
+  });
+} catch {
+  // Resilient fallback in environments without prom-client
+  githubWebhooksReceivedTotalInstance = {
+    inc: () => {},
+    labels: () => ({ inc: () => {} }),
+  };
+  githubWebhookProcessingDurationSecondsInstance = {
+    observe: () => {},
+    labels: () => ({ observe: () => {} }),
+  };
+}
+
+export const githubWebhooksReceivedTotal: MetricCounter = githubWebhooksReceivedTotalInstance;
+export const githubWebhookProcessingDurationSeconds: MetricHistogram = githubWebhookProcessingDurationSecondsInstance;
+
