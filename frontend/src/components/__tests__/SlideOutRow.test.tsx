@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import SlideOutRow from '../../../components/SlideOutRow';
+import SlideOutRow from '../SlideOutRow';
 
 describe('SlideOutRow (Issue #854 / FE-019)', () => {
   const originalMatchMedia = window.matchMedia;

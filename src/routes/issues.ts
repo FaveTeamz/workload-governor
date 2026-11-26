@@ -163,7 +163,7 @@ router.get('/:org_id/:issue_id', async (req: Request, res: Response) => {
     const appCountResult = await pool.query<{ count: string }>(
       `SELECT COUNT(*) AS count
        FROM applications
-       WHERE org_id = $1 AND issue_id = $2`,
+       WHERE org_id = $1 AND issue_id = $2 AND deleted_at IS NULL`,
       [org_id, issueIdNum],
     );
     const applicant_count = parseInt(appCountResult.rows[0]?.count ?? '0', 10);

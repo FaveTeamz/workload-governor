@@ -354,7 +354,7 @@ router.post(
     if (pool && typeof pool.query === 'function') {
       try {
         const globalAppsRes = await pool.query<{ count: string }>(
-          'SELECT COUNT(*) as count FROM applications WHERE contributor = $1 AND status = $2',
+          'SELECT COUNT(*) as count FROM applications WHERE contributor = $1 AND status = $2 AND deleted_at IS NULL',
           [contributor, 'pending'],
         );
         const globalAppsCount = parseInt(globalAppsRes.rows[0]?.count ?? '0', 10);

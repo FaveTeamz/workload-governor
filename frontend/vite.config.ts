@@ -9,6 +9,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      // `@/…` resolves into src/, the single canonical source tree (matches tsconfig.json paths).
+      '@':           resolve(__dirname, 'src'),
       '@tokens':     resolve(__dirname, 'src/tokens.json'),
       '@components': resolve(__dirname, 'src/components'),
       '@hooks':      resolve(__dirname, 'src/hooks'),

@@ -1,7 +1,11 @@
 'use client';
 
 /**
- * EventHistoryTable — closes #550
+ * LiveEventHistoryTable — closes #550
+ *
+ * Polling event table, moved from the legacy
+ * frontend/components/EventHistoryTable in #1259. The fetch-once table with
+ * filters and sorting is EventHistoryTable.
  *
  * Adds real-time event updates via 10-second polling against GET /api/events.
  *

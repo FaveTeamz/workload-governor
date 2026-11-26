@@ -15,7 +15,7 @@ import { render, screen } from '@testing-library/react';
 import IssueCardGridWithSkeleton, {
   IssueCardSkeleton,
   IssueCardSkeletonGrid,
-} from '../../../components/IssueCardSkeleton';
+} from '../IssueCardSkeleton';
 
 describe('IssueCardSkeleton (#552)', () => {
   it('renders a single skeleton card with aria-hidden', () => {

@@ -35,3 +35,4 @@ __pycache__/
 # Compiled frontend artifacts accidentally placed under backend source
 /src/**/*.js
 /src/**/*.js.map
+bench-results/

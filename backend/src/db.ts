@@ -125,6 +125,13 @@ export function getPoolMetrics(): PoolMetrics {
     waitingCount: pool.waitingCount,
   };
 }
+// Soft-delete / archival helpers for applications (#1252).
+export {
+  ACTIVE_APPLICATION_FILTER,
+  softDeleteApplication,
+  restoreApplication,
+  archiveStaleApplications,
+} from "./applicationRetention.js";
 
 export default pool;
 

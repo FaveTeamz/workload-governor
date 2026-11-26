@@ -246,6 +246,15 @@ export async function migrate(): Promise<void> {
       PRIMARY KEY (contributor, org_id, issue_id)
     );
 
+    -- Soft deletion + archival (#1252, migration 7_add_soft_delete_and_archive)
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS deleted_at  TIMESTAMPTZ;
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_applications_deleted_at
+      ON applications(deleted_at) WHERE deleted_at IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS applications_archive (LIKE applications INCLUDING DEFAULTS);
+    CREATE INDEX IF NOT EXISTS idx_applications_archive_contributor
+      ON applications_archive(contributor, org_id);
+
     CREATE TABLE IF NOT EXISTS assignments (
       contributor TEXT NOT NULL,
       org_id      TEXT NOT NULL,
@@ -293,6 +302,10 @@ export async function migrate(): Promise<void> {
       ON contract_events(ledger_seq);
     CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp
       ON contract_events(timestamp DESC);
+    -- Leaderboard aggregation (#1254, migration 5_leaderboard_completed_idx)
+    CREATE INDEX IF NOT EXISTS idx_contract_events_completed_contributor
+      ON contract_events(contributor, org_id, timestamp)
+      WHERE event_type = 'completed';
 
     CREATE TABLE IF NOT EXISTS indexer_quarantine (
       id          SERIAL PRIMARY KEY,

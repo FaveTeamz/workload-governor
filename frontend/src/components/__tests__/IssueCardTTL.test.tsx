@@ -15,7 +15,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
 // We import IssueCardGrid (default export) plus the Issue type
-import IssueCardGrid, { type Issue } from '../../../components/IssueCard';
+import IssueCardGrid, { type Issue } from '../IssueCardGrid';
 
 // ---------------------------------------------------------------------------
 // Helpers
