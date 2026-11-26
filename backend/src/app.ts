@@ -18,6 +18,7 @@
 import express from "express";
 import helmet from "helmet";
 import { healthHandler } from "./health.js";
+import { sseHandler } from "./routes/events.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
 import { adminAuth } from "./middleware/adminAuth.js";
