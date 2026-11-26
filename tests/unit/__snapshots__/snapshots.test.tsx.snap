@@ -116,7 +116,7 @@ exports[`AssignmentCard snapshots > without actions 1`] = `
 exports[`IssueCard snapshots > status=applied 1`] = `
 <article
   aria-label="Issue: Fix TTL bug"
-  class="issue-card issue-card--applied"
+  class="issue-card issue-card-slot issue-card--applied"
 >
   <div
     class="issue-card__meta"
@@ -129,6 +129,7 @@ exports[`IssueCard snapshots > status=applied 1`] = `
     </span>
     <span
       aria-label="Status: Applied"
+      aria-live="polite"
       class="issue-card__chip issue-card__chip--applied"
     >
       Applied
@@ -156,7 +157,7 @@ exports[`IssueCard snapshots > status=applied 1`] = `
 exports[`IssueCard snapshots > status=assigned 1`] = `
 <article
   aria-label="Issue: Fix TTL bug"
-  class="issue-card issue-card--assigned"
+  class="issue-card issue-card-slot issue-card--assigned"
 >
   <div
     class="issue-card__meta"
@@ -169,6 +170,7 @@ exports[`IssueCard snapshots > status=assigned 1`] = `
     </span>
     <span
       aria-label="Status: Assigned"
+      aria-live="polite"
       class="issue-card__chip issue-card__chip--assigned"
     >
       Assigned
@@ -188,7 +190,7 @@ exports[`IssueCard snapshots > status=assigned 1`] = `
 exports[`IssueCard snapshots > status=completed 1`] = `
 <article
   aria-label="Issue: Fix TTL bug"
-  class="issue-card issue-card--completed"
+  class="issue-card issue-card-slot issue-card--completed"
 >
   <div
     class="issue-card__meta"
@@ -201,6 +203,7 @@ exports[`IssueCard snapshots > status=completed 1`] = `
     </span>
     <span
       aria-label="Status: Completed"
+      aria-live="polite"
       class="issue-card__chip issue-card__chip--completed"
     >
       Completed
@@ -220,7 +223,7 @@ exports[`IssueCard snapshots > status=completed 1`] = `
 exports[`IssueCard snapshots > status=open 1`] = `
 <article
   aria-label="Issue: Fix TTL bug"
-  class="issue-card issue-card--open"
+  class="issue-card issue-card-slot issue-card--open"
 >
   <div
     class="issue-card__meta"
@@ -233,6 +236,7 @@ exports[`IssueCard snapshots > status=open 1`] = `
     </span>
     <span
       aria-label="Status: Open"
+      aria-live="polite"
       class="issue-card__chip issue-card__chip--open"
     >
       Open
