@@ -690,6 +690,7 @@ List open issues for an org.
 |---|---|---|---|
 | `limit` | integer | `20` | Page size, `1`–`100` |
 | `offset` | integer | `0` | Number of records to skip |
+| `cursor` | string | — | Base64-encoded cursor (`<ledger>:<id>`) for cursor-based pagination |
 
 **Response `200`**
 ```json
@@ -706,7 +707,28 @@ List open issues for an org.
 ]
 ```
 
-**Errors:** `401`, `404`, `500`
+**Errors:** `400` (invalid cursor), `401`, `404`, `500`
+
+**Example: cURL**
+
+```bash
+curl -X GET "https://api.workload-governor.org/orgs/stellar/issues?limit=20&cursor=MTAwMDE6NDI=" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Accept: application/json"
+```
+
+**Example: JavaScript / TypeScript (`fetch`)**
+
+```typescript
+const response = await fetch("https://api.workload-governor.org/orgs/stellar/issues?limit=20", {
+  method: "GET",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/json",
+  },
+});
+const issues = await response.json();
+```
 
 ---
 
@@ -734,6 +756,7 @@ List pending applications for an org, aggregated from on-chain state via Soroban
 |---|---|---|---|
 | `page` | integer | `1` | 1-based page number |
 | `limit` | integer | `20` | Results per page, max `50` |
+| `cursor` | string | — | Base64-encoded cursor (`<ledger>:<id>`) for cursor-based pagination |
 
 **Response `200`**
 ```json
@@ -752,7 +775,28 @@ List pending applications for an org, aggregated from on-chain state via Soroban
 }
 ```
 
-**Errors:** `401`, `404`, `500`
+**Errors:** `400` (invalid cursor), `401`, `404`, `500`
+
+**Example: cURL**
+
+```bash
+curl -X GET "https://api.workload-governor.org/orgs/stellar/applications?page=1&limit=20" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Accept: application/json"
+```
+
+**Example: JavaScript / TypeScript (`fetch`)**
+
+```typescript
+const response = await fetch("https://api.workload-governor.org/orgs/stellar/applications?page=1&limit=20", {
+  method: "GET",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/json",
+  },
+});
+const applications = await response.json();
+```
 
 ---
 
@@ -808,6 +852,7 @@ List active assignments for an org.
 | `contributor` | string | — | Filter by contributor address |
 | `limit` | integer | `20` | Page size, `1`–`100` |
 | `offset` | integer | `0` | Number of records to skip |
+| `cursor` | string | — | Base64-encoded cursor (`<ledger>:<id>`) for cursor-based pagination |
 
 **Response `200`**
 ```json
@@ -822,7 +867,28 @@ List active assignments for an org.
 ]
 ```
 
-**Errors:** `401`, `404`, `500`
+**Errors:** `400` (invalid cursor), `401`, `404`, `500`
+
+**Example: cURL**
+
+```bash
+curl -X GET "https://api.workload-governor.org/orgs/stellar/assignments?limit=20" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Accept: application/json"
+```
+
+**Example: JavaScript / TypeScript (`fetch`)**
+
+```typescript
+const response = await fetch("https://api.workload-governor.org/orgs/stellar/assignments?limit=20", {
+  method: "GET",
+  headers: {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/json",
+  },
+});
+const assignments = await response.json();
+```
 
 ---
 
@@ -1066,7 +1132,7 @@ Each `failed` entry has the shape `{ "pair": { … }, "reason": "…" }`.
 
 #### `POST /verify-xdr`
 
-Validate a base64-encoded signed Stellar transaction envelope without submitting it. The endpoint checks that the XDR is well-formed, targets the configured contract ID, is within its `timeBounds`, and carries a signature from the contributor address in the first operation argument.
+Validate a base64-encoded signed Stellar transaction envelope without submitting it. The endpoint checks that the XDR is well-formed, targets the configured contract ID, is within its `timeBounds`, enforces the 64 KB size limit, and verifies the transaction network against the target network passphrase.
 
 **Auth:** None
 
@@ -1074,25 +1140,86 @@ Validate a base64-encoded signed Stellar transaction envelope without submitting
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `xdr` | string | Yes | Base64-encoded signed transaction envelope |
+| `xdr` | string | Yes | Base64-encoded signed transaction envelope (max 64 KB) |
+| `network` | string | No | Target network (`testnet` or `mainnet`; default: `testnet`) |
 
 **Response `200` — valid**
 ```json
 {
-  "ok": true,
-  "signerAddress": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
-  "contractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+  "valid": true,
+  "hash": "3b1a8d0f8c2e6b7a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a",
+  "fee": "100",
+  "source": "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+  "sequence": "12345678",
+  "operationCount": 1,
+  "operations": [
+    { "type": "invokeHostFunction", "source": null }
+  ],
+  "network": "testnet"
 }
 ```
 
-**Response `200` — invalid**
+**Response `200` — fee bump transaction**
 ```json
-{ "ok": false, "reason": "TRANSACTION_EXPIRED", "detail": "maxTime 1718000000 is in the past" }
+{
+  "valid": true,
+  "hash": "9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b",
+  "fee": "200",
+  "source": "GB7B5432ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX",
+  "type": "fee_bump",
+  "network": "testnet"
+}
 ```
 
-`reason` is one of `MISSING_SIGNATURE`, `SIGNER_MISMATCH`, `TRANSACTION_EXPIRED`, `TRANSACTION_NOT_YET_VALID`, `WRONG_CONTRACT`, `MALFORMED_XDR`, `MISSING_CONTRIBUTOR_ARG`.
+**Errors**
 
-**Errors:** `400`, `429`, `500`
+| Status | Error Code | Description |
+|---|---|---|
+| `400` | `invalid_xdr` | Provided XDR is malformed or invalid base64 |
+| `400` | `network_mismatch` | Transaction network passphrase does not match requested network |
+| `413` | `payload_too_large` | XDR envelope exceeds maximum allowed size of 64 KB (65,536 bytes) |
+| `429` | `rate_limited` | Rate limit exceeded (10 requests per minute per IP) |
+| `500` | `internal_server_error` | Internal server or verification error |
+
+**Example: cURL**
+
+```bash
+curl -X POST "https://api.workload-governor.org/api/verify-xdr" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "xdr": "AAAAAgAAAAAB2KM2AAAAAGAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN...",
+    "network": "testnet"
+  }'
+```
+
+**Example: JavaScript / TypeScript (`fetch`)**
+
+```typescript
+const response = await fetch("https://api.workload-governor.org/api/verify-xdr", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+  },
+  body: JSON.stringify({
+    xdr: base64XdrEnvelope,
+    network: "testnet",
+  }),
+});
+
+if (response.status === 413) {
+  throw new Error("Transaction XDR exceeds 64 KB limit");
+} else if (response.status === 400) {
+  const err = await response.json();
+  throw new Error(`Invalid XDR: ${err.message}`);
+} else if (!response.ok) {
+  throw new Error(`Verification request failed: ${response.status}`);
+}
+
+const result = await response.json();
+console.log(`Transaction valid=${result.valid}, hash=${result.hash}, fee=${result.fee}`);
+```
 
 ---
 

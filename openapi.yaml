@@ -510,9 +510,47 @@ paths:
           required: true
           schema:
             type: string
+          description: Organization ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Number of issues to return per page (max 100)
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Number of issues to skip for pagination
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Base64-encoded cursor ("<ledger>:<id>") for cursor-based pagination
       responses:
         '200':
           description: List of issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Issue'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       summary: Create issue for organization
       operationId: createOrgIssue
@@ -540,9 +578,65 @@ paths:
           required: true
           schema:
             type: string
+          description: Organization ID
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: 1-based page number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 50
+          description: Results per page (max 50)
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Base64-encoded cursor ("<ledger>:<id>") for cursor-based pagination
       responses:
         '200':
           description: List of applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  org_id:
+                    type: string
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  applications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        contributor:
+                          type: string
+                        issue_id:
+                          type: integer
+                        applied_at_ledger:
+                          type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /orgs/{orgId}/issues/{issueId}/apply:
     post:
@@ -596,9 +690,53 @@ paths:
           required: true
           schema:
             type: string
+          description: Organization ID
+        - name: contributor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by contributor Stellar address
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Results per page (max 100)
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Number of records to skip
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Base64-encoded cursor ("<ledger>:<id>") for cursor-based pagination
       responses:
         '200':
           description: List of assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Assignment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /orgs/{orgId}/events:
     get:
@@ -681,12 +819,47 @@ paths:
   /verify-xdr:
     post:
       summary: Verify signed XDR transaction
+      description: Validates a base64-encoded Stellar transaction envelope without submitting it to the network. Enforces 64 KB payload size limit and verifies network passphrase.
       operationId: postVerifyXdr
       tags:
         - Transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                xdr:
+                  type: string
+                  description: Base64-encoded signed Stellar transaction envelope (max 64 KB)
+                  example: AAAAAgAAAAA...
+                network:
+                  type: string
+                  enum: [testnet, mainnet]
+                  default: testnet
+                  description: Target Stellar network for validation
+              required:
+                - xdr
       responses:
         '200':
           description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyXdrResponse'
+        '400':
+          description: Invalid XDR or network mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /api/contributors/{address}/applications:
     get:
@@ -1128,6 +1301,59 @@ components:
         - actor
         - created_at
 
+    VerifyXdrResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          description: Whether the transaction envelope is valid
+          example: true
+        hash:
+          type: string
+          description: Hex-encoded transaction hash
+          example: 3b1a8d0f8c...
+        fee:
+          type: string
+          description: Fee bid for the transaction
+          example: "100"
+        source:
+          type: string
+          description: Stellar address of the transaction source account
+          example: GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN
+        sequence:
+          type: string
+          nullable: true
+          description: Source account sequence number
+          example: "12345678"
+        operationCount:
+          type: integer
+          description: Number of operations in the transaction
+          example: 1
+        operations:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                description: Operation type
+                example: invokeHostFunction
+              source:
+                type: string
+                nullable: true
+                description: Optional operation source account
+          description: Summary of operations in envelope
+        network:
+          type: string
+          description: Network validated against
+          example: testnet
+      required:
+        - valid
+        - hash
+        - fee
+        - source
+        - network
+
   responses:
     BadRequest:
       description: Bad request - invalid parameters
@@ -1138,6 +1364,34 @@ components:
 
     Unauthorized:
       description: Unauthorized - invalid or missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: Conflict with existing resource or state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    PayloadTooLarge:
+      description: Request payload exceeds maximum permitted size
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    TooManyRequests:
+      description: Rate limit exceeded
       content:
         application/json:
           schema:
