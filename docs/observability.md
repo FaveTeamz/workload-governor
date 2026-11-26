@@ -1,4 +1,4 @@
-# Observability
+# Observability Runbook
 
 This document describes the distributed tracing setup, X-Ray service map, operational runbooks, and log privacy guidelines for the WorkloadGovernor backend.
 
@@ -43,127 +43,231 @@ header.
 The counter is incremented after an insert succeeds. Duplicate rows do not
 increment it. The [Prometheus rule](../monitoring/prometheus/alerting_rules.yml)
 fires when the reported lag exceeds 50 ledgers for five minutes.
+This document covers every alert defined in
+`monitoring/prometheus/alerting_rules.yml` (Prometheus) and
+`infra/logs_and_alarms.tf` (CloudWatch), and specifies the structured audit
+log schema emitted by `src/logger.ts`.
 
 ---
 
-## Distributed Tracing — AWS X-Ray
+## Infrastructure alerts
 
-The backend uses [AWS X-Ray](https://aws.amazon.com/xray/) to trace every inbound request through all downstream service calls.
+### HighCpuUtilization
 
-### Architecture
+| Field       | Value |
+|-------------|-------|
+| Severity    | warning |
+| Threshold   | CPU > 85% for 5 minutes |
+| Prometheus  | `alerting_rules.yml` → group `infrastructure` |
 
-```
-Browser / API client
-        │
-        ▼
-  ALB (trace header injected)
-        │
-        ▼
-  ECS Task — workload-governor-backend
-  ├── Express middleware: opens X-Ray segment per request
-  ├── tracedFetch("horizon-rpc") → Soroban RPC / Horizon
-  ├── tracedFetch("github-api")  → GitHub API
-  ├── tracedDbQuery()            → PostgreSQL (pg subsegment)
-  └── sends UDP segments to xray-daemon sidecar
-              │
-              ▼
-       xray-daemon sidecar (amazon/aws-xray-daemon:3.x)
-              │
-              ▼
-       AWS X-Ray service (PutTraceSegments)
-```
+**What it means**  
+One or more hosts are saturating their CPU allocation.  User-visible latency
+will increase; if sustained, the service will start dropping requests.
 
-### What is instrumented
+**Investigation steps**
 
-| Component | Implementation | Subsegment name |
-|---|---|---|
-| Inbound HTTP requests | `xrayMiddleware()` in `app.ts` | Root segment per request |
-| Horizon RPC calls | `tracedFetch("horizon-rpc", ...)` | `horizon-rpc` |
-| Soroban RPC calls | `tracedFetch("soroban-rpc", ...)` | `soroban-rpc` |
-| GitHub API calls | `tracedFetch("github-api", ...)` | `github-api` |
-| PostgreSQL queries | `tracedDbQuery(pool, sql, ...)` | `postgres` |
-
-### SDK configuration
-
-`backend/src/tracing.ts` exports:
-
-- `xrayMiddleware()` — Express middleware; mount first in `app.ts`.
-- `tracedFetch(name, url, init?)` — drop-in replacement for `fetch` that wraps the call in an X-Ray subsegment.
-- `tracedDbQuery(pool, sql, values?)` — wraps `pg.Pool.query` with a `postgres` subsegment.
-
-Set `XRAY_ENABLED=false` to disable tracing in local development and unit tests. The helpers become pass-through wrappers with zero overhead when disabled.
-
-### Environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `XRAY_ENABLED` | `true` | Set to `false` to disable tracing |
-| `SERVICE_NAME` | `workload-governor-backend` | Service name shown in the X-Ray service map |
-| `AWS_XRAY_DAEMON_ADDRESS` | `127.0.0.1:2000` | Set automatically by ECS task definition |
+1. Check which process is consuming CPU:
+   ```
+   top -b -n 1 | head -20
+   ```
+2. Review recent deployments — a new build may have introduced a hot loop.
+3. Check ECS task count; scale out if the cluster has headroom.
+4. Inspect `slow_requests` Insights query in CloudWatch for correlated latency.
 
 ---
 
-## X-Ray Service Map
+### HighMemoryUtilization
 
-The service map is available in the [AWS X-Ray console](https://console.aws.amazon.com/xray/home#/service-map).
+| Field       | Value |
+|-------------|-------|
+| Severity    | warning |
+| Threshold   | Memory > 90% for 5 minutes |
+| Prometheus  | `alerting_rules.yml` → group `infrastructure` |
 
-After deploying and generating traffic:
+**What it means**  
+Available memory is critically low.  The OOM killer may terminate processes,
+causing unexpected restarts.
 
-1. Open the X-Ray console → **Service map**.
-2. You should see nodes for:
-   - `workload-governor-backend` (the ECS service)
-   - `postgres` (RDS database)
-   - `horizon-rpc` (Horizon/Soroban RPC)
-   - `github-api` (GitHub REST API)
-3. Click any edge to see latency percentiles (p50, p95, p99) and error rates.
+**Investigation steps**
 
-> **Tip:** Select a 5-minute window during an active deploy to see the baseline latency of a cold-start task.
+1. Identify the top memory consumers: `ps aux --sort=-%mem | head -10`
+2. Check for memory leaks introduced in recent releases.
+3. Review heap dumps or APM traces for runaway caches.
+4. Scale up the task memory limit or increase the ECS task count.
 
 ---
 
-## Runbook: p99 Transaction Latency
+## SLO alerts
 
-Use this CloudWatch Insights query to find the p99 latency for Soroban transaction submission over the last hour.
+### HighHttp5xxErrorRate
 
-**Log group:** `/ecs/workload-governor-<environment>`
+| Field       | Value |
+|-------------|-------|
+| Severity    | **critical** |
+| Threshold   | 5xx rate > 5% of total HTTP traffic for 3 minutes |
+| Prometheus  | `alerting_rules.yml` → group `slo` |
+| CloudWatch  | `${service_name}-slo-5xx-error-ratio` |
 
+**What it means**  
+More than 1 in 20 HTTP requests are returning server errors.  This is a
+user-impacting outage.  The root cause is often an unhandled exception in
+backend code (e.g. a database query that starts throwing after a schema
+change) that never manifests as CPU or memory pressure.
+
+**Investigation steps**
+
+1. Open the CloudWatch error-rate Insights query
+   (`${service_name}-error-rate`) and filter to the last 15 minutes.
+2. Identify which `path` values are generating errors.
+3. Correlate with the `contract_submission_failures` query for RPC-related
+   causes.
+4. Check application logs for stack traces:
+   ```
+   aws logs filter-log-events \
+     --log-group-name /ecs/<service> \
+     --filter-pattern "ERROR" \
+     --start-time $(date -d '-10 minutes' +%s000)
+   ```
+5. If caused by a bad deployment, follow the
+   [rollback runbook](rollback-runbook.md).
+6. If caused by a database issue, check RDS connections on the dashboard and
+   follow the [incident-response runbook](runbooks/incident-response.md).
+
+**Escalation**  
+Page the on-call backend engineer immediately.  If unresolved in 15 minutes,
+escalate to the engineering lead.
+
+---
+
+### HighHttpLatencyP95
+
+| Field       | Value |
+|-------------|-------|
+| Severity    | warning |
+| Threshold   | P95 request latency > 500 ms for 5 minutes |
+| Prometheus  | `alerting_rules.yml` → group `slo` |
+| CloudWatch  | `${service_name}-slo-p95-latency` |
+
+**What it means**  
+The 95th-percentile response time has crossed 500 ms, meaning at least 1 in
+20 users is experiencing noticeable slowness.  This often precedes a
+`HighHttp5xxErrorRate` event.
+
+**Investigation steps**
+
+1. Open the `slow_requests` Insights query to rank endpoints by P95 latency.
+2. Check whether a specific path is the outlier or whether latency is spread
+   evenly (the latter suggests a downstream bottleneck such as the database or
+   a Soroban RPC endpoint).
+3. Check the Soroban RPC failover alarm — a failover in progress will add
+   latency until the new endpoint warms up.
+4. Review RDS `DatabaseConnections` on the dashboard; a connection-pool
+   exhaustion will spike latency across all endpoints.
+5. If the spike coincides with a deployment, consider rolling back:
+   [rollback runbook](rollback-runbook.md).
+
+**Escalation**  
+Notify the on-call engineer.  If P95 latency exceeds 2 s or if
+`HighHttp5xxErrorRate` fires concurrently, treat as a severity-1 incident.
+
+---
+
+## Verification
+
+To validate Prometheus rule syntax locally:
+
+```bash
+promtool check rules monitoring/prometheus/alerting_rules.yml
 ```
-fields @timestamp, @message
-| filter @message like "TTL extension batch confirmed" or @message like "Transaction"
-| parse @message '"hash":"*"' as hash
-| parse @message '"batchSize":*,' as batchSize
-| stats pct(@duration, 99) as p99_ms,
-        avg(@duration) as avg_ms,
-        count() as request_count
+
+A clean run produces no output and exits with code 0.
+
+To simulate an error spike in a Prometheus unit-test ruleset, add a test file
+at `monitoring/prometheus/alerting_rules_test.yml` and run:
+
+```bash
+promtool test rules monitoring/prometheus/alerting_rules_test.yml
+```
+
+---
+
+## Audit log schema (#1323)
+
+All audit events are emitted as structured JSON by `logAuditEvent` in
+`src/logger.ts`.  Every record carries a top-level `audit: true` field that
+makes it trivially filterable without regex.
+
+### JSON schema
+
+```jsonc
+{
+  "audit": true,              // always present — use as the primary filter key
+  "action": "register_org",  // machine-readable operation name (snake_case)
+  "actor": {
+    "type": "admin",          // "admin" | "maintainer" | "contributor"
+    "id": "GAADMIN…",         // Stellar public key or GitHub login
+    "ip": "203.0.113.1"       // originating IP, present when available
+  },
+  "target": {
+    "type": "org",            // "org" | "issue" | "contract"
+    "id": "stellar-oss"       // resource identifier
+  },
+  "outcome": "success",       // "success" | "failure"
+  "details": {                // optional — action-specific payload
+    "tx_hash": "abc123",
+    "maintainers": ["GBMAINT…"],
+    "error": "MaintainerNotFound"
+  }
+}
+```
+
+### Action catalogue
+
+| action | actor.type | target.type | Emitted by |
+|---|---|---|---|
+| `admin_auth` | `admin` | `contract` | `routes/admin.ts` — invalid signature |
+| `register_org` | `admin` | `org` | `routes/admin.ts` — `POST /api/admin/orgs` success |
+| `register_maintainer` | `admin` | `org` | `routes/admin.ts` — contract call failure + DB rollback |
+| `deregister_maintainer` | `admin` | `org` | `routes/admin.ts` — `DELETE /api/admin/maintainers` success |
+| `cancellation` | `admin` | `issue` | `services/auditService.ts` — cancellation write path |
+
+### CloudWatch Logs Insights queries
+
+**All audit events (last hour)**
+```
+fields @timestamp, action, actor.id, actor.type, target.id, outcome
+| filter audit = true
 | sort @timestamp desc
 | limit 100
 ```
 
-To run this query:
+**Failed operations only**
+```
+fields @timestamp, action, actor.id, target.id, details.error
+| filter audit = true and outcome = "failure"
+| sort @timestamp desc
+```
 
-1. Open [CloudWatch Logs Insights](https://console.aws.amazon.com/cloudwatch/home#logsV2:logs-insights).
-2. Select log group `/ecs/workload-governor-production`.
-3. Set the time range to **Last 1 hour**.
-4. Paste the query above and choose **Run query**.
+**Activity by a specific admin**
+```
+fields @timestamp, action, target.id, outcome
+| filter audit = true and actor.id = "GAADMIN…"
+| sort @timestamp desc
+```
 
-### Latency SLOs
+**All cancellation events for an org**
+```
+fields @timestamp, actor.id, target.id, details.reason, details.tx_hash
+| filter audit = true and action = "CONTRIBUTOR_WITHDREW" or action = "MAINTAINER_REVOKED"
+| sort @timestamp desc
+```
 
-| Operation | p50 target | p99 target |
-|---|---|---|
-| Soroban transaction submit | < 500 ms | < 5 s |
-| GitHub sync per repo | < 2 s | < 10 s |
-| PostgreSQL query (read) | < 20 ms | < 100 ms |
-| Health check endpoint | < 200 ms | < 500 ms |
+### SIEM indexing
 
-### Investigating a latency spike
-
-1. Open the X-Ray service map → identify the slow edge.
-2. Click the edge → **View traces** → sort by **Duration (desc)**.
-3. Open the slowest trace to see which subsegment (DB, Horizon, GitHub) is the bottleneck.
-4. Cross-reference with CloudWatch metrics for the suspected service:
-   - **RDS**: `DatabaseConnections`, `DBLoad`
-   - **Horizon/Soroban RPC**: `soroban_rpc` subsegment duration in X-Ray; if RPC throttling or high latency persists, consult the [Horizon & RPC Node Migration Runbook](runbooks/horizon-migration.md) for switching providers with zero downtime.
-   - **GitHub API**: check rate-limit headers in application logs
+The `audit: true` field is the recommended index key.  Every field except
+`details` is always present, so queries never need to handle missing keys.
+`details` is free-form and action-specific; treat it as an opaque payload for
+human review rather than a typed schema to filter on.
 
 ---
 
@@ -210,3 +314,9 @@ for a minute. Check long-running queries and transactions before increasing the 
 minutes. `HighHttpLatencyP95` alerts when the 95th-percentile request duration
 exceeds 500 ms for five minutes. Check the status and route labels in
 `http_requests_total` and the request duration histogram to identify affected routes.
+## Related documents
+
+- [Deployment runbook](deployment-runbook.md)
+- [Rollback runbook](rollback-runbook.md)
+- [Incident response runbook](runbooks/incident-response.md)
+- [Architecture overview](architecture.md)

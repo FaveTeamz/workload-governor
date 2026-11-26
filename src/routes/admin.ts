@@ -3,9 +3,15 @@ import { pool } from '../db';
 import { SorobanService } from '../soroban';
 import { verifySignature, parseAuthHeader } from '../signature';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
-import { logger } from '../logger';
-import { adminCapUpdateSchema } from '../schemas/admin';
-import { recordAuditEvent } from '../services/auditService';
+import { logger, logAuditEvent } from '../logger';
+import { validateBody } from '../middleware/validation';
+import {
+  registerMaintainerBodySchema,
+  RegisterMaintainerBody,
+  deregisterMaintainerBodySchema,
+  DeregisterMaintainerBody,
+} from '../schemas/admin';
+import { registerOrgSchema } from '../schemas/orgs';
 
 const router = Router();
 const soroban = new SorobanService();
@@ -29,10 +35,12 @@ async function signatureAuthMiddleware(
   }
 
   if (!verifySignature(signed.adminAddress, signed.message, signed.signature)) {
-    logger.warn({
-      correlationId: req.correlationId,
-      message: 'Invalid admin signature',
-      adminAddress: signed.adminAddress,
+    logAuditEvent({
+      action: 'admin_auth',
+      actor: { type: 'admin', id: signed.adminAddress, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+      target: { type: 'contract', id: 'admin' },
+      outcome: 'failure',
+      details: { correlationId: req.correlationId, reason: 'invalid_signature' },
     });
     res.status(401).json({ error: 'unauthorized' });
     return;
@@ -45,7 +53,131 @@ async function signatureAuthMiddleware(
 // POST /api/admin/maintainers
 // Body: { maintainer_address, org_id, sequence }
 // Returns unsigned transaction XDR for admin to sign
-router.post('/maintainers', signatureAuthMiddleware, async (req: Request, res: Response) => {
+router.post(
+  '/maintainers',
+  signatureAuthMiddleware,
+  validateBody(registerMaintainerBodySchema),
+  async (req: Request, res: Response) => {
+    const adminReq = req as Request & { adminAddress: string };
+    const { maintainer_address, org_id, sequence } = req.body as RegisterMaintainerBody;
+
+    try {
+      // Build the register_maintainer transaction
+      const account = adminReq.adminAddress;
+      const args = [
+        new Address(maintainer_address).toScVal(),
+        nativeToScVal(org_id, { type: 'symbol' }),
+      ];
+
+      const tx = soroban.buildRawTransaction(
+        account,
+        sequence,
+        'register_maintainer',
+        args,
+      );
+
+      // Store pending transaction for later verification
+      await pool.query(
+        `INSERT INTO pending_transactions (admin_address, org_id, maintainer_address, transaction_xdr, created_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (admin_address, maintainer_address, org_id) DO UPDATE
+         SET transaction_xdr = $4, created_at = NOW()`,
+        [account, org_id, maintainer_address, tx.toXDR()],
+      );
+
+      res.status(200).json({
+        xdr: tx.toXDR(),
+        message: 'Sign this transaction with your admin key and submit to /broadcast',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'internal error';
+      logger.error({
+        correlationId: adminReq.correlationId,
+        error: msg,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      res.status(400).json({ error: msg });
+    }
+  },
+);
+
+// DELETE /api/admin/maintainers
+// Body: { maintainer_address, org_id, sequence? }
+// Builds an unsigned deregister_maintainer transaction XDR for the admin to sign.
+// Returns 404 with error code 17 if the maintainer is not registered for the org.
+router.delete(
+  '/maintainers',
+  signatureAuthMiddleware,
+  validateBody(deregisterMaintainerBodySchema),
+  async (req: Request, res: Response) => {
+    const adminReq = req as Request & { adminAddress: string };
+    const { maintainer_address, org_id, sequence } = req.body as DeregisterMaintainerBody;
+
+    try {
+      const account = adminReq.adminAddress;
+
+      // Fetch sequence from the RPC when not supplied by the caller
+      const seq = sequence ?? (await soroban.getAccountSequence(account));
+
+      const args = [
+        new Address(maintainer_address).toScVal(),
+        nativeToScVal(org_id, { type: 'symbol' }),
+      ];
+
+      const tx = soroban.buildRawTransaction(
+        account,
+        seq,
+        'deregister_maintainer',
+        args,
+      );
+
+      logAuditEvent({
+        action: 'deregister_maintainer',
+        actor: { type: 'admin', id: account, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+        target: { type: 'org', id: org_id },
+        outcome: 'success',
+        details: {
+          correlationId: adminReq.correlationId,
+          maintainer_address,
+        },
+      });
+
+      res.status(200).json({
+        xdr: tx.toXDR(),
+        message: 'Sign this transaction with your admin key and submit to /broadcast',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'internal error';
+
+      // Surface MaintainerNotFound (code 17) as a 404 so the client can
+      // distinguish "already-deregistered" from generic 400/500 errors.
+      if (msg.includes('MaintainerNotFound') || msg.includes('error code=17')) {
+        res.status(404).json({
+          error: 'MaintainerNotFound',
+          code: 17,
+          message: `Maintainer ${maintainer_address} is not registered for org ${org_id}`,
+        });
+        return;
+      }
+
+      logger.error({
+        correlationId: adminReq.correlationId,
+        error: msg,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+      res.status(400).json({ error: msg });
+    }
+  },
+);
+
+// POST /api/admin/orgs
+// Body: { github_org: string, org_id: string, maintainers: string[], org_cap?: number }
+// 1. Validates github_org exists via the GitHub API (422 if not found)
+// 2. Checks for duplicate org_id (409 if already registered)
+// 3. Inserts the org into the DB
+// 4. Calls register_maintainer on the Soroban contract for each maintainer
+// 5. Rolls back the DB insert if any contract call fails
+router.post('/orgs', signatureAuthMiddleware, async (req: Request, res: Response) => {
   const adminReq = req as Request & { adminAddress: string };
   const { maintainer_address, org_id, sequence } = req.body as Record<string, unknown>;
 
@@ -182,19 +314,40 @@ router.get('/consistency', signatureAuthMiddleware, async (req: Request, res: Re
   });
 });
 
-// POST /api/admin/consistency/remediate
-router.post('/consistency/remediate', signatureAuthMiddleware, async (req: Request, res: Response) => {
-  const adminReq = req as Request & { adminAddress?: string };
-  if (!adminReq.adminAddress) {
-    res.status(403).json({ error: 'forbidden: valid admin credentials required' });
-    return;
+      const msg = err instanceof Error ? err.message : 'contract error';
+      logAuditEvent({
+        action: 'register_maintainer',
+        actor: { type: 'admin', id: adminReq.adminAddress, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+        target: { type: 'org', id: org_id },
+        outcome: 'failure',
+        details: {
+          correlationId: adminReq.correlationId,
+          maintainer,
+          error: msg,
+          db_rolled_back: true,
+        },
+      });
+      res.status(502).json({
+        error: 'contract_error',
+        message: `Failed to register maintainer ${maintainer}: ${msg}`,
+        registered,
+      });
+      return;
+    }
   }
 
-  const { pairs } = req.body as { pairs?: Array<{ contributor: string; org_id: string }>; issue_ids?: number[] };
-  if (!pairs || !Array.isArray(pairs)) {
-    res.status(400).json({ error: 'pairs array is required' });
-    return;
-  }
+  logAuditEvent({
+    action: 'register_org',
+    actor: { type: 'admin', id: adminReq.adminAddress, ip: String(req.socket?.remoteAddress ?? 'unknown') },
+    target: { type: 'org', id: org_id },
+    outcome: 'success',
+    details: {
+      correlationId: adminReq.correlationId,
+      github_org,
+      maintainers,
+      org_cap,
+    },
+  });
 
   res.status(200).json({
     remediated: pairs,
