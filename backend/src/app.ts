@@ -9,9 +9,13 @@
  *
  * Tracing:
  *   - AWS X-Ray segment opened per request via xrayMiddleware (#634)
+ *
+ * Security:
+ *   - CSP, X-Frame-Options and X-Content-Type-Options on every response (#1314)
  */
 
 import express from "express";
+import helmet from "helmet";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
 import { xrayMiddleware } from "./tracing.js";
@@ -19,56 +23,83 @@ import logger from "./logger.js";
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
-const app = express();
+export function createApp(): express.Application {
+  const app = express();
 
-// X-Ray segment middleware — must be first so all downstream handlers inherit
-// the active segment context. No-op when XRAY_ENABLED=false.
-app.use(xrayMiddleware());
+  // X-Ray segment middleware — must be first so all downstream handlers inherit
+  // the active segment context. No-op when XRAY_ENABLED=false.
+  app.use(xrayMiddleware());
 
-app.use(express.json());
+  // Security response headers — applied before every route so health checks,
+  // API responses and 404s are all covered (#1314).
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https://avatars.githubusercontent.com"],
+        connectSrc: ["'self'", "https://horizon-testnet.stellar.org", "https://horizon.stellar.org"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+      },
+    },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    xContentTypeOptions: true,
+    xFrameOptions: { action: "deny" },
+  }));
 
-// Request logger middleware
-app.use((req, _res, next) => {
-  logger.debug({ method: req.method, path: req.path }, "Incoming request");
-  next();
-});
+  app.use(express.json());
 
-// Health check
-app.get("/api/health", healthHandler);
+  // Request logger middleware
+  app.use((req, _res, next) => {
+    logger.debug({ method: req.method, path: req.path }, "Incoming request");
+    next();
+  });
 
-// 404 fallback
-app.use((_req, res) => {
-  res.status(404).json({ error: "Not found" });
-});
+  // Health check
+  app.get("/api/health", healthHandler);
+
+  // 404 fallback
+  app.use((_req, res) => {
+    res.status(404).json({ error: "Not found" });
+  });
+
+  return app;
+}
+
+const app = createApp();
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
-const PORT = parseInt(process.env.PORT ?? "3000", 10);
+if (require.main === module) {
+  const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, "WorkloadGovernor backend listening");
-});
-
-// Start scheduled jobs
-const scheduler = startScheduler();
-
-// ─── Graceful shutdown ───────────────────────────────────────────────────────
-
-function shutdown(signal: string): void {
-  logger.info({ signal }, "Shutdown signal received");
-  scheduler.stop();
-  server.close(() => {
-    logger.info("HTTP server closed");
-    process.exit(0);
+  const server = app.listen(PORT, () => {
+    logger.info({ port: PORT }, "WorkloadGovernor backend listening");
   });
-  // Force exit after 10s if server doesn't close cleanly
-  setTimeout(() => {
-    logger.error("Forced shutdown after timeout");
-    process.exit(1);
-  }, 10_000).unref();
-}
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT",  () => shutdown("SIGINT"));
+  // Start scheduled jobs
+  const scheduler = startScheduler();
+
+  // ─── Graceful shutdown ─────────────────────────────────────────────────────
+
+  function shutdown(signal: string): void {
+    logger.info({ signal }, "Shutdown signal received");
+    scheduler.stop();
+    server.close(() => {
+      logger.info("HTTP server closed");
+      process.exit(0);
+    });
+    // Force exit after 10s if server doesn't close cleanly
+    setTimeout(() => {
+      logger.error("Forced shutdown after timeout");
+      process.exit(1);
+    }, 10_000).unref();
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT",  () => shutdown("SIGINT"));
+}
 
 export default app;
