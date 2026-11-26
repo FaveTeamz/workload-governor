@@ -37,7 +37,6 @@
  *   const result = await tracedDbQuery("SELECT 1");
  */
 
-import { AsyncLocalStorage } from "async_hooks";
 import { randomUUID } from "crypto";
 import AWSXRay from "aws-xray-sdk-core";
 import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "@opentelemetry/core";
@@ -51,6 +50,8 @@ import type { Request, Response, NextFunction } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
 import { Gauge, Counter, register } from "prom-client";
 import logger from "./logger.js";
+import { requestContext } from "./requestContext.js";
+export { getRequestId, requestContext } from "./requestContext.js";
 
 // ─── Contract TTL & Application Metrics ───────────────────────────────────────
 
@@ -70,24 +71,6 @@ export {
   contractMinApplicationRemainingLedgers as contract_min_application_remaining_ledgers,
   contractApplicationTtlExtensionsTotal as contract_application_ttl_extensions_total,
 };
-// ─── Correlation ID storage ────────────────────────────────────────────────────
-
-/**
- * AsyncLocalStorage context for the current HTTP request.
- * Any code that runs inside a request handler (including async continuations,
- * database callbacks and scheduled microtasks) can read the reqId without it
- * being threaded through every function argument.
- */
-export const requestContext = new AsyncLocalStorage<{ reqId: string }>();
-
-/**
- * Return the correlation ID for the currently executing request, or undefined
- * when called outside a request context (e.g. from a background scheduler).
- */
-export function getRequestId(): string | undefined {
-  return requestContext.getStore()?.reqId;
-}
-
 // ─── Correlation middleware ────────────────────────────────────────────────────
 
 /**
@@ -171,9 +154,6 @@ if (XRAY_ENABLED) {
   // This covers any library that uses the built-in http module under the hood.
   AWSXRay.captureHTTPsGlobal(require("http"),  false /* capture all */);
   AWSXRay.captureHTTPsGlobal(require("https"), false);
-
-  // Set the service name used in the X-Ray service map.
-  AWSXRay.setDefaultName(SERVICE_NAME);
 
   // In ECS the daemon runs on the default UDP port. The SDK picks up the
   // AWS_XRAY_DAEMON_ADDRESS env var automatically if set.
@@ -289,7 +269,7 @@ export async function tracedFetch(
   name: string,
   url: string,
   init?: RequestInit,
-): Promise<Response> {
+): ReturnType<typeof fetch> {
   if (!XRAY_ENABLED) {
     return fetch(url, init);
   }

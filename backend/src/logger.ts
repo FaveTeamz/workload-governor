@@ -14,7 +14,7 @@
 import pino from "pino";
 import pinoHttp from "pino-http";
 
-import { getRequestId } from "./tracing.js";
+import { getRequestId } from "./requestContext.js";
 
 export const REDACT_PATHS = [
   "req.headers.authorization",

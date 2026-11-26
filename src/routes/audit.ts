@@ -12,7 +12,7 @@
 
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
-import { AuditService } from '../services/auditService';
+import { AuditService } from '../services/sealedAuditService';
 
 const router = Router();
 

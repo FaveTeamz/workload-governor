@@ -34,7 +34,7 @@ jobs:
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # Cache node_modules keyed on the hash of package-lock.json so that
       # identical dependency trees reuse the cached layer without re-running npm ci.
@@ -82,7 +82,7 @@ jobs:
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Cache node_modules
         uses: actions/cache@v4

@@ -14,9 +14,9 @@
 
 'use strict';
 
-/** @param {import('pg').Pool} pool */
-async function up(pool) {
-  await pool.query(`
+/** @param {import('node-pg-migrate').MigrationBuilder} pool */
+function up(pgm) {
+  pgm.sql(`
     -- Ensure the audit_log table exists (idempotent).
     CREATE TABLE IF NOT EXISTS audit_log (
       id           BIGSERIAL    PRIMARY KEY,
@@ -56,14 +56,14 @@ async function up(pool) {
   `);
 }
 
-/** @param {import('pg').Pool} pool */
-async function down(pool) {
+/** @param {import('node-pg-migrate').MigrationBuilder} pool */
+function down(pgm) {
   if (process.env.FULL_ROLLBACK === '1') {
     // Full rollback: remove the entire table.
-    await pool.query(`DROP TABLE IF EXISTS audit_log;`);
+    pgm.sql(`DROP TABLE IF EXISTS audit_log;`);
   } else {
     // Partial rollback: strip only the three signature columns.
-    await pool.query(`
+    pgm.sql(`
       ALTER TABLE audit_log
         DROP COLUMN IF EXISTS previous_hash,
         DROP COLUMN IF EXISTS entry_hash,

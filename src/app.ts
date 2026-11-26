@@ -1,6 +1,7 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import { rateLimit, MemoryStore, type Store } from 'express-rate-limit';
 import pinoHttp from 'pino-http';
 import { logger } from './logger';
 import issuesRouter from './routes/issues';
@@ -13,6 +14,8 @@ import adminWebhooksRouter from './routes/admin-webhooks';
 import eventsRouter from './routes/events';
 import leaderboardRouter from './routes/leaderboard';
 import auditRouter from './routes/auditRoutes';
+import auditVerificationRouter from './routes/audit';
+import xdrRouter from './routes/xdr';
 import verifyXdrRouter from './routes/verify-xdr';
 import orgsRouter from './routes/orgs';
 import createMaintainersRouter from './routes/maintainers';
@@ -112,6 +115,21 @@ export function createApp(options: AppOptions = {}): express.Application {
     genReqId: (req) => (req as Request).correlationId,
   }));
 
+  /** 15 requests per minute per IP, applied only to /api/verify-xdr */
+  const verifyXdrLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    store: options.verifyXdrStore ?? new MemoryStore(),
+    message: { error: 'Too many requests, please try again later.' },
+  });
+
+  // Rate limit applied first, then a tighter body parser (64 KB cap) for the
+  // CPU-intensive XDR verification endpoint.
+  app.use('/api/verify-xdr', verifyXdrLimiter);
+  app.use('/api/verify-xdr', express.json({ limit: '64kb' }));
+
   // JSON parser middleware
   app.use(express.json());
   app.use(express.static('public'));
@@ -136,31 +154,16 @@ export function createApp(options: AppOptions = {}): express.Application {
   app.use('/api/api-keys', apiKeysRouter);
   app.use('/api/transactions', walletLimiter, transactionsRouter);
   app.use('/api/events', eventsRouter);
-  app.use('/api/verify-xdr', verifyXdrRouter);
+  app.use('/api/verify-xdr', xdrRouter);
   app.use('/verify-xdr', verifyXdrRouter);
   app.use('/api/v1/leaderboard', leaderboardRouter);
   app.use('/api/v1/audit', auditRouter);
+  app.use('/api/v1/audit', auditVerificationRouter);
   app.use('/webhooks', webhooksRouter);
   app.use('/', orgsRouter);
   app.use('/', createMaintainersRouter());
 
   app.use(errorHandler);
-
-  /** 15 requests per minute per IP, applied only to /api/verify-xdr */
-  const verifyXdrLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 15,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    store: options.verifyXdrStore ?? new MemoryStore(),
-    message: { error: 'Too many requests, please try again later.' },
-  });
-
-  // Rate limit applied first, then a tighter body parser (64 KB cap) for the
-  // CPU-intensive XDR verification endpoint.
-  app.use('/api/verify-xdr', verifyXdrLimiter);
-  app.use('/api/verify-xdr', express.json({ limit: '64kb' }));
-  app.use('/api/verify-xdr', xdrRouter);
 
   return app;
 }

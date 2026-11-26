@@ -53,7 +53,6 @@ async function getDefaultClient(): Promise<RedisClient> {
   // Dynamic import avoids a hard startup failure when ioredis is absent in
   // test environments that inject their own client.
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error — ioredis is a production runtime dependency; not declared in devDependencies
   const { Redis } = await import('ioredis') as { Redis: new (url: string) => RedisClient };
   const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
   const client: RedisClient = new Redis(url);

@@ -36,7 +36,7 @@ function makeParsed(overrides: { topics?: Array<Record<string, unknown>>; data?:
       { type: "symbol", value: "apply" },
       { type: "address", value: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN" },
     ],
-    data: overrides.data ?? {
+    data: overrides.data !== undefined ? overrides.data : {
       type: "map",
       value: [
         { key: { type: "symbol", value: "org_id" }, val: { type: "symbol", value: "org_stellar" } },

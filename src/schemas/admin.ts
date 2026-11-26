@@ -16,12 +16,12 @@ export type AddMaintainerInput = z.infer<typeof addMaintainerSchema>;
  */
 export const adminCapUpdateSchema = z.object({
   global_cap: z
-    .number({ error: 'global_cap must be a number' })
+    .number({ invalid_type_error: 'global_cap must be a number' })
     .int('global_cap must be an integer')
     .min(1, 'global_cap must be at least 1')
     .max(100, 'global_cap must be at most 100'),
   per_org_cap: z
-    .number({ error: 'per_org_cap must be a number' })
+    .number({ invalid_type_error: 'per_org_cap must be a number' })
     .int('per_org_cap must be an integer')
     .min(1, 'per_org_cap must be at least 1')
     .max(20, 'per_org_cap must be at most 20'),

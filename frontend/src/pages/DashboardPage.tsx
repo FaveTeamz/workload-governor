@@ -432,11 +432,6 @@ export function DashboardPage({ apiBase = '/api' }: DashboardPageProps) {
         )}
       </section>
 
-      {/* Withdraw confirmation modal */}
-      <WithdrawConfirmModal
-        target={withdraw.pendingTarget}
-        loading={withdraw.loading}
-        onConfirm={withdraw.handleConfirm}
       {/* Lazy-loaded: WithdrawConfirmModal chunk is only fetched when a
           withdrawal confirmation is needed, keeping the initial bundle small. */}
       <Suspense fallback={null}>

@@ -441,8 +441,8 @@ describe("apiKeyAuth Middleware Edge Cases (#1287)", () => {
 
       expect(timingSafeSpy).toHaveBeenCalled();
       const [bufA, bufB] = timingSafeSpy.mock.calls[0];
-      expect(bufA.length).toBe(32);
-      expect(bufB.length).toBe(32);
+      expect(bufA.byteLength).toBe(32);
+      expect(bufB.byteLength).toBe(32);
     });
 
     it("exhibits uniform execution time across different mismatch byte positions", () => {

@@ -71,6 +71,14 @@ export function errorHandler(
     return;
   }
 
+  if ('type' in err && err.type === 'entity.too.large') {
+    res.status(413).json({
+      error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds the allowed size' },
+      correlationId,
+    } satisfies ApiErrorResponse);
+    return;
+  }
+
   if (err instanceof ValidationError) {
     res.status(400).json({
       error: { code: 'VALIDATION_ERROR', message: err.message, details: err.details },

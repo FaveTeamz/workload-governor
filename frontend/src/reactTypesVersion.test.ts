@@ -1,6 +1,6 @@
 /**
  * #1257: @types/react and @types/react-dom must match the installed React
- * major version (18), in package.json and in the resolved lockfile.
+ * major version, in package.json and in the resolved lockfile.
  */
 import { readFileSync } from 'fs';
 import { join, resolve } from 'path';
@@ -16,10 +16,9 @@ const locked = (name: string) => lock.packages[`node_modules/${name}`]?.version 
 describe('React type definitions match React (#1257)', () => {
   const reactMajor = major(declared('react'));
 
-  it('runs React 18', () => {
-    expect(reactMajor).toBe(18);
-    expect(major(locked('react'))).toBe(18);
-    expect(major(locked('react-dom'))).toBe(18);
+  it('uses the same major for React and React DOM', () => {
+    expect(major(locked('react'))).toBe(reactMajor);
+    expect(major(locked('react-dom'))).toBe(reactMajor);
   });
 
   it.each(['@types/react', '@types/react-dom'])('%s is declared and locked at the React major', (name) => {

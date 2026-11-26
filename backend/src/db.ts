@@ -21,7 +21,7 @@
 import pg, { PoolClient } from "pg";
 import Redis from "ioredis";
 import logger from "./logger.js";
-import { getRequestId } from "./tracing.js";
+import { getRequestId } from "./requestContext.js";
 
 const { Pool } = pg;
 

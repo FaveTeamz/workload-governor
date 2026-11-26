@@ -2,7 +2,7 @@
 # Image: ghcr.io/FaveTeamz/workload-governor-frontend:{sha} | :latest
 
 # ── Build arguments ───────────────────────────────────────────────────────────
-ARG NODE_VERSION=20
+ARG NODE_VERSION=22
 ARG PORT=3000
 
 # ── Stage 1: deps ────────────────────────────────────────────────────────────

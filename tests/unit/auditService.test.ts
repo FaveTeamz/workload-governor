@@ -26,7 +26,7 @@ import {
   buildHashInput,
   AuditService,
   AuditEntry,
-} from '../../src/services/auditService';
+} from '../../src/services/sealedAuditService';
 
 // ─── In-memory DB mock ────────────────────────────────────────────────────────
 
