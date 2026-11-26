@@ -10,6 +10,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ## [Unreleased]
 
 ### Fixed
+- Stabilize Button snapshots and restrict Chromatic to Storybook inputs. (#1275)
 - Validate contract event topics and data against the XDR ABI before indexing, and preserve rejected events in `indexer_quarantine` for inspection. (#1030)
 
 ### Added
