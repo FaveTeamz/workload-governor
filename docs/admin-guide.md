@@ -4,6 +4,13 @@
 
 The Workload Governor contract manages issue assignments and applications for contributors. This guide covers administration tasks including TTL (Time-To-Live) management, admin modes, and error handling.
 
+## Initialization
+
+Initialize a newly deployed contract atomically with contract creation. The
+admin address must authorize initialization, and a second initialization
+attempt always fails with `AlreadyInitialized`. After a successful call,
+`ContractInitialized` is emitted with the admin address.
+
 ---
 
 ## Admin Transfer
