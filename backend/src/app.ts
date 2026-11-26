@@ -25,6 +25,7 @@ import logger from "./logger.js";
 
 export function createApp(): express.Application {
   const app = express();
+  app.set("trust proxy", 1);
 
   // X-Ray segment middleware — must be first so all downstream handlers inherit
   // the active segment context. No-op when XRAY_ENABLED=false.
@@ -44,10 +45,27 @@ export function createApp(): express.Application {
         objectSrc: ["'none'"],
       },
     },
+    hsts: { maxAge: 31_536_000, includeSubDomains: true, preload: true },
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     xContentTypeOptions: true,
     xFrameOptions: { action: "deny" },
   }));
+
+  if (process.env.NODE_ENV === "production") {
+    app.use((req, res, next) => {
+      if (req.secure) {
+        next();
+        return;
+      }
+      const host = req.get("host");
+      if (!host || !/^(?:[a-z0-9.-]+|\[[a-f0-9:]+\])(?::[0-9]+)?$/i.test(host)) {
+        res.status(400).json({ error: "Invalid Host header" });
+        return;
+      }
+      logger.warn({ "x-forwarded-proto": "http", path: req.path }, "Redirecting plaintext request");
+      res.redirect(301, `https://${host}${req.originalUrl}`);
+    });
+  }
 
   app.use(express.json());
 
