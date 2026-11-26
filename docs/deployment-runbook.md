@@ -63,6 +63,35 @@ Minimum recommended balance: **5 XLM** on top of the base reserve.
 
 ---
 
+## Atomic Initialization Requirement
+
+Creation and first initialization must be performed in a single Stellar
+transaction envelope. Never deploy the contract instance, publish the contract
+ID, and leave it uninitialized while waiting for a separate transaction.
+
+The deployer must sign the initialization, and the supplied admin address must
+sign its own authorization as well. `WorkloadGovernor::initialize` rejects a
+second initialization and publishes the `ContractInitialized` event after
+successfully storing the admin.
+
+Example flow:
+
+```bash
+stellar contract deploy \
+  --wasm target/wasm32v1-none/release/workload_governor.optimized.wasm \
+  --network mainnet \
+  --source <DEPLOYER_ACCOUNT> \
+  -- \
+  --admin <ADMIN_ADDRESS>
+```
+
+If the CLI or automation layer does not support constructor arguments directly,
+build and sign the deploy operation and `initialize` invocation into the same
+`TransactionEnvelope` before submission. Do not submit them as separate
+transactions.
+
+---
+
 ## Step 3 — Deploy the Contract and Capture the Contract ID
 
 ```bash

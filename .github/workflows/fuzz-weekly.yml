@@ -44,7 +44,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload fuzz artifacts (crashes / timeouts)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-weekly-artifacts-${{ github.run_id }}
           path: |
@@ -121,7 +121,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
