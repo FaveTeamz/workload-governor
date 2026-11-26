@@ -4,17 +4,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --color-bg: #0f1117;
-  --color-surface: #1c1f2b;
-  --color-border: #2e3347;
-  --color-primary: #6c8eff;
-  --color-primary-dark: #4a6de0;
-  --color-complete: #22c55e;
-  --color-revoke: #dc2626;   /* AA-compliant: #dc2626 on dark bg = 5.4:1 (was #ef4444 = 4.3:1 ❌) */
-  --color-text: #e2e8f0;
-  --color-muted: #a8b5c8;   /* raised from #94a3b8: 4.4:1 ❌ on surface → 5.6:1 ✅ */
-  --color-focus: #facc15;
-  --radius: 6px;
   font-family: system-ui, sans-serif;
   color: var(--color-text);
   background: var(--color-bg);
@@ -296,15 +285,15 @@ a, button, input, select, textarea {
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 /* btn-sm keeps compact visual padding but padding + min-height = 44px */
 .btn-sm { padding: 0 12px; font-size: 0.8125rem; min-height: 44px; }
-.btn-primary { background: var(--color-primary); color: #fff; }
+.btn-primary { background: var(--color-primary); color: var(--color-text-on-fill); }
 .btn-primary:hover:not(:disabled) { background: var(--color-primary-dark); }
 .btn-secondary { background: transparent; color: var(--color-primary); border: 1.5px solid var(--color-primary); }
-.btn-secondary:hover:not(:disabled) { background: var(--color-primary); color: #fff; }
+.btn-secondary:hover:not(:disabled) { background: var(--color-primary); color: var(--color-text-on-fill); }
 .btn-ghost { background: transparent; color: var(--color-muted); }
 .btn-ghost:hover:not(:disabled) { color: var(--color-text); }
-.btn-complete { background: var(--color-complete); color: #fff; }
+.btn-complete { background: var(--color-complete); color: var(--color-text-on-fill); }
 .btn-complete:hover:not(:disabled) { opacity: .85; }
-.btn-revoke { background: var(--color-revoke); color: #fff; }
+.btn-revoke { background: var(--color-revoke); color: var(--color-text-on-fill); }
 .btn-revoke:hover:not(:disabled) { opacity: .85; }
 .get-started { margin-left: auto; }
 

@@ -42,14 +42,23 @@ export function DesignSystemPage() {
   }, []);
 
   const colorTokens = useMemo<TokenEntry[]>(() => {
-    return Object.entries(tokens.color as Record<string, Record<string, string>>).flatMap(([group, values]) =>
-      Object.entries(values).map(([name, value]) => ({
+    const { primary, secondary, accent, success, warning, error, semantic } = tokens.color;
+    const scales = { primary, secondary, accent, success, warning, error };
+    const palette = Object.entries(scales).flatMap(([group, values]) =>
+      Object.entries(values).map(([name, token]) => ({
         name: formatTokenName('color', `${group}.${name}`),
         cssVar: `--color-${group}-${name}`,
-        value,
+        value: token.$value.hex,
         description: `${group} ${name}`,
       })),
     );
+    const semanticTokens = Object.entries(semantic.light).flatMap(([group, values]) =>
+      Object.entries(values).map(([name]) => {
+        const cssVar = `--color-${group}-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+        return { name: `color.semantic.${group}.${name}`, cssVar, value: `var(${cssVar})`, description: `${group} ${name}` };
+      }),
+    );
+    return [...palette, ...semanticTokens];
   }, []);
 
   const spacingTokens = useMemo<TokenEntry[]>(() => {

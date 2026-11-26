@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { NavBar } from "./components/NavBar";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { OnboardingWizard, GetStartedButton } from "./components/OnboardingWizard";
 import { MaintainerPanel } from "./components/MaintainerPanel";
 import type { Application, Assignment } from "./components/MaintainerPanel";
@@ -148,6 +149,7 @@ export default function App() {
               <span className="app-logo" aria-hidden="true">⚙</span>
               <h1>WorkloadGovernor</h1>
               <GetStartedButton />
+              <ThemeToggle />
             </header>
 
             {/* Open issues — optimistic apply */}
