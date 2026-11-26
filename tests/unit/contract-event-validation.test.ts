@@ -48,6 +48,8 @@ describe('Contract event ABI validation (#1030)', () => {
     ['mig_done', [uint(3)]], ['ms_set', [uint(2), uint(3)]],
     ['cap_prop', [uint(1), uint(5)]], ['cap_vote', [uint(1), xdr.ScVal.scvBool(true)]],
     ['cap_exec', [uint(1), uint(5)]], ['adm_act', [uint(1)]],
+    ['app_ttl', [org, uint(42), xdr.ScVal.scvU64(xdr.Uint64.fromString('1700000000'))]],
+    ['app_ttl_cfg', [uint(100), uint(500)]],
   ];
 
   it.each(layouts)('accepts the exact %s ABI tuple', (name, data) => {

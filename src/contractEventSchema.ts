@@ -1,6 +1,6 @@
 import { scValToNative, xdr } from '@stellar/stellar-sdk';
 
-type FieldType = 'scvSymbol' | 'scvAddress' | 'scvU32' | 'scvBool';
+type FieldType = 'scvSymbol' | 'scvAddress' | 'scvU32' | 'scvU64' | 'scvBool';
 
 /** Event ABI emitted by src/events.rs. Keep exact tuple lengths and XDR types. */
 const EVENT_DATA_ABI = {
@@ -9,6 +9,8 @@ const EVENT_DATA_ABI = {
   maint_dreg: ['scvAddress', 'scvSymbol'],
   applied: ['scvSymbol', 'scvU32'],
   withdrew: ['scvSymbol', 'scvU32'],
+  app_ttl: ['scvSymbol', 'scvU32', 'scvU64'],
+  app_ttl_cfg: ['scvU32', 'scvU32'],
   assigned: ['scvAddress', 'scvSymbol', 'scvU32'],
   completed: ['scvAddress', 'scvSymbol', 'scvU32'],
   revoked: ['scvAddress', 'scvSymbol', 'scvU32'],
