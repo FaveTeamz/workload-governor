@@ -12,7 +12,7 @@ import { IssueCard } from "./IssueCard";
 import { AssignmentCard } from "./AssignmentCard";
 import { Gauge } from "./Gauge";
 import { WorkloadGauge } from "./WorkloadGauge";
-import { EventHistoryTable, type EventRow } from "./EventHistoryTable";
+import { EventHistoryTable, type ContractEvent } from "./EventHistoryTable";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -190,45 +190,50 @@ describe("WorkloadGauge accessibility", () => {
 
 // ─── EventHistoryTable ────────────────────────────────────────────────────────
 
-const SAMPLE_EVENTS: EventRow[] = [
+const SAMPLE_EVENTS: ContractEvent[] = [
   {
     id: "1",
-    eventType: "applied",
-    org: "stellar-org",
-    issueId: "42",
+    event_type: "application",
+    org_id: "stellar-org",
+    issue_id: "42",
     contributor: "GBXXX1ABCDEFGHIJKLMNO12345",
+    tx_hash: "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56abcd",
     timestamp: "2026-06-01T10:00:00Z",
   },
   {
     id: "2",
-    eventType: "assigned",
-    org: "stellar-org",
-    issueId: "42",
+    event_type: "assignment",
+    org_id: "stellar-org",
+    issue_id: "42",
     contributor: "GCYYY2PQRSTUVWXYZABCDE67890",
+    tx_hash: "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56abcd",
     timestamp: "2026-06-02T11:30:00Z",
   },
   {
     id: "3",
-    eventType: "completed",
-    org: "meridian-dao",
-    issueId: "17",
+    event_type: "completion",
+    org_id: "meridian-dao",
+    issue_id: "17",
     contributor: "GAZZZ3FGHIJKLMNOPQRST11111",
+    tx_hash: "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56abcd",
     timestamp: "2026-06-03T09:00:00Z",
   },
   {
     id: "4",
-    eventType: "revoked",
-    org: "soroban-labs",
-    issueId: "55",
+    event_type: "revocation",
+    org_id: "soroban-labs",
+    issue_id: "55",
     contributor: "GDWWW4LMNOPQRSTUVWXYZ22222",
+    tx_hash: "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56abcd",
     timestamp: "2026-06-04T14:00:00Z",
   },
   {
     id: "5",
-    eventType: "withdrawn",
-    org: "meridian-dao",
-    issueId: "20",
+    event_type: "withdrawn",
+    org_id: "meridian-dao",
+    issue_id: "20",
     contributor: "GBXXX1ABCDEFGHIJKLMNO12345",
+    tx_hash: "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56abcd",
     timestamp: "2026-06-05T16:00:00Z",
   },
 ];

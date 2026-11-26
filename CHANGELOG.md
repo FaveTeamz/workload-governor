@@ -14,6 +14,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 - Enable sccache for contract compilation and trigger frontend CI for root shared configuration changes. (#1290, #1291)
 - Cancel obsolete pull-request workflow runs without cancelling runs on `main`, and validate source-change changelog entries. (#1297, #1298)
 - Rename Helm chart helpers and defaults to `workload-governor` for consistent Kubernetes resource names. (#1299)
+- Display event history as labeled cards on narrow screens and allow copying full transaction hashes and addresses. (#1271)
 
 ### Added
 - Add an animated contributor progress ring for weekly completions and daily streak milestones. (#1274)
