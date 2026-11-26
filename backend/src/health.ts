@@ -1,5 +1,5 @@
 /**
- * health.ts — Health check endpoint handler (#309, #862)
+ * health.ts — Health check endpoint handler (#309, #862, #1232)
  *
  * GET /api/health
  *
@@ -17,18 +17,21 @@
  *   }
  *
  * HTTP status:
- *   200 — all dependencies healthy
+ *   200 — all dependencies healthy or only non-critical deps (Redis) degraded
  *   503 — any critical dependency (DB or Soroban RPC) is unhealthy or
  *          DB latency exceeds 2000ms (degraded)
+ *
+ * Redis is treated as a non-fatal dependency (#1232): when Redis is
+ * reconnecting the overall status is "degraded" (HTTP 200) instead of 503,
+ * so Kubernetes liveness probes do not kill pods during transient cache blips.
  *
  * Each check has a 2-second timeout. The handler itself resolves within ~3s.
  */
 
 import type { Request, Response } from "express";
-import pool from "./db.js";
+import pool, { redisClient } from "./db.js";
 import { getLatestLedger } from "./soroban.js";
 import logger from "./logger.js";
-import Redis from "ioredis";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,23 +60,7 @@ interface HealthResponse {
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 const HORIZON_URL  = process.env.HORIZON_URL  ?? "https://horizon-testnet.stellar.org";
-const REDIS_URL    = process.env.REDIS_URL    ?? "redis://localhost:6379";
 const CHECK_TIMEOUT_MS = 2_000;
-
-// Lazy Redis client — only created once, reused across requests
-let redisClient: Redis | undefined;
-
-function getRedisClient(): Redis {
-  if (!redisClient) {
-    redisClient = new Redis(REDIS_URL, {
-      connectTimeout: CHECK_TIMEOUT_MS,
-      commandTimeout: CHECK_TIMEOUT_MS,
-      lazyConnect:    true,
-      maxRetriesPerRequest: 0,
-    });
-  }
-  return redisClient;
-}
 
 // ─── Individual checks ────────────────────────────────────────────────────────
 
@@ -130,20 +117,24 @@ async function checkDatabase(): Promise<DependencyResult> {
   return { name: "postgres", status: "healthy", latency_ms, pool: poolStats };
 }
 
-/** Check Redis by sending PING. */
+/** Check Redis by sending PING.
+ *
+ * Redis is a non-fatal dependency (#1232): a failed ping returns "degraded"
+ * rather than "unhealthy" so the overall health response stays HTTP 200 when
+ * PostgreSQL is healthy, preventing unnecessary Kubernetes pod restarts during
+ * transient cache blips or ElastiCache failovers.
+ */
 async function checkRedis(): Promise<DependencyResult> {
   const { result, latency_ms, error } = await withTimeout("redis", async () => {
-    const client = getRedisClient();
-    await client.connect().catch(() => {/* already connected */});
-    const pong = await client.ping();
+    const pong = await redisClient.ping();
     return pong === "PONG";
   });
 
   if (result && !error) {
     return { name: "redis", status: "healthy", latency_ms };
   }
-  logger.warn({ error }, "Health check: redis unhealthy");
-  return { name: "redis", status: "unhealthy", latency_ms };
+  logger.warn({ error }, "Health check: redis unavailable — reporting degraded (non-fatal)");
+  return { name: "redis", status: "degraded", latency_ms };
 }
 
 /** Check Soroban RPC by calling getLatestLedger. */
@@ -194,7 +185,10 @@ async function checkGitHub(): Promise<DependencyResult> {
   return { name: "github", status: "unhealthy", latency_ms };
 }
 
-// ─── Critical dependency names (503 if any is unhealthy) ─────────────────────
+// ─── Critical dependency names (503 if any is unhealthy or degraded) ─────────
+// Redis is intentionally excluded: it is non-fatal (#1232). A reconnecting
+// Redis raises the overall status to "degraded" but keeps HTTP 200 so that
+// Kubernetes liveness probes do not restart pods during transient cache blips.
 
 const CRITICAL_DEPS = new Set(["postgres", "soroban_rpc"]);
 
