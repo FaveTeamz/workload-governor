@@ -1080,6 +1080,86 @@ fn test_complete_assignment_cross_org_maintainer_rejected() {
 }
 
 // ---------------------------------------------------------------------------
+// UNIT TESTS — #1217: assign_issue duplicate assignment validation
+// ---------------------------------------------------------------------------
+
+/// Attempting to assign the same issue to the same contributor a second time
+/// must fail with AlreadyAssigned (error code 11).
+///
+/// After assign_issue consumes the application entry, we re-apply and attempt
+/// to assign again so that the has_assignment guard at lib.rs:283 is reached.
+#[test]
+fn test_assign_issue_duplicate_same_contributor_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("duporg");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // First assign succeeds
+    t.client.apply_for_issue(&contributor, &org, &101u32);
+    t.client.assign_issue(&maintainer, &contributor, &org, &101u32);
+    assert!(t.client.is_assigned(&contributor, &org, &101u32));
+
+    // Re-apply so ApplicationNotFound is not triggered before AlreadyAssigned
+    t.client.apply_for_issue(&contributor, &org, &101u32);
+
+    // Second assign must be rejected with AlreadyAssigned
+    let result = t
+        .client
+        .try_assign_issue(&maintainer, &contributor, &org, &101u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AlreadyAssigned)),
+        "assigning the same issue twice must return AlreadyAssigned (error code 11)"
+    );
+
+    // Assignment count must still be 1 (not incremented by the failed call)
+    assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
+}
+
+/// Attempting to assign an already-assigned issue to a different contributor
+/// must also fail with AlreadyAssigned, since the issue record is keyed by
+/// (org_id, issue_id) and cannot have two assignees simultaneously.
+#[test]
+fn test_assign_issue_duplicate_different_contributor_fails() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor_a = Address::generate(&t.env);
+    let contributor_b = Address::generate(&t.env);
+    let org = t.org("duporg2");
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+
+    // contributor_a is assigned issue 101
+    t.client.apply_for_issue(&contributor_a, &org, &101u32);
+    t.client.assign_issue(&maintainer, &contributor_a, &org, &101u32);
+
+    // contributor_b applies for the same issue_id
+    t.client.apply_for_issue(&contributor_b, &org, &101u32);
+
+    // Assigning 101 to contributor_b while contributor_a holds it must fail
+    let result = t
+        .client
+        .try_assign_issue(&maintainer, &contributor_b, &org, &101u32);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::AlreadyAssigned)),
+        "assigning a taken issue to a second contributor must return AlreadyAssigned"
+    );
+
+    // contributor_a still holds the assignment
+    assert!(t.client.is_assigned(&contributor_a, &org, &101u32));
+    // contributor_b was not assigned
+    assert!(!t.client.is_assigned(&contributor_b, &org, &101u32));
+}
+
+// ---------------------------------------------------------------------------
 // PROPERTY-BASED TESTS
 // ---------------------------------------------------------------------------
 
