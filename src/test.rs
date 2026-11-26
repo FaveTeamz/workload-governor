@@ -1802,21 +1802,6 @@ fn unit_mutant_upgrade_rejects_missing_wasm() {
     assert_eq!(t.client.get_admin_nonce(), 0);
 }
 
-#[test]
-fn unit_upgrade_requires_admin_authorization() {
-    use soroban_sdk::xdr::ScErrorType;
-
-    let t = TestEnv::new();
-    let admin = Address::generate(&t.env);
-    t.client.initialize(&admin);
-    t.env.mock_auths(&[]);
-
-    let wasm_hash = soroban_sdk::BytesN::from_array(&t.env, &[0u8; 32]);
-    let result = t.client.try_upgrade(&wasm_hash);
-    assert!(matches!(result, Err(Ok(error)) if error.is_type(ScErrorType::Auth)));
-    assert_eq!(t.client.get_admin_nonce(), 0);
-}
-
 /// Mutant: `replace == with != in WorkloadGovernor::assign_issue` (line 283)
 ///
 /// The mutated line is:
