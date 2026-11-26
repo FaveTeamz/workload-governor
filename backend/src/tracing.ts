@@ -2,6 +2,8 @@
  * tracing.ts — AWS X-Ray and OpenTelemetry distributed tracing integration
  *
  * Provides:
+ *   - OpenTelemetry HTTP, Express, and PostgreSQL spans exported over OTLP
+ *   - AWS X-Ray and W3C trace-context propagation
  *   - Configured aws-xray-sdk-core instance
  *   - Intelligent sampling (5% production ratio, 100% errors, 0% health probes)
  *   - xrayMiddleware()   — Express middleware: opens/closes a segment per request
@@ -38,6 +40,13 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { randomUUID } from "crypto";
 import AWSXRay from "aws-xray-sdk-core";
+import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "@opentelemetry/core";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";
+import { AWSXRayPropagator } from "@opentelemetry/propagator-aws-xray";
+import { NodeSDK } from "@opentelemetry/sdk-node";
 import type { Request, Response, NextFunction } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
 import { Gauge, Counter, register } from "prom-client";
@@ -118,6 +127,44 @@ export function correlationMiddleware() {
 
 const XRAY_ENABLED = process.env.XRAY_ENABLED !== "false";
 const SERVICE_NAME = process.env.SERVICE_NAME ?? "workload-governor-backend";
+const OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+  ?? `${(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318").replace(/\/$/, "")}/v1/traces`;
+
+const otelSdk = new NodeSDK({
+  serviceName: SERVICE_NAME,
+  traceExporter: new OTLPTraceExporter({ url: OTLP_ENDPOINT }),
+  textMapPropagator: new CompositePropagator({
+    propagators: [
+      new AWSXRayPropagator(),
+      new W3CTraceContextPropagator(),
+      new W3CBaggagePropagator(),
+    ],
+  }),
+  instrumentations: [
+    new HttpInstrumentation(),
+    new ExpressInstrumentation(),
+    new PgInstrumentation({
+      // Keep parameter values out of span attributes; only the parameterized SQL is recorded.
+      enhancedDatabaseReporting: false,
+      requestHook: (span, queryInfo) => {
+        span.setAttribute("db.system", "postgresql");
+        if (queryInfo.connection.database) {
+          span.setAttribute("db.name", queryInfo.connection.database);
+        }
+        span.setAttribute("db.statement", queryInfo.query.text);
+      },
+      responseHook: (span, responseInfo) => {
+        span.setAttribute("db.row_count", responseInfo.data.rowCount ?? 0);
+      },
+    }),
+  ],
+});
+
+otelSdk.start();
+
+export function shutdownTracing(): Promise<void> {
+  return otelSdk.shutdown();
+}
 
 if (XRAY_ENABLED) {
   // Allow the SDK to capture all outbound HTTP calls made via Node's http/https.

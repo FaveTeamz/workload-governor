@@ -8,17 +8,19 @@
  *   - Scheduler for TTL extension + GitHub sync (#311, #312)
  *
  * Tracing:
+ *   - OpenTelemetry HTTP, Express, and PostgreSQL spans exported via OTLP
  *   - AWS X-Ray segment opened per request via xrayMiddleware (#634)
  *
  * Security:
  *   - CSP, X-Frame-Options and X-Content-Type-Options on every response (#1314)
  */
 
+// Register HTTP and Express instrumentation before loading Express.
+import { correlationMiddleware, shutdownTracing, xrayMiddleware } from "./tracing.js";
 import express from "express";
 import helmet from "helmet";
 import { healthHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
-import { correlationMiddleware, xrayMiddleware } from "./tracing.js";
 import logger, { pinoHttpMiddleware } from "./logger.js";
 import { adminAuth } from "./middleware/adminAuth.js";
 import adminRouter from "./routes/admin.js";
@@ -113,8 +115,13 @@ if (require.main === module) {
     logger.info({ signal }, "Shutdown signal received");
     scheduler.stop();
     server.close(() => {
-      logger.info("HTTP server closed");
-      process.exit(0);
+      void shutdownTracing().then(() => {
+        logger.info("HTTP server closed");
+        process.exit(0);
+      }).catch((err: unknown) => {
+        logger.error({ err }, "Failed to flush tracing data");
+        process.exit(1);
+      });
     });
     // Force exit after 10s if server doesn't close cleanly
     setTimeout(() => {
