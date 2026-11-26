@@ -19,6 +19,10 @@ import pool from "./db.js";
 import logger from "./logger.js";
 import { extendApplicationTtlBatch, type ApplicationRef } from "./soroban.js";
 import { runFullSync } from "./github.js";
+import {
+  contractMinApplicationRemainingLedgers,
+  contractApplicationTtlExtensionsTotal,
+} from "./tracing.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -124,6 +128,25 @@ export async function runTtlExtensionJob(): Promise<void> {
     // Success: reset consecutive failure counter
     consecutiveTtlExtensionFailures = 0;
 
+    // Inspect pending applications to determine and export lowest remaining ledger TTL
+    try {
+      const ttlStatsResult = await pool.query<{ min_remaining_seconds: number | null }>(
+        /* sql */ `
+        SELECT EXTRACT(EPOCH FROM (MIN(ttl_expires_at) - NOW())) AS min_remaining_seconds
+        FROM   active_applications
+        WHERE  status = 'pending'
+        `,
+      );
+      const minSeconds = ttlStatsResult.rows[0]?.min_remaining_seconds;
+      if (minSeconds !== null && minSeconds !== undefined) {
+        const remainingLedgers = Math.max(0, Math.floor(minSeconds * LEDGERS_PER_SECOND));
+        contractMinApplicationRemainingLedgers.set(remainingLedgers);
+        logger.debug({ minRemainingLedgers: remainingLedgers }, "Updated contract_min_application_remaining_ledgers");
+      }
+    } catch (metricErr) {
+      logger.warn({ err: metricErr }, "Failed to calculate lowest remaining application TTL gauge");
+    }
+
     if (applications.length === 0) {
       logger.info("TTL extension job: no expiring applications found");
       return;
@@ -140,6 +163,7 @@ export async function runTtlExtensionJob(): Promise<void> {
       try {
         await extendApplicationTtlBatch(batch);
         extendedCount += batch.length;
+        contractApplicationTtlExtensionsTotal.inc(batch.length);
         logger.debug(
           { batchIndex: i + 1, batchTotal: batches.length, batchSize: batch.length },
           "TTL batch submitted",

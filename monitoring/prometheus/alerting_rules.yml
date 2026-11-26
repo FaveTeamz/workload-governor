@@ -29,3 +29,14 @@ groups:
         annotations:
           summary: "P95 HTTP request latency exceeds 500 ms"
           description: "P95 request latency exceeded 500 ms for five minutes."
+
+  - name: workload-governor-contract
+    rules:
+      - alert: ApplicationTtlNearExpiration
+        expr: contract_min_application_remaining_ledgers < 2000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Application TTL near expiration"
+          description: "Minimum remaining application entry TTL is {{ $value }} ledgers (< 2000 ledgers / ~2.5 hours remaining). Extend TTL immediately to prevent state eviction."

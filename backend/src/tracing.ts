@@ -26,7 +26,27 @@
 import AWSXRay from "aws-xray-sdk-core";
 import type { Request, Response, NextFunction } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
+import { Gauge, Counter, register } from "prom-client";
 import logger from "./logger.js";
+
+// ─── Contract TTL & Application Metrics ───────────────────────────────────────
+
+export const contractMinApplicationRemainingLedgers = new Gauge({
+  name: "contract_min_application_remaining_ledgers",
+  help: "Minimum remaining TTL across all active pending applications",
+  registers: [register],
+});
+
+export const contractApplicationTtlExtensionsTotal = new Counter({
+  name: "contract_application_ttl_extensions_total",
+  help: "Total successful TTL extensions executed",
+  registers: [register],
+});
+
+export {
+  contractMinApplicationRemainingLedgers as contract_min_application_remaining_ledgers,
+  contractApplicationTtlExtensionsTotal as contract_application_ttl_extensions_total,
+};
 
 // ─── SDK configuration ────────────────────────────────────────────────────────
 
