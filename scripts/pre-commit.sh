@@ -6,6 +6,11 @@ set -euo pipefail
 
 echo "🔍 Running pre-commit validation checks..."
 
+if ! git diff --cached --quiet -- '*.rs'; then
+  echo "▶ Checking Rust formatting..."
+  cargo fmt -- --check
+fi
+
 # 1. Root and TypeScript lint
 echo "▶ Running ESLint..."
 npm run lint

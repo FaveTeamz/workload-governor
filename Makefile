@@ -3,7 +3,7 @@
 # Standard developer commands for smart contract, backend, and frontend.
 # Run 'make help' for a list of all documented targets.
 
-.PHONY: all setup build build-wasm build-all test test-contract test-backend \
+.PHONY: all setup hooks build build-wasm build-all test test-contract test-backend \
         test-frontend test-all lint-all dev fuzz-list fuzz-build fuzz-apply \
         fuzz-ci clean help
 
@@ -35,6 +35,9 @@ all: build test ## Build and test contract (default)
 # ---------------------------------------------------------------------------
 # Setup & Installation
 # ---------------------------------------------------------------------------
+
+hooks: ## Install local git pre-commit hooks
+	@node scripts/install-hooks.js
 
 setup: ## Install backend, frontend, and rust toolchain dependencies
 	@echo "==> Installing backend dependencies..."
