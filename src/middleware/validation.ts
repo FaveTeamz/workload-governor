@@ -13,7 +13,7 @@ export interface FieldError {
   message: string;
 }
 
-const ORG_ID_PATTERN = /^[a-z0-9_-]{2,32}$/;
+const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{1,31}$/;
 
 export function validateOrgIdParam(
   _req: Request,
@@ -25,7 +25,7 @@ export function validateOrgIdParam(
   if (!ORG_ID_PATTERN.test(value)) {
     next(new ValidationError('Invalid organization ID format', {
       field: name,
-      pattern: '^[a-z0-9_-]{2,32}$',
+      pattern: ORG_ID_PATTERN.source,
     }));
     return;
   }

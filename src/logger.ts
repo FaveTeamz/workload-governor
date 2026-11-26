@@ -14,7 +14,6 @@ const logger = pino({
     paths: ['req.headers.authorization', 'req.headers.cookie', 'body.secret'],
     censor: '[REDACTED]',
   },
-  },
   transport: {
     target: 'pino/file',
   },
