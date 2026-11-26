@@ -15,7 +15,7 @@
  */
 
 import { useState, useEffect, type ReactNode } from "react";
-import FadeInCard from "../../components/FadeInCard";
+import FadeInCard from "./FadeInCard";
 
 // ---------------------------------------------------------------------------
 // SkeletonLoader — handles 300 ms min display + aria-busy management
@@ -97,39 +97,7 @@ function SkeletonBlock({ width = "100%", height = "48px", className = "", border
   );
 }
 
-// ---------------------------------------------------------------------------
-// IssueCardSkeleton
-// ---------------------------------------------------------------------------
-
-/**
- * Skeleton placeholder matching the IssueCard layout:
- *   - Meta row: org chip + status chip
- *   - Title line
- *   - Action button
- */
-export function IssueCardSkeleton() {
-  return (
-    <article
-      className="issue-card issue-card--skeleton"
-      aria-hidden="true"
-    >
-      {/* Meta row */}
-      <div className="issue-card__meta">
-        <SkeletonLine width="80px" height="18px" />
-        <SkeletonLine width="64px" height="18px" />
-      </div>
-
-      {/* Title */}
-      <SkeletonLine width="75%" height="20px" className="issue-card__title-skeleton" />
-      <SkeletonLine width="50%" height="14px" className="issue-card__subtitle-skeleton" />
-
-      {/* Button */}
-      <div className="issue-card__actions">
-        <SkeletonBlock width="80px" height="32px" borderRadius="var(--radius)" />
-      </div>
-    </article>
-  );
-}
+export { IssueCardSkeleton } from "./IssueCardSkeleton";
 
 // ---------------------------------------------------------------------------
 // EventHistoryTableSkeleton

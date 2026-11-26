@@ -1,4 +1,5 @@
 import { useState } from "react";
+import "./IssueCardSkeleton.css";
 
 /** Issue status values */
 export type IssueStatus = "open" | "applied" | "assigned" | "completed";
@@ -65,7 +66,7 @@ export function IssueCard({ id, org, title, status, globalCapReached = false, on
   const applyDisabled = busy || globalCapReached;
 
   return (
-    <article className={`issue-card issue-card--${displayStatus}`} aria-label={`Issue: ${title}`}>
+    <article className={`issue-card issue-card-slot issue-card--${displayStatus}`} aria-label={`Issue: ${title}`}>
       <div className="issue-card__meta">
         <span className="issue-card__org" aria-label={`Organisation: ${org}`}>{org}</span>
         <span

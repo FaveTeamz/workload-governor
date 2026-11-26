@@ -1,0 +1,54 @@
+/* Reserve the same border-box height for loaded cards and placeholders. */
+.issue-card-slot {
+  box-sizing: border-box;
+  min-height: 188px;
+}
+
+.issue-card-slot.issue-card-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: var(--space-2, 8px);
+  pointer-events: none;
+}
+
+.issue-card-skeleton .skeleton-shimmer {
+  display: block;
+  background-color: var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.issue-card-skeleton__title {
+  width: 75%;
+  height: 24px;
+}
+
+.issue-card-skeleton__tags,
+.issue-card-skeleton__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.issue-card-skeleton__tags .skeleton-shimmer {
+  width: 56px;
+  height: 20px;
+  border-radius: var(--radius-full, 999px);
+}
+
+.issue-card-skeleton__footer {
+  margin-top: auto;
+  justify-content: space-between;
+}
+
+.issue-card-skeleton__metadata {
+  width: 30%;
+  height: 16px;
+}
+
+.issue-card-skeleton__action {
+  width: 90px;
+  height: 44px;
+}

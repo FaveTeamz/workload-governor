@@ -18,7 +18,7 @@ import {
 import type { Difficulty } from '../hooks/useOrgIssues';
 import type { IssueStatus } from '../hooks/useOrgIssues';
 import { useToast } from '../components/Toast';
-import { IssueCardSkeleton } from '../components/SkeletonScreens';
+import { IssueCardSkeleton } from '../components/IssueCardSkeleton';
 import { useTxModal } from '../hooks/useTxModal';
 
 /**
@@ -78,6 +78,7 @@ interface IssueRowProps {
   onWithdraw: (issueId: string) => void;
   busy: boolean;
   txHash: string | null;
+  revealWithSkeleton: boolean;
 }
 
 function IssueRow({
@@ -88,14 +89,16 @@ function IssueRow({
   onWithdraw,
   busy,
   txHash,
+  revealWithSkeleton,
 }: IssueRowProps) {
+  const [showSkeleton, setShowSkeleton] = useState(revealWithSkeleton);
   const showApply = issue.status === 'open';
   const showWithdraw = issue.status === 'applied';
   const isDisabled = !canApply || busy;
   const network = (import.meta.env.VITE_STELLAR_NETWORK ?? 'TESTNET').toLowerCase();
 
   return (
-    <div className="org-issue-row">
+    <div className="org-issue-row issue-card-slot">
       <div className="org-issue-row__info">
         <h3 className="org-issue-row__title">{issue.title}</h3>
         <div className="org-issue-row__meta">
@@ -165,12 +168,20 @@ function IssueRow({
           )}
         </div>
       </div>
+      {showSkeleton && (
+        <IssueCardSkeleton
+          className="org-issue-row org-issue-row__loading-overlay"
+          onAnimationEnd={(event) => {
+            if (event.target === event.currentTarget) setShowSkeleton(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function SkeletonRow() {
-  return <div className="org-issue-row org-issue-row--skeleton" aria-busy="true" />;
+  return <IssueCardSkeleton className="org-issue-row" />;
 }
 
 // ── OrgIssuesPage ─────────────────────────────────────────────────────────────
@@ -420,6 +431,11 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     }
   }
 
+  const revealedIssueIds = useRef(new Set<string>());
+  useEffect(() => {
+    revealedIssueIds.current = new Set(issues.map((issue) => issue.issue_id));
+  }, [issues]);
+
   const showCapBanner = !loading && wallet.publicKey && (globalCapReached || orgCapReached);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -579,6 +595,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
               onWithdraw={handleWithdraw}
               busy={busyIssue === issue.issue_id}
               txHash={busyIssue === issue.issue_id ? txHash : null}
+              revealWithSkeleton={!revealedIssueIds.current.has(issue.issue_id)}
             />
           ))}
 
@@ -590,7 +607,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
               aria-busy="true"
             >
               {Array.from({ length: SKELETON_COUNT }, (_, i) => (
-                <IssueCardSkeleton key={i} />
+                <SkeletonRow key={i} />
               ))}
             </div>
           )}
