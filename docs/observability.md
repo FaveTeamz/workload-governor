@@ -1,6 +1,30 @@
 # Observability
 
-This document describes the distributed tracing setup, X-Ray service map, and operational runbooks for the WorkloadGovernor backend.
+This document describes the distributed tracing setup, X-Ray service map, operational runbooks, and log privacy guidelines for the WorkloadGovernor backend.
+
+---
+
+## Log Privacy and Redaction
+
+Both backend loggers redact selected structured fields before logs are sent to storage.
+
+### Redacted Fields and Paths
+
+Pino replaces the configured fields with `[REDACTED]`:
+
+- `req.headers.authorization` — Bearer tokens and HTTP Authorization headers
+- `req.headers["x-api-key"]` — API key authentication headers
+- `req.headers.cookie` — Session cookies and auth state
+- `*.secretKey` — Secret cryptographic keys and seeds
+- `*.privateKey` — Ed25519 or RSA private keys
+- `*.apiKey` — Service or contributor API keys
+- `*.token` — Auth, session, and webhook tokens
+- `*.email` — Contributor email addresses and PII
+- `*.password` — Passwords and shared secrets
+
+The field rules apply in every environment. Sensitive values embedded in log messages or stored deeper than the configured paths require redaction at the call site.
+
+---
 
 ---
 
