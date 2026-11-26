@@ -44,7 +44,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -121,7 +121,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Restore cargo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
