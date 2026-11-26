@@ -17,7 +17,7 @@ router.get('/', async (req: Request, res: Response) => {
 
   const limitNum = Math.min(Math.max(parseInt((limit as string) ?? '20', 10) || 20, 1), 100);
 
-  const conditions: string[] = [];
+  const conditions = ["event_type = 'completed'"];
   const params: unknown[] = [];
 
   // Filter by org if provided
@@ -33,8 +33,6 @@ router.get('/', async (req: Request, res: Response) => {
     conditions.push(`timestamp >= NOW() - INTERVAL '30 days'`);
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
   try {
     const result = await pool.query(
       `SELECT
@@ -42,8 +40,7 @@ router.get('/', async (req: Request, res: Response) => {
          org_id,
          COUNT(*) AS completed_count
        FROM contract_events
-       ${where}
-       ${org_id ? '' : 'AND event_type = \'completed\''}
+       WHERE ${conditions.join(' AND ')}
        GROUP BY contributor, org_id
        ORDER BY completed_count DESC
        LIMIT $${params.length + 1}`,

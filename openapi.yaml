@@ -991,7 +991,8 @@ components:
           type: string
           description: Organization ID
         completed_count:
-          type: integer
+          type: string
+          pattern: '^[0-9]+$'
           description: Number of completed assignments in the given timeframe
       required:
         - contributor

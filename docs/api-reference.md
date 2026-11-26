@@ -1492,32 +1492,35 @@ List contract events with pagination and filtering.
 
 #### `GET /api/v1/leaderboard`
 
-Contributor leaderboard ranked by completed assignments.
-
-**Query parameters**
+Returns contributors and organizations ranked by completed assignments.
+For community dashboards, use `org_id` to scope results to one organization.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `timeframe` | string | `all` | Time window for ranking (`week`, `month`, `all`) |
-| `limit` | integer | `20` | Number of contributors to return (`1`–`100`) |
-| `offset` | integer | `0` | Number of contributors to skip |
+| `timeframe` | string | `all` | Time window (`week`, `month`, `all`) |
+| `limit` | integer | `20` | Maximum number of rows (`1`–`100`) |
+| `org_id` | string | — | Optional organization filter |
 
 **Response `200`**
+
 ```json
 {
   "leaderboard": [
     {
-      "rank": 1,
       "contributor": "GA5W63S2GBKDV2GX2C5JJWDYYUO2WKZDPO7BAHNREUINNOAJCSOAK5EM",
-      "completed_assignments": 42,
-      "active_assignments": 2,
-      "total_applications": 50,
-      "organizations_count": 3
+      "org_id": "stellar-core",
+      "completed_count": "42"
     }
   ],
   "timeframe": "all",
-  "total": 1
+  "limit": 20
 }
+```
+
+`completed_count` is returned as a decimal string from PostgreSQL.
+
+```bash
+curl "${API_BASE_URL%/}/api/v1/leaderboard?timeframe=month&limit=10"
 ```
 
 **Errors:** `500`
