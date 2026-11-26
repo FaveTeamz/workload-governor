@@ -1,114 +1,153 @@
-# Security Policy
+# Security Runbook
 
-This document covers the SAST scanning setup, suppression policy, and how to
-handle security findings in WorkloadGovernor.
+This document covers transport-layer security controls enforced by the backend
+and the supporting infrastructure, with investigation steps for every related
+alert.
 
----
-
-## SAST Scanning (Semgrep)
-
-Every pull request runs a Semgrep static analysis scan via
-`.github/workflows/sast.yml`. The scan covers:
-
-| Rule pack | Languages | Focus areas |
-|---|---|---|
-| `p/rust` | Rust | Memory safety, unsafe usage, injection patterns |
-| `p/typescript` | TypeScript / JavaScript | Injection, prototype pollution, XSS |
-| `p/nodejs` | Node.js | Path traversal, SSRF, hardcoded secrets |
-| `.semgrep.yml` | TS/JS | Project-specific custom rules (see below) |
-
-### Severity levels
-
-| Severity | CI behaviour |
-|---|---|
-| `ERROR` | Fails CI — must be resolved or suppressed before merge |
-| `WARNING` | Reported as PR annotations — does not fail CI |
-
-### Viewing findings
-
-All findings are uploaded to the **GitHub Security tab** (Security → Code
-scanning alerts) as SARIF output. This includes both error and warning findings.
+For the smart-contract security audit (authentication checks, integer
+overflow, replay attack, storage key predictability) see
+[security-checklist.md](security-checklist.md).
 
 ---
 
-## Custom Rules
+## Transport security (#1318)
 
-The project-specific rules in `.semgrep.yml` cover:
+### Design
 
-| Rule ID | Severity | Description |
-|---|---|---|
-| `no-hardcoded-secrets-ts` | ERROR | Detects secret-like variable names assigned string literals |
-| `no-console-log-production` | WARNING | Flags `console.log` in non-test TypeScript files |
-| `no-sql-string-concat` | ERROR | Detects SQL queries built by string concatenation |
+The backend enforces two complementary layers of HTTPS enforcement:
 
-Test files, scripts, and the frontend are excluded from certain rules where
-appropriate — see `.semgrep.yml` for the full `paths.exclude` lists.
+**Layer 1 — ALB redirect rule (infrastructure)**  
+The Application Load Balancer (or Cloudflare) is configured with a redirect
+rule that returns HTTP 301 to any client that connects on port 80 before the
+request reaches the container.  This is the primary enforcement point.
 
----
-
-## Suppression Policy
-
-### When to suppress
-
-Suppress a finding only when **all three** conditions are met:
-
-1. The finding is a **confirmed false positive** — the code is safe by design
-   or context that Semgrep cannot infer statically.
-2. Fixing it would require a **larger refactor** that is out of scope for the
-   current PR, or the fix would introduce a regression.
-3. The suppression is **documented** with a reason, date, and ticket reference.
-
-Do **not** suppress findings to unblock a deadline without investigation.
-Do **not** suppress findings for convenience — fix them instead.
-
-### How to suppress
-
-**Option A — Inline (single occurrence):**
-
-Add `// nosemgrep: <rule-id>` on the line that triggers the finding:
+**Layer 2 — Application middleware (defence in depth)**  
+`src/app.ts` adds a second enforcement layer so that a misconfiguration of
+the ALB redirect rule can never silently expose traffic in plaintext:
 
 ```typescript
-const url = process.env.HORIZON_URL ?? "https://horizon-testnet.stellar.org"; // nosemgrep: typescript.lang.security.audit.hardcoded-credentials
+// src/app.ts (production only)
+app.set('trust proxy', 1);
+
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      return res.redirect(301, `https://${req.header('host')}${req.url}`);
+    }
+    next();
+  });
+}
 ```
 
-**Option B — Path-level (entire file or glob):**
+`app.set('trust proxy', 1)` instructs Express to read `X-Forwarded-Proto`
+from the first upstream proxy (the ALB), so `req.header('x-forwarded-proto')`
+reflects the original client protocol rather than the container-local TCP
+connection (which is always HTTP inside the VPC).
 
-Add an entry to the `suppressions` section of `.semgrep.yml`:
+**Layer 3 — HSTS header (browser preload)**  
+Helmet is configured with the browser preload list requirements:
 
-```yaml
-suppressions:
-  rule-id-here:
-    - path: src/some/file.ts
-      reason: >
-        Explain exactly why this is a false positive and why it is safe.
-      added: "YYYY-MM-DD"
-      ticket: "#<issue-number>"
+```typescript
+helmet({
+  hsts: {
+    maxAge: 31_536_000,      // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+})
 ```
 
-Path-level suppressions should be as narrow as possible — prefer a specific
-file path over a glob.
-
-### Reviewing suppressions
-
-All suppressions must be reviewed in the PR that introduces them. Reviewers
-should verify:
-
-- The reason accurately describes why the finding is a false positive.
-- The suppression scope (path/line) is as narrow as possible.
-- The ticket reference links to a tracking issue or PR discussion.
-
-Suppressions are audited quarterly. Stale suppressions (where the code has
-changed and the finding no longer applies) must be removed.
+The `Strict-Transport-Security` header instructs browsers to refuse to
+make plain-HTTP connections to this origin for the next 365 days, even
+before the ALB or application redirect fires.  With `preload: true` the
+domain can be submitted to the [HSTS preload list](https://hstspreload.org/)
+so the protection applies on first visit from any browser.
 
 ---
 
-## Reporting Security Vulnerabilities
+### HTTPS enforcement {#https-enforcement}
 
-Do **not** open a public GitHub issue for security vulnerabilities. Instead:
+**Alert:** `${service_name}-http-plaintext-bypass` (CloudWatch)
 
-1. Email the maintainers directly (see `CODEOWNERS` for contacts).
-2. Or use GitHub's private vulnerability reporting:
-   **Security → Report a vulnerability**.
+| Field | Value |
+|---|---|
+| Severity | **critical** — security event |
+| Threshold | ≥ 1 plain-HTTP request reaches the container in any 60-second window |
+| CloudWatch metric | `HttpPlaintextCount` in `${service_name}/Application` |
 
-We aim to acknowledge reports within 2 business days and publish a fix within
-30 days for critical issues.
+**What it means**  
+A plain-HTTP request bypassed the ALB redirect rule and reached the
+application container.  This should never happen in a correctly configured
+production deployment.
+
+**Investigation steps**
+
+1. Query the `${service_name}-http-plaintext-requests` Logs Insights saved
+   query to identify the source IPs and paths:
+   ```
+   fields @timestamp, correlationId, method, path, status
+   | filter headers["x-forwarded-proto"] = "http"
+   | sort @timestamp desc
+   | limit 50
+   ```
+2. Check the ALB listener rules in the AWS Console — verify that port 80 has
+   a redirect rule set to `HTTP 301` → `https://#{host}:443/#{path}?#{query}`.
+3. Check whether Cloudflare (if in use) is set to "Full (strict)" TLS mode,
+   not "Flexible" (which would cause Cloudflare→origin to use HTTP).
+4. Verify the ECS security group does not expose port 80 directly to the
+   internet, bypassing the ALB.
+5. If requests are from internal tooling (health checks, synthetic monitors),
+   update those tools to use HTTPS endpoints and confirm the alert resolves.
+
+**Escalation**  
+Treat any confirmed external plain-HTTP traffic as a security incident.
+Engage the security on-call and open a P1 incident ticket.
+
+---
+
+### Verifying HTTPS enforcement manually
+
+**Check HSTS header**
+```bash
+curl -sI https://<your-domain>/health | grep -i strict-transport
+# Expected:
+# strict-transport-security: max-age=31536000; includeSubDomains; preload
+```
+
+**Check HTTP→HTTPS redirect**
+```bash
+curl -sI -H "X-Forwarded-Proto: http" http://<your-domain>/health
+# Expected: HTTP/1.1 301 Moved Permanently
+# Location: https://<your-domain>/health
+```
+
+**Check redirect in production via the ALB**
+```bash
+curl -sI http://<alb-dns-name>/health
+# Expected: HTTP/1.1 301 Moved Permanently
+# Location: https://<your-domain>/health
+```
+
+---
+
+### Environment behaviour
+
+| Environment | HTTPS redirect middleware | HSTS header |
+|---|---|---|
+| `production` | ✅ Enabled — returns 301 for `X-Forwarded-Proto: http` | ✅ Always emitted by Helmet |
+| `staging` / `development` | ❌ Disabled — traffic may arrive over HTTP without redirect | ✅ Always emitted by Helmet |
+| `test` | ❌ Disabled | ✅ Always emitted by Helmet |
+
+The redirect middleware is intentionally off outside production so that
+local development and integration tests (which use HTTP) are not broken.
+Staging deployments should still sit behind an HTTPS terminator; the
+middleware is an additional safety net, not the primary control.
+
+---
+
+## Related documents
+
+- [Security checklist](security-checklist.md) — smart-contract audit
+- [Observability runbook](observability.md) — alert definitions
+- [Deployment runbook](deployment-runbook.md)
+- [Incident response runbook](runbooks/incident-response.md)
