@@ -46,7 +46,7 @@ pub(crate) fn emit_maintainer_registered(
 
 /// Emitted by `deregister_maintainer` (when implemented).
 ///
-/// topics: `(WG, symbol_short!("maint_dreg"), maintainer)`
+/// topics: `(WG, Symbol::new(env, "maint_dreg"), maintainer)`
 /// data:   `(admin, org_id)`
 pub(crate) fn emit_maintainer_deregistered(
     env: &Env,
@@ -54,7 +54,7 @@ pub(crate) fn emit_maintainer_deregistered(
     maintainer: &Address,
     org_id: &Symbol,
 ) {
-    let topics = (WG(), symbol_short!("maint_dreg"), maintainer.clone());
+    let topics = (WG(), Symbol::new(env, "maint_dreg"), maintainer.clone());
     let data = (admin.clone(), org_id.clone());
     env.events().publish(topics, data);
 }
