@@ -197,6 +197,32 @@ fn unit_register_maintainer_idempotent() {
 }
 
 #[test]
+fn unit_deregister_maintainer_revokes_org_authority() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let other = Address::generate(&t.env);
+    let maintainer = Address::generate(&t.env);
+    let contributor = Address::generate(&t.env);
+    let org = t.org("alpha");
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer, &org);
+    assert_eq!(
+        t.client.try_deregister_maintainer(&other, &maintainer, &org),
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            ContractError::UnauthorizedAdmin as u32
+        )))
+    );
+    t.client.deregister_maintainer(&admin, &maintainer, &org);
+    t.client.apply_for_issue(&contributor, &org, &1);
+    assert_eq!(
+        t.client.try_assign_issue(&maintainer, &contributor, &org, &1),
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            ContractError::UnauthorizedMaintainer as u32
+        )))
+    );
+}
+
+#[test]
 fn unit_ttl_constant_in_range() {
     use crate::storage::{APP_TTL_LEDGERS, APP_TTL_MAX, APP_TTL_MIN};
     assert!(

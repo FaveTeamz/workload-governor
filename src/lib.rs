@@ -131,6 +131,19 @@ impl WorkloadGovernor {
         events::emit_maintainer_registered(&env, &admin, &maintainer, &org_id);
     }
 
+    /// Revokes a maintainer's authorization for an organisation.
+    pub fn deregister_maintainer(env: Env, admin: Address, maintainer: Address, org_id: Symbol) {
+        storage::require_initialized(&env, &ContractError::NotInitialized);
+        require_valid_org_id(&env, &org_id);
+        if storage::get_admin(&env).as_ref() != Some(&admin) {
+            panic_with_error!(&env, ContractError::UnauthorizedAdmin);
+        }
+        require_admin_auth(&env);
+        storage::remove_maintainer(&env, &maintainer, &org_id);
+        storage::bump_instance(&env);
+        events::emit_maintainer_deregistered(&env, &admin, &maintainer, &org_id);
+    }
+
     /// Configures the threshold and target used to extend application TTLs.
     ///
     /// Both values must be nonzero, the threshold must not exceed the target,
