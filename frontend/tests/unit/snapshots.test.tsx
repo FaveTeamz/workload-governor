@@ -9,11 +9,7 @@
  *   Table    – empty / populated
  *   Gauge    – 0 % / 50 % / 100 %
  *
- * Snapshots are written to tests/unit/snapshots/ (configured in vitest.config.ts).
- *
- * Run once to generate:   npm run test:snapshots
- * Update intentionally:   npm run test:update-snapshots
- * CI fails on mismatch:   npm test  (vitest run has --ci semantics by default)
+ * Design-system fixtures live in tests/unit/snapshots/.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -246,9 +242,7 @@ describe('Gauge snapshots', () => {
     expect(container).toMatchSnapshot()
   })
 
-  it('50% (value=7, max=15)', () => {
-    // Round(7/15*100) = 47 % — use value=8 for a clean ~53 %, or keep at 7
-    // Use exact 50 %: value=1, max=2 for cleaner snapshot
+  it('50% (value=1, max=2)', () => {
     const { container } = render(
       <Gauge value={1} max={2} label="Global Applications" />
     )
@@ -276,14 +270,14 @@ describe('Gauge snapshots', () => {
     expect(container).toMatchSnapshot()
   })
 
-  it('no label', () => {
-    const { container } = render(<Gauge value={4} max={4} />)
+  it('org capacity', () => {
+    const { container } = render(<Gauge value={4} max={4} label="Org Assignments" />)
     expect(container).toMatchSnapshot()
   })
 
-  it('custom size', () => {
+  it('custom className', () => {
     const { container } = render(
-      <Gauge value={2} max={4} label="Org Assignments" size={80} />
+      <Gauge value={2} max={4} label="Org Assignments" className="custom-gauge" />
     )
     expect(container).toMatchSnapshot()
   })

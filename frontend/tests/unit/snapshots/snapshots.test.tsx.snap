@@ -194,396 +194,374 @@ exports[`Card snapshots > with title and footer 1`] = `
 </div>
 `;
 
-exports[`Gauge snapshots > ~50% realistic (value=7, max=15) 1`] = `
-<div>
-  <figure
-    aria-label="Global Applications"
-    class="gauge"
-  >
-    <svg
-      aria-label="Global Applications: 7 of 15"
-      height="120"
-      role="img"
-      viewBox="0 0 120 120"
-      width="120"
-    >
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 0 1 52.86658839416546 14.961411668861722"
-        fill="none"
-        stroke="var(--color-success-500)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="60"
-        y="56"
-      >
-        47
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="60"
-        y="74"
-      >
-        7
-        /
-        15
-      </text>
-    </svg>
-    <figcaption
-      class="gauge__label"
-    >
-      Global Applications
-    </figcaption>
-  </figure>
-</div>
-`;
-
 exports[`Gauge snapshots > 0% (value=0, max=15) 1`] = `
 <div>
-  <figure
-    aria-label="Global Applications"
+  <div
+    aria-label="Global Applications: 0 of 15"
     class="gauge"
   >
-    <svg
-      aria-label="Global Applications: 0 of 15"
-      height="120"
-      role="img"
-      viewBox="0 0 120 120"
-      width="120"
+    <div
+      class="gauge__label"
     >
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="60"
-        y="56"
+      Global Applications
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-success-500, #22c55e);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="0 of 15"
+        aria-live="polite"
+        class="gauge__animated-value"
       >
         0
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="60"
-        y="74"
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
       >
-        0
         /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
+      >
         15
-      </text>
-    </svg>
-    <figcaption
-      class="gauge__label"
+      </span>
+    </div>
+    <div
+      aria-label="Global Applications: 0 of 15"
+      aria-valuemax="15"
+      aria-valuemin="0"
+      aria-valuenow="0"
+      class="gauge__track"
+      role="progressbar"
     >
-      Global Applications
-    </figcaption>
-  </figure>
-</div>
-`;
-
-exports[`Gauge snapshots > 50% (value=7, max=15) 1`] = `
-<div>
-  <figure
-    aria-label="Global Applications"
-    class="gauge"
-  >
-    <svg
-      aria-label="Global Applications: 1 of 2"
-      height="120"
-      role="img"
-      viewBox="0 0 120 120"
-      width="120"
-    >
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="12"
+      <div
+        class="gauge__fill"
+        style="width: 0%; background: var(--color-success-500, #22c55e); transition: width 400ms ease-out;"
       />
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 0 1 59.99999999999999 14.399999999999999"
-        fill="none"
-        stroke="var(--color-success-500)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="60"
-        y="56"
-      >
-        50
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="60"
-        y="74"
-      >
-        1
-        /
-        2
-      </text>
-    </svg>
-    <figcaption
-      class="gauge__label"
-    >
-      Global Applications
-    </figcaption>
-  </figure>
+    </div>
+  </div>
 </div>
 `;
 
 exports[`Gauge snapshots > 100% (value=15, max=15) 1`] = `
 <div>
-  <figure
-    aria-label="Global Applications"
+  <div
+    aria-label="Global Applications: 15 of 15"
     class="gauge"
   >
-    <svg
-      aria-label="Global Applications: 15 of 15"
-      height="120"
-      role="img"
-      viewBox="0 0 120 120"
-      width="120"
-    >
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-error-500)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="60"
-        y="56"
-      >
-        100
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="60"
-        y="74"
-      >
-        15
-        /
-        15
-      </text>
-    </svg>
-    <figcaption
+    <div
       class="gauge__label"
     >
       Global Applications
-    </figcaption>
-  </figure>
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-error-500, #ef4444);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="15 of 15"
+        aria-live="polite"
+        class="gauge__animated-value"
+      >
+        15
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
+      >
+        /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
+      >
+        15
+      </span>
+    </div>
+    <div
+      aria-label="Global Applications: 15 of 15"
+      aria-valuemax="15"
+      aria-valuemin="0"
+      aria-valuenow="15"
+      class="gauge__track"
+      role="progressbar"
+    >
+      <div
+        class="gauge__fill"
+        style="width: 100%; background: var(--color-error-500, #ef4444); transition: width 400ms ease-out;"
+      />
+    </div>
+  </div>
 </div>
 `;
 
-exports[`Gauge snapshots > custom size 1`] = `
+exports[`Gauge snapshots > 50% (value=1, max=2) 1`] = `
 <div>
-  <figure
-    aria-label="Org Assignments"
+  <div
+    aria-label="Global Applications: 1 of 2"
     class="gauge"
   >
-    <svg
-      aria-label="Org Assignments: 2 of 4"
-      height="80"
-      role="img"
-      viewBox="0 0 80 80"
-      width="80"
+    <div
+      class="gauge__label"
     >
-      <path
-        d="M 18.50395385192896 61.496046148071045 A 30.4 30.4 0 1 1 61.49604614807107 61.49604614807102"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="8"
-      />
-      <path
-        d="M 18.50395385192896 61.496046148071045 A 30.4 30.4 0 0 1 39.99999999999999 9.600000000000001"
-        fill="none"
-        stroke="var(--color-success-500)"
-        stroke-linecap="round"
-        stroke-width="8"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="40"
-        y="36"
+      Global Applications
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-success-500, #22c55e);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="1 of 2"
+        aria-live="polite"
+        class="gauge__animated-value"
       >
-        50
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="40"
-        y="54"
+        1
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
+      >
+        /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
       >
         2
-        /
-        4
-      </text>
-    </svg>
-    <figcaption
+      </span>
+    </div>
+    <div
+      aria-label="Global Applications: 1 of 2"
+      aria-valuemax="2"
+      aria-valuemin="0"
+      aria-valuenow="1"
+      class="gauge__track"
+      role="progressbar"
+    >
+      <div
+        class="gauge__fill"
+        style="width: 50%; background: var(--color-success-500, #22c55e); transition: width 400ms ease-out;"
+      />
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Gauge snapshots > custom className 1`] = `
+<div>
+  <div
+    aria-label="Org Assignments: 2 of 4"
+    class="gauge custom-gauge"
+  >
+    <div
       class="gauge__label"
     >
       Org Assignments
-    </figcaption>
-  </figure>
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-success-500, #22c55e);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="2 of 4"
+        aria-live="polite"
+        class="gauge__animated-value"
+      >
+        2
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
+      >
+        /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
+      >
+        4
+      </span>
+    </div>
+    <div
+      aria-label="Org Assignments: 2 of 4"
+      aria-valuemax="4"
+      aria-valuemin="0"
+      aria-valuenow="2"
+      class="gauge__track"
+      role="progressbar"
+    >
+      <div
+        class="gauge__fill"
+        style="width: 50%; background: var(--color-success-500, #22c55e); transition: width 400ms ease-out;"
+      />
+    </div>
+  </div>
 </div>
 `;
 
-exports[`Gauge snapshots > no label 1`] = `
+exports[`Gauge snapshots > org capacity 1`] = `
 <div>
-  <figure
+  <div
+    aria-label="Org Assignments: 4 of 4"
     class="gauge"
   >
-    <svg
-      aria-label="Gauge: 4 of 4"
-      height="120"
-      role="img"
-      viewBox="0 0 120 120"
-      width="120"
+    <div
+      class="gauge__label"
     >
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-error-500)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="60"
-        y="56"
-      >
-        100
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="60"
-        y="74"
+      Org Assignments
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-error-500, #ef4444);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="4 of 4"
+        aria-live="polite"
+        class="gauge__animated-value"
       >
         4
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
+      >
         /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
+      >
         4
-      </text>
-    </svg>
-  </figure>
+      </span>
+    </div>
+    <div
+      aria-label="Org Assignments: 4 of 4"
+      aria-valuemax="4"
+      aria-valuemin="0"
+      aria-valuenow="4"
+      class="gauge__track"
+      role="progressbar"
+    >
+      <div
+        class="gauge__fill"
+        style="width: 100%; background: var(--color-error-500, #ef4444); transition: width 400ms ease-out;"
+      />
+    </div>
+  </div>
 </div>
 `;
 
 exports[`Gauge snapshots > warning range (value=10, max=15) 1`] = `
 <div>
-  <figure
-    aria-label="Global Applications"
+  <div
+    aria-label="Global Applications: 10 of 15"
     class="gauge"
   >
-    <svg
-      aria-label="Global Applications: 10 of 15"
-      height="120"
-      role="img"
-      viewBox="0 0 120 120"
-      width="120"
-    >
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 1 1 92.2440692221066 92.24406922210653"
-        fill="none"
-        stroke="var(--color-border)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <path
-        d="M 27.755930777893433 92.24406922210656 A 45.6 45.6 0 0 1 92.24406922210656 27.755930777893425"
-        fill="none"
-        stroke="var(--color-success-500)"
-        stroke-linecap="round"
-        stroke-width="12"
-      />
-      <text
-        class="gauge__pct"
-        fill="var(--color-text)"
-        text-anchor="middle"
-        x="60"
-        y="56"
-      >
-        67
-        %
-      </text>
-      <text
-        class="gauge__value"
-        fill="var(--color-muted)"
-        text-anchor="middle"
-        x="60"
-        y="74"
-      >
-        10
-        /
-        15
-      </text>
-    </svg>
-    <figcaption
+    <div
       class="gauge__label"
     >
       Global Applications
-    </figcaption>
-  </figure>
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-warning-500, #f59e0b);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="10 of 15"
+        aria-live="polite"
+        class="gauge__animated-value"
+      >
+        10
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
+      >
+        /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
+      >
+        15
+      </span>
+    </div>
+    <div
+      aria-label="Global Applications: 10 of 15"
+      aria-valuemax="15"
+      aria-valuemin="0"
+      aria-valuenow="10"
+      class="gauge__track"
+      role="progressbar"
+    >
+      <div
+        class="gauge__fill"
+        style="width: 66.66666666666666%; background: var(--color-warning-500, #f59e0b); transition: width 400ms ease-out;"
+      />
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Gauge snapshots > ~50% realistic (value=7, max=15) 1`] = `
+<div>
+  <div
+    aria-label="Global Applications: 7 of 15"
+    class="gauge"
+  >
+    <div
+      class="gauge__label"
+    >
+      Global Applications
+    </div>
+    <div
+      class="gauge__count"
+      style="color: var(--color-success-500, #22c55e);"
+    >
+      <span
+        aria-atomic="true"
+        aria-label="7 of 15"
+        aria-live="polite"
+        class="gauge__animated-value"
+      >
+        7
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__separator"
+      >
+        /
+      </span>
+      <span
+        aria-hidden="true"
+        class="gauge__max"
+      >
+        15
+      </span>
+    </div>
+    <div
+      aria-label="Global Applications: 7 of 15"
+      aria-valuemax="15"
+      aria-valuemin="0"
+      aria-valuenow="7"
+      class="gauge__track"
+      role="progressbar"
+    >
+      <div
+        class="gauge__fill"
+        style="width: 46.666666666666664%; background: var(--color-success-500, #22c55e); transition: width 400ms ease-out;"
+      />
+    </div>
+  </div>
 </div>
 `;
 
