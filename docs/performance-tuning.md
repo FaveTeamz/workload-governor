@@ -247,3 +247,46 @@ export async function recordHorizonThrottle() {
 | Redis TTL — event feed | `30` s (global default) | `15` s |
 | ECS min tasks | `1` | `2` (100–500 TPS) / `3` (500+ TPS) |
 | ECS CPU target | `70%` | `70%` (keep this; adjust task size instead) |
+
+## Wave kickoff application spike
+
+Start Docker Compose and apply the database migrations. Seed open issues for the
+organizations and activity for the contributor addresses used in the run. Export
+a valid testnet application envelope as `APPLICATION_XDR`. The verification
+endpoint parses it without submitting a Stellar transaction.
+
+```sh
+docker compose up -d
+ORG_IDS=org_1,org_2 CONTRIBUTOR_ADDRESSES="$STELLAR_TEST_ADDRESSES" \
+  APPLICATION_XDR="$TESTNET_APPLICATION_ENVELOPE" npm run test:load
+```
+
+The default base URL is `http://localhost:3000`. Set `BASE_URL` and, for
+deployments that require it, `API_KEY`. The script uses this checkout's
+database-backed `/api/issues?status=open&org_id=:orgId` and contributor
+`/api/contributors/:address/summary` routes. Deployments exposing
+`/api/orgs/:orgId/issues` and `/api/contributors/:address/workload` can set
+`ISSUES_PATH` and `WORKLOAD_PATH` to those templates.
+
+| Request | Share |
+| --- | ---: |
+| Open issues | 70% |
+| Contributor workload | 15% |
+| `POST /api/verify-xdr` | 10% |
+| `GET /api/v1/leaderboard` | 5% |
+
+The spike starts at 10 VUs, reaches 250 after two minutes, holds for five minutes,
+then ramps to zero over one minute. Targets are p95 below 200 ms, p99 below
+500 ms, and fewer than 1% HTTP failures excluding 429 responses as failures.
+Use a k6 release with the built-in web dashboard. Reports are written to
+`results/k6-application-spike.html` and `results/k6-application-spike.json`.
+The JSON report includes endpoint latency and the `http_rate_limited` rate.
+
+Baseline measurements are pending. A single source IP can hit the local per-IP
+limits before saturating PostgreSQL. Record the 429 rate and use an isolated
+environment configured for the intended load or multiple load generator IPs
+when measuring pool capacity. Compare the ramp and hold windows with
+`pg_pool_total_connections`, `pg_pool_idle_connections`, and
+`pg_pool_waiting_requests`. Sustained waiters and no idle connections point to
+pool contention. Compare slow endpoints with query plans and track process
+memory through the hold and ramp-down.

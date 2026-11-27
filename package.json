@@ -4,6 +4,7 @@
   "description": "WorkloadGovernor sync service and API for the Stellar/Soroban contributor platform",
   "main": "dist/index.js",
   "scripts": {
+    "test:load": "mkdir -p results && K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_PORT=-1 K6_WEB_DASHBOARD_EXPORT=results/k6-application-spike.html k6 run --summary-export results/k6-application-spike.json tests/load/k6-application-spike.js",
     "dev": "ts-node src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
