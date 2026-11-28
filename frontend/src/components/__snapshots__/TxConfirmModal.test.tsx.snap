@@ -9,12 +9,13 @@ exports[`TxConfirmModal > matches snapshot for confirming state 1`] = `
   />
   <div
     aria-describedby="txmodal-subtitle"
-    aria-labelledby="txmodal-title"
+    aria-labelledby="tx-modal-title"
     aria-modal="true"
     class="txmodal"
     data-testid="txmodal-dialog"
     role="dialog"
     style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; background: rgb(255, 255, 255); border-radius: 0.75rem; padding: 1.5rem; max-width: 480px; width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,0.25);"
+    tabindex="-1"
   >
     <div
       style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;"
@@ -27,7 +28,7 @@ exports[`TxConfirmModal > matches snapshot for confirming state 1`] = `
       </span>
       <div>
         <h2
-          id="txmodal-title"
+          id="tx-modal-title"
           style="margin: 0px; font-size: 1.1rem; font-weight: 600;"
         >
           Apply for issue #42 in stellar-org
@@ -151,12 +152,13 @@ exports[`TxConfirmModal > matches snapshot for error state 1`] = `
   />
   <div
     aria-describedby="txmodal-subtitle"
-    aria-labelledby="txmodal-title"
+    aria-labelledby="tx-modal-title"
     aria-modal="true"
     class="txmodal"
     data-testid="txmodal-dialog"
     role="dialog"
     style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; background: rgb(255, 255, 255); border-radius: 0.75rem; padding: 1.5rem; max-width: 480px; width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,0.25);"
+    tabindex="-1"
   >
     <div
       style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;"
@@ -169,7 +171,7 @@ exports[`TxConfirmModal > matches snapshot for error state 1`] = `
       </span>
       <div>
         <h2
-          id="txmodal-title"
+          id="tx-modal-title"
           style="margin: 0px; font-size: 1.1rem; font-weight: 600;"
         >
           Apply for issue #42 in stellar-org
@@ -299,12 +301,13 @@ exports[`TxConfirmModal > matches snapshot for loading state 1`] = `
   />
   <div
     aria-describedby="txmodal-subtitle"
-    aria-labelledby="txmodal-title"
+    aria-labelledby="tx-modal-title"
     aria-modal="true"
     class="txmodal"
     data-testid="txmodal-dialog"
     role="dialog"
     style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; background: rgb(255, 255, 255); border-radius: 0.75rem; padding: 1.5rem; max-width: 480px; width: 90vw; box-shadow: 0 25px 50px rgba(0,0,0,0.25);"
+    tabindex="-1"
   >
     <div
       style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;"
@@ -317,7 +320,7 @@ exports[`TxConfirmModal > matches snapshot for loading state 1`] = `
       </span>
       <div>
         <h2
-          id="txmodal-title"
+          id="tx-modal-title"
           style="margin: 0px; font-size: 1.1rem; font-weight: 600;"
         >
           Apply for issue #42 in stellar-org
