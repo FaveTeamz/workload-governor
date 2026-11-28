@@ -1,91 +1,61 @@
-/**
- * useFocusTrap — closes #324
- *
- * Traps keyboard focus inside `containerRef` while `active` is true.
- * Also locks body scroll while active, and restores focus to the
- * previously-focused element when deactivated.
- */
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, type RefObject } from 'react';
 
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'button, a[href], input, select, textarea, [tabindex], [contenteditable="true"]';
 
-function getFocusable(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+function tabStops(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    element =>
+      element.tabIndex >= 0 &&
+      !element.matches(':disabled, [type="hidden"]') &&
+      !element.closest('[hidden], [inert]') &&
+      getComputedStyle(element).visibility === 'visible' &&
+      getComputedStyle(element).display !== 'none',
+  );
 }
 
-export function useFocusTrap(
-  containerRef: RefObject<HTMLElement | null>,
-  active: boolean,
-): void {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  // Stable ref for the keydown handler so we can remove it exactly
-  const handlerRef = useRef<((e: KeyboardEvent) => void) | null>(null);
-  const rafRef = useRef<number | null>(null);
-
+export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean) {
   useEffect(() => {
-    if (!active) {
-      // Restore focus
-      previousFocusRef.current?.focus();
-      // Unlock scroll
-      document.body.style.overflow = "";
-      // Remove listener
-      if (handlerRef.current) {
-        document.removeEventListener("keydown", handlerRef.current);
-        handlerRef.current = null;
+    const container = ref.current;
+    if (!active || !container) return;
+
+    const trigger = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function keepFocusInside(event: FocusEvent) {
+      if (event.target instanceof Node && container && !container.contains(event.target)) {
+        (tabStops(container)[0] ?? container).focus();
       }
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      return;
     }
 
-    // Save current focus
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    // Lock scroll
-    document.body.style.overflow = "hidden";
-
-    // Focus first focusable element after paint
-    rafRef.current = requestAnimationFrame(() => {
-      const container = containerRef.current;
-      if (!container) return;
-      const focusable = getFocusable(container);
-      focusable[0]?.focus();
-    });
-
-    // Tab-trap handler
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab") return;
-      const container = containerRef.current;
-      if (!container) return;
-      const focusable = getFocusable(container);
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+    function wrapTab(event: KeyboardEvent) {
+      if (event.key !== 'Tab' || !container) return;
+      const stops = tabStops(container);
+      const edge = event.shiftKey ? stops[0] : stops[stops.length - 1];
+      if (!stops.includes(document.activeElement as HTMLElement) || document.activeElement === edge) {
+        event.preventDefault();
+        (event.shiftKey ? stops[stops.length - 1] ?? container : stops[0] ?? container).focus();
       }
-    };
+    }
 
-    handlerRef.current = onKeyDown;
-    document.addEventListener("keydown", onKeyDown);
-
+    (tabStops(container)[0] ?? container).focus();
+    document.addEventListener('focusin', keepFocusInside);
+    document.addEventListener('keydown', wrapTab);
     return () => {
-      // Cleanup on unmount or before re-run
-      document.body.style.overflow = "";
-      if (handlerRef.current) {
-        document.removeEventListener("keydown", handlerRef.current);
-        handlerRef.current = null;
-      }
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+      document.removeEventListener('focusin', keepFocusInside);
+      document.removeEventListener('keydown', wrapTab);
+      document.body.style.overflow = previousOverflow;
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
     };
-  }, [active, containerRef]);
+  }, [active, ref]);
+
+  // Buttons can become disabled or be replaced when the signing state changes.
+  useEffect(() => {
+    const container = ref.current;
+    const focused = document.activeElement;
+    if (active && container && (!container.contains(focused) || focused?.matches(':disabled'))) {
+      (tabStops(container)[0] ?? container).focus();
+    }
+  });
 }

@@ -3,12 +3,10 @@ import {
   useState,
   useEffect,
   useCallback,
-  type KeyboardEvent,
 } from 'react';
 import type { UseTxModal } from '../hooks/useTxModal';
 
-const FOCUSABLE =
-  'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface Props {
   modal: UseTxModal;
@@ -29,7 +27,6 @@ function actionIcon(action: string, destructive?: boolean): string {
 export default function TxConfirmModal({ modal }: Props) {
   const { state, _resolve, _reject, close } = modal;
   const dialogRef     = useRef<HTMLDivElement>(null);
-  const previousFocus = useRef<HTMLElement | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const isOpen    = state.status !== 'idle';
@@ -47,32 +44,7 @@ export default function TxConfirmModal({ modal }: Props) {
   const confirmLabel = details?.confirmLabel ?? 'Confirm & Sign';
   const errorMsg     = state.status === 'error' ? state.message : '';
 
-  // ── Focus management ────────────────────────────────────────
-  useEffect(() => {
-    if (isOpen) {
-      if (!previousFocus.current) {
-        previousFocus.current = document.activeElement as HTMLElement;
-      }
-      document.body.style.overflow = 'hidden';
-      requestAnimationFrame(() => {
-        const first = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE)[0];
-        first?.focus();
-      });
-    } else {
-      document.body.style.overflow = '';
-      if (previousFocus.current) {
-        previousFocus.current.focus();
-        previousFocus.current = null;
-      }
-    }
-    return () => {
-      document.body.style.overflow = '';
-      if (previousFocus.current) {
-        previousFocus.current.focus();
-        previousFocus.current = null;
-      }
-    };
-  }, [isOpen]);
+  useFocusTrap(dialogRef, isOpen);
 
   // ── Escape key ──────────────────────────────────────────────
   useEffect(() => {
@@ -86,24 +58,6 @@ export default function TxConfirmModal({ modal }: Props) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, isLoading, _reject]);
-
-  // ── Tab trap ────────────────────────────────────────────────
-  const trapFocus = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Tab') return;
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []
-    );
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last  = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }, []);
 
   // ── Backdrop click ──────────────────────────────────────────
   const handleBackdropClick = useCallback(() => {
@@ -132,9 +86,9 @@ export default function TxConfirmModal({ modal }: Props) {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="txmodal-title"
+        aria-labelledby="tx-modal-title"
         aria-describedby="txmodal-subtitle"
-        onKeyDown={trapFocus}
+        tabIndex={-1}
         data-testid="txmodal-dialog"
         className={`txmodal${destructive ? ' txmodal--destructive' : ''}`}
         style={{
@@ -158,7 +112,7 @@ export default function TxConfirmModal({ modal }: Props) {
           </span>
           <div>
             <h2
-              id="txmodal-title"
+              id="tx-modal-title"
               style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}
             >
               {details?.action ?? 'Confirm Transaction'}

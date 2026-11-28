@@ -168,7 +168,7 @@ describe('TxConfirmModal', () => {
     render(<TxConfirmModal modal={modal} />);
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
-    expect(dialog.getAttribute('aria-labelledby')).toBe('txmodal-title');
+    expect(dialog.getAttribute('aria-labelledby')).toBe('tx-modal-title');
     expect(dialog.getAttribute('aria-describedby')).toBe('txmodal-subtitle');
   });
 

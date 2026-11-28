@@ -28,6 +28,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ### Fixed
 - Fix devcontainer configuration to ensure Node.js and Rust toolchains are automatically installed and available in standard PATH for all terminal sessions. (#1124)
 - Reserve space for issue cards and contributor profile sections during loading. (#1273)
+- Trap keyboard focus in transaction reviews and restore it on close. (#1270)
 
 ### Security
 - Run the production container as the unprivileged `node` user and its group. (#1300)
