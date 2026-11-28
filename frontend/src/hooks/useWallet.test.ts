@@ -17,6 +17,7 @@ const STORAGE_KEY = 'wg_wallet_pubkey';
 const TEST_PUBKEY = 'GBABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRST';
 
 // Typed helpers for the mocked functions
+const mockIsAllowed = vi.mocked(freighterApi.isAllowed);
 const mockIsConnected = vi.mocked(freighterApi.isConnected);
 const mockGetAddress = vi.mocked(freighterApi.getAddress);
 const mockGetNetwork = vi.mocked(freighterApi.getNetwork);
@@ -25,6 +26,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   // Default: Freighter installed, on the right network
+  mockIsAllowed.mockResolvedValue({ isAllowed: true });
   mockIsConnected.mockResolvedValue({ isConnected: true });
   mockGetAddress.mockResolvedValue({ address: TEST_PUBKEY });
   mockGetNetwork.mockResolvedValue({ network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
@@ -317,6 +319,20 @@ describe('cross-tab wallet synchronization', () => {
     });
 
     expect(result.current.publicKey).toBeNull();
+  });
+
+  it('checks authorization on focus and disconnects a revoked wallet', async () => {
+    localStorage.setItem(STORAGE_KEY, TEST_PUBKEY);
+    mockIsAllowed.mockResolvedValue({ isAllowed: false });
+    const { result } = renderHook(() => useWallet());
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    expect(mockIsAllowed).toHaveBeenCalled();
+    expect(result.current.publicKey).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('updates wallet state when a connect message is received via storage event', () => {
