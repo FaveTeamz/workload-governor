@@ -1,9 +1,8 @@
 /**
  * ActivityTimeline stories — #651
  */
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ActivityTimeline, type TimelineEvent } from "../components/ActivityTimeline";
-import { MemoryRouter } from "react-router-dom";
 
 const meta: Meta<typeof ActivityTimeline> = {
   title: "Pages/ActivityTimeline",
@@ -11,17 +10,15 @@ const meta: Meta<typeof ActivityTimeline> = {
   tags: ["autodocs"],
   decorators: [
     (Story) => (
-      <MemoryRouter>
-        <div
-          style={{
-            background: "var(--color-bg)",
-            minHeight: "400px",
-            padding: "24px",
-          }}
-        >
-          <Story />
-        </div>
-      </MemoryRouter>
+      <div
+        style={{
+          background: "var(--color-bg)",
+          minHeight: "400px",
+          padding: "24px",
+        }}
+      >
+        <Story />
+      </div>
     ),
   ],
 };

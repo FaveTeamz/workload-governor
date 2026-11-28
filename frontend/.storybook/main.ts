@@ -12,6 +12,14 @@ const config: StorybookConfig = {
     "@storybook/addon-docs",
     "@storybook/addon-mcp"
   ],
+  typescript: {
+    check: false,
+    reactDocgen: 'react-docgen-typescript',
+    reactDocgenTypescriptOptions: {
+      shouldExtractLiteralValuesFromEnum: true,
+      propFilter: (prop) => !prop.parent || !prop.parent.fileName.includes('node_modules'),
+    },
+  },
   "framework": "@storybook/react-vite"
 };
 export default config;

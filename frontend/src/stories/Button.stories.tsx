@@ -5,7 +5,7 @@
  *
  * Closes #541
  */
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 interface ButtonProps {
   label: string;

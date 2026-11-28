@@ -1,9 +1,10 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { AnimatedCount } from "../components/AnimatedCount";
 
 const meta: Meta<typeof AnimatedCount> = {
   title: "Components/AnimatedCount",
+  tags: ["autodocs"],
   component: AnimatedCount,
   parameters: {
     docs: {
@@ -39,7 +40,7 @@ export const Decrement: Story = {
 
 /** Interactive demo: click button to animate count */
 export const Interactive: Story = {
-  render: () => {
+  render: function InteractiveCount() {
     const [count, setCount] = useState(0);
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 16 }}>

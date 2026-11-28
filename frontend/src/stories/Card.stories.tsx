@@ -4,7 +4,7 @@
  *
  * Closes #541
  */
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 

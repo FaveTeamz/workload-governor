@@ -3,7 +3,7 @@
  *
  * All variants, stacked state, and auto-dismiss demo.
  */
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ToastContainer } from "../components/Toast";
 import type { Toast } from "../components/Toast";
 

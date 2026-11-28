@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Gauge } from '../components/Gauge'
+import { Gauge } from '../components/design-system/Gauge'
 
 const meta: Meta<typeof Gauge> = {
   title:     'Design System/Gauge Examples',
@@ -9,7 +9,6 @@ const meta: Meta<typeof Gauge> = {
     value:   { control: { type: 'range', min: 0, max: 15, step: 1 } },
     max:     { control: { type: 'range', min: 1, max: 15, step: 1 } },
     size:    { control: { type: 'range', min: 60, max: 400, step: 10 } },
-    variant: { control: 'radio', options: ['global', 'org'] },
   },
 }
 export default meta
@@ -19,51 +18,50 @@ type Story = StoryObj<typeof Gauge>
 
 /** Empty — 0 of 15 slots used (green) */
 export const GlobalEmpty: Story = {
-  args: { value: 0, max: 15, label: 'Global Applications', variant: 'global' },
+  args: { value: 0, max: 15, label: 'Global Applications' },
 }
 
 /** ~Half — 7 of 15 slots used (green, ≤50%) */
 export const GlobalHalf: Story = {
-  args: { value: 7, max: 15, label: 'Global Applications', variant: 'global' },
+  args: { value: 7, max: 15, label: 'Global Applications' },
 }
 
 /** Yellow threshold — 9 of 15 = 60% (yellow, 51-80%) */
 export const GlobalYellow: Story = {
-  args: { value: 9, max: 15, label: 'Global Applications', variant: 'global' },
+  args: { value: 9, max: 15, label: 'Global Applications' },
 }
 
 /** Red threshold — 13 of 15 = 87% (red, >80%) */
 export const GlobalRed: Story = {
-  args: { value: 13, max: 15, label: 'Global Applications', variant: 'global' },
+  args: { value: 13, max: 15, label: 'Global Applications' },
 }
 
 /** Full — 15 of 15 (red, 100%) */
 export const GlobalFull: Story = {
-  args: { value: 15, max: 15, label: 'Global Applications', variant: 'global' },
+  args: { value: 15, max: 15, label: 'Global Applications' },
 }
 
 // ── Org variant (0-4) ────────────────────────────────────────
 
 /** ~Half org — 2 of 4 = 50% (green) */
 export const OrgHalf: Story = {
-  args: { value: 2, max: 4, label: 'Org: stellar-org', variant: 'org' },
+  args: { value: 2, max: 4, label: 'Org: stellar-org' },
 }
 
 /** Full org — 4 of 4 (red, 100%) */
 export const OrgFull: Story = {
-  args: { value: 4, max: 4, label: 'Org: stellar-org', variant: 'org' },
+  args: { value: 4, max: 4, label: 'Org: stellar-org' },
 }
 
-// ── With tooltip ─────────────────────────────────────────────
+// ── Accessible label ─────────────────────────────────────────────
 
-/** Tooltip shown on hover/focus */
-export const WithTooltip: Story = {
+/** Custom accessible label */
+export const WithAccessibleLabel: Story = {
   args: {
     value:   12,
     max:     15,
     label:   'Global Applications',
-    variant: 'global',
-    tooltip: 'You have used 12 of 15 global application slots.',
+    'aria-label': 'You have used 12 of 15 global application slots.',
   },
 }
 
@@ -82,5 +80,5 @@ export const SizeLarge: Story = {
 // ── Playground ───────────────────────────────────────────────
 
 export const Playground: Story = {
-  args: { value: 7, max: 15, label: 'Custom', size: 120, variant: 'global' },
+  args: { value: 7, max: 15, label: 'Custom', size: 120 },
 }

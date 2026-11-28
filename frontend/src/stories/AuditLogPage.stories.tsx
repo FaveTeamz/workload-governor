@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { AuditLogPage, AuditLogRecord } from "../pages/AuditLogPage";
 
 const SAMPLE_LOGS: AuditLogRecord[] = [
@@ -42,6 +42,7 @@ const SAMPLE_LOGS: AuditLogRecord[] = [
 
 const meta: Meta<typeof AuditLogPage> = {
   title: "Pages/AuditLogPage",
+  tags: ["autodocs"],
   component: AuditLogPage,
   parameters: {
     docs: {
