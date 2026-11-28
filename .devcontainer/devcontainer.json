@@ -19,7 +19,7 @@
   "features": {
     // Rust toolchain with stable channel and wasm targets
     "ghcr.io/devcontainers/features/rust:1": {
-      "version": "stable",
+      "version": "latest",
       "profile": "default",
       "targets": "wasm32v1-none,wasm32-unknown-unknown"
     },
@@ -42,8 +42,9 @@
     "NVM_DIR": "/usr/local/share/nvm"
   },
 
-  // Install project dependencies and copy env files the first time the container starts
-  "postCreateCommand": "echo Devcontainer started successfully",
+  // Finish provisioning before reporting the workspace ready.
+  "postCreateCommand": "rustup target add wasm32v1-none && npm ci && npm --prefix frontend ci && npm --prefix backend ci",
+  "waitFor": "postCreateCommand",
 
   // VS Code / cursor extensions that improve the Rust + TypeScript experience
   "customizations": {
