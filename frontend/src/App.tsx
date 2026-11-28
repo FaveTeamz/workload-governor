@@ -12,7 +12,7 @@ import type { IssueStatus } from "./components/IssueCard";
 import { ToastContainer, useToast } from "./components/Toast";
 import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { useWallet } from "./hooks/useWallet";
+import { useWallet, WALLET_DISCONNECTED_MESSAGE } from "./hooks/useWallet";
 import { useKeyboardShortcuts, type ShortcutHandler } from "./hooks/useKeyboardShortcuts";
 import "./app.css";
 
@@ -56,6 +56,13 @@ export default function App() {
   const [assignments, setAssignments] = useState(DEMO_ASGNS);
   const [issues, setIssues] = useState<DemoIssue[]>(INITIAL_ISSUES);
   const { toasts, add: addToast, remove: removeToast } = useToast();
+  const previousWallet = useRef(wallet.publicKey);
+  useEffect(() => {
+    if (previousWallet.current && !wallet.publicKey) {
+      addToast(WALLET_DISCONNECTED_MESSAGE, "info");
+    }
+    previousWallet.current = wallet.publicKey;
+  }, [wallet.publicKey, addToast]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Ref to the search/filter input so '/' can focus it
@@ -137,6 +144,7 @@ export default function App() {
       <NavBar
         walletAddress={wallet.publicKey}
         walletError={wallet.error}
+        connecting={wallet.connecting}
         networkMismatch={wallet.networkMismatch}
         onConnect={wallet.connect}
         onDisconnect={wallet.disconnect}

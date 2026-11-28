@@ -11,7 +11,7 @@
  * All three actions open TxConfirmModal, optimistically update state, and revert on error.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useMaintainerAuth } from "../hooks/useMaintainerAuth";
 import { useWallet } from "../hooks/useWallet";
 import { Modal } from "../components/Modal";
@@ -268,6 +268,12 @@ export function MaintainerDashboard({ orgId, apiBase = "/api", initialItems }: P
   } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
+  const previousWallet = useRef(publicKey);
+  useEffect(() => {
+    if (previousWallet.current && !publicKey) setPendingAction(null);
+    previousWallet.current = publicKey;
+  }, [publicKey]);
+
   // ── Fetch items ─────────────────────────────────────────────────────────────
 
   const fetchItems = useCallback(async () => {
@@ -306,7 +312,7 @@ export function MaintainerDashboard({ orgId, apiBase = "/api", initialItems }: P
   }
 
   async function executeAction() {
-    if (!pendingAction) return;
+    if (!pendingAction || !publicKey) return;
     const { item, action } = pendingAction;
 
     setConfirmBusy(true);
