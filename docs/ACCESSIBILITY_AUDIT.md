@@ -234,6 +234,8 @@ level: **P1** = Level A (must fix), **P2** = Level AA (required for launch),
 | F-19 | Tables have `<th>` headers with `scope` attributes | 1.3.1 Info and Relationships (A) | P1 | Frontend team | 2026-07-30 | ⬜ Open — Table component not audited for header markup |
 | F-20 | Motion / animation can be paused, stopped, or hidden | 2.2.2 Pause, Stop, Hide (A) | P1 | Frontend team | 2026-08-15 | ⬜ Open — Gauge animation not reviewed |
 
+WorkloadGauge text contrast (issue #1269) was addressed with the themed gauge text token. The label and count use the same foreground in every usage state. On the WorkloadGauge surface, the token pair calculates to 7.53:1 in light mode and 13.31:1 in dark mode. A rendered dashboard axe audit remains pending.
+
 ### Priority 1 findings requiring owners (P1 open items)
 
 | Finding | Owner | GitHub Issue |

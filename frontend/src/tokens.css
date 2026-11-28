@@ -99,6 +99,7 @@
   --color-background-primary: #f8fafc;
   --color-background-surface: #ffffff;
   --color-background-elevated: #f1f5f9;
+  --color-gauge-text: #4a5568;
   --color-text-primary: #0f172a;
   --color-text-secondary: #334155;
   --color-text-muted: #475569;
@@ -131,6 +132,7 @@
     --color-background-primary: #0f1117;
     --color-background-surface: #1c1f2b;
     --color-background-elevated: #252a3a;
+    --color-gauge-text: #e2e8f0;
     --color-text-primary: #e2e8f0;
     --color-text-secondary: #cbd5e1;
     --color-text-muted: #a8b5c8;
@@ -164,6 +166,7 @@
   --color-background-primary: #0f1117;
   --color-background-surface: #1c1f2b;
   --color-background-elevated: #252a3a;
+  --color-gauge-text: #e2e8f0;
   --color-text-primary: #e2e8f0;
   --color-text-secondary: #cbd5e1;
   --color-text-muted: #a8b5c8;
@@ -195,6 +198,7 @@
   --color-background-primary: #f8fafc;
   --color-background-surface: #ffffff;
   --color-background-elevated: #f1f5f9;
+  --color-gauge-text: #4a5568;
   --color-text-primary: #0f172a;
   --color-text-secondary: #334155;
   --color-text-muted: #475569;
@@ -227,6 +231,7 @@
     --color-background-primary: #000000;
     --color-background-surface: #0a0a0a;
     --color-background-elevated: #171717;
+    --color-gauge-text: #ffffff;
     --color-text-primary: #ffffff;
     --color-text-secondary: #f8fafc;
     --color-text-muted: #e5e5e5;
@@ -267,6 +272,7 @@
   --color-background-primary: #000000;
   --color-background-surface: #0a0a0a;
   --color-background-elevated: #171717;
+  --color-gauge-text: #ffffff;
   --color-text-primary: #ffffff;
   --color-text-secondary: #f8fafc;
   --color-text-muted: #e5e5e5;
