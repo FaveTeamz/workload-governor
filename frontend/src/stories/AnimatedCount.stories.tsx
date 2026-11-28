@@ -1,9 +1,10 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { AnimatedCount } from "../components/AnimatedCount";
 
 const meta: Meta<typeof AnimatedCount> = {
   title: "Components/AnimatedCount",
+  tags: ["autodocs"],
   component: AnimatedCount,
   parameters: {
     docs: {

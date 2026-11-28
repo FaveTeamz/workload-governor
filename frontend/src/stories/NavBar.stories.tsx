@@ -12,7 +12,7 @@
  *   - No unread notifications
  */
 
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { NavBar, type NavBarProps } from "../components/NavBar";
 import "../components/navbar.css";
 import "../i18n"; // initialise i18next with all locales
@@ -27,6 +27,7 @@ const WALLET_ADDRESS = "GBZX4364PEPQTDICMIQDZ56K4T75QZCR4NBEYKO6PDRJAHZKGUOJPCXB
 
 const meta: Meta<typeof NavBar> = {
   title: "Navigation/NavBar",
+  tags: ["autodocs"],
   component: NavBar,
   parameters: {
     layout: "fullscreen",

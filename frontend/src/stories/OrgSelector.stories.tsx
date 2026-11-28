@@ -1,5 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { MemoryRouter } from "react-router-dom";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { OrgSelector } from "../components/OrgSelector";
 import type { Org } from "../components/OrgSelector";
 
@@ -13,8 +12,8 @@ const SAMPLE_ORGS: Org[] = [
 
 const meta: Meta<typeof OrgSelector> = {
   title: "Components/OrgSelector",
+  tags: ["autodocs"],
   component: OrgSelector,
-  decorators: [(Story) => <MemoryRouter><Story /></MemoryRouter>],
   parameters: {
     docs: {
       description: {

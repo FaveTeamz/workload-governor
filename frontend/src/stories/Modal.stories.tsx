@@ -6,7 +6,7 @@
  * Closes #541
  */
 import { useState } from 'react';
-import type { Meta, StoryObj } from '@storybook/react';
+import type { Meta, StoryObj } from '@storybook/react-vite';
 import { ShortcutHelpModal } from '../components/ShortcutHelpModal';
 
 // ── Controlled demo wrapper ───────────────────────────────────────────────────

@@ -24,6 +24,7 @@ const SAMPLE_EVENTS: ContractEvent[] = [
 
 const meta: Meta<typeof EventHistoryTable> = {
   title: "Components/EventHistoryTable",
+  tags: ["autodocs"],
   component: EventHistoryTable,
   parameters: {
     viewport: {

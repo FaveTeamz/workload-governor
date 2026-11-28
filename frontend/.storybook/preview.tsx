@@ -1,7 +1,42 @@
 import type { Preview } from "@storybook/react-vite";
+import { useState, type ReactNode } from "react";
+import { createInstance } from "i18next";
+import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
+import { ThemeContext, type ThemePreference } from "../src/context/ThemeContext";
+import en from "../src/locales/en.json";
 import "../src/tokens.css";
 import "../src/app.css";
-import "../src/i18n"; // ensure i18next is initialised for all stories
+
+const storyI18n = createInstance();
+void storyI18n.init({
+  lng: "en",
+  fallbackLng: "en",
+  resources: { en: { translation: en } },
+  interpolation: { escapeValue: false },
+  initAsync: false,
+});
+
+function StoryTheme({ initial, children }: { initial: ThemePreference; children: ReactNode }) {
+  const [preference, setPreference] = useState(initial);
+  const dark = preference === "system"
+    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+    : preference !== "light";
+  const theme = dark ? "dark" : "light";
+  return (
+    <ThemeContext.Provider value={{
+      preference,
+      theme,
+      setPreference,
+      toggle: () => setPreference(dark ? "light" : "dark"),
+    }}>
+      <div data-theme={preference} style={{ color: "var(--color-text)", background: "var(--color-bg)" }}>
+        {children}
+      </div>
+    </ThemeContext.Provider>
+  );
+}
+
 
 const preview: Preview = {
   globalTypes: {
@@ -20,9 +55,13 @@ const preview: Preview = {
   },
   decorators: [
     (Story, { globals }) => (
-      <div data-theme={globals.theme} style={{ color: 'var(--color-text)', background: 'var(--color-bg)' }}>
-        <Story />
-      </div>
+      <StoryTheme key={globals.theme} initial={globals.theme ?? "system"}>
+        <I18nextProvider i18n={storyI18n}>
+          <MemoryRouter>
+            <Story />
+          </MemoryRouter>
+        </I18nextProvider>
+      </StoryTheme>
     ),
   ],
   parameters: {

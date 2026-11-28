@@ -25,7 +25,7 @@ interface ThemeState {
   toggle: () => void;
 }
 
-const ThemeContext = createContext<ThemeState | null>(null);
+export const ThemeContext = createContext<ThemeState | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, updatePreference] = useState<ThemePreference>('system');

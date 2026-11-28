@@ -1,5 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
-import { MemoryRouter } from 'react-router-dom'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Breadcrumb } from '../components/Breadcrumb'
 import '../tokens.css'
 
@@ -11,13 +10,6 @@ const meta: Meta<typeof Breadcrumb> = {
     layout: 'padded',
     backgrounds: { default: 'dark', values: [{ name: 'dark', value: '#0f1117' }] },
   },
-  decorators: [
-    (Story) => (
-      <MemoryRouter>
-        <Story />
-      </MemoryRouter>
-    ),
-  ],
 }
 export default meta
 type Story = StoryObj<typeof Breadcrumb>
