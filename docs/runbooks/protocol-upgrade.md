@@ -19,12 +19,17 @@ Stellar network protocol upgrades (voted on by validators) can introduce changes
 
 ## 2. Pre-Upgrade Timeline & Preparation Checklist
 
-Stellar protocol upgrades follow a two-stage rollout: **Testnet upgrade** first, followed several weeks later by the **Mainnet validator vote**.
+Use the [SDF protocol upgrade calendar](https://stellar.org/protocol-upgrades) and the linked release guide to track the Testnet validator upgrade and Mainnet vote in UTC. Subscribe to the Stellar Developer Discord announcements for schedule changes and check whether a Testnet reset is planned. Assign an incident lead, an RPC and indexer owner, and a contract admin before the rehearsal.
+
+Protocol 21 is a precedent for rehearsing TTL and VM resource costs. Protocol 22 added constructors and BLS12-381 host functions, so check existing contracts as well as any candidate WASM that uses new features. The SDF calendar records both rollouts.
 
 - [ ] **Track SDF Protocol Upgrade Schedule**: Record the target protocol version (e.g., Protocol $N$), Testnet upgrade timestamp, and Mainnet vote timestamp.
 - [ ] **Verify RPC & Horizon Provider Readiness**: Confirm that Horizon (`HORIZON_URL`) and Soroban RPC (`SOROBAN_RPC_URL`) providers are running Stellar Core and Soroban RPC builds compatible with Protocol $N$.
 - [ ] **Pin Baseline Artifacts**: Record the currently deployed Mainnet `CONTRACT_ID`, active on-chain WASM SHA-256 hash (`PREVIOUS_WASM_HASH`), and current backend container image digest.
 - [ ] **Snapshot Indexer Checkpoints**: Confirm `indexer_checkpoints` has an up-to-date `last_ledger` record before the upgrade window.
+- [ ] Confirm a secondary RPC provider serves the same network and protocol and retains the ledger range needed to resume indexing.
+- [ ] Capture baseline view results, simulation fees and resource usage, confirmation latency, and indexer lag. Agree on acceptable deviations and record the observation window in the change ticket.
+- [ ] Require passing Testnet evidence, a compatible fallback application release, and an on-call handoff before approving the Mainnet rollout.
 
 ---
 
@@ -76,11 +81,11 @@ stellar contract invoke \
   --contributor "${TEST_CONTRIBUTOR_ADDRESS}" \
   --org_id acme
 
-# 2. Simulate and execute state-changing lifecycle (apply -> assign -> complete)
+# 2. Exercise an application and its withdrawal on Testnet
 stellar contract invoke \
   --id "${TESTNET_CONTRACT_ID}" \
   --network testnet \
-  --source "${TEST_CONTRIBUTOR_SECRET}" \
+  --source "${TEST_CONTRIBUTOR_IDENTITY}" \
   -- apply_for_issue \
   --contributor "${TEST_CONTRIBUTOR_ADDRESS}" \
   --org_id acme \
@@ -89,7 +94,7 @@ stellar contract invoke \
 stellar contract invoke \
   --id "${TESTNET_CONTRACT_ID}" \
   --network testnet \
-  --source "${TEST_CONTRIBUTOR_SECRET}" \
+  --source "${TEST_CONTRIBUTOR_IDENTITY}" \
   -- withdraw_application \
   --contributor "${TEST_CONTRIBUTOR_ADDRESS}" \
   --org_id acme \
@@ -105,10 +110,13 @@ Verify that `EventIndexer` (`src/eventIndexer.ts`) and `xdrVerifier` (`src/xdrVe
 npm run typecheck
 npm run test:unit
 npm test
+make test-all
 
 # Run dry-run historical/recent event backfill against Testnet RPC
 npx ts-node src/scripts/backfill-events.ts --dry-run --batch-size 50
 ```
+
+Run the same smoke checks against the current deployment and against each candidate release. Record the Testnet transaction hashes and confirm inclusion and expected state changes in a closed ledger. Compare simulation CPU, memory, resource fee, and TTL or rent costs to the baseline. Investigate deviations outside the agreed limits before promoting the release.
 
 Confirm:
 - Zero `ScVal.fromXDR` decoding failures in logs.
@@ -131,13 +139,14 @@ If the protocol upgrade introduces XDR changes, deprecates host functions, or re
    [dev-dependencies]
    soroban-sdk = { version = "<new-version>", features = ["testutils"] }
    ```
-2. Update `@stellar/stellar-sdk` in `package.json`:
+2. Select an `@stellar/stellar-sdk` version from the target protocol’s compatibility guide and update both Node packages and their lockfiles:
    ```bash
-   npm install @stellar/stellar-sdk@latest
+   npm install --save-exact "@stellar/stellar-sdk@${JS_SDK_VERSION}"
+   npm --prefix backend install --save-exact "@stellar/stellar-sdk@${JS_SDK_VERSION}"
    ```
 3. Update Stellar CLI to match the target protocol version:
    ```bash
-   cargo install --locked stellar-cli
+   cargo install --locked stellar-cli --version "${STELLAR_CLI_VERSION}"
    stellar --version
    ```
 
@@ -161,7 +170,7 @@ WASM_RAW="target/wasm32v1-none/release/workload_governor.wasm"
 WASM_OPT="target/wasm32v1-none/release/workload_governor.optimized.wasm"
 stellar contract optimize --wasm "${WASM_RAW}" --wasm-out "${WASM_OPT}"
 
-# 6. Verify binary size (< 64 KB hard limit; target < 20 KB) and record SHA-256 hash
+# 6. Check binary size against the target network limit and record SHA-256 hash
 ls -lh "${WASM_OPT}"
 NEW_WASM_HASH=$(sha256sum "${WASM_OPT}" | awk '{print $1}')
 echo "Optimized WASM SHA256: ${NEW_WASM_HASH}"
@@ -208,17 +217,23 @@ Re-run Step 3.2 and Step 3.3 against the upgraded Testnet contract before schedu
    - Follow [Contract Upgrade Runbook](contract-upgrade.md) (`stellar contract install` followed by `upgrade --new_wasm_hash "$NEW_WASM_HASH"`).
 5. **Post-Upgrade Health Verification**:
    - Check `/health` endpoint and confirm `IndexerLedgerLag <= 2`.
-   - Spot-check `get_global_application_count`, `get_org_assignment_count`, and `get_contributor_snapshot` on Mainnet.
+   - Spot-check `get_global_application_count` and `get_org_assignment_count` against recorded values on Mainnet.
+   - Compare RPC ledger advancement and protocol version across both providers. Track `sendTransaction` hashes through `getTransaction` and confirm successful inclusion in closed ledgers.
+   - Confirm `getEvents` results are decoded and persisted, `indexer_ledger_lag` returns to its pre-vote range, and no ledger ranges were skipped. Keep the freeze in place until all checks remain healthy throughout the observation window.
 
 ---
 
 ## 6. Emergency Rollback Safeguards
 
-If regressions, XDR parsing failures, or unexpected host traps occur during or immediately after the protocol upgrade:
+If transaction inclusion or read-only calls fail, new host traps or XDR decoding errors appear, or indexer lag stays above the agreed limit throughout the observation window, keep writes paused and open an incident. Record the last confirmed ledger, affected transaction hashes, and the last verified indexer checkpoint.
+
+- If only the primary RPC is stale or unhealthy, switch to the rehearsed secondary after confirming its network passphrase, target protocol, ledger progress, and history coverage. Resume from a verified checkpoint. Look up pending transaction hashes before resubmitting.
+- If both providers show the failure, keep writes paused and escalate to the Stellar RPC providers and SDF. The validator vote sets the network protocol. Operators can switch providers or roll back compatible application releases and contract WASM.
+- Reopen writes after the post-upgrade checks pass. Record the recovery ledger and any replayed event range.
 
 ### 6.1 — Smart Contract WASM Rollback
 
-Because `upgrade(new_wasm_hash)` swaps the executable bytecode reference without altering persistent or temporary storage keys (`"admin"`, `("maint", ...)`, `("o_asgn", ...)`, `("g_apps", ...)`), you can immediately revert to the previous verified WASM hash:
+Before reverting, confirm the previous WASM is available, works under the active protocol, and can read the current state layout. An executable swap preserves storage changes from earlier transactions. Coordinate authorization using the [contract upgrade runbook](contract-upgrade.md).
 
 ```bash
 # Revert contract bytecode to the pre-upgrade WASM hash
@@ -243,11 +258,11 @@ NETWORK="mainnet" \
    ```bash
    kubectl scale deployment/workload-governor-indexer --replicas=0 -n workload-governor
    ```
-2. **Rollback Backend Container Image**:
+2. **Rollback Backend Container Image** (use the rehearsed image compatible with the active protocol and current database schema):
    ```bash
    helm rollback workload-governor -n workload-governor
    kubectl rollout status deployment/workload-governor-backend -n workload-governor
    ```
 3. **Safe Event Replay After Fix**:
-   - Once the SDK or parser patch is deployed, restart `event-indexer`.
-   - `EventIndexer` automatically resumes from `MAX(ledger_seq)` / `indexer_checkpoints`, and the composite constraint `UNIQUE (ledger_seq, tx_hash, event_index)` (`ON CONFLICT DO NOTHING`) guarantees idempotent replay with zero duplicate events.
+   - Reconcile malformed rows and reset the persisted and cached checkpoints to the last verified ledger before restarting. Use the backfill dry run to verify coverage and source older ledgers from a provider with sufficient retention.
+   - Reconcile the replayed range and confirm lag has recovered before reopening writes.
