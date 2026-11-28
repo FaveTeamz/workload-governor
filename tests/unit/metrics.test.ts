@@ -4,6 +4,7 @@
 
 import express, { Request, Response } from 'express';
 import request from 'supertest';
+import { SorobanRpc } from '@stellar/stellar-sdk';
 
 // Mock env vars before importing metrics
 const originalEnv = process.env.METRICS_TOKEN;
@@ -24,6 +25,10 @@ jest.mock('../../src/logger', () => ({
     warn: jest.fn(),
     error: jest.fn(),
   },
+}));
+
+jest.mock('@stellar/stellar-sdk', () => ({
+  SorobanRpc: { AxiosClient: require('axios').create() },
 }));
 
 import { metricsHandler, metricsMiddleware } from '../../src/metrics';
@@ -47,6 +52,42 @@ describe('Metrics Endpoint', () => {
   });
 
   describe('GET /metrics', () => {
+    it('exports RPC latency with response and transport error labels', async () => {
+      const url = 'https://rpc.example.test:8443/private?key=secret';
+      const body = { jsonrpc: '2.0', method: 'getEvents', id: 1 };
+      const client = SorobanRpc.AxiosClient;
+
+      await client.post(url, body, {
+        adapter: async (config) => ({
+          config,
+          data: { result: { events: [] } },
+          headers: {},
+          status: 200,
+          statusText: 'OK',
+        }),
+      });
+
+      await expect(client.post(url, body, {
+        adapter: async (config) => {
+          throw Object.assign(new Error('connection failed'), { config });
+        },
+      })).rejects.toThrow('connection failed');
+
+      const response = await request(app).get('/metrics');
+      expect(response.text).toContain('# TYPE soroban_rpc_duration_seconds histogram');
+      const counts = response.text.split('\n').filter(
+        (line) => line.startsWith('soroban_rpc_duration_seconds_count{'),
+      );
+      expect(counts).toHaveLength(2);
+      for (const status of ['200', 'error']) {
+        expect(counts).toEqual(expect.arrayContaining([
+          expect.stringMatching(new RegExp(
+            `^soroban_rpc_duration_seconds_count\\{method="getEvents",endpoint="rpc\\.example\\.test",status="${status}"\\} 1$`,
+          )),
+        ]));
+      }
+    });
+
     it('should return 200 OK when no token is configured', async () => {
       delete process.env.METRICS_TOKEN;
 

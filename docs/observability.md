@@ -50,6 +50,32 @@ log schema emitted by `src/logger.ts`.
 
 ---
 
+## Soroban RPC latency
+
+Both Node services expose the `soroban_rpc_duration_seconds` histogram on
+`GET /metrics`, with buckets at 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, and 10
+seconds. Configure `METRICS_TOKEN` on the services and configure the scraper
+to send it as a bearer token.
+
+| Label | Values |
+|---|---|
+| `method` | JSON-RPC method, such as `simulateTransaction`, `sendTransaction`, or `getEvents` |
+| `status` | HTTP status code, or `error` for transport failures and JSON-RPC error responses |
+| `endpoint` | RPC hostname, with credentials, port, path, and query excluded |
+
+In Grafana, define a custom variable `quantile` with values
+`0.50,0.90,0.99` and use the following PromQL for successful HTTP 200 requests.
+In Prometheus, substitute the desired quantile directly.
+
+```promql
+histogram_quantile(
+  ${quantile},
+  sum by (le, method, endpoint) (
+    rate(soroban_rpc_duration_seconds_bucket{status="200"}[5m])
+  )
+)
+```
+
 ## Infrastructure alerts
 
 ### HighCpuUtilization

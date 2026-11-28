@@ -19,6 +19,7 @@
  * If METRICS_TOKEN is set, requests must include "Authorization: Bearer <token>" header.
  */
 
+import { SorobanRpc } from "@stellar/stellar-sdk";
 import { register, Counter, Histogram, Gauge } from "prom-client";
 import type { Request, Response } from "express";
 import { logger } from "./logger";
@@ -62,11 +63,43 @@ export const rpcCallDurationSeconds = new Histogram({
 
 export const sorobanRpcDurationSeconds = new Histogram({
   name: "soroban_rpc_duration_seconds",
-  help: "Soroban RPC call duration in seconds",
-  labelNames: ["rpc_method", "status"],
-  buckets: DEFAULT_BUCKETS,
+  help: "Duration of Soroban RPC calls in seconds",
+  labelNames: ["method", "status", "endpoint"],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
   registers: [register],
 });
+
+// Instrument the SDK transport so the labels reflect the JSON-RPC request
+// and actual HTTP response, including requests made by the event indexer.
+const rpcInterceptors = SorobanRpc?.AxiosClient?.interceptors;
+const rpcTimers = new WeakMap<object, ReturnType<typeof sorobanRpcDurationSeconds.startTimer>>();
+
+rpcInterceptors?.request.use((config) => {
+  const { data, url } = config;
+  if (data?.jsonrpc === "2.0" && typeof data.method === "string" && url && URL.canParse(url)) {
+    const endpoint = new URL(url).hostname;
+    const end = sorobanRpcDurationSeconds.startTimer({ method: data.method, endpoint });
+    rpcTimers.set(config, end);
+  }
+  return config;
+});
+
+rpcInterceptors?.response.use(
+  (response) => {
+    rpcTimers.get(response.config)?.({
+      status: response.data?.error != null ? "error" : String(response.status),
+    });
+    return response;
+  },
+  (error: { config?: object; response?: { status: number } }) => {
+    if (error?.config) {
+      rpcTimers.get(error.config)?.({
+        status: error.response ? String(error.response.status) : "error",
+      });
+    }
+    throw error;
+  },
+);
 
 export const cacheHitsTotal = new Counter({
   name: "cache_hits_total",

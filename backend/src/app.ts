@@ -22,6 +22,7 @@ import express from "express";
 import helmet from "helmet";
 import { healthHandler, readyHandler } from "./health.js";
 import { startScheduler } from "./scheduler.js";
+import { metricsHandler } from "./metrics.js";
 import logger, { pinoHttpMiddleware } from "./logger.js";
 import { adminAuth } from "./middleware/adminAuth.js";
 import adminRouter from "./routes/admin.js";
@@ -86,6 +87,7 @@ export function createApp(): express.Application {
   app.use(rateLimiterMiddleware);
   app.get("/api/health", healthHandler);
   app.get("/api/ready", readyHandler);
+  app.get("/metrics", metricsHandler);
   app.get("/api/events/stream", sseHandler);
   app.use("/api/admin", adminAuth, adminRouter);
 
