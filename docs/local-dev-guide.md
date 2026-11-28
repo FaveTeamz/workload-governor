@@ -13,55 +13,26 @@ Two setup paths are available:
 
 ## Devcontainer Setup (Recommended)
 
-A devcontainer gives you a pre-configured Linux environment with every tool already installed. It works on Windows, macOS, and Linux and requires no manual Rust, Node.js, or Stellar CLI installation.
-
-### Prerequisites
-
-1. **Docker Desktop** ≥ 24 — [docker.com/get-started](https://www.docker.com/get-started)
-   - Windows: enable WSL 2 backend in Docker Desktop settings.
-2. **VS Code** with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), **or** GitHub Codespaces.
+The devcontainer provisions Node.js 20, stable Rust, the WebAssembly target, and the recommended VS Code extensions.
 
 ### Starting the devcontainer
 
-1. Clone the repo and open it in VS Code:
+- **GitHub Codespaces** — Open the repository on GitHub and select **Code → Codespaces → Create codespace**.
+- **VS Code** — Install Docker and the Dev Containers extension. Open the cloned repository and run **Dev Containers: Reopen in Container** from the Command Palette.
 
-   ```bash
-   git clone https://github.com/FaveTeamz/workload-governor.git
-   cd workload-governor
-   code .
-   ```
+Wait for the post-create setup to finish. It installs `wasm32v1-none` for the active Rust toolchain and runs `npm ci` at the repository root, in `frontend/`, and in `backend/`. A first build may take several minutes depending on image pulls and dependency caches. Use **Codespaces: Rebuild Container** or **Dev Containers: Rebuild Container** to apply the setup to an existing environment.
 
-2. VS Code will detect `.devcontainer/devcontainer.json` and prompt:
-   **"Reopen in Container"** — click it.  
-   Alternatively, open the Command Palette (`Ctrl+Shift+P`) and run **Dev Containers: Reopen in Container**.
+Verify the provisioned tools from the container terminal:
 
-3. The first build takes 3–5 minutes while Docker pulls the base image and installs extensions. Subsequent opens take under 30 seconds.
+```bash
+node -v
+cargo --version
+rustup target list --installed | grep -x wasm32v1-none
+```
 
-4. When the container is ready the `post-create.sh` script runs automatically:
-   - Adds the `wasm32v1-none` Rust target
-   - Runs `npm ci` at the root and in `frontend/`
-   - Copies `*.env.example` → `*.env` (if not already present)
+The Node version should start with `v20.`. Run `make test-all` from the repository root to check the contract, backend, and frontend.
 
-5. Start the database services (PostgreSQL + Redis):
-
-   ```bash
-   docker compose up -d
-   ```
-
-6. Follow steps 3–6 of [Manual Setup](#manual-setup) (build contract, start backend, start frontend, configure Freighter) — the toolchain is already installed inside the container.
-
-### What's included in the devcontainer
-
-| Tool | Version |
-|---|---|
-| Rust (stable) | ≥ 1.78 |
-| `wasm32v1-none` target | auto-added |
-| Stellar CLI | ≥ 22.x |
-| Node.js | 20 LTS |
-| PostgreSQL client (`psql`) | via Docker Compose service |
-| Redis client (`redis-cli`) | via Docker Compose service |
-
-VS Code extensions installed automatically: `rust-analyzer`, `prettier`, `eslint`, `SQLTools`, Redis client, Docker.
+The container starts PostgreSQL and Redis through Docker Compose. For application configuration and startup, follow [Manual Setup](#manual-setup). Install the Stellar CLI if you need to deploy or invoke contracts.
 
 ### Windows-specific notes
 
