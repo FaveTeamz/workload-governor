@@ -1,15 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import {
-  Skeleton,
-  IssueCardSkeleton,
-  AssignmentRowSkeleton,
-  EventHistoryRowSkeleton,
-  WorkloadGaugeSkeleton,
-  OrgSelectorSkeleton,
-} from '../components/Skeleton'
+import { Skeleton, IssueCardSkeleton, PanelRowSkeleton } from '../components/Skeleton'
+import { EventHistoryTableSkeleton } from '../components/SkeletonScreens'
 
 const meta: Meta = {
   title:  'Design System/Skeleton',
+  component: Skeleton,
   tags:   ['autodocs'],
   parameters: { layout: 'padded' },
 }
@@ -19,12 +14,12 @@ export default meta
 
 export const BaseBlock: StoryObj<typeof Skeleton> = {
   name:    'Base — block',
-  render:  () => <Skeleton width="100%" height={20} />,
+  args: { width: '100%', height: 20 },
 }
 
 export const BaseInlinePill: StoryObj<typeof Skeleton> = {
   name:    'Base — inline pill',
-  render:  () => <Skeleton width={80} height={20} radius={9999} />,
+  args: { width: 80, height: 20, borderRadius: 9999 },
 }
 
 export const BaseMultiLine: StoryObj<typeof Skeleton> = {
@@ -64,9 +59,9 @@ export const AssignmentRow: StoryObj = {
   name:   'Variant — AssignmentRow',
   render: () => (
     <ul style={{ listStyle: 'none', padding: 0, maxWidth: 700 }}>
-      <AssignmentRowSkeleton />
-      <AssignmentRowSkeleton />
-      <AssignmentRowSkeleton />
+      <PanelRowSkeleton />
+      <PanelRowSkeleton />
+      <PanelRowSkeleton />
     </ul>
   ),
 }
@@ -74,11 +69,9 @@ export const AssignmentRow: StoryObj = {
 export const EventHistoryRow: StoryObj = {
   name:   'Variant — EventHistoryTable row',
   render: () => (
-    <ol style={{ listStyle: 'none', padding: 0, maxWidth: 700 }}>
-      <EventHistoryRowSkeleton />
-      <EventHistoryRowSkeleton />
-      <EventHistoryRowSkeleton />
-    </ol>
+    <div style={{ maxWidth: 700 }}>
+      <EventHistoryTableSkeleton rows={3} />
+    </div>
   ),
 }
 
@@ -86,8 +79,8 @@ export const WorkloadGauge: StoryObj = {
   name:   'Variant — WorkloadGauge',
   render: () => (
     <div style={{ display: 'flex', gap: 24 }}>
-      <WorkloadGaugeSkeleton size={120} />
-      <WorkloadGaugeSkeleton size={80} />
+      <Skeleton width={120} height={120} borderRadius="50%" />
+      <Skeleton width={80} height={80} borderRadius="50%" />
     </div>
   ),
 }
@@ -96,7 +89,7 @@ export const OrgSelector: StoryObj = {
   name:   'Variant — OrgSelector',
   render: () => (
     <div style={{ maxWidth: 220 }}>
-      <OrgSelectorSkeleton count={5} />
+      <Skeleton width="100%" height={36} />
     </div>
   ),
 }
@@ -113,22 +106,20 @@ export const AllVariants: StoryObj = {
       <section>
         <h3 style={{ marginBottom: 8, fontSize: '0.875rem', color: '#94a3b8' }}>AssignmentRow</h3>
         <ul style={{ listStyle: 'none', padding: 0 }}>
-          <AssignmentRowSkeleton />
+          <PanelRowSkeleton />
         </ul>
       </section>
       <section>
         <h3 style={{ marginBottom: 8, fontSize: '0.875rem', color: '#94a3b8' }}>EventHistoryRow</h3>
-        <ol style={{ listStyle: 'none', padding: 0 }}>
-          <EventHistoryRowSkeleton />
-        </ol>
+        <EventHistoryTableSkeleton rows={1} />
       </section>
       <section>
         <h3 style={{ marginBottom: 8, fontSize: '0.875rem', color: '#94a3b8' }}>WorkloadGauge</h3>
-        <WorkloadGaugeSkeleton size={120} />
+        <Skeleton width={120} height={120} borderRadius="50%" />
       </section>
       <section>
-        <h3 style={{ marginBottom: 8, fontSize: '0.875rem', color: '#94a3b8' }}>OrgSelector (5 items)</h3>
-        <OrgSelectorSkeleton count={5} />
+        <h3 style={{ marginBottom: 8, fontSize: '0.875rem', color: '#94a3b8' }}>OrgSelector</h3>
+        <Skeleton width="100%" height={36} />
       </section>
     </div>
   ),

@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { ShortcutHelpModal } from '../components/ShortcutHelpModal';
+import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
 
 // ── Controlled demo wrapper ───────────────────────────────────────────────────
 
@@ -222,14 +222,22 @@ export const LoadingDark: Story = {
 
 export const ShortcutModal: Story = {
   name: 'Shortcut help modal',
-  render: () => {
+  render: function ShortcutModalDemo() {
     const [open, setOpen] = useState(false);
     return (
       <div style={{ padding: '32px' }}>
         <button className="btn btn-secondary" onClick={() => setOpen(true)}>
           Open Shortcut Help
         </button>
-        <ShortcutHelpModal open={open} onClose={() => setOpen(false)} />
+        <KeyboardShortcutsModal
+          open={open}
+          onClose={() => setOpen(false)}
+          shortcuts={[
+            { key: '?', description: 'Open keyboard shortcuts', handler: () => {} },
+            { key: '/', description: 'Focus search', handler: () => {} },
+            { key: 'Escape', description: 'Close the dialog', handler: () => {} },
+          ]}
+        />
       </div>
     );
   },

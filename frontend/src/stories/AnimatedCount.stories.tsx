@@ -40,7 +40,7 @@ export const Decrement: Story = {
 
 /** Interactive demo: click button to animate count */
 export const Interactive: Story = {
-  render: () => {
+  render: function InteractiveCount() {
     const [count, setCount] = useState(0);
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 16 }}>
