@@ -4,6 +4,10 @@
 
 The Workload Governor contract manages issue assignments and applications for contributors. This guide covers administration tasks including TTL (Time-To-Live) management, admin modes, and error handling.
 
+## Network Protocol Upgrades
+
+Use the [Stellar network protocol upgrade runbook](runbooks/protocol-upgrade.md) to rehearse on Testnet, verify Mainnet health, and coordinate any contract upgrade or rollback with the authorized contract admin.
+
 ## Initialization
 
 Initialize a newly deployed contract atomically with contract creation. The
