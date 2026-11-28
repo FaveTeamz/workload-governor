@@ -13,7 +13,6 @@ exports[`Gauge > renders 0 pending applications 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-success-500, #22c55e);"
     >
       <span
         aria-atomic="true"
@@ -66,7 +65,6 @@ exports[`Gauge > renders 10 pending applications 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-warning-500, #f59e0b);"
     >
       <span
         aria-atomic="true"
@@ -119,7 +117,6 @@ exports[`Gauge > renders 15 pending applications 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-error-500, #ef4444);"
     >
       <span
         aria-atomic="true"
@@ -172,7 +169,6 @@ exports[`Gauge > renders 5 pending applications 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-success-500, #22c55e);"
     >
       <span
         aria-atomic="true"

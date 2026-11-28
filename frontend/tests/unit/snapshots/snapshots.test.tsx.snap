@@ -207,7 +207,6 @@ exports[`Gauge snapshots > 0% (value=0, max=15) 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-success-500, #22c55e);"
     >
       <span
         aria-atomic="true"
@@ -260,7 +259,6 @@ exports[`Gauge snapshots > 100% (value=15, max=15) 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-error-500, #ef4444);"
     >
       <span
         aria-atomic="true"
@@ -313,7 +311,6 @@ exports[`Gauge snapshots > 50% (value=1, max=2) 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-success-500, #22c55e);"
     >
       <span
         aria-atomic="true"
@@ -366,7 +363,6 @@ exports[`Gauge snapshots > custom className 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-success-500, #22c55e);"
     >
       <span
         aria-atomic="true"
@@ -419,7 +415,6 @@ exports[`Gauge snapshots > org capacity 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-error-500, #ef4444);"
     >
       <span
         aria-atomic="true"
@@ -472,7 +467,6 @@ exports[`Gauge snapshots > warning range (value=10, max=15) 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-warning-500, #f59e0b);"
     >
       <span
         aria-atomic="true"
@@ -525,7 +519,6 @@ exports[`Gauge snapshots > ~50% realistic (value=7, max=15) 1`] = `
     </div>
     <div
       class="gauge__count"
-      style="color: var(--color-success-500, #22c55e);"
     >
       <span
         aria-atomic="true"
