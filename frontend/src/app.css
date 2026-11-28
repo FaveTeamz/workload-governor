@@ -2001,7 +2001,8 @@ a, button, input, select, textarea {
 }
 .gauge__pct   { font-size: 1.1em; font-weight: 700; }
 .gauge__value { font-size: .75em; }
-.gauge__label { font-size: var(--text-xs, .75rem); color: var(--color-muted); text-align: center; }
+.gauge__label { font-size: var(--text-xs, .75rem); color: var(--color-gauge-text); text-align: center; }
+.gauge__count { color: var(--color-gauge-text); }
 
 /* ============================================================
    MaintainerPage

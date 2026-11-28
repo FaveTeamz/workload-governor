@@ -50,7 +50,7 @@ export function Gauge({
       <div className="gauge__label">{label}</div>
 
       {/* Numeric display with animated transition */}
-      <div className="gauge__count" style={{ color }}>
+      <div className="gauge__count">
         <AnimatedCount
           value={value}
           duration={animationDuration}
@@ -65,7 +65,7 @@ export function Gauge({
       <div
         className="gauge__track"
         role="progressbar"
-        aria-valuenow={value}
+        aria-valuenow={Math.max(0, Math.min(value, max))}
         aria-valuemin={0}
         aria-valuemax={max}
         aria-label={`${label}: ${value} of ${max}`}

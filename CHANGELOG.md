@@ -16,6 +16,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 - Cancel obsolete pull-request workflow runs without cancelling runs on `main`, and validate source-change changelog entries. (#1297, #1298)
 - Rename Helm chart helpers and defaults to `workload-governor` for consistent Kubernetes resource names. (#1299)
 - Display event history as labeled cards on narrow screens and allow copying full transaction hashes and addresses. (#1271)
+- Improve workload gauge text contrast and progress announcements. (#1269)
 
 ### Added
 - Add an animated contributor progress ring for weekly completions and daily streak milestones. (#1274)

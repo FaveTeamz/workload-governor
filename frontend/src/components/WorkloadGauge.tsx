@@ -17,7 +17,7 @@ export interface WorkloadGaugeProps {
  * - non-integer      → Math.floor(value)
  */
 export function normaliseCount(value: number | null | undefined): number {
-  if (value === null || value === undefined) return 0;
+  if (value == null || !Number.isFinite(value)) return 0;
   const floored = Math.floor(value);
   return floored < 0 ? 0 : floored;
 }
@@ -69,7 +69,8 @@ export function WorkloadGauge({ current, max, label }: WorkloadGaugeProps) {
       <div
         className="workload-gauge__track"
         role="progressbar"
-        aria-valuenow={safeCurrent}
+        aria-live="polite"
+        aria-valuenow={displayCurrent}
         aria-valuemin={0}
         aria-valuemax={safeMax}
         aria-label={label ? `${label}: ${displayCurrent} of ${safeMax}` : `${displayCurrent} of ${safeMax}`}
