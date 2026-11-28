@@ -213,6 +213,17 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
   } = useInfiniteOrgIssues(apiBase, org_id ?? '', wallet.publicKey ?? null);
 
   const [busyIssue, setBusyIssue] = useState<string | null>(null);
+  const transaction = useRef<AbortController | null>(null);
+  const { _reject: cancelReview } = txModal;
+
+  useEffect(() => {
+    if (!wallet.publicKey && transaction.current) {
+      transaction.current.abort();
+      cancelReview();
+      setBusyIssue(null);
+    }
+  }, [wallet.publicKey, cancelReview]);
+
   const [txHash, setTxHash] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchInput, setSearchInput] = useState(searchParams.get('search') ?? '');
@@ -324,15 +335,17 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  async function executeReviewedTransaction(action: 'apply' | 'withdraw', issueId: string): Promise<string> {
+  async function executeReviewedTransaction(action: 'apply' | 'withdraw', issueId: string, signal: AbortSignal): Promise<string> {
     if (!wallet.publicKey || !org_id) throw new Error('Connect your wallet before submitting a transaction.');
 
     const horizonBase = import.meta.env.VITE_HORIZON_URL ?? 'https://horizon-testnet.stellar.org';
-    const accountResponse = await fetch(`${horizonBase}/accounts/${encodeURIComponent(wallet.publicKey)}`);
+    const accountResponse = await fetch(`${horizonBase}/accounts/${encodeURIComponent(wallet.publicKey)}`, { signal });
     if (!accountResponse.ok) throw new Error(`Failed to fetch account sequence: ${accountResponse.status}`);
     const account = await accountResponse.json() as { sequence: string };
 
+    signal.throwIfAborted();
     const buildResponse = await fetch(`${apiBase}/transactions/${action}`, {
+      signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -351,6 +364,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     const issue = issues.find((item) => item.issue_id === issueId);
     const operation = action === 'apply' ? 'apply_for_issue' : 'withdraw_application';
     const network = (import.meta.env.VITE_STELLAR_NETWORK ?? 'TESTNET').toLowerCase();
+    signal.throwIfAborted();
     await txModal.confirm({
       action: `${action === 'apply' ? 'Apply for' : 'Withdraw from'} ${issue?.title ?? `issue ${issueId}`}`,
       operation,
@@ -367,6 +381,7 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
       confirmLabel: action === 'apply' ? 'Confirm application' : 'Confirm withdrawal',
     });
 
+    signal.throwIfAborted();
     txModal.setLoading();
     const freighter = getFreighter();
     if (!freighter) throw new Error('Freighter extension not found.');
@@ -378,7 +393,9 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     if (signError) throw new Error(`Signing failed: ${signError}`);
     if (!signedTxXdr) throw new Error('Freighter did not return a signed transaction.');
 
+    signal.throwIfAborted();
     const submitResponse = await fetch(`${apiBase}/transactions/submit`, {
+      signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ signed_xdr: signedTxXdr }),
@@ -397,8 +414,10 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     setBusyIssue(issueId);
     setTxHash(null);
 
+    const controller = new AbortController();
+    transaction.current = controller;
     try {
-      const hash = await executeReviewedTransaction('apply', issueId);
+      const hash = await executeReviewedTransaction('apply', issueId, controller.signal);
       setIssueStatus(issueId, 'applied');
       setTxHash(hash);
       const issue = issues.find((entry) => entry.issue_id === issueId);
@@ -408,8 +427,11 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
         addToast(err instanceof Error ? err.message : 'Apply failed', 'error');
       }
     } finally {
-      txModal.close();
-      setBusyIssue(null);
+      if (transaction.current === controller) {
+        transaction.current = null;
+        txModal.close();
+        setBusyIssue(null);
+      }
     }
   }
 
@@ -418,8 +440,10 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
     setBusyIssue(issueId);
     setTxHash(null);
 
+    const controller = new AbortController();
+    transaction.current = controller;
     try {
-      const hash = await executeReviewedTransaction('withdraw', issueId);
+      const hash = await executeReviewedTransaction('withdraw', issueId, controller.signal);
       setIssueStatus(issueId, 'open');
       setTxHash(hash);
       const issue = issues.find((entry) => entry.issue_id === issueId);
@@ -429,8 +453,11 @@ export function OrgIssuesPage({ apiBase = '/api' }: OrgIssuesPageProps) {
         addToast(err instanceof Error ? err.message : 'Withdraw failed', 'error');
       }
     } finally {
-      txModal.close();
-      setBusyIssue(null);
+      if (transaction.current === controller) {
+        transaction.current = null;
+        txModal.close();
+        setBusyIssue(null);
+      }
     }
   }
 

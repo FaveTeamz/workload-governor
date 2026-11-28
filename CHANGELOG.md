@@ -12,6 +12,7 @@ For guidelines on writing changelog entries see [docs/changelog-guide.md](docs/c
 ### Fixed
 - Stabilize Button snapshots and restrict Chromatic to Storybook inputs. (#1275)
 - Validate contract event topics and data against the XDR ABI before indexing, and preserve rejected events in `indexer_quarantine` for inspection. (#1030)
+- Synchronize Freighter disconnects across tabs and close pending transaction reviews. (#1267)
 - Enable sccache for contract compilation and trigger frontend CI for root shared configuration changes. (#1290, #1291)
 - Cancel obsolete pull-request workflow runs without cancelling runs on `main`, and validate source-change changelog entries. (#1297, #1298)
 - Rename Helm chart helpers and defaults to `workload-governor` for consistent Kubernetes resource names. (#1299)
